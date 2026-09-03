@@ -57,6 +57,20 @@ impl Knob {
         self.param
             .set_normalized_value(cx, (current + delta).clamp(0.0, 1.0));
     }
+
+    /// Ends a drag: releases the mouse and closes the gesture with the host.
+    ///
+    /// Called from more than one place because the one that must not be relied
+    /// on is the mouse button coming back up. See `event`.
+    fn finish(&mut self, cx: &mut EventContext) {
+        if !self.dragging {
+            return;
+        }
+        self.dragging = false;
+        cx.release();
+        cx.set_active(false);
+        self.param.end_set_parameter(cx);
+    }
 }
 
 impl View for Knob {
@@ -114,6 +128,32 @@ impl View for Knob {
         );
     }
 
+    /// Mouse handling, and the one thing in it that is not obvious.
+    ///
+    /// A drag captures the mouse so that the knob keeps receiving movement
+    /// when the pointer leaves it, and releases on the button coming back up.
+    /// That release must not be the *only* way out.
+    ///
+    /// vizia routes every mouse event to the captured entity, and nothing in
+    /// vizia ever clears a capture on its own -- `MouseCaptureOutEvent` is
+    /// declared in its event enum and emitted nowhere, and `release` only
+    /// clears the field when the widget itself asks. So a drag whose button-up
+    /// never arrives leaves this knob holding the mouse for the rest of the
+    /// session: every other control stops responding, the window looks frozen,
+    /// and the audio thread carries on as though nothing were wrong. The
+    /// gesture opened with the host is never closed either, so it also thinks
+    /// an edit is still in progress.
+    ///
+    /// A button-up can genuinely go missing. On Windows the pointer is held
+    /// with `SetCapture`, and a `WM_CAPTURECHANGED` -- another window taking
+    /// capture, the host putting up a dialog, the plugin window being
+    /// deactivated mid-drag -- sends the button-up somewhere else entirely.
+    ///
+    /// So the drag is also ended by anything that says the mouse is no longer
+    /// down, and the check that does not depend on an event arriving at all is
+    /// in `MouseMove`: if the button is up while this knob thinks it is
+    /// dragging, the drag is over whether or not anyone said so. That one
+    /// heals the window the moment the pointer moves over it again.
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|param_event, _| {
             if let RawParamEvent::ParametersChanged = param_event {
@@ -128,7 +168,10 @@ impl View for Knob {
                     self.param
                         .set_normalized_value(cx, self.param.default_normalized_value());
                     self.param.end_set_parameter(cx);
-                } else {
+                } else if !self.dragging {
+                    // Guarded: a second press without an intervening release
+                    // would open a gesture inside a gesture, which is not
+                    // something a host has to make sense of.
                     self.dragging = true;
                     self.last_y = cx.mouse().cursory;
                     cx.capture();
@@ -148,15 +191,24 @@ impl View for Knob {
             }
             WindowEvent::MouseUp(MouseButton::Left) => {
                 if self.dragging {
-                    self.dragging = false;
-                    cx.release();
-                    cx.set_active(false);
-                    self.param.end_set_parameter(cx);
+                    self.finish(cx);
                     meta.consume();
                 }
             }
+            // Anything that means this window is no longer the one being used.
+            // These are the events that do arrive when a drag is interrupted;
+            // the check in `MouseMove` covers the times none of them does.
+            WindowEvent::FocusOut | WindowEvent::WindowClose | WindowEvent::MouseCaptureOutEvent => {
+                self.finish(cx);
+            }
             WindowEvent::MouseMove(_, y) => {
                 if self.dragging {
+                    // The button came up somewhere this window never heard
+                    // about. Without this the knob holds the mouse for good.
+                    if cx.mouse().left.state == MouseButtonState::Released {
+                        self.finish(cx);
+                        return;
+                    }
                     let speed = if cx.modifiers().shift() { FINE } else { 1.0 };
                     let delta = (self.last_y - *y) / (DRAG_RANGE * cx.scale_factor()) * speed;
                     self.last_y = *y;
