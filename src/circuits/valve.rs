@@ -44,6 +44,36 @@ pub const HOT: Values = Values {
     triode: TriodeSpec::ECC83,
 };
 
+/// Appends one stage to a netlist and gives back the node its output is on.
+///
+/// Composable because the nodes are named: a second stage asks for
+/// `"b_grid"` and gets its own, where hand numbered nodes would mean either
+/// copying the whole builder or keeping a running offset by hand -- which is
+/// the bookkeeping that produced the worst bugs in the previous version.
+pub fn stage(
+    net: &mut Netlist,
+    prefix: &str,
+    input: &str,
+    v: &Values,
+    control: usize,
+) -> String {
+    let grid = format!("{prefix}_grid");
+    let plate = format!("{prefix}_plate");
+    let cathode = format!("{prefix}_cathode");
+    let leg = format!("{prefix}_bypass");
+    let out = format!("{prefix}_out");
+
+    net.capacitor(input, &grid, 22e-9)
+        .resistor(&grid, "gnd", 1_000_000.0)
+        .supply(&plate, v.plate_load, v.supply)
+        .resistor(&cathode, "gnd", v.cathode)
+        .pot(&cathode, &leg, &leg, 25_000.0, Taper::Linear, control)
+        .capacitor(&leg, "gnd", 22e-6)
+        .triode(&plate, &grid, &cathode, v.triode)
+        .capacitor(&plate, &out, 22e-9);
+    out
+}
+
 pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("valve stage");
     net.input("in", source)
