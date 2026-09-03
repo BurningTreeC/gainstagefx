@@ -135,11 +135,11 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
     };
     let quietest = PRESETS
         .iter()
-        .map(|p| thd_of(p))
+        .map(thd_of)
         .fold(f64::MAX, f64::min);
     let loudest = PRESETS
         .iter()
-        .map(|p| thd_of(p))
+        .map(thd_of)
         .fold(f64::MIN, f64::max);
     println!("the catalogue runs from {quietest:.2} % to {loudest:.1} % distortion");
     assert!(

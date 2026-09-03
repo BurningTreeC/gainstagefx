@@ -9,8 +9,7 @@
 //! They are grouped by what they are for rather than by which circuit they
 //! use, because that is how somebody looking for a sound is thinking.
 
-use crate::params::{Cabinet, Circuit, Diode, GainStageParams, ToneStack};
-use nih_plug::prelude::*;
+use crate::params::{Cabinet, Circuit, Diode, ToneStack};
 
 pub struct Preset {
     pub group: &'static str,
@@ -123,52 +122,47 @@ pub const PRESETS: &[Preset] = &[
 pub const GROUPS: [&str; 5] = ["Preamp", "Crunch", "High Gain", "Overdrive", "Distortion"];
 
 impl Preset {
-    /// Writes the preset onto the parameters.
+    /// The preset as parameter ids and the values the panel would show, which
+    /// is the form the host wants them in.
     ///
-    /// Through the host's own setter rather than by assignment, so that a DAW
-    /// showing automation lanes sees every value move and an undo step covers
-    /// the whole change rather than none of it.
-    pub fn apply(&self, setter: &ParamSetter, params: &GainStageParams) {
-        setter.begin_set_parameter(&params.input_trim);
-        setter.set_parameter(&params.input_trim, self.input_trim);
-        setter.end_set_parameter(&params.input_trim);
-
-        set_enum(setter, &params.circuit, self.circuit);
-        set_enum(setter, &params.diode, self.diode);
-        set_enum(setter, &params.tone, self.tone);
-        set_enum(setter, &params.cabinet, self.cabinet);
-
-        for (param, value) in [
-            (&params.drive, self.drive),
-            (&params.bass, self.bass),
-            (&params.mid, self.mid),
-            (&params.treble, self.treble),
-            (&params.mix, self.mix),
-            (&params.output_trim, self.output_trim),
-        ] {
-            setter.begin_set_parameter(param);
-            setter.set_parameter(param, value);
-            setter.end_set_parameter(param);
-        }
-
-        if let Ok(mut name) = params.preset_name.lock() {
-            *name = self.name.to_string();
-        }
+    /// Ids rather than fields, because this is what gets pushed out as
+    /// ordinary parameter gestures: an automatable, undoable edit like any
+    /// other, rather than a set of assignments the host never hears about. It
+    /// is also the shape a preset saved to disk would take, so user presets
+    /// can join the same path later without any of this changing.
+    pub fn dials(&self) -> [(&'static str, f32); 11] {
+        [
+            ("in_trim", self.input_trim),
+            ("circuit", index_in(&Circuit::ALL, self.circuit)),
+            ("diode", index_in(&Diode::ALL, self.diode)),
+            ("drive", self.drive),
+            ("tone", index_in(&ToneStack::ALL, self.tone)),
+            ("bass", self.bass),
+            ("mid", self.mid),
+            ("treble", self.treble),
+            ("cabinet", index_in(&Cabinet::ALL, self.cabinet)),
+            ("mix", self.mix),
+            ("out_trim", self.output_trim),
+        ]
     }
 }
 
-fn set_enum<T: Enum + PartialEq + Copy + 'static>(
-    setter: &ParamSetter,
-    param: &EnumParam<T>,
-    value: T,
-) {
-    setter.begin_set_parameter(param);
-    setter.set_parameter(param, value);
-    setter.end_set_parameter(param);
+/// Where a variant sits in its list, which is what an enumerated parameter
+/// takes as its plain value.
+fn index_in<T: PartialEq + Copy>(all: &[T], value: T) -> f32 {
+    all.iter().position(|v| *v == value).unwrap_or(0) as f32
 }
 
 /// Where a named preset sits in the list, or nothing if it has been renamed
 /// out from under a saved session.
 pub fn index_of(name: &str) -> Option<usize> {
     PRESETS.iter().position(|p| p.name == name)
+}
+
+/// The presets in one group, with their positions in the full list.
+pub fn in_group(group: &'static str) -> impl Iterator<Item = (usize, &'static Preset)> {
+    PRESETS
+        .iter()
+        .enumerate()
+        .filter(move |(_, p)| p.group == group)
 }

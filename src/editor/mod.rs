@@ -13,6 +13,7 @@
 //! is a claim about how a thing works; that one made no claim at all.
 
 mod panel;
+mod session;
 mod sprites;
 mod style;
 mod widgets;
@@ -60,15 +61,20 @@ pub fn create(
         }
         .build(cx);
 
+        session::Session::build_into(cx, params.clone());
+
         Faceplate::new(cx);
         gutter(cx);
-        session(cx);
+        strip(cx);
         input(cx);
         circuit(cx);
         drive(cx);
         tone(cx);
         cabinet(cx);
         output(cx);
+
+        // Last, so it draws over the panel and takes the clicks first.
+        session::menu(cx);
     })
 }
 
@@ -186,29 +192,16 @@ fn gutter(cx: &mut Context) {
 // The strip above the panel
 // ---------------------------------------------------------------------------
 
-fn session(cx: &mut Context) {
+fn strip(cx: &mut Context) {
     label(cx, "GAINSTAGEFX", 78.0, HEADER_H / 2.0, 11.5, 140.0, 0xe8eef4);
 
-    Label::new(
-        cx,
-        Panel::params.map(|p| {
-            p.preset_name
-                .lock()
-                .map(|n| n.clone())
-                .unwrap_or_else(|_| String::from("Init"))
-        }),
-    )
-    .position_type(PositionType::SelfDirected)
-    .left(Pixels(168.0))
-    .top(Pixels(HEADER_H / 2.0 - LABEL_H / 2.0))
-    .width(Pixels(220.0))
-    .height(Pixels(LABEL_H))
-    .child_top(Stretch(1.0))
-    .child_bottom(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
-    .font_size(11.0)
-    .color(Color::rgb(0xff, 0xb2, 0x6a))
-    .hoverable(false);
+    label(cx, "preset", 182.0, HEADER_H / 2.0, 10.0, 48.0, 0x7e8a96);
+    session::PresetButton::new(cx)
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(session::BUTTON_X))
+        .top(Pixels(HEADER_H / 2.0 - 11.0))
+        .width(Pixels(session::BUTTON_W))
+        .height(Pixels(22.0));
 
     // Oversampling belongs up here rather than in a band: it changes what the
     // plugin costs, not what it sounds like, and putting it in the signal path
