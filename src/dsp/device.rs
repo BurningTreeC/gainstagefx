@@ -12,7 +12,7 @@
 //! Three evaluations of a closed-form curve is not the expensive part of a
 //! circuit solve.
 
-use super::netlist::{DiodeSpec, TriodeSpec, GROUND};
+use super::netlist::{CoreSpec, DiodeSpec, JfetSpec, TriodeSpec, GROUND};
 
 /// Thermal voltage at room temperature.
 const VT: f64 = 0.025_852;
@@ -321,5 +321,190 @@ impl Device for OpAmp {
 
     fn moved(&self) -> f64 {
         self.delta
+    }
+}
+
+/// A junction FET, by the square law.
+///
+/// Between a valve and a bipolar transistor in how its harmonics arrive. A
+/// triode follows a three-halves power, a bipolar an exponential, and a JFET a
+/// square -- and a square law has *only* a second-order term, so a JFET stage
+/// run in its saturated region makes second harmonic and almost nothing else
+/// until it starts clipping against its own supply. That is the whole reason
+/// discrete studio equipment is built from them.
+///
+/// Three regions, and all three matter here. Cut off below pinch-off; the
+/// square law above it while the drain has room; and the ohmic region when it
+/// does not, which is what sets how the stage clips at the bottom of its
+/// swing.
+pub struct Jfet {
+    d: usize,
+    g: usize,
+    s: usize,
+    spec: JfetSpec,
+    vgs: f64,
+    vds: f64,
+    delta: f64,
+}
+
+impl Jfet {
+    pub fn new(d: usize, g: usize, s: usize, spec: JfetSpec) -> Self {
+        Self { d, g, s, spec, vgs: 0.0, vds: 0.0, delta: 0.0 }
+    }
+
+    /// Drain current for a pair of terminal voltages.
+    pub fn drain(&self, vgs: f64, vds: f64) -> f64 {
+        let vp = self.spec.pinch_off;
+        // Below pinch-off the channel is shut.
+        if vgs <= vp || vds <= 0.0 {
+            return 0.0;
+        }
+        let over = 1.0 - vgs / vp;
+        let knee = vgs - vp;
+        if vds >= knee {
+            // Saturated: the square law, and the only place the stage is
+            // usable as an amplifier.
+            self.spec.idss * over * over
+        } else {
+            // Ohmic: the drain has run out of room and the device is closer to
+            // a resistor than an amplifier.
+            let x = vds / -vp;
+            self.spec.idss * (2.0 * over * x - x * x)
+        }
+    }
+}
+
+impl Device for Jfet {
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        // A square law is gentle enough not to need the limiter a junction
+        // does, but the gate can still be walked a long way in one iteration
+        // by whatever is in front of it.
+        let vgs = limit(across(v, self.g, self.s), self.vgs, 0.5);
+        let vds = limit(across(v, self.d, self.s), self.vds, 2.0);
+        self.delta = (vgs - self.vgs).abs().max((vds - self.vds).abs());
+        self.vgs = vgs;
+        self.vds = vds;
+
+        let id = self.drain(vgs, vds);
+        let step = 1e-4;
+        let gm = (self.drain(vgs + step, vds) - self.drain(vgs - step, vds)) / (2.0 * step);
+        let gds = ((self.drain(vgs, vds + step) - self.drain(vgs, vds - step)) / (2.0 * step))
+            .max(1e-9);
+
+        // Drain to source conductance, and the gate's control of it.
+        s.conductance(self.d, self.s, gds);
+        s.transconductance(self.d, self.s, self.g, self.s, gm);
+        s.current(self.d, self.s, id - gds * vds - gm * vgs);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
+    }
+}
+
+/// The magnetising branch of a transformer: the part that saturates.
+///
+/// An ideal transformer is a ratio and nothing else, and a plugin built on one
+/// would have iron in the signal path that made no difference whatever. What
+/// a transformer actually does to a sound is here.
+///
+/// The winding has an inductance across it, and the current that flows in it
+/// magnetises the core. It is *flux* that saturates, not voltage -- and flux
+/// is the integral of voltage, so the same signal makes far more of it at
+/// forty hertz than at four thousand. That is why transformer distortion is a
+/// bottom-end phenomenon, and why it is not a waveshaper: no curve applied to
+/// the samples can be frequency dependent in that way.
+///
+/// Past the knee the magnetising current rises very steeply as more flux is
+/// forced into a core that has no more room, which loads whatever is driving
+/// the winding and bends the waveform. The curve continues rather than
+/// clamping, so driving it harder goes on doing more.
+pub struct Core {
+    a: usize,
+    b: usize,
+    spec: CoreSpec,
+    /// Flux linkage, in weber-turns. The state that makes this frequency
+    /// dependent.
+    flux: f64,
+    /// Flux and voltage at the end of the last settled sample.
+    last_flux: f64,
+    last_volts: f64,
+    volts: f64,
+    delta: f64,
+    /// Half the timestep, which is what trapezoidal integration of the voltage
+    /// comes to.
+    half_step: f64,
+}
+
+impl Core {
+    pub fn new(a: usize, b: usize, spec: CoreSpec, rate: f64) -> Self {
+        Self {
+            a,
+            b,
+            spec,
+            flux: 0.0,
+            last_flux: 0.0,
+            last_volts: 0.0,
+            volts: 0.0,
+            delta: 0.0,
+            half_step: 0.5 / rate,
+        }
+    }
+
+    pub fn set_rate(&mut self, rate: f64) {
+        self.half_step = 0.5 / rate;
+    }
+
+    /// Magnetising current for a flux linkage.
+    ///
+    /// Linear through the origin, plus an odd power that only matters past the
+    /// knee. Odd so the core behaves the same on both halves of the wave --
+    /// which is why a transformer makes odd harmonics and a single-ended valve
+    /// stage makes even ones.
+    pub fn magnetising(&self, flux: f64) -> f64 {
+        let linear = flux / self.spec.henry;
+        let over = flux / self.spec.knee;
+        let bend = over.abs().powf(self.spec.sharpness) * over.signum();
+        linear + bend * self.spec.knee / self.spec.henry
+    }
+
+    pub fn flux(&self) -> f64 {
+        self.flux
+    }
+}
+
+impl Device for Core {
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        // The winding voltage is what drives the flux, and a long way in one
+        // iteration is how a steep curve makes the solve oscillate.
+        let volts = limit(across(v, self.a, self.b), self.volts, 4.0);
+        self.delta = (volts - self.volts).abs();
+        self.volts = volts;
+
+        // Trapezoidal: the flux at this instant is what it was, plus the area
+        // under the voltage since.
+        let history = self.last_flux + self.half_step * self.last_volts;
+        let flux = history + self.half_step * volts;
+        self.flux = flux;
+
+        let i = self.magnetising(flux);
+        let step = self.spec.knee * 1e-3;
+        // d(current)/d(volts) is d(current)/d(flux) times the half step, which
+        // is what the integration contributes.
+        let slope = (self.magnetising(flux + step) - self.magnetising(flux - step))
+            / (2.0 * step);
+        let g = (slope * self.half_step).max(1e-12);
+
+        s.conductance(self.a, self.b, g);
+        s.current(self.a, self.b, i - g * volts);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
+    }
+
+    fn advance(&mut self) {
+        self.last_flux = self.flux;
+        self.last_volts = self.volts;
     }
 }

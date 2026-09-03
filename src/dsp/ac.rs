@@ -155,7 +155,10 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                     }
                 }
             }
-            Part::Diode { .. } | Part::Triode { .. } => unreachable!("checked above"),
+            Part::Diode { .. }
+            | Part::Triode { .. }
+            | Part::Jfet { .. }
+            | Part::Core { .. } => unreachable!("checked above"),
         }
     }
 

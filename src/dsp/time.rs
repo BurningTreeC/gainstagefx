@@ -12,7 +12,7 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
-use super::device::{Device, Diode, OpAmp, Stamper, Triode};
+use super::device::{Core, Device, Diode, Jfet, OpAmp, Stamper, Triode};
 use super::netlist::{Circuit, Part, GROUND};
 
 /// How still the solve has to get before it is called settled, in volts.
@@ -213,6 +213,16 @@ impl Simulation {
                     Part::Triode { p, g, k, spec } => {
                         self.devices.push(Box::new(Triode::new(p, g, k, spec)));
                     }
+                    Part::Jfet { d, g, s: source_pin, spec } => {
+                        self.devices
+                            .push(Box::new(Jfet::new(d, g, source_pin, spec)));
+                    }
+                    Part::Core { a, b, spec } => {
+                        // The only device that has to be told the rate: it
+                        // integrates the voltage across it, so its answer
+                        // depends on how long a sample lasts.
+                        self.devices.push(Box::new(Core::new(a, b, spec, self.rate)));
+                    }
                     Part::OpAmp { out, plus, minus, rail } => {
                         let branch = self.circuit.branch_of(index);
                         self.devices
@@ -384,6 +394,17 @@ impl Simulation {
             let current = l.conductance * v - l.history;
             l.history = -(current + l.conductance * v);
             l.current = current;
+        }
+        // And what each device remembers. Most of them remember nothing -- a
+        // diode's current depends on its voltage now and on nothing else -- so
+        // this went uncalled for a long time without any of them noticing. A
+        // saturating core is the first device here with a state, and it
+        // integrates the voltage across it: left unadvanced its flux never
+        // accumulated past a single sample, so it drew a hundred-thousandth of
+        // the current it should have and iron in the signal path did nothing
+        // whatsoever.
+        for device in &mut self.devices {
+            device.advance();
         }
 
         self.voltage[self.circuit.output]

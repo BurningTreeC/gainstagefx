@@ -91,6 +91,50 @@ impl Taper {
     }
 }
 
+/// Saturation drain current, and the gate voltage that pinches it off.
+///
+/// Pinch-off is negative: an n-channel JFET conducts with no bias at all and
+/// is turned *off* by pulling the gate down. That is why these stages are
+/// self-biased by a source resistor rather than by a divider from the rail.
+#[derive(Clone, Copy, Debug)]
+pub struct JfetSpec {
+    pub idss: f64,
+    pub pinch_off: f64,
+}
+
+impl JfetSpec {
+    /// The small-signal part in a great deal of discrete studio equipment.
+    pub const J2N5457: JfetSpec = JfetSpec { idss: 3.0e-3, pinch_off: -1.5 };
+    /// Higher current and a deeper pinch-off, so it swings further before it
+    /// runs out of room.
+    pub const J201: JfetSpec = JfetSpec { idss: 0.6e-3, pinch_off: -0.8 };
+    /// A large-signal part, for a stage that has to drive something.
+    pub const J113: JfetSpec = JfetSpec { idss: 20.0e-3, pinch_off: -3.0 };
+}
+
+
+#[derive(Clone, Copy, Debug)]
+pub struct CoreSpec {
+    /// Inductance below the knee, in henries. Large, so the branch is nearly
+    /// invisible until the flux gets up.
+    pub henry: f64,
+    /// Flux linkage at the knee.
+    pub knee: f64,
+    /// How sharply the core gives up past it. Silicon steel has a hard corner;
+    /// nickel is softer and starts bending sooner.
+    pub sharpness: f64,
+}
+
+impl CoreSpec {
+    /// Silicon steel: takes a lot before it does anything, then does a lot.
+    pub const STEEL: CoreSpec = CoreSpec { henry: 40.0, knee: 0.012, sharpness: 7.0 };
+    /// Nickel: bends earlier and more gently, which is the sound people buy
+    /// input transformers for.
+    pub const NICKEL: CoreSpec = CoreSpec { henry: 90.0, knee: 0.006, sharpness: 3.0 };
+    /// A modern amorphous core: very little of its own until pushed hard.
+    pub const AMORPHOUS: CoreSpec = CoreSpec { henry: 150.0, knee: 0.030, sharpness: 9.0 };
+}
+
 /// One part.
 #[derive(Clone, Debug)]
 pub enum Part {
@@ -121,6 +165,11 @@ pub enum Part {
     /// An ideal transformer, `ratio` primary turns to one secondary turn.
     /// Everything that colours a real one hangs off it as ordinary parts.
     Transformer { p1: usize, p2: usize, s1: usize, s2: usize, ratio: f64 },
+    /// A junction FET: drain, gate, source.
+    Jfet { d: usize, g: usize, s: usize, spec: JfetSpec },
+    /// A transformer's magnetising branch, which is the part that saturates.
+    /// Put across a winding, alongside the `Transformer` that sets the ratio.
+    Core { a: usize, b: usize, spec: CoreSpec },
 }
 
 /// Saturation current and emission coefficient.
@@ -172,6 +221,8 @@ impl Part {
             Part::Triode { p, g, k, .. } => vec![p, g, k],
             Part::OpAmp { out, plus, minus, .. } => vec![out, plus, minus],
             Part::Transformer { p1, p2, s1, s2, .. } => vec![p1, p2, s1, s2],
+            Part::Jfet { d, g, s, .. } => vec![d, g, s],
+            Part::Core { a, b, .. } => vec![a, b],
         }
     }
 
@@ -190,7 +241,14 @@ impl Part {
     /// Whether this part has a single frequency response. A device does not,
     /// so a circuit containing one cannot be handed to the AC solver.
     pub fn is_linear(&self) -> bool {
-        !matches!(self, Part::Diode { .. } | Part::Triode { .. } | Part::OpAmp { .. })
+        !matches!(
+            self,
+            Part::Diode { .. }
+                | Part::Triode { .. }
+                | Part::OpAmp { .. }
+                | Part::Jfet { .. }
+                | Part::Core { .. }
+        )
     }
 
     fn name(&self) -> &'static str {
@@ -203,6 +261,8 @@ impl Part {
             Part::Supply { .. } => "supply",
             Part::Diode { .. } => "diode",
             Part::Triode { .. } => "triode",
+            Part::Jfet { .. } => "JFET",
+            Part::Core { .. } => "core",
             Part::OpAmp { .. } => "op-amp",
             Part::Transformer { .. } => "transformer",
         }
@@ -325,6 +385,19 @@ impl Netlist {
         self
     }
 
+    pub fn jfet(&mut self, d: &str, g: &str, s: &str, spec: JfetSpec) -> &mut Self {
+        let (d, g, s_) = (self.pin(d), self.pin(g), self.pin(s));
+        self.parts.push(Part::Jfet { d, g, s: s_, spec });
+        self
+    }
+
+    /// The magnetising branch of a winding: what makes iron sound like iron.
+    pub fn core(&mut self, a: &str, b: &str, spec: CoreSpec) -> &mut Self {
+        let (a, b) = (self.pin(a), self.pin(b));
+        self.parts.push(Part::Core { a, b, spec });
+        self
+    }
+
     pub fn triode(&mut self, p: &str, g: &str, k: &str, spec: TriodeSpec) -> &mut Self {
         let (p, g, k) = (self.pin(p), self.pin(g), self.pin(k));
         self.parts.push(Part::Triode { p, g, k, spec });
@@ -387,6 +460,12 @@ impl Netlist {
                 Part::Input { series, .. } | Part::Supply { series, .. } => series <= 0.0,
                 Part::Diode { spec, .. } => spec.saturation <= 0.0 || spec.emission <= 0.0,
                 Part::Triode { spec, .. } => spec.mu <= 0.0 || spec.kg1 <= 0.0,
+                // Pinch-off is negative for an n-channel part, and a core with
+                // no knee would saturate at zero signal.
+                Part::Jfet { spec, .. } => spec.idss <= 0.0 || spec.pinch_off >= 0.0,
+                Part::Core { spec, .. } => {
+                    spec.henry <= 0.0 || spec.knee <= 0.0 || spec.sharpness <= 1.0
+                }
                 Part::OpAmp { rail, .. } => rail <= 0.0,
                 Part::Transformer { ratio, .. } => ratio <= 0.0,
             };
