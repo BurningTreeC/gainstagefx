@@ -1,0 +1,19 @@
+[package]
+name = "gainstagefx"
+version = "0.1.0"
+edition = "2021"
+authors = ["Simon Huber <huber.simon@protonmail.com>"]
+license = "GPL-3.0-or-later"
+description = "GainStageFx, circuit modelled gain stages from subtle saturation to high gain (CLAP/VST3)"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+opt-level = 3
