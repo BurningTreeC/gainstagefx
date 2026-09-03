@@ -6,8 +6,8 @@
 
 use nih_plug_vizia::vizia::vg;
 
-pub const PANEL_W: f32 = 720.0;
-pub const HEADER_H: f32 = 36.0;
+pub const PANEL_W: f32 = 640.0;
+pub const HEADER_H: f32 = 32.0;
 
 /// The six sections, in signal order, with the height each needs.
 ///
@@ -16,17 +16,23 @@ pub const HEADER_H: f32 = 36.0;
 /// about. The number and name sit in a gutter down the left, which is what
 /// makes the order legible at a glance rather than only after reading the
 /// labels.
+/// Sized to the controls in them and nothing else. An earlier set of these
+/// was laid out around three and four line explanations sitting beside every
+/// section, which made the window 720 by 734 -- a lot of screen for a plugin
+/// with eleven controls on it, and permanently so, since panel text cannot be
+/// dismissed once it has been read. The explanations are in the README, where
+/// they can be read once.
 pub const SECTIONS: [(&str, &str, f32); 6] = [
-    ("1", "INPUT", 88.0),
-    ("2", "CIRCUIT", 178.0),
-    ("3", "DRIVE", 104.0),
-    ("4", "TONE", 128.0),
-    ("5", "CABINET", 96.0),
-    ("6", "OUTPUT", 104.0),
+    ("1", "INPUT", 74.0),
+    ("2", "CIRCUIT", 148.0),
+    ("3", "DRIVE", 76.0),
+    ("4", "TONE", 104.0),
+    ("5", "CABINET", 44.0),
+    ("6", "OUTPUT", 74.0),
 ];
 
 /// Width of the numbered gutter down the left.
-pub const GUTTER_W: f32 = 96.0;
+pub const GUTTER_W: f32 = 78.0;
 
 pub fn section_top(index: usize) -> f32 {
     HEADER_H + SECTIONS.iter().take(index).map(|s| s.2).sum::<f32>()

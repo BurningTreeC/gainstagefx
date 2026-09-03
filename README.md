@@ -15,7 +15,9 @@ the curve.
 ## The panel
 
 Six numbered bands in the order the signal goes through them, with an arrow at
-the foot of each pointing into the next.
+the foot of each pointing into the next. 640 × 552 at its own size, and the
+button in the strip scales it from 75 % to 150 % — it is drawn rather than
+pictured, so it is sharp at any of them.
 
 | | | |
 |---|---|---|

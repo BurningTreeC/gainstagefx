@@ -14,7 +14,7 @@
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::{assets, widgets::RawParamEvent};
+use nih_plug_vizia::{assets, widgets::GuiContextEvent, widgets::RawParamEvent};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -31,8 +31,17 @@ const HEADING_H: f32 = 24.0;
 
 /// Where the preset button sits in the strip, which is also where the menu
 /// hangs from.
-pub const BUTTON_X: f32 = 212.0;
-pub const BUTTON_W: f32 = 160.0;
+pub const BUTTON_X: f32 = 118.0;
+pub const BUTTON_W: f32 = 152.0;
+
+/// The sizes the panel can be shown at.
+///
+/// A plugin that opens at one fixed size is a plugin that is too big on a
+/// laptop and too small on a large display, and the panel is drawn rather than
+/// pictured so it is sharp at any of them.
+pub const SCALES: [f64; 5] = [0.75, 0.9, 1.0, 1.25, 1.5];
+pub const SIZE_X: f32 = 386.0;
+pub const SIZE_W: f32 = 46.0;
 
 // `Data` is how vizia decides whether a bound value has actually changed.
 // These are local types, so the impls belong here rather than putting a user
@@ -65,6 +74,10 @@ impl Data for Dialog {
 #[derive(Lens)]
 pub struct Session {
     pub open: bool,
+    /// Whether the size list is showing.
+    pub sizing: bool,
+    /// How much larger than its own coordinates the panel is drawn.
+    pub scale: f64,
     pub dialog: Dialog,
     /// The name shown in the strip.
     pub current: String,
@@ -84,6 +97,8 @@ pub struct Session {
 
 pub enum SessionEvent {
     Toggle,
+    ToggleSize,
+    SetScale(f64),
     Close,
     Load(usize),
     /// Step through the whole list, which is what the wheel over the name
@@ -97,7 +112,7 @@ pub enum SessionEvent {
 }
 
 impl Session {
-    pub fn build_into(cx: &mut Context, params: Arc<GainStageParams>) {
+    pub fn build_into(cx: &mut Context, params: Arc<GainStageParams>, scale: f64) {
         let current = params
             .preset_name
             .lock()
@@ -114,6 +129,8 @@ impl Session {
             .any(|p| !p.built_in && p.name == current);
         Self {
             open: false,
+            sizing: false,
+            scale,
             dialog: Dialog::None,
             current,
             dirty: false,
@@ -198,6 +215,7 @@ impl Model for Session {
         event.map(|e: &SessionEvent, meta| {
             match e {
                 SessionEvent::Toggle => {
+                    self.sizing = false;
                     if self.open {
                         self.open = false;
                     } else {
@@ -205,7 +223,23 @@ impl Model for Session {
                         self.open = true;
                     }
                 }
-                SessionEvent::Close => self.open = false,
+                SessionEvent::ToggleSize => {
+                    self.open = false;
+                    self.sizing = !self.sizing;
+                }
+                SessionEvent::SetScale(scale) => {
+                    self.sizing = false;
+                    self.scale = *scale;
+                    cx.set_user_scale_factor(*scale);
+                    // The host is told to give the window its new size. Done
+                    // after the scale is set, because the size it asks for is
+                    // read back from it.
+                    cx.emit(GuiContextEvent::Resize);
+                }
+                SessionEvent::Close => {
+                    self.open = false;
+                    self.sizing = false;
+                }
                 SessionEvent::Load(index) => {
                     self.open = false;
                     self.apply(cx, *index);
@@ -422,6 +456,136 @@ fn frame(canvas: &mut Canvas, b: BoundingBox, scale: f32, lit: bool) {
         &path,
         &vg::Paint::color(rgba(0xffffff, if lit { 0.20 } else { 0.12 })).with_line_width(scale),
     );
+}
+
+/// The size button: shows the scale it is at, and opens the list.
+pub struct SizeButton;
+
+impl SizeButton {
+    pub fn build_into(cx: &mut Context) -> Handle<'_, Self> {
+        Self.build(cx, |cx| {
+            Label::new(cx, Session::scale.map(|s| format!("{:.0}%", s * 100.0)))
+                .width(Stretch(1.0))
+                .height(Stretch(1.0))
+                .child_left(Stretch(1.0))
+                .child_right(Stretch(1.0))
+                .child_top(Stretch(1.0))
+                .child_bottom(Stretch(1.0))
+                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                .font_size(10.0)
+                .color(Color::rgb(0xc9, 0xd2, 0xd8))
+                .hoverable(false);
+        })
+    }
+}
+
+impl View for SizeButton {
+    fn element(&self) -> Option<&'static str> {
+        Some("size-button")
+    }
+
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|window: &WindowEvent, meta| match window {
+            WindowEvent::MouseDown(MouseButton::Left) => {
+                cx.emit(SessionEvent::ToggleSize);
+                meta.consume();
+            }
+            // The wheel steps through the sizes, which is the quickest way to
+            // find the one that suits the screen.
+            WindowEvent::MouseScroll(_, y) => {
+                let at = SCALES
+                    .iter()
+                    .position(|s| (*s - cx.user_scale_factor()).abs() < 1e-6)
+                    .unwrap_or(2) as i64;
+                let next = (at + y.signum() as i64).clamp(0, SCALES.len() as i64 - 1);
+                cx.emit(SessionEvent::SetScale(SCALES[next as usize]));
+                meta.consume();
+            }
+            _ => {}
+        });
+    }
+
+    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+        frame(canvas, cx.bounds(), cx.scale_factor(), false);
+    }
+}
+
+/// The sizes, as a short list under the button.
+pub fn sizes(cx: &mut Context) {
+    Binding::new(cx, Session::sizing, |cx, sizing| {
+        if !sizing.get(cx) {
+            return;
+        }
+        Backdrop::new(cx, SessionEvent::Close);
+
+        VStack::new(cx, |cx| {
+            for scale in SCALES {
+                SizeRow::build_into(cx, scale);
+            }
+        })
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(SIZE_X - 8.0))
+        .top(Pixels(HEADER_H - 2.0))
+        .width(Pixels(72.0))
+        .height(Pixels(ROW_H * SCALES.len() as f32 + 8.0))
+        .child_top(Pixels(4.0))
+        .background_color(Color::rgb(0x1c, 0x20, 0x23))
+        .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
+        .border_width(Pixels(1.0));
+    });
+}
+
+pub struct SizeRow {
+    scale: f64,
+}
+
+impl SizeRow {
+    pub fn build_into(cx: &mut Context, scale: f64) -> Handle<'_, Self> {
+        Self { scale }
+            .build(cx, move |cx| {
+                Label::new(cx, &format!("{:.0}%", scale * 100.0))
+                    .width(Stretch(1.0))
+                    .height(Stretch(1.0))
+                    .child_left(Pixels(14.0))
+                    .child_top(Stretch(1.0))
+                    .child_bottom(Stretch(1.0))
+                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                    .font_size(10.5)
+                    .color(Session::scale.map(move |current| {
+                        if (*current - scale).abs() < 1e-6 {
+                            Color::rgb(0xff, 0xb2, 0x6a)
+                        } else {
+                            Color::rgb(0xc9, 0xd2, 0xd8)
+                        }
+                    }))
+                    .hoverable(false);
+            })
+            .width(Stretch(1.0))
+            .height(Pixels(ROW_H))
+    }
+}
+
+impl View for SizeRow {
+    fn element(&self) -> Option<&'static str> {
+        Some("size-row")
+    }
+
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        let scale = self.scale;
+        event.map(|window: &WindowEvent, meta| {
+            if let WindowEvent::MouseDown(MouseButton::Left) = window {
+                cx.emit(SessionEvent::SetScale(scale));
+                meta.consume();
+            }
+        });
+    }
+
+    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+        let b = cx.bounds();
+        let mut row = vg::Path::new();
+        row.rect(b.x, b.y, b.w, b.h);
+        canvas.fill_path(&row, &vg::Paint::color(rgba(0xffffff, 0.02)));
+    }
 }
 
 // ---------------------------------------------------------------------------
