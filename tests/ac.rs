@@ -5,7 +5,7 @@
 //! disagreement is the solver's fault and not a matter of opinion.
 
 use gainstagefx::dsp::ac;
-use gainstagefx::dsp::netlist::{Fault, Netlist, Taper};
+use gainstagefx::dsp::netlist::{Netlist, Taper};
 
 /// A first order RC low pass: `-3.01 dB` at its corner, then six decibels an
 /// octave, and `-45` degrees of phase at the corner.
