@@ -178,4 +178,13 @@ measurement, and several times it was me:
 
 ## Licence
 
-GPL-3.0-or-later.
+GPL-3.0-or-later — the full text is in [`LICENSE`](LICENSE).
+
+The VST3 bindings this links are GPL, so the whole is. Every crate it links is
+listed with its own licence and copyright notice in
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md); regenerate that with
+`python3 tools/third-party-notices.py`.
+
+VST is a trademark of Steinberg Media Technologies GmbH, registered in Europe
+and other countries. CLAP is a trademark of its respective owners. Neither this
+project nor its authors are affiliated with or endorsed by them.

@@ -1,1 +1,16 @@
+# Build output.
 /target
+
+# Plugin bundles, which `cargo xtask bundle` writes into target/ anyway but
+# which people sometimes copy up a level while testing.
+/bundled
+*.clap
+*.vst3
+
+# Editor and OS droppings
+*~
+*.swp
+*.rs.bk
+.DS_Store
+.idea/
+.vscode/
