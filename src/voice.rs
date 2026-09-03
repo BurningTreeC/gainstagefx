@@ -474,20 +474,30 @@ struct Delay {
 
 impl Delay {
     fn new(len: usize) -> Self {
-        Self { buf: vec![0.0; len.max(1)], pos: 0 }
+        Self { buf: vec![0.0; len], pos: 0 }
     }
 
+    /// A length of zero means no delay at all, and has to mean that.
+    ///
+    /// Rounding it up to one sample instead is not a rounding: at eight times
+    /// oversampling the padding is exactly zero, so the wet path came out one
+    /// sample later than the dry path it is mixed against and one later than
+    /// the host had been told. A one sample offset between two copies of the
+    /// same signal is a comb filter, and the reported latency was wrong at
+    /// that setting and right at every other.
     fn set_len(&mut self, len: usize) {
-        let len = len.max(1);
         if len != self.buf.len() {
+            self.buf.clear();
             self.buf.resize(len, 0.0);
-            self.buf.iter_mut().for_each(|v| *v = 0.0);
             self.pos = 0;
         }
     }
 
     #[inline]
     fn process(&mut self, x: f64) -> f64 {
+        if self.buf.is_empty() {
+            return x;
+        }
         let out = self.buf[self.pos];
         self.buf[self.pos] = x;
         self.pos = (self.pos + 1) % self.buf.len();
@@ -533,6 +543,11 @@ pub struct Chain {
     /// Volts in per unit of digital signal, and digital signal out per volt.
     into: f64,
     out_of: f64,
+    /// Where `out_of` is heading. The make-up moves with the drive control,
+    /// and the drive control now moves once a block rather than once a sample
+    /// -- so the make-up is glided rather than stepped, which costs three
+    /// arithmetic operations and saves a click on every automation step.
+    out_of_target: f64,
 }
 
 impl Chain {
@@ -580,9 +595,11 @@ impl Chain {
             drive: 0.5,
             into: 1.0,
             out_of: 1.0,
+            out_of_target: 1.0,
         };
         chain.set_oversampling(4);
         chain.set_drive(0.5);
+        chain.settle();
         chain
     }
 
@@ -640,6 +657,12 @@ impl Chain {
 
     /// The drive control, which moves both the circuit and the make-up that
     /// keeps the comparison honest.
+    ///
+    /// Call this once a block, not once a sample. Moving a circuit control
+    /// invalidates the matrix, and the next sample then rebuilds it and hunts
+    /// the operating point again -- which at audio rate is a rebuild and a DC
+    /// solve forty-eight thousand times a second. Measured, that is most of
+    /// what the plugin costs while a knob is moving.
     pub fn set_drive(&mut self, drive: f64) {
         self.drive = drive.clamp(0.0, 1.0);
         self.gains[self.gain].set_control(clipper::GAIN, self.drive);
@@ -647,7 +670,8 @@ impl Chain {
         // A nominal digital signal has to arrive as the stated voltage.
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
         self.into = calibration.drive_volts / nominal;
-        self.out_of = 10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into;
+        self.out_of_target =
+            10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into;
     }
 
     pub fn set_tone(&mut self, which: usize, position: f64) {
@@ -702,6 +726,9 @@ impl Chain {
         // cabinet are linear and cost nothing extra by staying down here.
         // The iron runs inside the oversampling with the gain circuit, not
         // after it: a saturating core is as nonlinear as anything else here.
+        // One pole toward the target: about a millisecond at any sample rate
+        // the plugin is likely to see.
+        self.out_of += (self.out_of_target - self.out_of) * 0.02;
         let gain = &mut self.gains[self.gain];
         let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
         let mut iron = self.iron.map(|i| &mut self.irons[i]);
@@ -731,7 +758,14 @@ impl Chain {
         y
     }
 
+    /// Settles the make-up where it is heading, for a chain that has just
+    /// been set up and has no glide to do.
+    pub fn settle(&mut self) {
+        self.out_of = self.out_of_target;
+    }
+
     pub fn reset(&mut self) {
+        self.out_of = self.out_of_target;
         for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
             sim.reset();
         }

@@ -152,20 +152,10 @@ impl Plugin for GainStageFx {
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
 
         for mut frame in buffer.iter_samples() {
-            let drive = self.params.drive.smoothed.next() as f64;
-            let bass = self.params.bass.smoothed.next() as f64;
-            let mid = self.params.mid.smoothed.next() as f64;
-            let treble = self.params.treble.smoothed.next() as f64;
-
             for (index, sample) in frame.iter_mut().enumerate() {
                 let Some(chain) = self.channels.get_mut(index) else {
                     continue;
                 };
-                chain.set_drive(drive);
-                chain.set_tone(crate::circuits::tone::BASS, bass);
-                chain.set_tone(crate::circuits::tone::MID, mid);
-                chain.set_tone(crate::circuits::tone::TREBLE, treble);
-
                 let input = *sample as f64 * input_trim;
                 let wet = chain.process(input);
                 let dry = chain.delayed_dry(input);

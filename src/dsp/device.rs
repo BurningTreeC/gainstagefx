@@ -123,6 +123,9 @@ fn limit(new: f64, old: f64, scale: f64) -> f64 {
     }
 }
 
+/// Where the exponential is held, short of overflowing.
+const CLAMP: f64 = 60.0;
+
 pub struct Diode {
     a: usize,
     k: usize,
@@ -136,12 +139,11 @@ impl Diode {
         Self { a, k, spec, voltage: 0.0, delta: 0.0 }
     }
 
-    fn current(&self, v: f64) -> f64 {
+    /// The Shockley current, exposed so tests can check the slope the stamp
+    /// uses against the curve it claims to be the slope of.
+    pub fn current(&self, v: f64) -> f64 {
         let scale = self.spec.emission * VT;
-        // Held below the point where the exponential overflows; past it the
-        // device is a short anyway and the limiter above is what walks the
-        // solve back down.
-        let x = (v / scale).min(60.0);
+        let x = (v / scale).min(CLAMP);
         self.spec.saturation * (x.exp() - 1.0)
     }
 }
@@ -153,10 +155,22 @@ impl Device for Diode {
         self.delta = (guess - self.voltage).abs();
         self.voltage = guess;
 
-        let i = self.current(guess);
-        let step = scale * 1e-3;
-        let g = ((self.current(guess + step) - self.current(guess - step)) / (2.0 * step))
-            .max(1e-12);
+        // One exponential, not three. The slope of `Is (e^x - 1)` is
+        // `Is e^x / scale`, which is the same exponential the current already
+        // needed -- where a central difference asked for two more.
+        let x = guess / scale;
+        let (i, g) = if x >= CLAMP {
+            // Held below the point where the exponential overflows. Past it
+            // the current no longer moves with the voltage, so neither does
+            // the slope, and the limiter above is what walks the solve back.
+            (self.spec.saturation * (CLAMP.exp() - 1.0), 1e-12)
+        } else {
+            let e = x.exp();
+            (
+                self.spec.saturation * (e - 1.0),
+                (self.spec.saturation * e / scale).max(1e-12),
+            )
+        };
         s.conductance(self.a, self.k, g);
         s.current(self.a, self.k, i - g * guess);
     }
@@ -218,6 +232,47 @@ impl Triode {
     }
 }
 
+impl Triode {
+    /// Plate current and both its slopes, from one evaluation.
+    ///
+    /// The slopes used to come from finite differences, which meant five calls
+    /// to `plate` per stamp, each with a `sqrt`, an `exp`, a `ln_1p` and a
+    /// `powf` in it. For a three stage preamplifier at four times oversampling
+    /// that came to about forty-five million transcendentals a second, and it
+    /// was the single largest cost in the plugin.
+    ///
+    /// Koren's equations differentiate in closed form, and every piece of the
+    /// derivative is something the current itself already computed: the slope
+    /// of `ln(1 + e^x)` is `e^x / (1 + e^x)`, from the same exponential, and
+    /// `E1^(ex-1)` is `E1^ex / E1`. So one evaluation now yields all three,
+    /// with one `powf` where there were five.
+    fn plate_with_slopes(&self, vpk: f64, vgk: f64) -> (f64, f64, f64) {
+        let s = &self.spec;
+        if vpk <= 0.0 {
+            return (0.0, 0.0, 0.0);
+        }
+        let root = (s.kvb + vpk * vpk).sqrt();
+        let inner = s.kp * (1.0 / s.mu + vgk / root);
+        let (soft, sigma) = if inner > 30.0 {
+            (inner, 1.0)
+        } else {
+            let e = inner.exp();
+            (e.ln_1p(), e / (1.0 + e))
+        };
+        let e1 = vpk / s.kp * soft;
+        if e1 <= 0.0 {
+            return (0.0, 0.0, 0.0);
+        }
+        let powered = e1.powf(s.ex);
+        let ip = 2.0 * powered / s.kg1;
+
+        let d_ip = 2.0 * s.ex * powered / (s.kg1 * e1);
+        let d_e1_vpk = soft / s.kp - vpk * vpk * vgk * sigma / (root * root * root);
+        let d_e1_vgk = vpk * sigma / root;
+        (ip, d_ip * d_e1_vpk, d_ip * d_e1_vgk)
+    }
+}
+
 impl Device for Triode {
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let vpk = across(v, self.p, self.k).max(0.0);
@@ -226,21 +281,17 @@ impl Device for Triode {
         self.vpk = vpk;
         self.vgk = vgk;
 
-        let ip = self.plate(vpk, vgk);
-        // Slopes by finite difference, on steps small against the curvature.
-        let dp = (vpk.abs() * 1e-4).max(1e-3);
-        let dg = 1e-4;
-        let rp = ((self.plate(vpk + dp, vgk) - self.plate(vpk - dp, vgk)) / (2.0 * dp)).max(1e-12);
-        let gm = (self.plate(vpk, vgk + dg) - self.plate(vpk, vgk - dg)) / (2.0 * dg);
+        let (ip, slope_p, gm) = self.plate_with_slopes(vpk, vgk);
+        let rp = slope_p.max(1e-12);
 
-        // The plate's own conductance, the transconductance the grid has over
-        // it, and whatever is left over as a source.
         s.conductance(self.p, self.k, rp);
         s.transconductance(self.p, self.k, self.g, self.k, gm);
         s.current(self.p, self.k, ip - rp * vpk - gm * vgk);
 
+        // The grid is a straight line once it conducts, so its slope is the
+        // line's and needs no difference at all.
         let ig = self.grid(vgk);
-        let gg = ((self.grid(vgk + dg) - self.grid(vgk - dg)) / (2.0 * dg)).max(1e-12);
+        let gg = if vgk < 0.0 { 1e-12 } else { 1.0 / 1_500.0 };
         s.conductance(self.g, self.k, gg);
         s.current(self.g, self.k, ig - gg * vgk);
     }
@@ -462,10 +513,23 @@ impl Core {
     /// which is why a transformer makes odd harmonics and a single-ended valve
     /// stage makes even ones.
     pub fn magnetising(&self, flux: f64) -> f64 {
-        let linear = flux / self.spec.henry;
-        let over = flux / self.spec.knee;
-        let bend = over.abs().powf(self.spec.sharpness) * over.signum();
-        linear + bend * self.spec.knee / self.spec.henry
+        self.magnetising_with_slope(flux).0
+    }
+
+    /// The magnetising current and its slope, from one evaluation.
+    ///
+    /// `|x|^(s-1)` is `|x|^s / |x|`, so the slope costs no second power.
+    pub fn magnetising_with_slope(&self, flux: f64) -> (f64, f64) {
+        let (l, knee, sharp) = (self.spec.henry, self.spec.knee, self.spec.sharpness);
+        let over = flux / knee;
+        let magnitude = over.abs();
+        if magnitude < 1e-30 {
+            return (flux / l, 1.0 / l);
+        }
+        let powered = magnitude.powf(sharp);
+        let current = flux / l + powered * over.signum() * knee / l;
+        let slope = 1.0 / l + sharp * (powered / magnitude) / l;
+        (current, slope)
     }
 
     pub fn flux(&self) -> f64 {

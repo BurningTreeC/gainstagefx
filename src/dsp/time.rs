@@ -70,7 +70,23 @@ pub struct Simulation {
     /// Scratch for a Newton pass.
     work: Vec<f64>,
     guess: Vec<f64>,
+    /// Scratch for the substitution, and the last settled answer.
+    ///
+    /// Held rather than allocated where they are used. Both of these were
+    /// heap allocations on the audio thread, once per Newton pass and once per
+    /// sample -- about one and a half million a second in stereo at four times
+    /// oversampling. Allocating there is not merely slow: `malloc` can take a
+    /// lock, and a lock on the audio thread is a dropout.
+    scratch: Vec<f64>,
+    previous: Vec<f64>,
     dirty: bool,
+    /// How much work the solver is actually doing, which is the only way to
+    /// tell a circuit that costs what it should from one iterating itself to
+    /// a standstill.
+    solves: u64,
+    newton_passes: u64,
+    unsettled: u64,
+    rebuilds: u64,
 }
 
 impl Simulation {
@@ -95,11 +111,22 @@ impl Simulation {
             devices: Vec::new(),
             work: vec![0.0; n * n],
             guess: vec![0.0; n],
+            scratch: vec![0.0; n],
+            previous: vec![0.0; n],
             dirty: true,
+            solves: 0,
+            newton_passes: 0,
+            unsettled: 0,
+            rebuilds: 0,
         };
         sim.rebuild();
         sim.find_operating_point();
         sim
+    }
+
+    /// Solves, Newton passes, solves that never settled, and matrix rebuilds.
+    pub fn statistics(&self) -> (u64, u64, u64, u64) {
+        (self.solves, self.newton_passes, self.unsettled, self.rebuilds)
     }
 
     pub fn is_linear(&self) -> bool {
@@ -134,6 +161,7 @@ impl Simulation {
     /// Stamps everything that does not depend on the solution, and factorises
     /// it once. A pot moving or the rate changing is what invalidates this.
     fn rebuild(&mut self) {
+        self.rebuilds += 1;
         let n = self.n;
         self.base.iter_mut().for_each(|x| *x = 0.0);
         self.base_dc.iter_mut().for_each(|x| *x = 0.0);
@@ -318,7 +346,7 @@ impl Simulation {
 
         self.guess.copy_from_slice(&self.rhs);
         factorise(&mut self.work, &mut self.pivots, n);
-        substitute(&self.work, &self.pivots, &mut self.guess, n);
+        substitute(&self.work, &self.pivots, &mut self.guess, n, &mut self.scratch);
 
         let mut moved: f64 = 0.0;
         for k in 0..n {
@@ -335,6 +363,7 @@ impl Simulation {
 
     /// One sample in, one out.
     pub fn process(&mut self, input: f64) -> f64 {
+        self.solves += 1;
         if self.dirty {
             self.rebuild();
             self.find_operating_point();
@@ -352,21 +381,25 @@ impl Simulation {
             for l in &self.inductors {
                 inject(&mut self.rhs, l.a, l.b, l.history);
             }
-            substitute(&self.matrix, &self.pivots, &mut self.rhs, n);
+            substitute(&self.matrix, &self.pivots, &mut self.rhs, n, &mut self.scratch);
             self.voltage.copy_from_slice(&self.rhs);
         } else {
-            let before = self.voltage.clone();
+            self.previous.copy_from_slice(&self.voltage);
             let mut settled = false;
             for _ in 0..MAX_ITERATIONS {
+                self.newton_passes += 1;
                 if self.iterate(input, false) {
                     settled = true;
                     break;
                 }
             }
+            if !settled {
+                self.unsettled += 1;
+            }
             if !settled && !self.voltage.iter().all(|v| v.is_finite()) {
                 // Driven somewhere it cannot follow. Hold the last answer
                 // rather than let a runaway out into the audio.
-                self.voltage.copy_from_slice(&before);
+                self.voltage.copy_from_slice(&self.previous);
             }
         }
 
@@ -513,6 +546,14 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], n: usize) {
         for row in (col + 1)..n {
             let factor = m[row * n + col] / pivot;
             m[row * n + col] = factor;
+            // A circuit matrix is mostly zeros: a part only ever stamps the
+            // nodes it is connected to, so most rows have nothing below the
+            // pivot at all. Eliminating with a zero multiplier subtracts
+            // nothing from every remaining column, which for these sizes is
+            // most of the arithmetic in the factorisation.
+            if factor == 0.0 {
+                continue;
+            }
             for k in (col + 1)..n {
                 m[row * n + k] -= factor * m[col * n + k];
             }
@@ -520,8 +561,7 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], n: usize) {
     }
 }
 
-fn substitute(m: &[f64], pivots: &[usize], rhs: &mut [f64], n: usize) {
-    let mut permuted = vec![0.0; n];
+fn substitute(m: &[f64], pivots: &[usize], rhs: &mut [f64], n: usize, permuted: &mut [f64]) {
     for (row, &from) in pivots.iter().enumerate() {
         permuted[row] = rhs[from];
     }
@@ -540,5 +580,5 @@ fn substitute(m: &[f64], pivots: &[usize], rhs: &mut [f64], n: usize) {
         let pivot = m[row * n + row];
         permuted[row] = if pivot.abs() < 1e-30 { 0.0 } else { sum / pivot };
     }
-    rhs.copy_from_slice(&permuted);
+    rhs.copy_from_slice(&permuted[..n]);
 }

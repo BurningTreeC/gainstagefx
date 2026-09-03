@@ -185,3 +185,71 @@ fn the_voices_are_in_the_order_their_names_claim() {
     );
     assert!(thd(Gain::Overdrive) < thd(Gain::Distortion));
 }
+
+/// The plugin has to delay by exactly what it tells the host, at every
+/// oversampling setting.
+///
+/// It did not, at one of them. The padding that brings the shorter settings up
+/// to the reported figure is exactly zero at eight times, and the delay line
+/// rounded a length of zero up to one sample -- so the wet path came out one
+/// sample later than the dry path it is mixed against, and one later than the
+/// host had been told. A one sample offset between two copies of the same
+/// signal is a comb filter, and it was there at that setting and no other.
+#[test]
+fn the_reported_latency_is_the_real_one_at_every_setting() {
+    use gainstagefx::voice::LATENCY;
+
+    for factor in [1usize, 2, 4, 8] {
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(Gain::Clean, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_oversampling(factor);
+        chain.set_drive(0.5);
+        // Settle the operating point on silence, so the impulse is the only
+        // thing in the answer.
+        for _ in 0..(RATE as usize / 2) {
+            chain.process(0.0);
+        }
+
+        let mut peak = (0usize, 0.0f64);
+        for n in 0..(LATENCY as usize * 3) {
+            let y = chain.process(if n == 0 { 0.05 } else { 0.0 }).abs();
+            if y > peak.1 {
+                peak = (n, y);
+            }
+        }
+        assert_eq!(
+            peak.0, LATENCY as usize,
+            "{factor}x delays by {} samples and reports {LATENCY}",
+            peak.0
+        );
+    }
+}
+
+/// And the dry path has to line up with the wet one, which is the thing the
+/// latency figure is actually for.
+#[test]
+fn the_dry_path_lines_up_with_the_wet_one() {
+    for factor in [1usize, 2, 4, 8] {
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(Gain::Clean, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_oversampling(factor);
+        for _ in 0..(RATE as usize / 2) {
+            chain.process(0.0);
+            chain.delayed_dry(0.0);
+        }
+        let mut dry_at = 0;
+        for n in 0..(gainstagefx::voice::LATENCY as usize * 3) {
+            let x = if n == 0 { 1.0 } else { 0.0 };
+            chain.process(x);
+            if chain.delayed_dry(x).abs() > 0.5 {
+                dry_at = n;
+                break;
+            }
+        }
+        assert_eq!(
+            dry_at,
+            gainstagefx::voice::LATENCY as usize,
+            "at {factor}x the dry path arrives at {dry_at}, not with the wet one"
+        );
+    }
+}
