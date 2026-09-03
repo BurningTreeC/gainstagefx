@@ -75,6 +75,48 @@ pub enum Part {
     },
     /// Where the signal arrives, through the impedance driving it.
     Input { node: usize, series: f64 },
+    /// A supply rail behind its series resistance, as a Norton source.
+    Supply { node: usize, series: f64, volts: f64 },
+    /// A junction diode.
+    Diode { a: usize, k: usize, spec: DiodeSpec },
+    /// A triode: plate, grid, cathode.
+    Triode { p: usize, g: usize, k: usize, spec: TriodeSpec },
+}
+
+/// Saturation current and emission coefficient.
+#[derive(Clone, Copy, Debug)]
+pub struct DiodeSpec {
+    pub saturation: f64,
+    pub emission: f64,
+}
+
+impl DiodeSpec {
+    pub const SILICON: DiodeSpec = DiodeSpec { saturation: 2.52e-9, emission: 1.752 };
+    /// Conducts at about a third of silicon's forward voltage, so a stage
+    /// leaves its linear region far earlier.
+    pub const GERMANIUM: DiodeSpec = DiodeSpec { saturation: 2.0e-7, emission: 1.2 };
+    /// Needs roughly three times silicon's, so it stays clean where the others
+    /// are already working and then arrives all at once.
+    pub const LED: DiodeSpec = DiodeSpec { saturation: 1.0e-16, emission: 2.0 };
+}
+
+/// Koren's triode parameters: amplification factor, exponent, and the three
+/// shaping constants.
+#[derive(Clone, Copy, Debug)]
+pub struct TriodeSpec {
+    pub mu: f64,
+    pub ex: f64,
+    pub kg1: f64,
+    pub kp: f64,
+    pub kvb: f64,
+}
+
+impl TriodeSpec {
+    pub const ECC83: TriodeSpec =
+        TriodeSpec { mu: 100.0, ex: 1.4, kg1: 1060.0, kp: 600.0, kvb: 300.0 };
+    /// A fifth of the amplification, and the commonest swap there is.
+    pub const ECC82: TriodeSpec =
+        TriodeSpec { mu: 21.5, ex: 1.3, kg1: 1180.0, kp: 84.0, kvb: 300.0 };
 }
 
 impl Part {
@@ -85,8 +127,16 @@ impl Part {
             | Part::Capacitor { a, b, .. }
             | Part::Inductor { a, b, .. } => vec![a, b],
             Part::Pot { a, wiper, b, .. } => vec![a, wiper, b],
-            Part::Input { node, .. } => vec![node],
+            Part::Input { node, .. } | Part::Supply { node, .. } => vec![node],
+            Part::Diode { a, k, .. } => vec![a, k],
+            Part::Triode { p, g, k, .. } => vec![p, g, k],
         }
+    }
+
+    /// Whether this part has a single frequency response. A device does not,
+    /// so a circuit containing one cannot be handed to the AC solver.
+    pub fn is_linear(&self) -> bool {
+        !matches!(self, Part::Diode { .. } | Part::Triode { .. })
     }
 
     fn name(&self) -> &'static str {
@@ -96,6 +146,9 @@ impl Part {
             Part::Inductor { .. } => "inductor",
             Part::Pot { .. } => "pot",
             Part::Input { .. } => "input",
+            Part::Supply { .. } => "supply",
+            Part::Diode { .. } => "diode",
+            Part::Triode { .. } => "triode",
         }
     }
 }
@@ -204,6 +257,24 @@ impl Netlist {
         self
     }
 
+    pub fn supply(&mut self, node: &str, series: f64, volts: f64) -> &mut Self {
+        let node = self.pin(node);
+        self.parts.push(Part::Supply { node, series, volts });
+        self
+    }
+
+    pub fn diode(&mut self, a: &str, k: &str, spec: DiodeSpec) -> &mut Self {
+        let (a, k) = (self.pin(a), self.pin(k));
+        self.parts.push(Part::Diode { a, k, spec });
+        self
+    }
+
+    pub fn triode(&mut self, p: &str, g: &str, k: &str, spec: TriodeSpec) -> &mut Self {
+        let (p, g, k) = (self.pin(p), self.pin(g), self.pin(k));
+        self.parts.push(Part::Triode { p, g, k, spec });
+        self
+    }
+
     /// `"gnd"` and `"ground"` are the reference; anything else is a node.
     fn pin(&mut self, name: &str) -> usize {
         if name == "gnd" || name == "ground" {
@@ -238,7 +309,9 @@ impl Netlist {
                 Part::Capacitor { farads, .. } => farads <= 0.0,
                 Part::Inductor { henry, .. } => henry <= 0.0,
                 Part::Pot { ohms, .. } => ohms <= 0.0,
-                Part::Input { series, .. } => series <= 0.0,
+                Part::Input { series, .. } | Part::Supply { series, .. } => series <= 0.0,
+                Part::Diode { spec, .. } => spec.saturation <= 0.0 || spec.emission <= 0.0,
+                Part::Triode { spec, .. } => spec.mu <= 0.0 || spec.kg1 <= 0.0,
             };
             if bad {
                 return Err(Fault::Malformed(format!(
@@ -322,6 +395,12 @@ pub struct Circuit {
 }
 
 impl Circuit {
+    /// Whether every part has a frequency response, and therefore whether the
+    /// AC solver can be asked about it.
+    pub fn is_linear(&self) -> bool {
+        self.parts.iter().all(Part::is_linear)
+    }
+
     /// What a node is called, for anything that has to report a problem.
     pub fn node_name(&self, at: usize) -> &str {
         if at == GROUND {

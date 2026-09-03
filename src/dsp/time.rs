@@ -12,7 +12,16 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
+use super::device::{Device, Diode, Stamper, Triode};
 use super::netlist::{Circuit, Part, GROUND};
+
+/// How still the solve has to get before it is called settled, in volts.
+const TOLERANCE: f64 = 1e-6;
+/// How many passes a sample may take before the last good answer is used
+/// instead. A circuit driven somewhere absurd should go quiet, not explode.
+const MAX_ITERATIONS: usize = 32;
+/// The operating point is hunted once and can afford to be patient.
+const DC_ITERATIONS: usize = 500;
 
 /// A capacitor's companion, by the trapezoidal rule.
 #[derive(Clone, Copy)]
@@ -41,6 +50,10 @@ pub struct Simulation {
     n: usize,
     /// Everything that does not change from sample to sample.
     base: Vec<f64>,
+    /// The same, as the circuit stands at DC: capacitors open and inductors
+    /// shorted, rather than carrying the companion conductances they have when
+    /// time is running.
+    base_dc: Vec<f64>,
     /// The working matrix, and its factorisation.
     matrix: Vec<f64>,
     pivots: Vec<usize>,
@@ -51,6 +64,12 @@ pub struct Simulation {
     controls: Vec<f64>,
     /// The drive the input source injects for one volt in.
     source: Vec<f64>,
+    /// What the rails inject, which does not depend on the signal.
+    bias: Vec<f64>,
+    devices: Vec<Box<dyn Device>>,
+    /// Scratch for a Newton pass.
+    work: Vec<f64>,
+    guess: Vec<f64>,
     dirty: bool,
 }
 
@@ -63,6 +82,7 @@ impl Simulation {
             rate,
             n,
             base: vec![0.0; n * n],
+            base_dc: vec![0.0; n * n],
             matrix: vec![0.0; n * n],
             pivots: vec![0; n],
             rhs: vec![0.0; n],
@@ -71,10 +91,26 @@ impl Simulation {
             inductors: Vec::new(),
             controls,
             source: vec![0.0; n],
+            bias: vec![0.0; n],
+            devices: Vec::new(),
+            work: vec![0.0; n * n],
+            guess: vec![0.0; n],
             dirty: true,
         };
         sim.rebuild();
+        sim.find_operating_point();
         sim
+    }
+
+    pub fn is_linear(&self) -> bool {
+        self.devices.is_empty()
+    }
+
+    /// What a node is sitting at. Worth having: an operating point is the
+    /// first thing to check when a stage sounds wrong, and it is a number the
+    /// data sheet also has.
+    pub fn voltage_at(&self, node: usize) -> f64 {
+        self.voltage.get(node).copied().unwrap_or(0.0)
     }
 
     pub fn controls(&self) -> usize {
@@ -100,48 +136,49 @@ impl Simulation {
     fn rebuild(&mut self) {
         let n = self.n;
         self.base.iter_mut().for_each(|x| *x = 0.0);
+        self.base_dc.iter_mut().for_each(|x| *x = 0.0);
         self.source.iter_mut().for_each(|x| *x = 0.0);
+        self.bias.iter_mut().for_each(|x| *x = 0.0);
         self.capacitors.clear();
         self.inductors.clear();
+        self.devices.clear();
         let step = 1.0 / self.rate;
 
         let mut base = std::mem::take(&mut self.base);
+        let mut base_dc = std::mem::take(&mut self.base_dc);
         let mut source = std::mem::take(&mut self.source);
+        let mut bias = std::mem::take(&mut self.bias);
         {
-            let mut stamp = |a: usize, b: usize, g: f64| {
-                if a != GROUND {
-                    base[a * n + a] += g;
-                }
-                if b != GROUND {
-                    base[b * n + b] += g;
-                }
-                if a != GROUND && b != GROUND {
-                    base[a * n + b] -= g;
-                    base[b * n + a] -= g;
-                }
-            };
+            // `into` says which of the two matrices a part belongs in. A
+            // capacitor's companion conductance is 2C/T, which for a 22 uF
+            // bypass at 96 kHz is four siemens -- a quarter of an ohm. Leaving
+            // that in the matrix while hunting the operating point shorts the
+            // cathode to ground and the stage comes up with no bias at all.
 
             for part in &self.circuit.parts {
                 match *part {
-                    Part::Resistor { a, b, ohms } => stamp(a, b, 1.0 / ohms),
+                    Part::Resistor { a, b, ohms } => {
+                        stamp_both(&mut base, &mut base_dc, n, a, b, 1.0 / ohms)
+                    }
                     Part::Pot { a, wiper, b, ohms, taper, control } => {
                         let position = self.controls.get(control).copied().unwrap_or(0.5);
                         let f = taper.fraction(position).clamp(1e-4, 1.0 - 1e-4);
-                        stamp(wiper, b, 1.0 / (ohms * f));
-                        stamp(a, wiper, 1.0 / (ohms * (1.0 - f)));
+                        stamp_both(&mut base, &mut base_dc, n, wiper, b, 1.0 / (ohms * f));
+                        stamp_both(&mut base, &mut base_dc, n, a, wiper, 1.0 / (ohms * (1.0 - f)));
                     }
                     Part::Input { node, series } => {
                         let g = 1.0 / series;
-                        stamp(node, GROUND, g);
+                        stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
                             source[node] += g;
                         }
                     }
                     Part::Capacitor { a, b, farads } => {
                         // Trapezoidal: 2C/T, with the history current carried
-                        // between steps.
+                        // between steps. Only into the running matrix -- at DC
+                        // a capacitor is an open circuit.
                         let conductance = 2.0 * farads / step;
-                        stamp(a, b, conductance);
+                        stamp_matrix(&mut base, n, a, b, conductance);
                         self.capacitors.push(Capacitor {
                             a,
                             b,
@@ -151,8 +188,10 @@ impl Simulation {
                         });
                     }
                     Part::Inductor { a, b, henry } => {
+                        // And at DC an inductor is a piece of wire.
                         let conductance = step / (2.0 * henry);
-                        stamp(a, b, conductance);
+                        stamp_matrix(&mut base, n, a, b, conductance);
+                        stamp_matrix(&mut base_dc, n, a, b, 1e6);
                         self.inductors.push(Inductor {
                             a,
                             b,
@@ -161,34 +200,155 @@ impl Simulation {
                             current: 0.0,
                         });
                     }
+                    Part::Supply { node, series, volts } => {
+                        let g = 1.0 / series;
+                        stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
+                        if node != GROUND {
+                            bias[node] += g * volts;
+                        }
+                    }
+                    Part::Diode { a, k, spec } => {
+                        self.devices.push(Box::new(Diode::new(a, k, spec)));
+                    }
+                    Part::Triode { p, g, k, spec } => {
+                        self.devices.push(Box::new(Triode::new(p, g, k, spec)));
+                    }
                 }
             }
         }
         self.base = base;
+        self.base_dc = base_dc;
         self.source = source;
+        self.bias = bias;
 
+        // A linear circuit is factorised once and reused. A circuit with a
+        // device in it has to be refactorised every Newton pass, because the
+        // device's own conductance is part of the matrix and moves with the
+        // answer.
         self.matrix.copy_from_slice(&self.base);
         factorise(&mut self.matrix, &mut self.pivots, n);
         self.dirty = false;
+    }
+
+    /// Where the circuit sits with no signal on it.
+    ///
+    /// Hunted before any audio arrives, with the reactances held at their
+    /// steady state, so the first sample starts from the operating point
+    /// rather than charging up through it. Without this a valve stage spends
+    /// its first tenth of a second climbing to its own bias, and whatever is
+    /// listening hears that as a thump.
+    pub fn find_operating_point(&mut self) -> bool {
+        // The matrix has to be the one the controls currently describe. Asking
+        // for an operating point after moving a control, without rebuilding
+        // first, solves the circuit as it used to be -- and the answer looks
+        // perfectly converged, because it is: it is the converged answer to
+        // the wrong question. What gives it away is Kirchhoff's law, which the
+        // returned voltages then quietly fail.
+        if self.dirty {
+            self.rebuild();
+        }
+        if self.devices.is_empty() {
+            return true;
+        }
+        let mut settled = false;
+        // At rest a capacitor carries no current and an inductor no voltage,
+        // which is what the zeroed histories already say.
+        for _ in 0..DC_ITERATIONS {
+            if self.iterate(0.0, true) {
+                settled = true;
+                break;
+            }
+        }
+        // The reactances take up whatever the operating point implies, so they
+        // do not then charge through it.
+        for c in &mut self.capacitors {
+            let v = across(&self.voltage, c.a, c.b);
+            c.voltage = v;
+            c.history = c.conductance * v;
+        }
+        for l in &mut self.inductors {
+            l.history = -l.current;
+        }
+        settled
+    }
+
+    /// One Newton pass. Returns whether it has stopped moving.
+    fn iterate(&mut self, input: f64, dc: bool) -> bool {
+        let n = self.n;
+        self.work
+            .copy_from_slice(if dc { &self.base_dc } else { &self.base });
+        for k in 0..n {
+            self.rhs[k] = self.source[k] * input + self.bias[k];
+        }
+        if !dc {
+            for c in &self.capacitors {
+                inject(&mut self.rhs, c.a, c.b, c.history);
+            }
+            for l in &self.inductors {
+                inject(&mut self.rhs, l.a, l.b, l.history);
+            }
+        }
+
+        {
+            let mut stamper = Stamper { matrix: &mut self.work, rhs: &mut self.rhs, n };
+            for device in &mut self.devices {
+                device.stamp(&mut stamper, &self.voltage);
+            }
+        }
+
+        self.guess.copy_from_slice(&self.rhs);
+        factorise(&mut self.work, &mut self.pivots, n);
+        substitute(&self.work, &self.pivots, &mut self.guess, n);
+
+        let mut moved: f64 = 0.0;
+        for k in 0..n {
+            moved = moved.max((self.guess[k] - self.voltage[k]).abs());
+        }
+        self.voltage.copy_from_slice(&self.guess);
+        let devices_still = self
+            .devices
+            .iter()
+            .map(|d| d.moved())
+            .fold(0.0f64, f64::max);
+        moved < TOLERANCE && devices_still < TOLERANCE
     }
 
     /// One sample in, one out.
     pub fn process(&mut self, input: f64) -> f64 {
         if self.dirty {
             self.rebuild();
+            self.find_operating_point();
         }
         let n = self.n;
-        for k in 0..n {
-            self.rhs[k] = self.source[k] * input;
+        if self.devices.is_empty() {
+            // Nothing bends, so the matrix from `rebuild` still stands and one
+            // substitution is the whole solve.
+            for k in 0..n {
+                self.rhs[k] = self.source[k] * input + self.bias[k];
+            }
+            for c in &self.capacitors {
+                inject(&mut self.rhs, c.a, c.b, c.history);
+            }
+            for l in &self.inductors {
+                inject(&mut self.rhs, l.a, l.b, l.history);
+            }
+            substitute(&self.matrix, &self.pivots, &mut self.rhs, n);
+            self.voltage.copy_from_slice(&self.rhs);
+        } else {
+            let before = self.voltage.clone();
+            let mut settled = false;
+            for _ in 0..MAX_ITERATIONS {
+                if self.iterate(input, false) {
+                    settled = true;
+                    break;
+                }
+            }
+            if !settled && !self.voltage.iter().all(|v| v.is_finite()) {
+                // Driven somewhere it cannot follow. Hold the last answer
+                // rather than let a runaway out into the audio.
+                self.voltage.copy_from_slice(&before);
+            }
         }
-        for c in &self.capacitors {
-            inject(&mut self.rhs, c.a, c.b, c.history);
-        }
-        for l in &self.inductors {
-            inject(&mut self.rhs, l.a, l.b, l.history);
-        }
-        substitute(&self.matrix, &self.pivots, &mut self.rhs, n);
-        self.voltage.copy_from_slice(&self.rhs);
 
         // Advance what each reactance remembers.
         //
@@ -231,6 +391,27 @@ impl Simulation {
         }
         self.voltage.iter_mut().for_each(|v| *v = 0.0);
     }
+}
+
+/// Adds a conductance between two nodes.
+fn stamp_matrix(m: &mut [f64], n: usize, a: usize, b: usize, g: f64) {
+    if a != GROUND {
+        m[a * n + a] += g;
+    }
+    if b != GROUND {
+        m[b * n + b] += g;
+    }
+    if a != GROUND && b != GROUND {
+        m[a * n + b] -= g;
+        m[b * n + a] -= g;
+    }
+}
+
+/// Into both the running matrix and the one the operating point is solved on.
+/// Only the reactances differ between them.
+fn stamp_both(base: &mut [f64], dc: &mut [f64], n: usize, a: usize, b: usize, g: f64) {
+    stamp_matrix(base, n, a, b, g);
+    stamp_matrix(dc, n, a, b, g);
 }
 
 fn across(v: &[f64], a: usize, b: usize) -> f64 {

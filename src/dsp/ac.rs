@@ -55,6 +55,12 @@ pub fn sweep(circuit: &Circuit, controls: &[f64], frequencies: &[f64]) -> Vec<Re
 
 /// The transfer function at one frequency: output volts per volt in.
 pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
+    assert!(
+        circuit.is_linear(),
+        "'{}' contains a device, and a device has no single frequency response. \
+         Ask the time domain solver instead, around a chosen operating point.",
+        circuit.name
+    );
     let n = circuit.nodes;
     if n == 0 {
         return C::ZERO;
@@ -109,6 +115,13 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                     i[node] = i[node] + C::real(g);
                 }
             }
+            // A rail is a short to ground for signal: its voltage is constant,
+            // so it contributes no current here, but its series resistance
+            // still loads the node it feeds.
+            Part::Supply { node, series, .. } => {
+                stamp(&mut y, node, GROUND, C::real(1.0 / series));
+            }
+            Part::Diode { .. } | Part::Triode { .. } => unreachable!("checked above"),
         }
     }
 
