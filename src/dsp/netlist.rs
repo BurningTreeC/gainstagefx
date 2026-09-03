@@ -40,7 +40,7 @@ pub enum Taper {
     /// matched pair and turn opposite ways.
     ReverseLinear,
     ReverseAudio,
-    /// An exponential over a stated span, and its reverse.
+    /// A geometric sweep over a stated span, and its reverse.
     ///
     /// A control whose effect goes as the *logarithm* of the track -- gain in
     /// decibels, a filter corner in octaves -- cannot be made to sweep evenly
@@ -52,6 +52,12 @@ pub enum Taper {
     ///
     /// `Audio` is this law at a span of a thousand, which is where a volume
     /// control wants to be and why it is written out separately.
+    ///
+    /// A span *below* one is the same law running the other way: the track
+    /// then moves quickly at first and slowly at the end. That is what a
+    /// rheostat needs when the thing it is fighting is small -- a 25 k bypass
+    /// pot against a 1.5 k cathode does nothing at all until its last eighth,
+    /// because everything above about 3 k is equally out of circuit.
     Log { span: f64 },
     ReverseLog { span: f64 },
 }
@@ -77,7 +83,8 @@ impl Taper {
     /// range to shape, so it falls back to a plain track rather than dividing
     /// by zero.
     fn log_law(p: f64, span: f64) -> f64 {
-        if span.is_nan() || span <= 1.000_001 {
+        // Only a span of one -- or a nonsense one -- has no shape to give.
+        if span.is_nan() || span <= 0.0 || (span - 1.0).abs() < 1e-6 {
             return p;
         }
         (span.powf(p) - 1.0) / (span - 1.0)

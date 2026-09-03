@@ -130,21 +130,49 @@ fn the_gain_control_reaches_every_stage() {
     );
 }
 
-/// Composing a stage has to give the same circuit as writing one out.
+/// Composing a stage has to give the same amplifier as writing one out.
+///
+/// The one-stage preamplifier is a written-out stage plus its gain control, so
+/// it has exactly one node more -- the pot's wiper -- and that is the whole
+/// difference. Turned all the way up the wiper sits on the input, and the only
+/// thing left between the two circuits is the pot's own million ohms loading
+/// the source. Against a ten thousand ohm source that is a small, calculable
+/// loss, and it is the tolerance below rather than a fudge factor: a bare
+/// divider of 1 M against 10 k gives 20*log10(1M / 1.01M), which is 0.086 dB.
 #[test]
 fn a_composed_stage_matches_the_written_one() {
-    let written = valve::build(&valve::CLASSIC, 10_000.0, 1_000_000.0).expect("builds");
-    let composed = preamp::build(&preamp::CLEAN, 10_000.0, 1_000_000.0).expect("builds");
-    assert_eq!(written.nodes, composed.nodes, "different node counts");
+    const SOURCE: f64 = 10_000.0;
+    const LEAK: f64 = 1_000_000.0;
+    let written = valve::build(&valve::CLASSIC, SOURCE, LEAK).expect("builds");
+    let composed = preamp::build(&preamp::CLEAN, SOURCE, LEAK).expect("builds");
+    assert_eq!(
+        composed.nodes,
+        written.nodes + 1,
+        "the gain control is one node: a wiper"
+    );
 
-    let gain = |circuit: gainstagefx::dsp::netlist::Circuit, control: usize| {
+    // Every control all the way up in both, rather than one by name. The two
+    // circuits do not number their controls the same way -- the composed one
+    // has a gain control the written one does not -- so naming a single index
+    // compared a fully bypassed cathode against a half bypassed one and read
+    // the 3.5 dB difference between those as an error in the composition.
+    let gain = |circuit: gainstagefx::dsp::netlist::Circuit| {
+        let controls = circuit.controls;
         let mut sim = Simulation::new(circuit, RATE);
-        sim.set_control(control, 1.0);
+        for i in 0..controls {
+            sim.set_control(i, 1.0);
+        }
         sim.find_operating_point();
         let tone = Tone::near(RATE, 16_384, 220.0, 0.05);
         measure::run(tone, (RATE * 0.3) as usize, |x| sim.process(x)).gain_db()
     };
-    let a = gain(written, valve::BYPASS);
-    let b = gain(composed, preamp::GAIN);
-    assert!((a - b).abs() < 0.01, "{a:.4} dB against {b:.4} dB");
+    let a = gain(written);
+    let b = gain(composed);
+    let expected = 20.0 * (LEAK / (LEAK + SOURCE)).log10();
+    assert!(
+        (b - a - expected).abs() < 0.05,
+        "the volume pot should cost {expected:.3} dB and cost {:.3}: \
+         {a:.4} dB written against {b:.4} dB composed",
+        b - a
+    );
 }

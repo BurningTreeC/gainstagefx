@@ -9,3 +9,4 @@
 
 pub mod circuits;
 pub mod dsp;
+pub mod voice;

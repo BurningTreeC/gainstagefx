@@ -18,6 +18,10 @@ use crate::dsp::netlist::{Circuit, Fault, Netlist, Taper, TriodeSpec};
 /// subtle rather than only loud.
 pub const BYPASS: usize = 0;
 
+/// The span the bypass pot sweeps over. Below one, so the resistance falls
+/// quickly and then finely -- see `Taper::Log`.
+pub const BYPASS_SPAN: f64 = 0.004;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Values {
     pub plate_load: f64,
@@ -67,7 +71,11 @@ pub fn stage(
         .resistor(&grid, "gnd", 1_000_000.0)
         .supply(&plate, v.plate_load, v.supply)
         .resistor(&cathode, "gnd", v.cathode)
-        .pot(&cathode, &leg, &leg, 25_000.0, Taper::Linear, control)
+        // A 25 k pot against a 1.5 k cathode: everything above about 3 k is
+        // equally out of circuit, so a linear track spends seven eighths of
+        // its travel doing nothing and then moves six decibels in the last.
+        // The track sweeps the resistance geometrically instead.
+        .pot(&cathode, &leg, &leg, 25_000.0, Taper::Log { span: BYPASS_SPAN }, control)
         .capacitor(&leg, "gnd", 22e-6)
         .triode(&plate, &grid, &cathode, v.triode)
         .capacitor(&plate, &out, 22e-9);
@@ -90,7 +98,7 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
         // is the cathode resistor itself, so a track that spends most of its
         // travel far above 1.5k is a control that does nothing until the very
         // end of it.
-        .pot("cathode", "bypass_leg", "bypass_leg", 25_000.0, Taper::Linear, BYPASS)
+        .pot("cathode", "bypass_leg", "bypass_leg", 25_000.0, Taper::Log { span: BYPASS_SPAN }, BYPASS)
         .capacitor("bypass_leg", "gnd", 22e-6)
         .triode("plate", "grid", "cathode", v.triode)
         // Off the plate and into the next stage's grid leak.
