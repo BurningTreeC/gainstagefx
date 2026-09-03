@@ -61,7 +61,9 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
          Ask the time domain solver instead, around a chosen operating point.",
         circuit.name
     );
-    let n = circuit.nodes;
+    // A row for every node, and one more for every part that imposes a
+    // voltage rather than a conductance.
+    let n = circuit.unknowns();
     if n == 0 {
         return C::ZERO;
     }
@@ -84,7 +86,7 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
         }
     };
 
-    for part in &circuit.parts {
+    for (index, part) in circuit.parts.iter().enumerate() {
         match *part {
             Part::Resistor { a, b, ohms } => stamp(&mut y, a, b, C::real(1.0 / ohms)),
             Part::Capacitor { a, b, farads } => stamp(&mut y, a, b, C::new(0.0, w * farads)),
@@ -120,6 +122,38 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             // still loads the node it feeds.
             Part::Supply { node, series, .. } => {
                 stamp(&mut y, node, GROUND, C::real(1.0 / series));
+            }
+            // Small signal, an op-amp holds its inputs together: whatever
+            // current its output has to carry to do that is the unknown.
+            Part::OpAmp { out, plus, minus, .. } => {
+                let branch = circuit.branch_of(index);
+                if out != GROUND {
+                    y[out * n + branch] = y[out * n + branch] + C::real(1.0);
+                }
+                if plus != GROUND {
+                    y[branch * n + plus] = y[branch * n + plus] + C::real(1.0);
+                }
+                if minus != GROUND {
+                    y[branch * n + minus] = y[branch * n + minus] - C::real(1.0);
+                }
+            }
+            // An ideal transformer: the primary is `ratio` times the secondary
+            // in volts and one over that in amps, which is the same statement
+            // twice and is why one unknown covers both.
+            Part::Transformer { p1, p2, s1, s2, ratio } => {
+                let branch = circuit.branch_of(index);
+                for (node, sign) in [(p1, 1.0), (p2, -1.0)] {
+                    if node != GROUND {
+                        y[node * n + branch] = y[node * n + branch] + C::real(sign);
+                        y[branch * n + node] = y[branch * n + node] + C::real(sign);
+                    }
+                }
+                for (node, sign) in [(s1, -ratio), (s2, ratio)] {
+                    if node != GROUND {
+                        y[node * n + branch] = y[node * n + branch] + C::real(sign);
+                        y[branch * n + node] = y[branch * n + node] + C::real(sign);
+                    }
+                }
             }
             Part::Diode { .. } | Part::Triode { .. } => unreachable!("checked above"),
         }

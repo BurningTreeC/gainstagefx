@@ -57,6 +57,27 @@ impl Stamper<'_> {
         }
     }
 
+    /// Ties a node to a branch's current: the part sources `sign` amps of it
+    /// into that node.
+    pub fn branch_current(&mut self, node: usize, branch: usize, sign: f64) {
+        if node != GROUND {
+            self.matrix[node * self.n + branch] += sign;
+        }
+    }
+
+    /// One term of a branch's own row, which is the condition the part is
+    /// imposing on the voltages.
+    pub fn branch_constraint(&mut self, branch: usize, node: usize, sign: f64) {
+        if node != GROUND {
+            self.matrix[branch * self.n + node] += sign;
+        }
+    }
+
+    /// What that condition equals.
+    pub fn branch_value(&mut self, branch: usize, volts: f64) {
+        self.rhs[branch] += volts;
+    }
+
     /// A current flowing out of `a` and into `b`.
     pub fn current(&mut self, a: usize, b: usize, amps: f64) {
         if a != GROUND {
@@ -222,6 +243,80 @@ impl Device for Triode {
         let gg = ((self.grid(vgk + dg) - self.grid(vgk - dg)) / (2.0 * dg)).max(1e-12);
         s.conductance(self.g, self.k, gg);
         s.current(self.g, self.k, ig - gg * vgk);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
+    }
+}
+
+/// An operational amplifier, as two linear states.
+///
+/// Not a huge gain fed through a `tanh`. That is the obvious model and it does
+/// not work: an open loop gain of a hundred thousand gives a linear region
+/// about thirty microvolts wide, so every sample fails to converge and the
+/// stage falls silent. Limiting the output instead lets it report convergence
+/// while sitting pinned sixteen volts the wrong side of a fifteen volt rail.
+///
+/// So it has two states and picks between them. In the linear one it holds its
+/// inputs together and its output carries whatever current that takes. Once
+/// the current it would need puts the output past a rail, it stops trying and
+/// becomes a voltage source to that rail instead. The switch is what a real
+/// one does; the two states are exactly describable and each is linear.
+pub struct OpAmp {
+    out: usize,
+    plus: usize,
+    minus: usize,
+    branch: usize,
+    rail: f64,
+    /// Which rail it is against, if any.
+    clamped: f64,
+    delta: f64,
+}
+
+impl OpAmp {
+    /// What an op-amp on a nine volt pedal supply can swing either way.
+    pub const NINE_VOLT: f64 = 3.5;
+    /// And on a studio rail.
+    pub const STUDIO: f64 = 15.0;
+
+    pub fn new(out: usize, plus: usize, minus: usize, branch: usize, rail: f64) -> Self {
+        Self { out, plus, minus, branch, rail, clamped: 0.0, delta: 0.0 }
+    }
+}
+
+impl Device for OpAmp {
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        let output = if self.out == GROUND { 0.0 } else { v[self.out] };
+        let error = across(v, self.plus, self.minus);
+
+        // Decide which state to be in from where the last solve put the
+        // output. Hysteresis is not needed: the two states agree at the rail.
+        let was = self.clamped;
+        self.clamped = if output > self.rail {
+            self.rail
+        } else if output < -self.rail {
+            -self.rail
+        } else {
+            0.0
+        };
+        self.delta = (self.clamped - was).abs().max(if self.clamped == 0.0 {
+            error.abs()
+        } else {
+            0.0
+        });
+
+        // The output carries the branch current either way.
+        s.branch_current(self.out, self.branch, 1.0);
+        if self.clamped == 0.0 {
+            // Linear: hold the inputs together.
+            s.branch_constraint(self.branch, self.plus, 1.0);
+            s.branch_constraint(self.branch, self.minus, -1.0);
+        } else {
+            // Against a rail: the output is that rail.
+            s.branch_constraint(self.branch, self.out, 1.0);
+            s.branch_value(self.branch, self.clamped);
+        }
     }
 
     fn moved(&self) -> f64 {

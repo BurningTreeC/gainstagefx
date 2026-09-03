@@ -20,7 +20,7 @@ use std::fmt;
 pub const GROUND: usize = usize::MAX;
 
 /// How a potentiometer's track divides as it turns.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Taper {
     /// Resistance proportional to rotation.
     Linear,
@@ -40,6 +40,20 @@ pub enum Taper {
     /// matched pair and turn opposite ways.
     ReverseLinear,
     ReverseAudio,
+    /// An exponential over a stated span, and its reverse.
+    ///
+    /// A control whose effect goes as the *logarithm* of the track -- gain in
+    /// decibels, a filter corner in octaves -- cannot be made to sweep evenly
+    /// by a linear track, and not by an audio one either. A rheostat in series
+    /// with a fixed resistance `Rf` covers a span `k = (Rf + R) / Rf`, and its
+    /// effect in decibels goes as `log(Rf + R·f(p))`. That is even in `p` only
+    /// when `f(p) = (k^p - 1) / (k - 1)`, so the law has to know the span it is
+    /// covering: a track that suits a span of ten is wrong for a span of fifty.
+    ///
+    /// `Audio` is this law at a span of a thousand, which is where a volume
+    /// control wants to be and why it is written out separately.
+    Log { span: f64 },
+    ReverseLog { span: f64 },
 }
 
 impl Taper {
@@ -53,7 +67,20 @@ impl Taper {
             // avoids the kink a two-segment approximation puts in the middle.
             Taper::Audio => (p * 6.908).exp_m1() / 999.0,
             Taper::ReverseAudio => 1.0 - (p * 6.908).exp_m1() / 999.0,
+            Taper::Log { span } => Self::log_law(p, span),
+            Taper::ReverseLog { span } => 1.0 - Self::log_law(p, span),
         }
+    }
+
+    /// `(k^p - 1) / (k - 1)`, which is the track that makes a logarithmic
+    /// effect sweep evenly over a span of `k`. A span at or below one has no
+    /// range to shape, so it falls back to a plain track rather than dividing
+    /// by zero.
+    fn log_law(p: f64, span: f64) -> f64 {
+        if span.is_nan() || span <= 1.000_001 {
+            return p;
+        }
+        (span.powf(p) - 1.0) / (span - 1.0)
     }
 }
 
@@ -81,6 +108,12 @@ pub enum Part {
     Diode { a: usize, k: usize, spec: DiodeSpec },
     /// A triode: plate, grid, cathode.
     Triode { p: usize, g: usize, k: usize, spec: TriodeSpec },
+    /// An operational amplifier, holding its inputs together by whatever it
+    /// has to put on its output -- until it runs out of rail.
+    OpAmp { out: usize, plus: usize, minus: usize, rail: f64 },
+    /// An ideal transformer, `ratio` primary turns to one secondary turn.
+    /// Everything that colours a real one hangs off it as ordinary parts.
+    Transformer { p1: usize, p2: usize, s1: usize, s2: usize, ratio: f64 },
 }
 
 /// Saturation current and emission coefficient.
@@ -130,13 +163,27 @@ impl Part {
             Part::Input { node, .. } | Part::Supply { node, .. } => vec![node],
             Part::Diode { a, k, .. } => vec![a, k],
             Part::Triode { p, g, k, .. } => vec![p, g, k],
+            Part::OpAmp { out, plus, minus, .. } => vec![out, plus, minus],
+            Part::Transformer { p1, p2, s1, s2, .. } => vec![p1, p2, s1, s2],
         }
+    }
+
+    /// Whether this part imposes a voltage rather than a conductance, and so
+    /// needs an unknown of its own in the matrix.
+    ///
+    /// A conductance goes on the diagonal and keeps the matrix well behaved.
+    /// A part that says "these two nodes shall differ by this much" cannot be
+    /// written that way at all: it needs its own current as a variable, and
+    /// the row it adds has a zero where the diagonal would be. That is why the
+    /// factorisation has to pivot.
+    pub fn needs_branch(&self) -> bool {
+        matches!(self, Part::OpAmp { .. } | Part::Transformer { .. })
     }
 
     /// Whether this part has a single frequency response. A device does not,
     /// so a circuit containing one cannot be handed to the AC solver.
     pub fn is_linear(&self) -> bool {
-        !matches!(self, Part::Diode { .. } | Part::Triode { .. })
+        !matches!(self, Part::Diode { .. } | Part::Triode { .. } | Part::OpAmp { .. })
     }
 
     fn name(&self) -> &'static str {
@@ -149,6 +196,8 @@ impl Part {
             Part::Supply { .. } => "supply",
             Part::Diode { .. } => "diode",
             Part::Triode { .. } => "triode",
+            Part::OpAmp { .. } => "op-amp",
+            Part::Transformer { .. } => "transformer",
         }
     }
 }
@@ -275,6 +324,25 @@ impl Netlist {
         self
     }
 
+    pub fn opamp(&mut self, out: &str, plus: &str, minus: &str, rail: f64) -> &mut Self {
+        let (out, plus, minus) = (self.pin(out), self.pin(plus), self.pin(minus));
+        self.parts.push(Part::OpAmp { out, plus, minus, rail });
+        self
+    }
+
+    pub fn transformer(
+        &mut self,
+        p1: &str,
+        p2: &str,
+        s1: &str,
+        s2: &str,
+        ratio: f64,
+    ) -> &mut Self {
+        let (p1, p2, s1, s2) = (self.pin(p1), self.pin(p2), self.pin(s1), self.pin(s2));
+        self.parts.push(Part::Transformer { p1, p2, s1, s2, ratio });
+        self
+    }
+
     /// `"gnd"` and `"ground"` are the reference; anything else is a node.
     fn pin(&mut self, name: &str) -> usize {
         if name == "gnd" || name == "ground" {
@@ -312,6 +380,8 @@ impl Netlist {
                 Part::Input { series, .. } | Part::Supply { series, .. } => series <= 0.0,
                 Part::Diode { spec, .. } => spec.saturation <= 0.0 || spec.emission <= 0.0,
                 Part::Triode { spec, .. } => spec.mu <= 0.0 || spec.kg1 <= 0.0,
+                Part::OpAmp { rail, .. } => rail <= 0.0,
+                Part::Transformer { ratio, .. } => ratio <= 0.0,
             };
             if bad {
                 return Err(Fault::Malformed(format!(
@@ -346,9 +416,11 @@ impl Netlist {
             });
         }
 
+        let branches = self.parts.iter().filter(|p| p.needs_branch()).count();
         Ok(Circuit {
             name: self.name,
             nodes: self.order.len(),
+            branches,
             names: self.order,
             parts: self.parts,
             output: out,
@@ -388,6 +460,8 @@ impl Netlist {
 pub struct Circuit {
     pub name: &'static str,
     pub nodes: usize,
+    /// How many parts carry a current of their own as an unknown.
+    pub branches: usize,
     pub names: Vec<String>,
     pub parts: Vec<Part>,
     pub output: usize,
@@ -395,6 +469,19 @@ pub struct Circuit {
 }
 
 impl Circuit {
+    /// How big the matrix is: a row for every node, and one more for every
+    /// part that imposes a voltage.
+    pub fn unknowns(&self) -> usize {
+        self.nodes + self.branches
+    }
+
+    /// Where a branch-carrying part's own unknown sits, counting the parts in
+    /// the order they were added.
+    pub fn branch_of(&self, part: usize) -> usize {
+        let before = self.parts[..part].iter().filter(|p| p.needs_branch()).count();
+        self.nodes + before
+    }
+
     /// Whether every part has a frequency response, and therefore whether the
     /// AC solver can be asked about it.
     pub fn is_linear(&self) -> bool {

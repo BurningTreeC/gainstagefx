@@ -12,7 +12,7 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
-use super::device::{Device, Diode, Stamper, Triode};
+use super::device::{Device, Diode, OpAmp, Stamper, Triode};
 use super::netlist::{Circuit, Part, GROUND};
 
 /// How still the solve has to get before it is called settled, in volts.
@@ -75,7 +75,7 @@ pub struct Simulation {
 
 impl Simulation {
     pub fn new(circuit: Circuit, rate: f64) -> Self {
-        let n = circuit.nodes;
+        let n = circuit.unknowns();
         let controls = vec![0.5; circuit.controls.max(1)];
         let mut sim = Self {
             circuit,
@@ -155,7 +155,7 @@ impl Simulation {
             // that in the matrix while hunting the operating point shorts the
             // cathode to ground and the stage comes up with no bias at all.
 
-            for part in &self.circuit.parts {
+            for (index, part) in self.circuit.parts.iter().enumerate() {
                 match *part {
                     Part::Resistor { a, b, ohms } => {
                         stamp_both(&mut base, &mut base_dc, n, a, b, 1.0 / ohms)
@@ -212,6 +212,16 @@ impl Simulation {
                     }
                     Part::Triode { p, g, k, spec } => {
                         self.devices.push(Box::new(Triode::new(p, g, k, spec)));
+                    }
+                    Part::OpAmp { out, plus, minus, rail } => {
+                        let branch = self.circuit.branch_of(index);
+                        self.devices
+                            .push(Box::new(OpAmp::new(out, plus, minus, branch, rail)));
+                    }
+                    Part::Transformer { p1, p2, s1, s2, ratio } => {
+                        let branch = self.circuit.branch_of(index);
+                        stamp_branch(&mut base, n, branch, p1, p2, s1, s2, ratio);
+                        stamp_branch(&mut base_dc, n, branch, p1, p2, s1, s2, ratio);
                     }
                 }
             }
@@ -390,6 +400,27 @@ impl Simulation {
             l.current = 0.0;
         }
         self.voltage.iter_mut().for_each(|v| *v = 0.0);
+    }
+}
+
+/// An ideal transformer's rows: the primary is `ratio` times the secondary in
+/// volts, and one over that in amps.
+#[allow(clippy::too_many_arguments)]
+fn stamp_branch(
+    m: &mut [f64],
+    n: usize,
+    branch: usize,
+    p1: usize,
+    p2: usize,
+    s1: usize,
+    s2: usize,
+    ratio: f64,
+) {
+    for (node, sign) in [(p1, 1.0), (p2, -1.0), (s1, -ratio), (s2, ratio)] {
+        if node != GROUND {
+            m[node * n + branch] += sign;
+            m[branch * n + node] += sign;
+        }
     }
 }
 
