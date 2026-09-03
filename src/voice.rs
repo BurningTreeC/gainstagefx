@@ -281,14 +281,72 @@ fn peak_gain(circuit: &Netlist, controls: &[f64]) -> f64 {
     peak
 }
 
+/// What the plugin tells the host it delays by, whatever the oversampling is
+/// set to.
+///
+/// The filters are shorter at the lower settings -- nothing at all with
+/// oversampling off, 160 samples at two times, 176 at four, 180 at eight -- so
+/// the honest figure would change as the control moves. The CLAP specification
+/// asks that it does not, and a host that has to renegotiate its delay
+/// compensation mid-stream will click. So one figure is reported and the
+/// shorter settings are padded up to it.
+pub const LATENCY: u32 = 180;
+
+/// A whole number of samples of delay.
+struct Delay {
+    buf: Vec<f64>,
+    pos: usize,
+}
+
+impl Delay {
+    fn new(len: usize) -> Self {
+        Self { buf: vec![0.0; len.max(1)], pos: 0 }
+    }
+
+    fn set_len(&mut self, len: usize) {
+        let len = len.max(1);
+        if len != self.buf.len() {
+            self.buf.resize(len, 0.0);
+            self.buf.iter_mut().for_each(|v| *v = 0.0);
+            self.pos = 0;
+        }
+    }
+
+    #[inline]
+    fn process(&mut self, x: f64) -> f64 {
+        let out = self.buf[self.pos];
+        self.buf[self.pos] = x;
+        self.pos = (self.pos + 1) % self.buf.len();
+        out
+    }
+
+    fn reset(&mut self) {
+        self.buf.iter_mut().for_each(|v| *v = 0.0);
+        self.pos = 0;
+    }
+}
+
 /// The whole signal path, in the order the signal goes through it.
+///
+/// It owns *every* circuit that can be selected and switches by index, rather
+/// than building the one that is wanted. Choosing a circuit is something a
+/// player does while playing, on the audio thread, where allocating is not
+/// allowed -- and there are only thirteen small circuits in the catalogue, so
+/// holding all of them costs less than the machinery to avoid it would.
 pub struct Chain {
-    gain: Simulation,
+    gains: Vec<Simulation>,
     /// Each linear section with the trim that undoes its own loss.
-    tone: Option<(Simulation, f64)>,
-    cabinet: Option<(Simulation, f64)>,
+    tones: Vec<(Simulation, f64)>,
+    cabinets: Vec<(Simulation, f64)>,
+    gain: usize,
+    tone: Option<usize>,
+    cabinet: Option<usize>,
     over: Oversampler,
-    calibration: Calibration,
+    /// Brings the wet path up to `LATENCY` whatever the oversampling is.
+    pad: Delay,
+    /// Holds the dry signal back by the same amount, so that mixing the two
+    /// is a mix rather than a comb filter.
+    dry: Delay,
     /// The host's rate. The gain circuit does not run at it -- see
     /// `set_oversampling`.
     rate: f64,
@@ -299,26 +357,38 @@ pub struct Chain {
 }
 
 impl Chain {
-    pub fn new(gain: Gain, diode: Diode, tone: Tone, cabinet: Cabinet, rate: f64) -> Self {
-        let calibration = CALIBRATION[voice_index(gain, diode)];
+    pub fn new(rate: f64) -> Self {
         let section = |built: Option<Result<Netlist, Fault>>| {
-            built.map(|c| {
-                let netlist = c.expect("catalogue builds");
-                let controls = vec![0.5; netlist.controls];
-                let trim = 1.0 / peak_gain(&netlist, &controls);
-                let mut sim = Simulation::new(netlist, rate);
-                for (i, p) in controls.iter().enumerate() {
-                    sim.set_control(i, *p);
-                }
-                (sim, trim)
-            })
+            let netlist = built.expect("a section that exists").expect("catalogue builds");
+            let controls = vec![0.5; netlist.controls];
+            let trim = 1.0 / peak_gain(&netlist, &controls);
+            let mut sim = Simulation::new(netlist, rate);
+            for (i, p) in controls.iter().enumerate() {
+                sim.set_control(i, *p);
+            }
+            (sim, trim)
         };
         let mut chain = Self {
-            gain: Simulation::new(build_voice(gain, diode).expect("catalogue builds"), rate),
-            tone: section(tone.build()),
-            cabinet: section(cabinet.build()),
+            gains: (0..VOICES)
+                .map(|i| {
+                    let (gain, diode) = voice_at(i);
+                    Simulation::new(build_voice(gain, diode).expect("catalogue builds"), rate)
+                })
+                .collect(),
+            tones: [Tone::Wide, Tone::Scooping]
+                .into_iter()
+                .map(|t| section(t.build()))
+                .collect(),
+            cabinets: [Cabinet::Combo, Cabinet::Stack]
+                .into_iter()
+                .map(|c| section(c.build()))
+                .collect(),
+            gain: 0,
+            tone: None,
+            cabinet: None,
             over: Oversampler::new(4),
-            calibration,
+            pad: Delay::new(1),
+            dry: Delay::new(LATENCY as usize),
             rate,
             drive: 0.5,
             into: 1.0,
@@ -329,21 +399,62 @@ impl Chain {
         chain
     }
 
+    /// Which gain circuit is in the path. Switching resets the one being
+    /// switched to: it has been sitting with whatever charge was on its
+    /// capacitors when it was last used, and a valve plate holds two hundred
+    /// volts of it.
+    pub fn set_voice(&mut self, gain: Gain, diode: Diode) {
+        let index = voice_index(gain, diode);
+        if index != self.gain {
+            self.gain = index;
+            self.gains[index].reset();
+            self.set_drive(self.drive);
+        }
+    }
+
+    pub fn set_tone_section(&mut self, tone: Tone) {
+        let next = match tone {
+            Tone::Off => None,
+            Tone::Wide => Some(0),
+            Tone::Scooping => Some(1),
+        };
+        if next != self.tone {
+            if let Some(i) = next {
+                self.tones[i].0.reset();
+            }
+            self.tone = next;
+        }
+    }
+
+    pub fn set_cabinet(&mut self, cabinet: Cabinet) {
+        let next = match cabinet {
+            Cabinet::Off => None,
+            Cabinet::Combo => Some(0),
+            Cabinet::Stack => Some(1),
+        };
+        if next != self.cabinet {
+            if let Some(i) = next {
+                self.cabinets[i].0.reset();
+            }
+            self.cabinet = next;
+        }
+    }
+
     /// The drive control, which moves both the circuit and the make-up that
     /// keeps the comparison honest.
     pub fn set_drive(&mut self, drive: f64) {
         self.drive = drive.clamp(0.0, 1.0);
-        self.gain.set_control(clipper::GAIN, self.drive);
+        self.gains[self.gain].set_control(clipper::GAIN, self.drive);
+        let calibration = CALIBRATION[self.gain];
         // A nominal digital signal has to arrive as the stated voltage.
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
-        self.into = self.calibration.drive_volts / nominal;
-        self.out_of =
-            10f64.powf(self.calibration.make_up_db_at(self.drive) / 20.0) / self.into;
+        self.into = calibration.drive_volts / nominal;
+        self.out_of = 10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into;
     }
 
     pub fn set_tone(&mut self, which: usize, position: f64) {
-        if let Some((t, _)) = self.tone.as_mut() {
-            t.set_control(which, position);
+        if let Some(i) = self.tone {
+            self.tones[i].0.set_control(which, position);
         }
     }
 
@@ -359,11 +470,31 @@ impl Chain {
     /// shown it.
     pub fn set_oversampling(&mut self, factor: usize) {
         self.over.set_factor(factor);
-        self.gain.set_rate(self.rate * self.over.factor() as f64);
+        self.pad
+            .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+        let inner = self.rate * self.over.factor() as f64;
+        for sim in &mut self.gains {
+            sim.set_rate(inner);
+        }
     }
 
+    pub fn set_rate(&mut self, rate: f64) {
+        self.rate = rate;
+        for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
+            sim.set_rate(rate);
+        }
+        self.set_oversampling(self.over.factor());
+    }
+
+    /// One figure, always. See `LATENCY`.
     pub fn latency(&self) -> u32 {
-        self.over.latency()
+        LATENCY
+    }
+
+    /// The dry signal, held back so it lines up with what `process` returns.
+    #[inline]
+    pub fn delayed_dry(&mut self, x: f64) -> f64 {
+        self.dry.process(x)
     }
 
     #[inline]
@@ -371,28 +502,30 @@ impl Chain {
         // Only the gain circuit can fold anything back into the band, so only
         // the gain circuit runs at the higher rate. The tone stack and the
         // cabinet are linear and cost nothing extra by staying down here.
-        let gain = &mut self.gain;
-        let mut y = self
-            .over
-            .process(x * self.into, &mut |v| gain.process(v))
-            * self.out_of;
-        if let Some((t, trim)) = self.tone.as_mut() {
-            y = t.process(y) * *trim;
+        let gain = &mut self.gains[self.gain];
+        let mut y = self.over.process(x * self.into, &mut |v| gain.process(v)) * self.out_of;
+        // Every setting delays by the same reported amount.
+        y = self.pad.process(y);
+        if let Some(i) = self.tone {
+            let (sim, trim) = &mut self.tones[i];
+            y = sim.process(y) * *trim;
         }
-        if let Some((c, trim)) = self.cabinet.as_mut() {
-            y = c.process(y) * *trim;
+        if let Some(i) = self.cabinet {
+            let (sim, trim) = &mut self.cabinets[i];
+            y = sim.process(y) * *trim;
         }
         y
     }
 
     pub fn reset(&mut self) {
-        self.gain.reset();
-        if let Some((t, _)) = self.tone.as_mut() {
-            t.reset();
+        for sim in &mut self.gains {
+            sim.reset();
         }
-        if let Some((c, _)) = self.cabinet.as_mut() {
-            c.reset();
+        for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
+            sim.reset();
         }
         self.over.reset();
+        self.pad.reset();
+        self.dry.reset();
     }
 }

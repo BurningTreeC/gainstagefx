@@ -84,7 +84,8 @@ fn the_make_up_holds_the_level_between_the_measured_points() {
         // Deliberately off the measured grid.
         for step in 0..17 {
             let drive = (step as f64 + 0.5) / 17.0;
-            let mut chain = Chain::new(gain, diode, ToneSection::Off, Cabinet::Off, RATE);
+            let mut chain = Chain::new(RATE);
+            chain.set_voice(gain, diode);
             chain.set_drive(drive);
             let out = level_through(&mut chain, nominal());
             if (out - NOMINAL_DBFS).abs() > worst {
@@ -109,7 +110,8 @@ fn the_make_up_holds_the_level_between_the_measured_points() {
 fn silence_in_is_silence_out() {
     for index in 0..VOICES {
         let (gain, diode) = voice::voice_at(index);
-        let mut chain = Chain::new(gain, diode, ToneSection::Off, Cabinet::Off, RATE);
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(gain, diode);
         chain.set_drive(0.7);
         let mut worst: f64 = 0.0;
         for _ in 0..(RATE as usize / 4) {
@@ -130,13 +132,17 @@ fn silence_in_is_silence_out() {
 #[test]
 fn the_passive_sections_do_not_cost_the_level() {
     let reference = {
-        let mut chain = Chain::new(Gain::Crunch, voice::Diode::Silicon, ToneSection::Off, Cabinet::Off, RATE);
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(Gain::Crunch, voice::Diode::Silicon);
         chain.set_drive(0.8);
         level_through(&mut chain, nominal())
     };
     for t in [ToneSection::Wide, ToneSection::Scooping] {
         for c in [Cabinet::Off, Cabinet::Combo, Cabinet::Stack] {
-            let mut chain = Chain::new(Gain::Crunch, voice::Diode::Silicon, t, c, RATE);
+            let mut chain = Chain::new(RATE);
+            chain.set_voice(Gain::Crunch, voice::Diode::Silicon);
+            chain.set_tone_section(t);
+            chain.set_cabinet(c);
             chain.set_drive(0.8);
             let out = level_through(&mut chain, nominal());
             assert!(
