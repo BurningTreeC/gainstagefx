@@ -166,3 +166,259 @@ pub fn in_group(group: &'static str) -> impl Iterator<Item = (usize, &'static Pr
         .enumerate()
         .filter(move |(_, p)| p.group == group)
 }
+
+// ---------------------------------------------------------------------------
+// Saved presets
+// ---------------------------------------------------------------------------
+
+use nih_plug::params::Params;
+use nih_plug::prelude::ParamPtr;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+/// The group saved presets appear under. Their own section at the foot of the
+/// list, rather than mixed into the shipped groups: which of these you can
+/// delete and which you cannot is worth being able to see without clicking.
+pub const SAVED: &str = "Saved";
+
+/// A preset as the menu handles it: a name and parameter ids against
+/// *normalised* values.
+///
+/// Normalised rather than the plain values the shipped catalogue is written
+/// in, because this is also what goes to disk, and a plain value only means
+/// something next to the parameter it came from. A range widened in a later
+/// version would silently reinterpret every saved file.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Stored {
+    pub name: String,
+    pub values: BTreeMap<String, f32>,
+    /// Compiled in rather than loaded from disk, so it cannot be overwritten
+    /// or deleted.
+    #[serde(default, skip)]
+    pub built_in: bool,
+    /// Which heading it sits under.
+    #[serde(default, skip)]
+    pub group: &'static str,
+}
+
+/// Controls that are about the plugin rather than the sound, and so have no
+/// business in a preset. Loading a sound should not resize the window or
+/// change what the plugin costs.
+const EXCLUDED: [&str; 1] = ["oversampling"];
+
+/// Where saved presets live.
+pub fn preset_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+    Some(base.join("gainstagefx").join("presets"))
+}
+
+/// Every preset: the shipped ones in their groups, then the saved ones in name
+/// order under their own heading.
+///
+/// A saved preset that happens to share a name with a shipped one does not
+/// hide it. The shipped preset is compiled in and cannot be edited, so
+/// dropping it from the list would put it permanently out of reach; the two
+/// sit in different sections instead, and only yours can be deleted.
+pub fn load_all(params: &impl Params) -> Vec<Stored> {
+    let mut all = shipped(params);
+    all.extend(load_saved());
+    all
+}
+
+/// The compiled-in catalogue, converted against the real parameters.
+fn shipped(params: &impl Params) -> Vec<Stored> {
+    let pointers: BTreeMap<String, ParamPtr> = params
+        .param_map()
+        .into_iter()
+        .map(|(id, ptr, _)| (id, ptr))
+        .collect();
+
+    PRESETS
+        .iter()
+        .map(|preset| Stored {
+            name: preset.name.to_string(),
+            values: preset
+                .dials()
+                .iter()
+                .filter_map(|(id, plain)| {
+                    let ptr = pointers.get(*id)?;
+                    // SAFETY: the pointers come from the parameters we were
+                    // handed, which outlive this function.
+                    Some((id.to_string(), unsafe { ptr.preview_normalized(*plain) }))
+                })
+                .collect(),
+            built_in: true,
+            group: preset.group,
+        })
+        .collect()
+}
+
+fn load_saved() -> Vec<Stored> {
+    let Some(dir) = preset_dir() else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+
+    let mut presets: Vec<Stored> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|path| {
+            let text = std::fs::read_to_string(&path).ok()?;
+            let mut preset: Stored = serde_json::from_str(&text).ok()?;
+            preset.built_in = false;
+            preset.group = SAVED;
+            // A preset whose file was renamed by hand should follow the file
+            // rather than vanish from the list.
+            if preset.name.trim().is_empty() {
+                preset.name = path.file_stem()?.to_str()?.to_string();
+            }
+            Some(preset)
+        })
+        .collect();
+    presets.sort_by_key(|preset| preset.name.to_lowercase());
+    presets
+}
+
+/// Take the current panel settings as a preset.
+pub fn capture(params: &impl Params, name: &str) -> Stored {
+    let values = params
+        .param_map()
+        .into_iter()
+        .filter(|(id, _, _)| !EXCLUDED.contains(&id.as_str()))
+        // SAFETY: as above, the pointers belong to the parameters we were
+        // given.
+        .map(|(id, ptr, _)| (id, unsafe { ptr.unmodulated_normalized_value() }))
+        .collect();
+
+    Stored {
+        name: name.trim().to_string(),
+        values,
+        built_in: false,
+        group: SAVED,
+    }
+}
+
+/// Write a preset out, replacing any file of yours with the same name.
+pub fn save(preset: &Stored) -> std::io::Result<PathBuf> {
+    if preset.name.trim().is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "a preset needs a name",
+        ));
+    }
+    let dir = preset_dir().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no config directory to save presets into",
+        )
+    })?;
+    std::fs::create_dir_all(&dir)?;
+
+    let path = dir.join(format!("{}.json", file_stem(&preset.name)));
+    let json = serde_json::to_string_pretty(preset)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    std::fs::write(&path, json)?;
+    Ok(path)
+}
+
+/// Remove a saved preset's file.
+///
+/// Found the way `load_saved` identifies it rather than by deriving a file
+/// name from the preset's own, because a file renamed by hand still shows in
+/// the list under the name stored inside it. Deleting the row has to remove
+/// the file that row actually came from, not a file the name implies.
+pub fn delete(name: &str) -> std::io::Result<()> {
+    let dir = preset_dir().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no config directory to delete presets from",
+        )
+    })?;
+    let wanted = name.trim().to_lowercase();
+    for entry in std::fs::read_dir(&dir)?.filter_map(Result::ok) {
+        let path = entry.path();
+        if !path.extension().is_some_and(|ext| ext == "json") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(preset) = serde_json::from_str::<Stored>(&text) else {
+            continue;
+        };
+        let shown = if preset.name.trim().is_empty() {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default()
+                .to_string()
+        } else {
+            preset.name.clone()
+        };
+        if shown.trim().to_lowercase() == wanted {
+            return std::fs::remove_file(&path);
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "no saved preset by that name",
+    ))
+}
+
+/// Whether the live parameters still match a preset's values.
+///
+/// Compared rather than tracked with an edited flag, so that turning a control
+/// back to where it was counts as unmodified again -- which is what somebody
+/// who has just undone a change expects to see.
+pub fn matches(params: &impl Params, values: &BTreeMap<String, f32>) -> bool {
+    if values.is_empty() {
+        return true;
+    }
+    params.param_map().into_iter().all(|(id, ptr, _)| {
+        let Some(&saved) = values.get(&id) else {
+            return true;
+        };
+        // SAFETY: the pointer comes from the parameters we were handed.
+        let current = unsafe { ptr.unmodulated_normalized_value() };
+        (current - saved).abs() <= 1e-5
+    })
+}
+
+/// Whether saving under this name would replace a file of yours.
+///
+/// Shipped presets deliberately do not count: saving under one of their names
+/// writes a new file beside it and replaces nothing, so warning about it would
+/// be describing something that does not happen.
+pub fn name_taken(name: &str, presets: &[Stored]) -> bool {
+    let name = name.trim();
+    presets
+        .iter()
+        .filter(|preset| !preset.built_in)
+        .any(|preset| preset.name.trim().eq_ignore_ascii_case(name))
+}
+
+/// Turns a preset name into something safe to use as a file name.
+fn file_stem(name: &str) -> String {
+    let stem: String = name
+        .trim()
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || matches!(c, ' ' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if stem.is_empty() {
+        "preset".to_string()
+    } else {
+        stem
+    }
+}

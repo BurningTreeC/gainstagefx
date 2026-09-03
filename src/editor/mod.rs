@@ -73,8 +73,11 @@ pub fn create(
         cabinet(cx);
         output(cx);
 
-        // Last, so it draws over the panel and takes the clicks first.
+        // Last, so they draw over the panel and take the clicks first. The
+        // dialogs come after the menu: a question has to sit on top of
+        // whatever asked it.
         session::menu(cx);
+        session::dialogs(cx);
     })
 }
 
@@ -196,12 +199,38 @@ fn strip(cx: &mut Context) {
     label(cx, "GAINSTAGEFX", 78.0, HEADER_H / 2.0, 11.5, 140.0, 0xe8eef4);
 
     label(cx, "preset", 182.0, HEADER_H / 2.0, 10.0, 48.0, 0x7e8a96);
-    session::PresetButton::new(cx)
+    let row = HEADER_H / 2.0 - 11.0;
+    session::PresetButton::build_into(cx)
         .position_type(PositionType::SelfDirected)
         .left(Pixels(session::BUTTON_X))
-        .top(Pixels(HEADER_H / 2.0 - 11.0))
+        .top(Pixels(row))
         .width(Pixels(session::BUTTON_W))
         .height(Pixels(22.0));
+
+    session::Press::build_into(cx, "Save", true, false, || session::SessionEvent::OpenSave)
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(session::BUTTON_X + session::BUTTON_W + 8.0))
+        .top(Pixels(row))
+        .width(Pixels(54.0))
+        .height(Pixels(22.0));
+
+    // Only your own presets can be deleted, and the button says so by going
+    // dim rather than by disappearing -- a strip that changes shape as the
+    // selection moves is harder to aim at.
+    Binding::new(cx, session::Session::deletable, |cx, deletable| {
+        session::Press::build_into(
+            cx,
+            "Delete",
+            deletable.get(cx),
+            false,
+            || session::SessionEvent::OpenDelete,
+        )
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(session::BUTTON_X + session::BUTTON_W + 70.0))
+        .top(Pixels(HEADER_H / 2.0 - 11.0))
+        .width(Pixels(60.0))
+        .height(Pixels(22.0));
+    });
 
     // Oversampling belongs up here rather than in a band: it changes what the
     // plugin costs, not what it sounds like, and putting it in the signal path

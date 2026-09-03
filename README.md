@@ -56,6 +56,17 @@ Each one is a full set of panel positions — loading one and looking at the pan
 tells you how the sound is made. **Scooped Metal** is three cascaded stages, the
 scooping voicing with the mid control right down, and a stack behind it.
 
+Save your own with the button beside the name; they go to
+`~/.config/gainstagefx/presets` as readable JSON and appear under their own
+**Saved** heading at the foot of the list. Only those can be deleted — saving
+under a shipped preset's name writes a new file beside it rather than replacing
+it, so the shipped one never becomes unreachable. A dot next to the name means
+the panel has been moved since the preset was loaded; move the control back and
+the dot goes, because that state is compared rather than remembered.
+
+Loading a preset goes out as ordinary parameter gestures, so it lands in a DAW's
+automation lanes and undoes in one step like any other edit.
+
 ## Building
 
 ```sh
@@ -65,7 +76,7 @@ cargo test --release                        # the measurements
 ```
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs sixty-four of them.
+measures it. `cargo test --release` runs sixty-five of them.
 
 ## How it is built
 
