@@ -20,7 +20,7 @@ the foot of each pointing into the next.
 | | | |
 |---|---|---|
 | **1 Input** | Trim, and a meter | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
-| **2 Circuit** | Topology, clipping | What does the work. The clipping row greys out on the valve circuits, which have no diodes in them. |
+| **2 Circuit** | Topology, clipping, amplifier, iron | What does the work. Clipping applies to the pedals, the amplifier choice to the preamplifier channels, and iron to everything. Rows that do not apply grey out rather than vanish. |
 | **3 Drive** | Drive | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble | A passive stack, so it only ever cuts. The scooping voicing has a resonant leg. |
 | **5 Cabinet** | Off, combo, stack | A speaker is most of what a distorted amplifier sounds like. |
@@ -35,12 +35,48 @@ the foot of each pointing into the next.
 | High Gain | Three stages, all clipping on every note | 25 %, 11.7 % third harmonic |
 | Overdrive | Diodes across the feedback resistor | 12 %, and it cleans up when hit harder |
 | Distortion | Diodes across the signal to ground | 30 %, a ceiling the output stops at |
+| Console | A step-up transformer into a discrete stage | 5 %, essentially all second harmonic |
+| Studio | An op-amp on a studio rail | 0.00 % across the band — see below |
 
 The two clipper families are not a matter of degree. In the loop, the diodes
 lower the *gain*, so the output never stops following the input — which is why
 an overdrive on a hot signal barely does anything. To ground, they are a
 ceiling: past it the waveform is squared off and the harmonics fill out to the
 top of the band.
+
+### Preamplifiers, and the iron
+
+A microphone preamplifier is not a guitar preamplifier turned down. A guitar
+preamplifier is *supposed* to run out of room — that is where the sound is — and
+these are built so that they do not, so everything interesting happens in the
+last few decibels before they do, or in the transformer rather than the gain
+stage.
+
+The **amplifier** row picks what does the work on those channels: a valve, a
+JFET, or an op-amp. A JFET follows a square law, and a square law has only a
+second-order term, so it makes second harmonic and essentially nothing else
+until it runs out of room. An op-amp with enough loop gain contributes nothing
+of its own at all — measured, 0.00 % across the whole band at every gain
+setting.
+
+The **iron** row puts an output transformer after any circuit here, and it is
+the part of this plugin that a waveshaper cannot be. What saturates in a
+transformer is the *flux*, and flux is the integral of voltage — so the same
+signal makes far more of it low down. Measured on a core at twelve volts:
+
+| 30 Hz | 120 Hz | 500 Hz |
+|---|---|---|
+| 68 % | 4 % | 0.00 % |
+
+No curve applied to the samples behaves that way. It is why the studio channel,
+which has no character whatever of its own, reads 13.97 % at 40 Hz with iron on
+it and 0.000 % without. The core is symmetric, so it makes odd harmonics where
+a single-ended valve stage makes even ones.
+
+Three materials, and they are not one another turned up: **nickel** is the only
+one that colours a quiet signal and the softest when pushed, **steel** stays out
+of the way then arrives hard and goes furthest, **amorphous** is still clean at
+eight volts where steel is at 40 %.
 
 Silicon, germanium and LED are selectable wherever there are diodes. They differ
 by forward voltage, which is the whole reason anyone swaps them: measured,
@@ -49,8 +85,11 @@ overtakes it when driven hard.
 
 ## Presets
 
-Twenty-six, in five groups, ordered quietest first so the list reads as a range.
-Measured end to end the catalogue runs from 0.03 % distortion to 26 %.
+Thirty-six, in six groups, ordered quietest first so the list reads as a range.
+Measured end to end the catalogue runs from 0.00 % distortion to 26 %. The
+**Studio** group holds the console and microphone-preamplifier sounds, with the
+cabinet off throughout — a guitar speaker in front of a microphone preamplifier
+makes no sense at all, and a test enforces it.
 
 Each one is a full set of panel positions — loading one and looking at the panel
 tells you how the sound is made. **Scooped Metal** is three cascaded stages, the
@@ -76,7 +115,7 @@ cargo test --release                        # the measurements
 ```
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs seventy of them.
+measures it. `cargo test --release` runs eighty-nine of them.
 
 ## How it is built
 
@@ -121,6 +160,17 @@ measurement, and several times it was me:
   voices almost nothing, so nothing but the clipper would have shown it.
 - An operating point converged, satisfied its own tolerance, and was wrong,
   because the matrix was stale. Kirchhoff caught it; convergence could not.
+- `Device::advance` sat on the trait uncalled from the beginning and nothing
+  noticed, because every device until the transformer core was memoryless. The
+  core integrates, and unadvanced its flux never accumulated past one sample: it
+  drew a hundred-thousandth of the current it should have and read 0.00 % at
+  every frequency, level and material.
+- A channel's gain control sat between the gain stage and the output
+  transformer, which looks like a reasonable place for it. A pot's wiper
+  impedance is highest in the middle of its travel, and a transformer colours
+  according to what feeds it, so the channel measured 18 % distortion at half
+  gain and 5 % at full — the knob inverted the character as it crossed the
+  middle.
 
 [nih-plug]: https://github.com/robbert-vdh/nih-plug
 

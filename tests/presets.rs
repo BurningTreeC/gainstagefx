@@ -74,12 +74,12 @@ fn every_preset_is_within_range() {
     }
 }
 
-/// A preset that selects diodes on a circuit with none in it is not wrong so
-/// much as misleading: it records a choice that has no effect, and the panel
-/// greys the control out while the preset still claims it. Every one of them
-/// should leave it at the default it will actually be given.
+/// A preset that chooses a part its circuit does not contain is not wrong so
+/// much as misleading: it records a choice that has no effect, the panel greys
+/// the control out, and the preset still claims it. Every one should leave
+/// such a control at the value it will actually be given.
 #[test]
-fn presets_only_choose_diodes_where_there_are_diodes() {
+fn presets_only_choose_parts_their_circuit_contains() {
     for preset in PRESETS {
         if !preset.circuit.has_diodes() {
             assert_eq!(
@@ -91,6 +91,61 @@ fn presets_only_choose_diodes_where_there_are_diodes() {
                 preset.diode.name(),
             );
         }
+        if !preset.circuit.has_amplifier() {
+            assert_eq!(
+                preset.amplifier,
+                gainstagefx::params::Amplifier::Jfet,
+                "'{}' is a {} and chooses a {}, which nothing will use",
+                preset.name,
+                preset.circuit.name(),
+                preset.amplifier.name(),
+            );
+        }
+    }
+}
+
+/// The studio channels are not guitar amplifiers, and a speaker in front of a
+/// microphone preamplifier makes no sense at all.
+#[test]
+fn the_studio_presets_have_no_speaker_on_them() {
+    for preset in PRESETS.iter().filter(|p| p.group == "Studio") {
+        assert_eq!(
+            preset.cabinet,
+            Cabinet::Off,
+            "'{}' is a microphone preamplifier with a guitar speaker after it",
+            preset.name
+        );
+    }
+}
+
+/// Every combination the presets use has to be reachable from the panel, and
+/// every combination the panel offers has to build. This is the check that a
+/// selection row is not offering something that does not exist.
+#[test]
+fn every_combination_on_the_panel_builds() {
+    use gainstagefx::params::{Amplifier, Iron};
+    for circuit in Circuit::ALL {
+        for diode in gainstagefx::params::Diode::ALL {
+            for amplifier in Amplifier::ALL {
+                gainstagefx::voice::build_voice(
+                    circuit.voice(),
+                    diode.voice(),
+                    amplifier.voice(),
+                )
+                .unwrap_or_else(|f| {
+                    panic!(
+                        "{} / {} / {} does not build: {f:?}",
+                        circuit.name(),
+                        diode.name(),
+                        amplifier.name()
+                    )
+                });
+            }
+        }
+    }
+    for iron in Iron::ALL.into_iter().filter(|i| *i != Iron::Off) {
+        gainstagefx::voice::build_iron(iron.voice())
+            .unwrap_or_else(|f| panic!("{} iron does not build: {f:?}", iron.name()));
     }
 }
 
@@ -126,8 +181,10 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
     let thd_of = |preset: &gainstagefx::presets::Preset| {
         let gain = preset.circuit.voice();
         let diode = preset.diode.voice();
-        let index = gainstagefx::voice::voice_index(gain, diode);
-        let netlist = gainstagefx::voice::build_voice(gain, diode).expect("builds");
+        let amplifier = preset.amplifier.voice();
+        let index = gainstagefx::voice::voice_index(gain, diode, amplifier);
+        let netlist =
+            gainstagefx::voice::build_voice(gain, diode, amplifier).expect("builds");
         let mut sim = gainstagefx::dsp::time::Simulation::new(netlist, RATE);
         sim.set_control(GAIN, preset.drive as f64);
         let tone = Tone::near(RATE, 16_384, 220.0, CALIBRATION[index].drive_volts);
@@ -165,7 +222,12 @@ fn the_presets_are_level_matched() {
     let mut levels = Vec::new();
     for preset in PRESETS {
         let mut chain = Chain::new(RATE);
-        chain.set_voice(preset.circuit.voice(), preset.diode.voice());
+        chain.set_voice(
+            preset.circuit.voice(),
+            preset.diode.voice(),
+            preset.amplifier.voice(),
+        );
+        chain.set_iron(preset.iron.voice());
         chain.set_tone_section(match preset.tone {
             ToneStack::Off => VTone::Off,
             ToneStack::Wide => VTone::Wide,

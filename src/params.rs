@@ -44,6 +44,14 @@ pub enum Circuit {
     #[id = "distortion"]
     #[name = "Distortion"]
     Distortion,
+    // Appended rather than slotted in beside their relatives, so the positions
+    // the shipped presets refer to do not move under them.
+    #[id = "console"]
+    #[name = "Console"]
+    Console,
+    #[id = "studio"]
+    #[name = "Studio"]
+    Studio,
 }
 
 impl Circuit {
@@ -56,14 +64,18 @@ impl Circuit {
             Circuit::HighGain => "High Gain",
             Circuit::Overdrive => "Overdrive",
             Circuit::Distortion => "Distortion",
+            Circuit::Console => "Console",
+            Circuit::Studio => "Studio",
         }
     }
-    pub const ALL: [Circuit; 5] = [
+    pub const ALL: [Circuit; 7] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
         Circuit::Overdrive,
         Circuit::Distortion,
+        Circuit::Console,
+        Circuit::Studio,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -73,7 +85,14 @@ impl Circuit {
             Circuit::HighGain => voice::Gain::HighGain,
             Circuit::Overdrive => voice::Gain::Overdrive,
             Circuit::Distortion => voice::Gain::Distortion,
+            Circuit::Console => voice::Gain::Console,
+            Circuit::Studio => voice::Gain::Studio,
         }
+    }
+
+    /// Whether the choice of amplifying part reaches this circuit.
+    pub fn has_amplifier(self) -> bool {
+        self.voice().has_amplifier()
     }
 
     /// Whether the diode choice reaches this circuit. A valve stage has no
@@ -83,8 +102,8 @@ impl Circuit {
         self.voice().has_diodes()
     }
 
-    /// Which of the two families this belongs to, which is what the panel
-    /// shows as a picture: a valve, or a pair of diodes.
+    /// Which of the two families this belongs to: something with a bottle or
+    /// a transistor in it, or something with a pair of diodes.
     pub fn is_valve(self) -> bool {
         !self.has_diodes()
     }
@@ -125,6 +144,89 @@ impl Diode {
             Diode::Silicon => voice::Diode::Silicon,
             Diode::Germanium => voice::Diode::Germanium,
             Diode::Led => voice::Diode::Led,
+        }
+    }
+}
+
+/// The part that does the amplifying, on the channels built around one.
+///
+/// The axis the hardware varies along: a console channel with a bottle in it
+/// instead of a transistor is a different and much-argued-about box built from
+/// the same schematic. Two decisions, so two controls.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum Amplifier {
+    #[id = "valve"]
+    #[name = "Valve"]
+    Valve,
+    #[id = "jfet"]
+    #[name = "JFET"]
+    Jfet,
+    #[id = "opamp"]
+    #[name = "Op-amp"]
+    OpAmp,
+}
+
+impl Amplifier {
+    pub const ALL: [Amplifier; 3] = [Amplifier::Valve, Amplifier::Jfet, Amplifier::OpAmp];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Amplifier::Valve => "Valve",
+            Amplifier::Jfet => "JFET",
+            Amplifier::OpAmp => "Op-amp",
+        }
+    }
+
+    pub fn voice(self) -> voice::Amplifier {
+        match self {
+            Amplifier::Valve => voice::Amplifier::Valve,
+            Amplifier::Jfet => voice::Amplifier::Jfet,
+            Amplifier::OpAmp => voice::Amplifier::OpAmp,
+        }
+    }
+}
+
+/// An output transformer, which every circuit here can have.
+///
+/// A control rather than a property of a circuit: iron belongs after a
+/// distortion pedal exactly as much as after a console channel, and there is
+/// no reason to offer it on one and not the other. What it does is level and
+/// frequency dependent together -- flux is the integral of voltage, so it
+/// gives up on a bass note long before anything else notices.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum Iron {
+    #[id = "off"]
+    #[name = "Off"]
+    Off,
+    #[id = "nickel"]
+    #[name = "Nickel"]
+    Nickel,
+    #[id = "steel"]
+    #[name = "Steel"]
+    Steel,
+    #[id = "amorphous"]
+    #[name = "Amorphous"]
+    Amorphous,
+}
+
+impl Iron {
+    pub const ALL: [Iron; 4] = [Iron::Off, Iron::Nickel, Iron::Steel, Iron::Amorphous];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Iron::Off => "Off",
+            Iron::Nickel => "Nickel",
+            Iron::Steel => "Steel",
+            Iron::Amorphous => "Amorphous",
+        }
+    }
+
+    pub fn voice(self) -> voice::Iron {
+        match self {
+            Iron::Off => voice::Iron::Off,
+            Iron::Nickel => voice::Iron::Nickel,
+            Iron::Steel => voice::Iron::Steel,
+            Iron::Amorphous => voice::Iron::Amorphous,
         }
     }
 }
@@ -271,6 +373,10 @@ pub struct GainStageParams {
     pub circuit: EnumParam<Circuit>,
     #[id = "diode"]
     pub diode: EnumParam<Diode>,
+    #[id = "amplifier"]
+    pub amplifier: EnumParam<Amplifier>,
+    #[id = "iron"]
+    pub iron: EnumParam<Iron>,
 
     // --- 3 Drive ---------------------------------------------------------
     /// How hard the circuit is worked. All the way up is the sound the voice
@@ -331,6 +437,8 @@ impl Default for GainStageParams {
 
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
             diode: EnumParam::new("Diode", Diode::Silicon),
+            amplifier: EnumParam::new("Amplifier", Amplifier::Jfet),
+            iron: EnumParam::new("Iron", Iron::Off),
 
             drive: position("Drive", 0.5),
 

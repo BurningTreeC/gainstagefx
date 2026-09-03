@@ -7,6 +7,14 @@ use gainstagefx::dsp::time::Simulation;
 
 const RATE: f64 = 96_000.0;
 
+/// A channel with an output transformer bolted on, which is what the panel's
+/// Iron control puts there. The catalogue itself carries only the input
+/// transformer, because that is the part that makes a console a console.
+fn ironed(mut v: Values) -> Values {
+    v.output_iron = Some(gainstagefx::circuits::iron::OUTPUT);
+    v
+}
+
 fn run(v: &Values, hz: f64, volts: f64, gain: f64) -> measure::Measured {
     let c = studio::build(v, 200.0, 10_000.0).expect("builds");
     let mut sim = Simulation::new(c, RATE);
@@ -36,13 +44,13 @@ fn the_channels_build_and_differ() {
 /// its output transformer to have any character at all.
 #[test]
 fn a_studio_channel_has_no_character_of_its_own_in_the_band() {
-    let m = run(&studio::STUDIO, 2000.0, 0.05, 1.0);
+    let m = run(&ironed(studio::STUDIO), 2000.0, 0.05, 1.0);
     assert!(
         m.thd_percent() < 0.1,
         "an op-amp channel should be clean across the band: {:.3} %",
         m.thd_percent()
     );
-    let console = run(&studio::CONSOLE, 2000.0, 0.05, 1.0);
+    let console = run(&ironed(studio::CONSOLE), 2000.0, 0.05, 1.0);
     assert!(
         console.thd_percent() > m.thd_percent() * 10.0,
         "a discrete channel should be audibly less clean than an op-amp one: \
@@ -68,6 +76,7 @@ fn the_iron_is_what_colours_the_bottom() {
         ("valve channel", studio::VALVE_CHANNEL),
         ("studio", studio::STUDIO),
     ] {
+        let with_iron = ironed(v);
         let mut bare = v;
         bare.input_iron = None;
         bare.output_iron = None;
@@ -77,7 +86,7 @@ fn the_iron_is_what_colours_the_bottom() {
             let high = run(values, 2000.0, 0.05, 1.0).thd_percent();
             (low, high)
         };
-        let (low, high) = tilt(&v);
+        let (low, high) = tilt(&with_iron);
         let (bare_low, bare_high) = tilt(&bare);
         println!(
             "{name}: with iron {low:.2} % / {high:.2} %, without {bare_low:.2} % / {bare_high:.2} %"
@@ -104,10 +113,8 @@ fn the_iron_is_what_colours_the_bottom() {
 /// the transformer is doing the work rather than the gain stage.
 #[test]
 fn the_iron_is_where_the_bottom_end_comes_from() {
-    let mut bare = studio::STUDIO;
-    bare.output_iron = None;
-    let with_iron = run(&studio::STUDIO, 40.0, 0.05, 1.0).thd_percent();
-    let without = run(&bare, 40.0, 0.05, 1.0).thd_percent();
+    let with_iron = run(&ironed(studio::STUDIO), 40.0, 0.05, 1.0).thd_percent();
+    let without = run(&studio::STUDIO, 40.0, 0.05, 1.0).thd_percent();
     println!("with iron {with_iron:.2} %, without {without:.3} %");
     assert!(
         with_iron > without * 20.0,
@@ -125,7 +132,7 @@ fn the_discrete_stages_make_even_harmonics() {
         ("console", studio::CONSOLE),
         ("valve channel", studio::VALVE_CHANNEL),
     ] {
-        let m = run(&v, 2000.0, 0.05, 1.0);
+        let m = run(&ironed(v), 2000.0, 0.05, 1.0);
         assert!(
             m.harmonic_percent(2) > m.harmonic_percent(3) * 3.0,
             "{name} made {:.2} % second against {:.2} % third, which is not a \
@@ -157,7 +164,7 @@ fn turning_the_gain_down_cleans_up() {
     ] {
         let mut last = -1.0;
         for gain in [0.2, 0.4, 0.6, 0.8, 1.0] {
-            let thd = run(&v, 40.0, 0.05, gain).thd_percent();
+            let thd = run(&ironed(v), 40.0, 0.05, gain).thd_percent();
             assert!(
                 thd >= last - 0.05,
                 "{name} at gain {gain} made {thd:.3} %, less than the \
@@ -194,8 +201,8 @@ fn the_gain_control_has_range() {
 #[test]
 fn a_studio_channel_has_the_headroom() {
     let level = 0.05;
-    let studio_thd = run(&studio::STUDIO, 220.0, level, 1.0).thd_percent();
-    let console_thd = run(&studio::CONSOLE, 220.0, level, 1.0).thd_percent();
+    let studio_thd = run(&ironed(studio::STUDIO), 220.0, level, 1.0).thd_percent();
+    let console_thd = run(&ironed(studio::CONSOLE), 220.0, level, 1.0).thd_percent();
     println!("at {level} V: studio {studio_thd:.3} %, console {console_thd:.2} %");
     assert!(
         studio_thd < console_thd,

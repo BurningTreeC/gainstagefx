@@ -18,7 +18,7 @@ pub const HEADER_H: f32 = 36.0;
 /// labels.
 pub const SECTIONS: [(&str, &str, f32); 6] = [
     ("1", "INPUT", 88.0),
-    ("2", "CIRCUIT", 116.0),
+    ("2", "CIRCUIT", 178.0),
     ("3", "DRIVE", 104.0),
     ("4", "TONE", 128.0),
     ("5", "CABINET", 96.0),

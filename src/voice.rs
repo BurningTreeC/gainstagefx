@@ -22,7 +22,7 @@
 //! away from it. So the numbers are measured, and the audio thread only ever
 //! interpolates five of them.
 
-use crate::circuits::{cabinet, clipper, preamp, tone};
+use crate::circuits::{cabinet, clipper, iron, preamp, studio, tone};
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::Oversampler;
@@ -54,15 +54,25 @@ pub enum Gain {
     Overdrive,
     /// Diodes to ground, which are a ceiling.
     Distortion,
+    /// A step-up transformer into a discrete stage. Not a guitar
+    /// preamplifier turned down: built so as *not* to run out of room, so
+    /// everything interesting happens in the last few decibels before it does.
+    Console,
+    /// The same channel without the input transformer, and with far more
+    /// headroom. The one to reach for when the point is not to hear the
+    /// preamplifier.
+    Studio,
 }
 
 impl Gain {
-    pub const ALL: [Gain; 5] = [
+    pub const ALL: [Gain; 7] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
         Gain::Overdrive,
         Gain::Distortion,
+        Gain::Console,
+        Gain::Studio,
     ];
 
     pub fn name(self) -> &'static str {
@@ -72,7 +82,19 @@ impl Gain {
             Gain::HighGain => "High Gain",
             Gain::Overdrive => "Overdrive",
             Gain::Distortion => "Distortion",
+            Gain::Console => "Console",
+            Gain::Studio => "Studio",
         }
+    }
+
+    /// Whether the choice of amplifying part reaches this circuit.
+    ///
+    /// Only the preamplifier channels are built around a part that can be
+    /// swapped. The guitar circuits are valve cascades by definition -- a
+    /// "three cascaded stages" made of op-amps is a different thing with the
+    /// same name -- and the pedals are built around their diodes.
+    pub fn has_amplifier(self) -> bool {
+        matches!(self, Gain::Console | Gain::Studio)
     }
 
     /// Whether the diode choice reaches this circuit at all. A valve stage has
@@ -80,6 +102,55 @@ impl Gain {
     /// does nothing -- which is worse than not offering it.
     pub fn has_diodes(self) -> bool {
         matches!(self, Gain::Overdrive | Gain::Distortion)
+    }
+
+    /// How many circuits this one covers: one per part it can be built with.
+    fn variants(self) -> usize {
+        if self.has_diodes() || self.has_amplifier() {
+            3
+        } else {
+            1
+        }
+    }
+}
+
+/// Which part does the amplifying, for the channels built around one.
+///
+/// The axis the hardware actually varies along, and the one the panel has to
+/// expose: a console channel with a bottle in it instead of a transistor is a
+/// different and much-argued-about box built from the same schematic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Amplifier {
+    Valve,
+    Jfet,
+    OpAmp,
+}
+
+impl Amplifier {
+    pub const ALL: [Amplifier; 3] = [Amplifier::Valve, Amplifier::Jfet, Amplifier::OpAmp];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Amplifier::Valve => "Valve",
+            Amplifier::Jfet => "JFET",
+            Amplifier::OpAmp => "Op-amp",
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Amplifier::Valve => 0,
+            Amplifier::Jfet => 1,
+            Amplifier::OpAmp => 2,
+        }
+    }
+
+    fn spec(self) -> studio::Amplifier {
+        match self {
+            Amplifier::Valve => studio::Amplifier::Valve,
+            Amplifier::Jfet => studio::Amplifier::Jfet,
+            Amplifier::OpAmp => studio::Amplifier::OpAmp,
+        }
     }
 }
 
@@ -102,6 +173,14 @@ impl Diode {
         }
     }
 
+    fn index(self) -> usize {
+        match self {
+            Diode::Silicon => 0,
+            Diode::Germanium => 1,
+            Diode::Led => 2,
+        }
+    }
+
     fn spec(self) -> DiodeSpec {
         match self {
             Diode::Silicon => DiodeSpec::SILICON,
@@ -111,41 +190,60 @@ impl Diode {
     }
 }
 
-/// Every gain circuit that can be selected, as one flat list. The plugin
-/// builds all of them once and then switches by index, so changing the
-/// circuit while playing allocates nothing.
-pub const VOICES: usize = 3 + 2 * 3;
+/// Every gain circuit that can be selected, as one flat list.
+///
+/// The plugin builds all of them once and then switches by index, so changing
+/// the circuit while playing allocates nothing. Laid out by walking `Gain::ALL`
+/// and giving each topology one slot per part it can be built with, so adding
+/// a circuit does not move the ones already there.
+pub const VOICES: usize = 15;
 
-/// Where a (circuit, diode) pair lives in that list.
-pub fn voice_index(gain: Gain, diode: Diode) -> usize {
-    let d = match diode {
-        Diode::Silicon => 0,
-        Diode::Germanium => 1,
-        Diode::Led => 2,
-    };
-    match gain {
-        Gain::Clean => 0,
-        Gain::Crunch => 1,
-        Gain::HighGain => 2,
-        Gain::Overdrive => 3 + d,
-        Gain::Distortion => 6 + d,
-    }
+/// Where a topology's first slot is.
+fn first_of(gain: Gain) -> usize {
+    Gain::ALL
+        .iter()
+        .take_while(|g| **g != gain)
+        .map(|g| g.variants())
+        .sum()
 }
 
-/// The (circuit, diode) pair at an index, which is the inverse of the above
-/// and exists so a table can be built by walking the list.
-pub fn voice_at(index: usize) -> (Gain, Diode) {
-    match index {
-        0 => (Gain::Clean, Diode::Silicon),
-        1 => (Gain::Crunch, Diode::Silicon),
-        2 => (Gain::HighGain, Diode::Silicon),
-        i if i < 6 => (Gain::Overdrive, Diode::ALL[i - 3]),
-        i => (Gain::Distortion, Diode::ALL[i - 6]),
+/// Where a (circuit, part) combination lives in that list.
+pub fn voice_index(gain: Gain, diode: Diode, amplifier: Amplifier) -> usize {
+    let within = if gain.has_diodes() {
+        diode.index()
+    } else if gain.has_amplifier() {
+        amplifier.index()
+    } else {
+        0
+    };
+    first_of(gain) + within
+}
+
+/// The combination at an index, which is the inverse of the above and exists
+/// so a table can be built by walking the list.
+pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
+    let mut at = 0;
+    for gain in Gain::ALL {
+        let n = gain.variants();
+        if index < at + n {
+            let within = index - at;
+            return (
+                gain,
+                if gain.has_diodes() { Diode::ALL[within] } else { Diode::Silicon },
+                if gain.has_amplifier() {
+                    Amplifier::ALL[within]
+                } else {
+                    Amplifier::Valve
+                },
+            );
+        }
+        at += n;
     }
+    (Gain::Clean, Diode::Silicon, Amplifier::Valve)
 }
 
 /// Build one gain circuit as a netlist.
-pub fn build_voice(gain: Gain, diode: Diode) -> Result<Netlist, Fault> {
+pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Netlist, Fault> {
     match gain {
         Gain::Clean => preamp::build(&preamp::CLEAN, SOURCE, LOAD),
         Gain::Crunch => preamp::build(&preamp::CRUNCH, SOURCE, LOAD),
@@ -159,10 +257,86 @@ pub fn build_voice(gain: Gain, diode: Diode) -> Result<Netlist, Fault> {
             v.diode = diode.spec();
             clipper::build(&v, SOURCE, LOAD)
         }
+        Gain::Console | Gain::Studio => {
+            let mut v = if gain == Gain::Console {
+                studio::CONSOLE
+            } else {
+                studio::STUDIO
+            };
+            v.amplifier = amplifier.spec();
+            studio::build(&v, SOURCE, LOAD)
+        }
     }
 }
 
-/// The tone section, which can be out of circuit entirely.
+/// The output transformer, which is a control rather than a property of a
+/// circuit: iron belongs after a distortion pedal exactly as much as after a
+/// console channel, and there is no reason to offer it on one and not the
+/// other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Iron {
+    Off,
+    /// Bends earliest and most gently -- the only one that colours a quiet
+    /// signal at all.
+    Nickel,
+    /// Stays out of the way and then arrives hard, and goes furthest.
+    Steel,
+    /// Still clean where the other two are well into it.
+    Amorphous,
+}
+
+impl Iron {
+    pub const ALL: [Iron; 4] = [Iron::Off, Iron::Nickel, Iron::Steel, Iron::Amorphous];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Iron::Off => "Off",
+            Iron::Nickel => "Nickel",
+            Iron::Steel => "Steel",
+            Iron::Amorphous => "Amorphous",
+        }
+    }
+
+    fn index(self) -> Option<usize> {
+        match self {
+            Iron::Off => None,
+            Iron::Nickel => Some(0),
+            Iron::Steel => Some(1),
+            Iron::Amorphous => Some(2),
+        }
+    }
+
+    fn values(self) -> Option<iron::Values> {
+        let core = match self {
+            Iron::Off => return None,
+            Iron::Nickel => crate::dsp::netlist::CoreSpec::NICKEL,
+            Iron::Steel => crate::dsp::netlist::CoreSpec::STEEL,
+            Iron::Amorphous => crate::dsp::netlist::CoreSpec::AMORPHOUS,
+        };
+        Some(iron::Values { core, ..iron::OUTPUT })
+    }
+}
+
+/// One output transformer as a netlist, for the calibration example and the
+/// chain, which have to build the same thing.
+pub fn build_iron(material: Iron) -> Result<Netlist, Fault> {
+    let values = material.values().unwrap_or(iron::OUTPUT);
+    iron::build(&values, 600.0, 10_000.0)
+}
+
+/// How many volts a unit of digital signal becomes at the iron stage.
+///
+/// The one place in the plugin where a level has to be chosen rather than
+/// measured. Flux is the integral of voltage, so what the core does depends
+/// on how many volts it is handed -- and unlike the gain circuits, which are
+/// calibrated so a nominal signal drives them the way their name says, the
+/// iron stage sits after the make-up and sees a known level already. Set so
+/// that a nominal signal at 40 Hz lands about at steel's knee: nickel is
+/// already bending there, amorphous has not started, and pushing the drive
+/// into it takes all three further.
+pub const IRON_VOLTS: f64 = 24.0;
+
+/// The tone section, which can be out of circuit entirely./// The tone section, which can be out of circuit entirely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tone {
     Off,
@@ -335,10 +509,15 @@ impl Delay {
 /// holding all of them costs less than the machinery to avoid it would.
 pub struct Chain {
     gains: Vec<Simulation>,
+    /// The three output transformers. Nonlinear, so unlike the tone stack and
+    /// the cabinet these cannot be normalised by asking the AC solver: their
+    /// trim is measured and baked with the voices.
+    irons: Vec<Simulation>,
     /// Each linear section with the trim that undoes its own loss.
     tones: Vec<(Simulation, f64)>,
     cabinets: Vec<(Simulation, f64)>,
     gain: usize,
+    iron: Option<usize>,
     tone: Option<usize>,
     cabinet: Option<usize>,
     over: Oversampler,
@@ -371,9 +550,16 @@ impl Chain {
         let mut chain = Self {
             gains: (0..VOICES)
                 .map(|i| {
-                    let (gain, diode) = voice_at(i);
-                    Simulation::new(build_voice(gain, diode).expect("catalogue builds"), rate)
+                    let (gain, diode, amplifier) = voice_at(i);
+                    Simulation::new(
+                        build_voice(gain, diode, amplifier).expect("catalogue builds"),
+                        rate,
+                    )
                 })
+                .collect(),
+            irons: [Iron::Nickel, Iron::Steel, Iron::Amorphous]
+                .into_iter()
+                .map(|i| Simulation::new(build_iron(i).expect("catalogue builds"), rate))
                 .collect(),
             tones: [Tone::Wide, Tone::Scooping]
                 .into_iter()
@@ -384,6 +570,7 @@ impl Chain {
                 .map(|c| section(c.build()))
                 .collect(),
             gain: 0,
+            iron: None,
             tone: None,
             cabinet: None,
             over: Oversampler::new(4),
@@ -403,12 +590,23 @@ impl Chain {
     /// switched to: it has been sitting with whatever charge was on its
     /// capacitors when it was last used, and a valve plate holds two hundred
     /// volts of it.
-    pub fn set_voice(&mut self, gain: Gain, diode: Diode) {
-        let index = voice_index(gain, diode);
+    pub fn set_voice(&mut self, gain: Gain, diode: Diode, amplifier: Amplifier) {
+        let index = voice_index(gain, diode, amplifier);
         if index != self.gain {
             self.gain = index;
             self.gains[index].reset();
             self.set_drive(self.drive);
+        }
+    }
+
+    /// Which output transformer, if any.
+    pub fn set_iron(&mut self, iron: Iron) {
+        let next = iron.index();
+        if next != self.iron {
+            if let Some(i) = next {
+                self.irons[i].reset();
+            }
+            self.iron = next;
         }
     }
 
@@ -473,7 +671,7 @@ impl Chain {
         self.pad
             .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
         let inner = self.rate * self.over.factor() as f64;
-        for sim in &mut self.gains {
+        for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
             sim.set_rate(inner);
         }
     }
@@ -502,8 +700,24 @@ impl Chain {
         // Only the gain circuit can fold anything back into the band, so only
         // the gain circuit runs at the higher rate. The tone stack and the
         // cabinet are linear and cost nothing extra by staying down here.
+        // The iron runs inside the oversampling with the gain circuit, not
+        // after it: a saturating core is as nonlinear as anything else here.
         let gain = &mut self.gains[self.gain];
-        let mut y = self.over.process(x * self.into, &mut |v| gain.process(v)) * self.out_of;
+        let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
+        let mut iron = self.iron.map(|i| &mut self.irons[i]);
+        let out_of = self.out_of;
+        let mut y = self.over.process(x * self.into, &mut |v| {
+            let amplified = gain.process(v) * out_of;
+            match iron {
+                Some(ref mut sim) => {
+                    // Handed volts rather than a number near one, because what
+                    // a core does depends on the flux and flux is in volt
+                    // seconds. See `IRON_VOLTS`.
+                    sim.process(amplified * IRON_VOLTS) * iron_trim / IRON_VOLTS
+                }
+                None => amplified,
+            }
+        });
         // Every setting delays by the same reported amount.
         y = self.pad.process(y);
         if let Some(i) = self.tone {
@@ -518,7 +732,7 @@ impl Chain {
     }
 
     pub fn reset(&mut self) {
-        for sim in &mut self.gains {
+        for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
             sim.reset();
         }
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {

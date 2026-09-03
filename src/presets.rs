@@ -9,13 +9,15 @@
 //! They are grouped by what they are for rather than by which circuit they
 //! use, because that is how somebody looking for a sound is thinking.
 
-use crate::params::{Cabinet, Circuit, Diode, ToneStack};
+use crate::params::{Amplifier, Cabinet, Circuit, Diode, Iron, ToneStack};
 
 pub struct Preset {
     pub group: &'static str,
     pub name: &'static str,
     pub circuit: Circuit,
     pub diode: Diode,
+    pub amplifier: Amplifier,
+    pub iron: Iron,
     pub drive: f32,
     pub tone: ToneStack,
     pub bass: f32,
@@ -37,6 +39,8 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         name,
         circuit: Circuit::Crunch,
         diode: Diode::Silicon,
+        amplifier: Amplifier::Jfet,
+        iron: Iron::Off,
         drive: 0.5,
         tone: ToneStack::Wide,
         bass: 0.5,
@@ -50,6 +54,28 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
 }
 
 pub const PRESETS: &[Preset] = &[
+    // --- Studio ----------------------------------------------------------
+    // Not guitar amplifiers turned down. A guitar preamplifier is supposed to
+    // run out of room -- that is where the sound is -- and these are built so
+    // that they do not, so what they have happens in the last few decibels
+    // before they do, or in the iron rather than the gain stage. The cabinet
+    // is off throughout: a speaker in front of a microphone preamplifier makes
+    // no sense at all.
+    Preset { drive: 0.55, circuit: Circuit::Console, amplifier: Amplifier::Jfet, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Console Channel") },
+    Preset { drive: 0.80, circuit: Circuit::Console, amplifier: Amplifier::Jfet, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Console, Driven") },
+    Preset { drive: 0.60, circuit: Circuit::Console, amplifier: Amplifier::Valve, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Valve Mic Pre") },
+    Preset { drive: 0.85, circuit: Circuit::Console, amplifier: Amplifier::Valve, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Valve, Pushed") },
+    Preset { drive: 0.50, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Off, tone: ToneStack::Off, ..base("Studio", "Studio Preamp") },
+    Preset { drive: 0.70, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Studio, Iron Out") },
+    Preset { drive: 0.60, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Amorphous, tone: ToneStack::Off, ..base("Studio", "Clean Line Amp") },
+    // The one that is nothing but the transformer: an op-amp contributes
+    // nothing of its own anywhere in the band, so everything heard here is
+    // the core running out of room -- and because flux is the integral of
+    // voltage, all of it is at the bottom.
+    Preset { drive: 0.95, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Transformer Colour") },
+    Preset { drive: 0.55, circuit: Circuit::Studio, amplifier: Amplifier::Jfet, iron: Iron::Off, tone: ToneStack::Off, ..base("Studio", "JFET Direct") },
+    Preset { drive: 0.75, circuit: Circuit::Studio, amplifier: Amplifier::Jfet, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Discrete Colour") },
+
     // --- Preamplifier ----------------------------------------------------
     // The quiet end. A valve stage barely working, which is the sound of a
     // signal having been through something rather than the sound of an
@@ -119,7 +145,8 @@ pub const PRESETS: &[Preset] = &[
 
 /// The groups, in the order they should be shown: quietest first, so the list
 /// itself reads as a range rather than as an alphabetical accident.
-pub const GROUPS: [&str; 5] = ["Preamp", "Crunch", "High Gain", "Overdrive", "Distortion"];
+pub const GROUPS: [&str; 6] =
+    ["Studio", "Preamp", "Crunch", "High Gain", "Overdrive", "Distortion"];
 
 impl Preset {
     /// The preset as parameter ids and the values the panel would show, which
@@ -130,11 +157,13 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 11] {
+    pub fn dials(&self) -> [(&'static str, f32); 13] {
         [
             ("in_trim", self.input_trim),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
             ("diode", index_in(&Diode::ALL, self.diode)),
+            ("amplifier", index_in(&Amplifier::ALL, self.amplifier)),
+            ("iron", index_in(&Iron::ALL, self.iron)),
             ("drive", self.drive),
             ("tone", index_in(&ToneStack::ALL, self.tone)),
             ("bass", self.bass),

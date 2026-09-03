@@ -26,7 +26,7 @@
 use gainstagefx::circuits::clipper::GAIN;
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::voice::{self, Gain, NOMINAL_DBFS, POINTS, VOICES};
+use gainstagefx::voice::{self, Gain, Iron, IRON_VOLTS, NOMINAL_DBFS, POINTS, VOICES};
 
 const RATE: f64 = 96_000.0;
 
@@ -42,6 +42,15 @@ fn intent(gain: Gain) -> f64 {
         Gain::HighGain => 25.0,
         Gain::Overdrive => 12.0,
         Gain::Distortion => 30.0,
+        // A microphone preamplifier is built not to run out of room, which is
+        // the opposite of what a guitar preamplifier is for. These sit where
+        // the character is audible and the channel is still doing its job.
+        Gain::Console => 3.0,
+        // And this one is the case where the answer is "as little as
+        // possible": an op-amp on a studio rail contributes nothing of its own
+        // until it hits it. Whatever character it has comes from the iron
+        // after it, which is a separate control.
+        Gain::Studio => 0.05,
     }
 }
 
@@ -58,8 +67,9 @@ fn main() {
     println!("pub const CALIBRATION: [Calibration; VOICES] = [");
 
     for index in 0..VOICES {
-        let (gain, diode) = voice::voice_at(index);
-        let netlist = voice::build_voice(gain, diode).expect("catalogue builds");
+        let (gain, diode, amplifier) = voice::voice_at(index);
+        let netlist =
+            voice::build_voice(gain, diode, amplifier).expect("catalogue builds");
         let target = intent(gain);
 
         // Find the level that gives the intended distortion.
@@ -121,10 +131,21 @@ fn main() {
         let mut check = Simulation::new(netlist.clone(), RATE);
         check.set_control(GAIN, 1.0);
         let got = measured(&mut check, drive_volts);
+        let part = if gain.has_diodes() {
+            format!("{} diodes", diode.name().to_lowercase())
+        } else if gain.has_amplifier() {
+            {
+                let name = amplifier.name().to_lowercase();
+                let article = if name.starts_with(['a', 'e', 'i', 'o', 'u']) { "an" } else { "a" };
+                format!("{article} {name}")
+            }
+        } else {
+            String::from("a valve")
+        };
         println!(
-            "    // {} with {} diodes: {:.4} V in, {:.1} % distortion, {:.1} % third.{}",
+            "    // {} with {}: {:.4} V in, {:.1} % distortion, {:.1} % third.{}",
             gain.name(),
-            diode.name().to_lowercase(),
+            part,
             drive_volts,
             got.thd_percent(),
             got.harmonic_percent(3),
@@ -144,5 +165,26 @@ fn main() {
         println!("    }},");
     }
     println!("];");
+
+    // The iron stage sits after the make-up and is handed volts, so its trim
+    // is what brings a small signal back to where it went in. Measured small
+    // deliberately: at a level where the core is still linear, this is the
+    // transformer's own insertion loss and nothing else. Anything it does
+    // above that is the sound and must not be normalised away.
+    println!();
+    println!("/// Insertion loss of each output transformer, measured where the");
+    println!("/// core is still linear. What it does above that is the sound.");
+    print!("pub const IRON_TRIM: [f64; 3] = [");
+    for (i, material) in [Iron::Nickel, Iron::Steel, Iron::Amorphous].into_iter().enumerate() {
+        let netlist = voice::build_iron(material).expect("catalogue builds");
+        let mut sim = Simulation::new(netlist, RATE);
+        let volts = 0.001 * IRON_VOLTS;
+        let tone = Tone::near(RATE, 16_384, 1000.0, volts);
+        let m = measure::run(tone, (RATE / 4.0) as usize, |x| sim.process(x));
+        let trim = 1.0 / 10f64.powf(m.gain_db() / 20.0);
+        print!("{}{trim:.6}", if i > 0 { ", " } else { "" });
+    }
+    println!("];");
+
     eprintln!("nominal is {NOMINAL_DBFS} dBFS");
 }

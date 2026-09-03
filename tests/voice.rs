@@ -28,9 +28,9 @@ fn level_through(chain: &mut Chain, amplitude: f64) -> f64 {
 #[test]
 fn the_whole_catalogue_builds() {
     for index in 0..VOICES {
-        let (gain, diode) = voice::voice_at(index);
-        voice::build_voice(gain, diode)
-            .unwrap_or_else(|f| panic!("{} with {} diodes: {f:?}", gain.name(), diode.name()));
+        let (gain, diode, amplifier) = voice::voice_at(index);
+        voice::build_voice(gain, diode, amplifier)
+            .unwrap_or_else(|f| panic!("{} / {} / {}: {f:?}", gain.name(), diode.name(), amplifier.name()));
     }
     for t in ToneSection::ALL {
         if let Some(built) = t.build() {
@@ -50,8 +50,8 @@ fn the_whole_catalogue_builds() {
 #[test]
 fn the_calibration_table_still_describes_the_circuits() {
     for (index, c) in CALIBRATION.iter().enumerate() {
-        let (gain, diode) = voice::voice_at(index);
-        let netlist = voice::build_voice(gain, diode).expect("builds");
+        let (gain, diode, amplifier) = voice::voice_at(index);
+        let netlist = voice::build_voice(gain, diode, amplifier).expect("builds");
         for (i, expected) in c.make_up_db.iter().enumerate() {
             let mut sim = Simulation::new(netlist.clone(), RATE);
             sim.set_control(GAIN, i as f64 / (POINTS - 1) as f64);
@@ -59,11 +59,12 @@ fn the_calibration_table_still_describes_the_circuits() {
             let got = -measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x)).gain_db();
             assert!(
                 (got - expected).abs() < 0.5,
-                "{} with {} diodes at drive {}/{}: the table says {expected:.2} dB \
+                "{} / {} / {} at drive {}/{}: the table says {expected:.2} dB \
                  and the circuit now says {got:.2}. Re-run `cargo run --release \
                  --example calibrate > src/calibration.rs`.",
                 gain.name(),
                 diode.name(),
+                amplifier.name(),
                 i,
                 POINTS - 1,
             );
@@ -78,14 +79,14 @@ fn the_calibration_table_still_describes_the_circuits() {
 #[test]
 fn the_make_up_holds_the_level_between_the_measured_points() {
     for index in 0..VOICES {
-        let (gain, diode) = voice::voice_at(index);
+        let (gain, diode, amplifier) = voice::voice_at(index);
         let mut worst: f64 = 0.0;
         let mut worst_at = 0.0;
         // Deliberately off the measured grid.
         for step in 0..17 {
             let drive = (step as f64 + 0.5) / 17.0;
             let mut chain = Chain::new(RATE);
-            chain.set_voice(gain, diode);
+            chain.set_voice(gain, diode, amplifier);
             chain.set_drive(drive);
             let out = level_through(&mut chain, nominal());
             if (out - NOMINAL_DBFS).abs() > worst {
@@ -95,10 +96,11 @@ fn the_make_up_holds_the_level_between_the_measured_points() {
         }
         assert!(
             worst < 3.0,
-            "{} with {} diodes drifts {worst:.2} dB at drive {worst_at:.2}, \
+            "{} / {} / {} drifts {worst:.2} dB at drive {worst_at:.2}, \
              so the drive control is partly a volume control",
             gain.name(),
             diode.name(),
+            amplifier.name(),
         );
     }
 }
@@ -109,9 +111,9 @@ fn the_make_up_holds_the_level_between_the_measured_points() {
 #[test]
 fn silence_in_is_silence_out() {
     for index in 0..VOICES {
-        let (gain, diode) = voice::voice_at(index);
+        let (gain, diode, amplifier) = voice::voice_at(index);
         let mut chain = Chain::new(RATE);
-        chain.set_voice(gain, diode);
+        chain.set_voice(gain, diode, amplifier);
         chain.set_drive(0.7);
         let mut worst: f64 = 0.0;
         for _ in 0..(RATE as usize / 4) {
@@ -119,9 +121,10 @@ fn silence_in_is_silence_out() {
         }
         assert!(
             worst < 0.02,
-            "{} with {} diodes put out {worst:.4} on silence, which is a thump",
+            "{} / {} / {} put out {worst:.4} on silence, which is a thump",
             gain.name(),
             diode.name(),
+            amplifier.name(),
         );
     }
 }
@@ -133,14 +136,14 @@ fn silence_in_is_silence_out() {
 fn the_passive_sections_do_not_cost_the_level() {
     let reference = {
         let mut chain = Chain::new(RATE);
-        chain.set_voice(Gain::Crunch, voice::Diode::Silicon);
+        chain.set_voice(Gain::Crunch, voice::Diode::Silicon, voice::Amplifier::Valve);
         chain.set_drive(0.8);
         level_through(&mut chain, nominal())
     };
     for t in [ToneSection::Wide, ToneSection::Scooping] {
         for c in [Cabinet::Off, Cabinet::Combo, Cabinet::Stack] {
             let mut chain = Chain::new(RATE);
-            chain.set_voice(Gain::Crunch, voice::Diode::Silicon);
+            chain.set_voice(Gain::Crunch, voice::Diode::Silicon, voice::Amplifier::Valve);
             chain.set_tone_section(t);
             chain.set_cabinet(c);
             chain.set_drive(0.8);
@@ -162,8 +165,14 @@ fn the_passive_sections_do_not_cost_the_level() {
 #[test]
 fn the_voices_are_in_the_order_their_names_claim() {
     let thd = |gain: Gain| {
-        let netlist = voice::build_voice(gain, voice::Diode::Silicon).expect("builds");
-        let c = CALIBRATION[voice::voice_index(gain, voice::Diode::Silicon)];
+        let netlist =
+            voice::build_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve)
+                .expect("builds");
+        let c = CALIBRATION[voice::voice_index(
+            gain,
+            voice::Diode::Silicon,
+            voice::Amplifier::Valve,
+        )];
         let mut sim = Simulation::new(netlist, RATE);
         sim.set_control(GAIN, 1.0);
         let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);

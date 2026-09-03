@@ -3,17 +3,17 @@
 // file. `tests/voice.rs` re-measures every entry and fails on drift.
 
 pub const CALIBRATION: [Calibration; VOICES] = [
-    // Clean with silicon diodes: 0.5871 V in, 1.5 % distortion, 0.1 % third.
+    // Clean with a valve: 0.5871 V in, 1.5 % distortion, 0.1 % third.
     Calibration {
         drive_volts: 0.587050,
         make_up_db: [48.61, 25.87, 15.34, 6.88, -0.87, -8.21, -15.17, -21.97, -31.28],
     },
-    // Crunch with silicon diodes: 0.0670 V in, 8.0 % distortion, 2.0 % third.
+    // Crunch with a valve: 0.0670 V in, 8.0 % distortion, 2.0 % third.
     Calibration {
         drive_volts: 0.066994,
         make_up_db: [17.13, -5.61, -16.16, -24.65, -32.48, -39.98, -47.23, -54.28, -61.92],
     },
-    // High Gain with silicon diodes: 0.0015 V in, 25.0 % distortion, 11.7 % third.
+    // High Gain with a valve: 0.0015 V in, 25.0 % distortion, 11.7 % third.
     Calibration {
         drive_volts: 0.001480,
         make_up_db: [-22.44, -45.19, -55.74, -64.25, -72.11, -79.69, -87.07, -93.64, -97.22],
@@ -48,4 +48,38 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.075498,
         make_up_db: [-5.46, -8.07, -11.23, -14.79, -18.60, -22.56, -25.84, -27.07, -27.65],
     },
+    // Console with a valve: 0.3454 V in, 3.0 % distortion, 0.3 % third.
+    Calibration {
+        drive_volts: 0.345351,
+        make_up_db: [34.86, 12.12, 1.59, -6.87, -14.61, -21.93, -28.80, -35.11, -41.47],
+    },
+    // Console with a jfet: 0.0820 V in, 3.0 % distortion, 1.8 % third.
+    Calibration {
+        drive_volts: 0.081965,
+        make_up_db: [38.71, 15.97, 5.44, -3.02, -10.77, -18.09, -24.95, -31.27, -37.50],
+    },
+    // Console with an op-amp: 0.0340 V in, 3.0 % distortion, 2.2 % third.
+    Calibration {
+        drive_volts: 0.034008,
+        make_up_db: [-25.79, -28.12, -30.95, -34.19, -37.73, -41.51, -45.43, -49.46, -53.34],
+    },
+    // Studio with a valve: 0.0199 V in, 0.0 % distortion, 0.0 % third.
+    Calibration {
+        drive_volts: 0.019886,
+        make_up_db: [48.61, 25.87, 15.34, 6.88, -0.87, -8.21, -15.17, -21.98, -31.30],
+    },
+    // Studio with a jfet: 0.0047 V in, 0.0 % distortion, 0.0 % third.
+    Calibration {
+        drive_volts: 0.004658,
+        make_up_db: [52.46, 29.72, 19.19, 10.73, 2.98, -4.36, -11.32, -18.13, -27.46],
+    },
+    // Studio with an op-amp: 0.1474 V in, 0.0 % distortion, 0.0 % third.
+    Calibration {
+        drive_volts: 0.147426,
+        make_up_db: [-6.06, -8.88, -12.40, -16.45, -20.87, -25.52, -30.33, -35.23, -40.17],
+    },
 ];
+
+/// Insertion loss of each output transformer, measured where the
+/// core is still linear. What it does above that is the sound.
+pub const IRON_TRIM: [f64; 3] = [1.089935, 1.089936, 1.089936];

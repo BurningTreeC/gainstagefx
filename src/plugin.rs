@@ -5,7 +5,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use crate::meters::Meters;
-use crate::params::{Diode, GainStageParams, Oversampling};
+use crate::params::{Amplifier, Diode, GainStageParams, Oversampling};
 use crate::voice::{Chain, LATENCY, NOMINAL_DBFS};
 
 pub struct GainStageFx {
@@ -127,12 +127,18 @@ impl Plugin for GainStageFx {
         } else {
             Diode::Silicon
         };
+        let amplifier = if circuit.has_amplifier() {
+            self.params.amplifier.value()
+        } else {
+            Amplifier::Valve
+        };
 
         // The selections move once a block, not once a sample: switching a
         // circuit resets it, and doing that at audio rate would be a click on
         // every sample rather than a control.
         for chain in &mut self.channels {
-            chain.set_voice(circuit.voice(), diode.voice());
+            chain.set_voice(circuit.voice(), diode.voice(), amplifier.voice());
+            chain.set_iron(self.params.iron.value().voice());
             chain.set_tone_section(self.params.tone.value().voice());
             chain.set_cabinet(self.params.cabinet.value().voice());
         }

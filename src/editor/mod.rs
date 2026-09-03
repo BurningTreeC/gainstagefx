@@ -23,7 +23,9 @@ use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::Arc;
 
-use crate::params::{Cabinet, Circuit, Diode, GainStageParams, Oversampling, ToneStack};
+use crate::params::{
+    Amplifier, Cabinet, Circuit, Diode, GainStageParams, Iron, Oversampling, ToneStack,
+};
 use panel::Faceplate;
 use style::*;
 use widgets::{Knob, Meter, Selector};
@@ -297,45 +299,43 @@ fn input(cx: &mut Context) {
 fn circuit(cx: &mut Context) {
     let top = section_top(1);
 
-    label(cx, "topology", body_x() + 34.0, top + 20.0, 10.0, 80.0, 0x7e8a96);
-    selector(
-        cx,
-        body_x() + 84.0,
-        top + 10.0,
-        body_w() - 84.0,
-        |p| &p.circuit,
-        Circuit::ALL.iter().map(|c| c.name()).collect(),
-        true,
-    );
+    // Four rows, in the order the signal meets them: what the topology is,
+    // what part does the bending, what part does the amplifying, and what
+    // iron it comes out through. Two of them apply to any given circuit and
+    // two do not, and the ones that do not are greyed rather than hidden --
+    // a panel that changes shape as the selection moves is harder to aim at,
+    // and a control that vanishes is one you cannot see the state of.
+    row(cx, top + 12.0, "topology", |p| &p.circuit, Circuit::ALL.iter().map(|c| c.name()).collect(), true, body_w() - 84.0);
 
-    label(cx, "clipping", body_x() + 34.0, top + 54.0, 10.0, 80.0, 0x7e8a96);
-    // Greyed rather than hidden when the circuit has no diodes in it: a
-    // control that vanishes makes the panel change shape, and a control that
-    // stays but stops claiming to do anything is easier to trust.
     Binding::new(
         cx,
         Panel::params.map(|p| p.circuit.value().has_diodes()),
         |cx, live| {
             let live = live.get(cx);
-            selector(
-                cx,
-                body_x() + 84.0,
-                top_of_clipping(),
-                220.0,
-                |p| &p.diode,
-                Diode::ALL.iter().map(|d| d.name()).collect(),
-                live,
-            );
+            row(cx, section_top(1) + 44.0, "clipping", |p| &p.diode,
+                Diode::ALL.iter().map(|d| d.name()).collect(), live, 240.0);
         },
     );
 
-    // The description gets the full width of its own line rather than the
-    // space left over beside a control, because it is a sentence and a
-    // sentence squeezed into a gap wraps into something nobody reads.
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.circuit.value().has_amplifier()),
+        |cx, live| {
+            let live = live.get(cx);
+            row(cx, section_top(1) + 76.0, "amplifier", |p| &p.amplifier,
+                Amplifier::ALL.iter().map(|a| a.name()).collect(), live, 240.0);
+        },
+    );
+
+    // Iron applies to everything, which is the point of it being a control
+    // rather than part of a circuit: a transformer belongs after a distortion
+    // pedal exactly as much as after a console channel.
+    row(cx, top + 108.0, "iron", |p| &p.iron, Iron::ALL.iter().map(|i| i.name()).collect(), true, 320.0);
+
     Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 76.0))
+        .top(Pixels(top + 138.0))
         .width(Pixels(body_w()))
         .height(Pixels(32.0))
         .child_top(Stretch(1.0))
@@ -346,8 +346,29 @@ fn circuit(cx: &mut Context) {
         .hoverable(false);
 }
 
-fn top_of_clipping() -> f32 {
-    section_top(1) + 44.0
+/// A named selection row: the caption in the gutter, the choices beside it.
+fn row<P, F>(
+    cx: &mut Context,
+    y: f32,
+    name: &str,
+    to_param: F,
+    labels: Vec<&'static str>,
+    enabled: bool,
+    width: f32,
+) where
+    F: Fn(&Arc<GainStageParams>) -> &P + Copy + 'static,
+    P: nih_plug::prelude::Param + 'static,
+{
+    label(
+        cx,
+        name,
+        body_x() + 34.0,
+        y + 11.0,
+        10.0,
+        84.0,
+        if enabled { 0x7e8a96 } else { 0x5a636b },
+    );
+    selector(cx, body_x() + 84.0, y, width, to_param, labels, enabled);
 }
 
 /// One line saying what the selected circuit actually is. It changes with the
@@ -365,6 +386,11 @@ fn describe(circuit: Circuit) -> String {
                                gain, so it keeps following and cleans up.",
         Circuit::Distortion => "Diodes across the signal to ground: a ceiling. The \
                                 wave is squared off, top to bottom of the band.",
+        Circuit::Console => "A step-up transformer into a discrete stage. Built \
+                             not to run out of room, so it happens in the last \
+                             few decibels before it does.",
+        Circuit::Studio => "An op-amp on a studio rail: nothing of its own \
+                            anywhere in the band. Add iron to give it some.",
     }
     .to_string()
 }

@@ -47,7 +47,14 @@ pub struct Values {
     /// The transformer on the way in, if there is one. A console channel has
     /// one; a studio channel with an electronically balanced input does not.
     pub input_iron: Option<iron::Values>,
-    /// The transformer on the way out.
+    /// The transformer on the way out, if the channel carries one of its own.
+    ///
+    /// Left empty in the catalogue below, because output iron is a control on
+    /// the panel rather than a property of a channel: it applies to a guitar
+    /// preamplifier and a distortion pedal exactly as much as to a console,
+    /// and there is no reason to offer it on two of them and not the rest.
+    /// The input transformer is different -- a console input *is* a
+    /// transformer, and a channel without one is a different channel.
     pub output_iron: Option<iron::Values>,
     /// How much the op-amp arrangement multiplies by, where that is what is
     /// doing the work.
@@ -59,7 +66,7 @@ pub struct Values {
 pub const CONSOLE: Values = Values {
     amplifier: Amplifier::Jfet,
     input_iron: Some(iron::INPUT),
-    output_iron: Some(iron::OUTPUT),
+    output_iron: None,
     feedback: 47_000.0,
     leg: 1_000.0,
 };
@@ -69,7 +76,7 @@ pub const CONSOLE: Values = Values {
 pub const VALVE_CHANNEL: Values = Values {
     amplifier: Amplifier::Valve,
     input_iron: Some(iron::INPUT),
-    output_iron: Some(iron::OUTPUT),
+    output_iron: None,
     feedback: 47_000.0,
     leg: 1_000.0,
 };
@@ -78,7 +85,7 @@ pub const VALVE_CHANNEL: Values = Values {
 pub const STUDIO: Values = Values {
     amplifier: Amplifier::OpAmp,
     input_iron: None,
-    output_iron: Some(iron::OUTPUT),
+    output_iron: None,
     feedback: 100_000.0,
     leg: 1_000.0,
 };
