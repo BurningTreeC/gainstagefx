@@ -68,28 +68,20 @@ fn saved_presets_survive_the_round_trip() {
          does not happen"
     );
 
-    // --- unchanged, then changed -------------------------------------------
+    // --- a saved preset matches the panel it came from ---------------------
+    // What the comparison decides is tested exhaustively in `tests/presets.rs`,
+    // driven from both sides. What matters here is that the values that came
+    // back off disk are still the ones that panel would be compared against.
     assert!(
         presets::matches(&params, &saved.values),
-        "nothing has moved, so the panel should still match"
+        "a preset written and read back should not read as edited"
     );
-    // Driven from the preset's side rather than the panel's: a parameter can
-    // only be moved through the host, and there is no host here. It is the
-    // same comparison either way -- what is being checked is that the answer
-    // comes from comparing the two, so that a control turned back to where it
-    // was counts as unmodified again rather than staying flagged for the rest
-    // of the session.
-    let mut moved = saved.values.clone();
-    let was = *moved.get("drive").expect("a drive value");
-    moved.insert(String::from("drive"), was + 0.2);
+    let mut differing = saved.values.clone();
+    let drive = differing["drive"];
+    differing.insert(String::from("drive"), drive + 0.3);
     assert!(
-        !presets::matches(&params, &moved),
-        "a differing control should read as edited"
-    );
-    moved.insert(String::from("drive"), was);
-    assert!(
-        presets::matches(&params, &moved),
-        "putting it back should clear the edited mark"
+        !presets::matches(&params, &differing),
+        "and one that differs should"
     );
 
     // --- a name that is not a file name ------------------------------------

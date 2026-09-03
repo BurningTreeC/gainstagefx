@@ -76,7 +76,7 @@ cargo test --release                        # the measurements
 ```
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs sixty-five of them.
+measures it. `cargo test --release` runs seventy of them.
 
 ## How it is built
 

@@ -286,20 +286,43 @@ fn load_saved() -> Vec<Stored> {
     presets
 }
 
-/// Take the current panel settings as a preset.
-pub fn capture(params: &impl Params, name: &str) -> Stored {
-    let values = params
+/// The panel as it stands, as parameter ids against normalised values.
+///
+/// The one thing here that cannot be tested without a host: nih-plug keeps
+/// every parameter setter private on purpose, so a test can read the live
+/// values but cannot move them. Reading is what this does, and it is one
+/// expression -- everything that decides anything is in `same` below, where it
+/// can be driven from both sides.
+pub fn live_values(params: &impl Params) -> BTreeMap<String, f32> {
+    params
         .param_map()
         .into_iter()
         .filter(|(id, _, _)| !EXCLUDED.contains(&id.as_str()))
         // SAFETY: as above, the pointers belong to the parameters we were
         // given.
         .map(|(id, ptr, _)| (id, unsafe { ptr.unmodulated_normalized_value() }))
-        .collect();
+        .collect()
+}
 
+/// Whether two sets of values describe the same panel.
+///
+/// An id the preset does not mention is not a difference. Presets written
+/// before a control existed should keep loading, and the control they say
+/// nothing about should stay where it is rather than jumping to a default the
+/// preset never chose.
+pub fn same(live: &BTreeMap<String, f32>, saved: &BTreeMap<String, f32>) -> bool {
+    saved.iter().all(|(id, &value)| match live.get(id) {
+        Some(&current) => (current - value).abs() <= 1e-5,
+        // An id the panel no longer has cannot differ from anything.
+        None => true,
+    })
+}
+
+/// Take the current panel settings as a preset.
+pub fn capture(params: &impl Params, name: &str) -> Stored {
     Stored {
         name: name.trim().to_string(),
-        values,
+        values: live_values(params),
         built_in: false,
         group: SAVED,
     }
@@ -377,17 +400,7 @@ pub fn delete(name: &str) -> std::io::Result<()> {
 /// back to where it was counts as unmodified again -- which is what somebody
 /// who has just undone a change expects to see.
 pub fn matches(params: &impl Params, values: &BTreeMap<String, f32>) -> bool {
-    if values.is_empty() {
-        return true;
-    }
-    params.param_map().into_iter().all(|(id, ptr, _)| {
-        let Some(&saved) = values.get(&id) else {
-            return true;
-        };
-        // SAFETY: the pointer comes from the parameters we were handed.
-        let current = unsafe { ptr.unmodulated_normalized_value() };
-        (current - saved).abs() <= 1e-5
-    })
+    values.is_empty() || same(&live_values(params), values)
 }
 
 /// Whether saving under this name would replace a file of yours.
