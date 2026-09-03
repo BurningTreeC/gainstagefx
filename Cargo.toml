@@ -7,7 +7,7 @@ license = "GPL-3.0-or-later"
 description = "GainStageFx, circuit modelled gain stages from subtle saturation to high gain (CLAP/VST3)"
 
 [workspace]
-members = ["xtask"]
+members = ["installer", "xtask"]
 
 [lib]
 crate-type = ["cdylib", "lib"]

@@ -1,0 +1,165 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+defaults:
+  run:
+    # The default Windows shell does not do brace expansion.
+    shell: bash
+
+env:
+  PACKAGE: gainstagefx
+  PLUGIN: GainStageFx
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgl-dev libjack-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
+      # --workspace so the installer that ships to users is linted too.
+      - run: cargo clippy --release --workspace --all-targets -- -D warnings
+      - name: Third party notices are up to date
+        run: |
+          python3 tools/third-party-notices.py
+          git diff --exit-code THIRD-PARTY-NOTICES.md
+
+  package:
+    name: Package (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux, os: ubuntu-22.04 }
+          - { name: macos-universal, os: macos-latest }
+          - { name: windows, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libgl-dev libjack-dev \
+            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
+            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # A universal macOS binary is lipo'd together from both slices, so
+          # both have to be installed even though the runner is one of them.
+          targets: ${{ startsWith(matrix.os, 'macos') && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.name }}
+
+      - name: Build the installer
+        # A small dependency free program that copies the bundles into place,
+        # shipped in the Windows archive as install.exe.
+        if: startsWith(matrix.os, 'windows')
+        run: cargo build --release -p installer
+
+      - name: Build the plugin
+        run: |
+          if [[ '${{ matrix.name }}' == 'macos-universal' ]]; then
+            # Anything older than this cannot run the plugin anyway.
+            export MACOSX_DEPLOYMENT_TARGET=10.13
+            # cargo xtask ad-hoc signs the bundles after lipo. That is free and
+            # needs no Apple account, and an arm64 binary will not load at all
+            # without at least an ad-hoc signature.
+            cargo xtask bundle-universal "$PACKAGE" --release
+          else
+            cargo xtask bundle "$PACKAGE" --release
+          fi
+
+      - name: Stage the archive contents
+        run: |
+          staged="staged/$PLUGIN-${{ matrix.name }}"
+          mkdir -p "$staged"
+          # The standalone binary is a development aid, not something to ship.
+          rm -rf "target/bundled/$PLUGIN"
+          cp -R target/bundled/* "$staged/"
+          # The GPL requires the licence to travel with the binaries, and the
+          # permissive licences of the dependencies require their notices.
+          cp LICENSE THIRD-PARTY-NOTICES.md "$staged/"
+          cp ".github/readme-${{ runner.os }}.txt" "$staged/README.txt"
+          case '${{ runner.os }}' in
+            Linux)
+              cp .github/install-Linux.sh "$staged/install.sh"
+              chmod +x "$staged/install.sh"
+              ;;
+            macOS)
+              cp .github/install-macOS.command "$staged/Install.command"
+              chmod +x "$staged/Install.command"
+              ;;
+            Windows)
+              cp target/release/install.exe "$staged/install.exe"
+              ;;
+          esac
+          ls -la "$staged"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN }}-${{ matrix.name }}
+          path: staged/${{ env.PLUGIN }}-${{ matrix.name }}
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: [test, package]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Zip each platform
+        run: |
+          mkdir -p release
+          for dir in artifacts/*/; do
+            name="$(basename "$dir")"
+            # Executability is not preserved through the artifact round trip.
+            chmod +x "$dir/Install.command" "$dir/install.sh" 2>/dev/null || true
+            (cd "$dir" && zip -qr "../../release/$name-${GITHUB_REF_NAME}.zip" .)
+          done
+          ls -la release
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.zip \
+            --title "$PLUGIN $GITHUB_REF_NAME" \
+            --notes-file - <<'NOTES'
+          Built from this tag by GitHub Actions.
+
+          Download the archive for your platform and run the installer inside
+          it: `install.sh` on Linux, `install.exe` on Windows,
+          `Install.command` on macOS. `README.txt` covers installing by hand.
+          Every archive also contains `LICENSE` and `THIRD-PARTY-NOTICES.md`.
+
+          **macOS:** the plugins are ad-hoc signed but not notarized, so macOS
+          quarantines them. `Install.command` in the archive puts them in place
+          and clears the quarantine flag; `README.txt` has the manual commands
+          if you would rather do it yourself.
+          NOTES

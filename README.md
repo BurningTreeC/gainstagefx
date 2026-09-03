@@ -108,6 +108,14 @@ the dot goes, because that state is compared rather than remembered.
 Loading a preset goes out as ordinary parameter gestures, so it lands in a DAW's
 automation lanes and undoes in one step like any other edit.
 
+## Installing
+
+Built archives for Linux, macOS and Windows are attached to each
+[release](https://github.com/BurningTreeC/gainstagefx/releases), built from the
+tag by GitHub Actions. Download the one for your platform and run the installer
+inside it — `install.sh`, `Install.command` or `install.exe`. `README.txt` in
+the archive covers installing by hand.
+
 ## Building
 
 ```sh

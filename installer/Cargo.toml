@@ -1,0 +1,16 @@
+[package]
+name = "installer"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Copies the GainStageFx bundles into the system plugin folders"
+publish = false
+
+[[bin]]
+# Produces install.exe on Windows, which is what ships in the archive.
+name = "install"
+path = "src/main.rs"
+
+# No dependencies on purpose: this binary ships to users, and anything it
+# linked would have to be accounted for in THIRD-PARTY-NOTICES.md.
+[dependencies]
