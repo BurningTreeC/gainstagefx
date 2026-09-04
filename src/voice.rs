@@ -641,12 +641,16 @@ pub struct Chain {
     tone: Option<usize>,
     cabinet: Option<usize>,
     over: Oversampler,
+    /// The panel's requested factor. The active factor can be lower for a
+    /// modelled circuit, but this is retained so switching back restores the
+    /// user's choice.
+    requested_oversampling: usize,
     /// Brings the wet path up to `LATENCY` whatever the oversampling is.
     pad: Delay,
     /// Holds the dry signal back by the same amount, so that mixing the two
     /// is a mix rather than a comb filter.
     dry: Delay,
-    /// The host's rate. The gain circuit does not run at it -- see
+    /// The host's rate. Modelled circuits always run at this rate; see
     /// `set_oversampling`.
     rate: f64,
     drive: f64,
@@ -699,6 +703,7 @@ impl Chain {
             tone: None,
             cabinet: None,
             over: Oversampler::new(4),
+            requested_oversampling: 4,
             pad: Delay::new(1),
             dry: Delay::new(LATENCY as usize),
             rate,
@@ -722,6 +727,7 @@ impl Chain {
         if index != self.gain {
             self.gain = index;
             self.gains[index].reset();
+            self.set_oversampling(self.requested_oversampling);
             self.set_drive(self.drive);
         }
     }
@@ -818,6 +824,23 @@ impl Chain {
     /// valve voices almost nothing, so nothing but the clipper would have
     /// shown it.
     pub fn set_oversampling(&mut self, factor: usize) {
+        // The schematic models solve a much larger nonlinear matrix than the
+        // generic gain stages. Running them at 4x (the default) makes their
+        // per-channel cost exceed a real-time audio budget and the host then
+        // falls behind: crackles, interrupted live input, and slow playback
+        // are the result. Their presets have always requested host-rate
+        // processing, but the global oversampling control accidentally
+        // overrode that when a user selected one from the panel.
+        //
+        // Keep this policy here, next to the resampling boundary, so it holds
+        // for every host and every caller of `Chain`, rather than relying on
+        // a particular preset or UI state.
+        self.requested_oversampling = factor;
+        let factor = if voice_at(self.gain).0.is_modelled() {
+            1
+        } else {
+            factor
+        };
         self.over.set_factor(factor);
         self.pad
             .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
@@ -832,7 +855,14 @@ impl Chain {
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.set_rate(rate);
         }
-        self.set_oversampling(self.over.factor());
+        self.set_oversampling(self.requested_oversampling);
+    }
+
+    /// The factor actually used by the nonlinear gain path. Modelled circuits
+    /// deliberately report one: they are kept at the host rate so they remain
+    /// safe to use live even when the global control is set higher.
+    pub fn effective_oversampling(&self) -> usize {
+        self.over.factor()
     }
 
     /// How many Newton passes the gain circuit is averaging, which is the

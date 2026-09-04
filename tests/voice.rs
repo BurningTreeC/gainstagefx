@@ -43,6 +43,33 @@ fn the_whole_catalogue_builds() {
     }
 }
 
+/// The full schematic models are intentionally kept at the host rate. They
+/// are large nonlinear solves, and applying the global 4x default to them can
+/// make a DAW miss its real-time deadline.
+#[test]
+fn modelled_circuits_stay_at_host_rate() {
+    for gain in [Gain::Screamer, Gain::Muff, Gain::Boogie, Gain::Peavey] {
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_oversampling(8);
+        assert_eq!(
+            chain.effective_oversampling(),
+            1,
+            "{} must not inherit the global oversampling factor",
+            gain.name(),
+        );
+    }
+
+    let mut generic = Chain::new(RATE);
+    generic.set_voice(
+        Gain::Overdrive,
+        voice::Diode::Silicon,
+        voice::Amplifier::Valve,
+    );
+    generic.set_oversampling(4);
+    assert_eq!(generic.effective_oversampling(), 4);
+}
+
 /// The table in `src/calibration.rs` is measured, and a circuit that has
 /// changed underneath it makes it a set of stale numbers that still compile.
 /// This is the test that notices.
