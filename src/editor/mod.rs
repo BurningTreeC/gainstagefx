@@ -436,6 +436,8 @@ pub fn describe(circuit: Circuit) -> String {
                           tone control is the mid scoop.",
         Circuit::Boogie => "Mesa Mark IIC+ lead channel: four triodes, and its \
                             own tone stack on the tone knobs.",
+        Circuit::Peavey => "Peavey EVH 5150 lead channel: six triodes, one of \
+                            them run cold to square off the bottom.",
     }
     .to_string()
 }

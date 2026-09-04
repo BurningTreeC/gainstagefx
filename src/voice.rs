@@ -22,7 +22,9 @@
 //! away from it. So the numbers are measured, and the audio thread only ever
 //! interpolates five of them.
 
-use crate::circuits::{bigmuff, cabinet, clipper, iron, markiic, preamp, studio, tone, ts808};
+use crate::circuits::{
+    bigmuff, cabinet, clipper, evh5150, iron, markiic, preamp, studio, tone, ts808,
+};
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::Oversampler;
@@ -72,10 +74,12 @@ pub enum Gain {
     Muff,
     /// Mesa Boogie Mark IIC+, the lead channel preamplifier.
     Boogie,
+    /// Peavey EVH 5150, the lead channel preamplifier.
+    Peavey,
 }
 
 impl Gain {
-    pub const ALL: [Gain; 10] = [
+    pub const ALL: [Gain; 11] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -86,6 +90,7 @@ impl Gain {
         Gain::Screamer,
         Gain::Muff,
         Gain::Boogie,
+        Gain::Peavey,
     ];
 
     pub fn name(self) -> &'static str {
@@ -100,6 +105,7 @@ impl Gain {
             Gain::Screamer => "TS808",
             Gain::Muff => "Big Muff",
             Gain::Boogie => "Mark IIC+",
+            Gain::Peavey => "5150",
         }
     }
 
@@ -112,6 +118,7 @@ impl Gain {
     pub fn drive_control(self) -> usize {
         match self {
             Gain::Boogie => markiic::LEAD_DRIVE,
+            Gain::Peavey => evh5150::PRE,
             Gain::Screamer => ts808::DRIVE,
             Gain::Muff => bigmuff::SUSTAIN,
             _ => clipper::GAIN,
@@ -137,7 +144,7 @@ impl Gain {
     /// topology. The panel says so, because "an overdrive" and "a TS808" are
     /// different kinds of claim.
     pub fn is_modelled(self) -> bool {
-        matches!(self, Gain::Screamer | Gain::Muff | Gain::Boogie)
+        matches!(self, Gain::Screamer | Gain::Muff | Gain::Boogie | Gain::Peavey)
     }
 
     /// Whether the choice of amplifying part reaches this circuit.
@@ -249,7 +256,7 @@ impl Diode {
 /// the circuit while playing allocates nothing. Laid out by walking `Gain::ALL`
 /// and giving each topology one slot per part it can be built with, so adding
 /// a circuit does not move the ones already there.
-pub const VOICES: usize = 18;
+pub const VOICES: usize = 19;
 
 /// Where a topology's first slot is.
 fn first_of(gain: Gain) -> usize {
@@ -324,6 +331,10 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::Screamer => ts808::build(10_000.0, 470_000.0),
         Gain::Muff => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
         Gain::Boogie => markiic::build(10_000.0, 1_000_000.0),
+        // Not a nominal load: the 5150's tone stack really does hang 33 k on
+        // the far side of R89, and leaving it out would flatter the model by
+        // twenty four decibels.
+        Gain::Peavey => evh5150::build(10_000.0, evh5150::TONE_STACK_INPUT),
     }
 }
 

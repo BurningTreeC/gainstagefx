@@ -64,6 +64,9 @@ pub enum Circuit {
     #[id = "markiic"]
     #[name = "Mark IIC+"]
     Boogie,
+    #[id = "evh5150"]
+    #[name = "5150"]
+    Peavey,
 }
 
 impl Circuit {
@@ -81,9 +84,10 @@ impl Circuit {
             Circuit::Screamer => "TS808",
             Circuit::Muff => "Big Muff",
             Circuit::Boogie => "Mark IIC+",
+            Circuit::Peavey => "5150",
         }
     }
-    pub const ALL: [Circuit; 10] = [
+    pub const ALL: [Circuit; 11] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -94,6 +98,7 @@ impl Circuit {
         Circuit::Screamer,
         Circuit::Muff,
         Circuit::Boogie,
+        Circuit::Peavey,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -108,6 +113,7 @@ impl Circuit {
             Circuit::Screamer => voice::Gain::Screamer,
             Circuit::Muff => voice::Gain::Muff,
             Circuit::Boogie => voice::Gain::Boogie,
+            Circuit::Peavey => voice::Gain::Peavey,
         }
     }
 

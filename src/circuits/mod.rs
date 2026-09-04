@@ -3,6 +3,7 @@
 pub mod bigmuff;
 pub mod cabinet;
 pub mod clipper;
+pub mod evh5150;
 pub mod iron;
 pub mod jfet;
 pub mod markiic;

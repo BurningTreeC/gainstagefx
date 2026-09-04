@@ -95,6 +95,11 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 2.127474,
         make_up_db: [29.39, 6.67, -3.80, -12.07, -18.93, -23.44, -25.70, -25.89, -25.88],
     },
+    // 5150 with a valve: 0.0040 V in, 45.0 % distortion, 32.7 % third.
+    Calibration {
+        drive_volts: 0.003964,
+        make_up_db: [-13.88, -36.62, -47.15, -55.58, -63.12, -66.90, -67.34, -67.41, -67.44],
+    },
 ];
 
 /// Insertion loss of each output transformer, measured where the

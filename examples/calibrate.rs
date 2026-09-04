@@ -66,6 +66,7 @@ fn intent(gain: Gain) -> f64 {
         Gain::Screamer => 12.0,
         Gain::Muff => 45.0,
         Gain::Boogie => 40.0,
+        Gain::Peavey => 45.0,
     }
 }
 
