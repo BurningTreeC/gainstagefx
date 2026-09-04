@@ -39,7 +39,10 @@ pub struct Panel {
 impl Model for Panel {}
 
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 2.0)
+    // The panel's coordinate system is already its intended 100% size.
+    // Starting at 2.0 made a new session open at 200%, while the size menu
+    // and persistent state define 1.0 as the default.
+    ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 1.0)
 }
 
 /// Writes the chosen size into the state the host saves and reads the window
