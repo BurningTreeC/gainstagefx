@@ -482,3 +482,26 @@ fn a_preset_captured_from_the_panel_matches_it() {
         "and one that differs should"
     );
 }
+
+/// A plugin that has just been added has not loaded a preset, and the strip
+/// has to say so rather than name one.
+///
+/// It used to open on a preset called "Init", which claims a sound has been
+/// loaded when none has -- and invites the reasonable belief that turning a
+/// knob has departed from something.
+#[test]
+fn nothing_loaded_is_not_a_preset() {
+    let params = GainStageParams::default();
+    let shown = params.preset_name.lock().expect("readable").clone();
+    assert_eq!(shown, gainstagefx::presets::NONE);
+    assert!(
+        PRESETS.iter().all(|p| p.name != gainstagefx::presets::NONE),
+        "the empty marker must not also be the name of a preset"
+    );
+    assert!(
+        !PRESETS.iter().any(|p| p.name == "Init"),
+        "Init is not a sound, it is the absence of one"
+    );
+    // And it cannot be deleted, since it is not a file.
+    assert!(gainstagefx::presets::index_of(gainstagefx::presets::NONE).is_none());
+}

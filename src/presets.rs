@@ -99,7 +99,6 @@ pub const PRESETS: &[Preset] = &[
     // effect. Everything here has the cabinet off: a speaker in front of a
     // preamplifier sound is wrong, and it is the commonest way these end up
     // sounding muffled.
-    Preset { drive: 0.45, ..base("Preamp", "Init") },
     Preset { drive: 0.55, circuit: Circuit::Clean, tone: ToneStack::Off, ..base("Preamp", "Valve Colour") },
     Preset { drive: 0.85, circuit: Circuit::Clean, tone: ToneStack::Off, ..base("Preamp", "Driven Preamp") },
     Preset { drive: 0.65, circuit: Circuit::Clean, treble: 0.62, bass: 0.45, ..base("Preamp", "Bright Front End") },
@@ -199,6 +198,13 @@ impl Preset {
 fn index_in<T: PartialEq + Copy>(all: &[T], value: T) -> f32 {
     all.iter().position(|v| *v == value).unwrap_or(0) as f32
 }
+
+/// What the strip shows when no preset has been loaded.
+///
+/// A plugin that has just been added has not loaded anything, and naming that
+/// state after a preset says it has -- and invites the reasonable belief that
+/// turning a knob has departed from something. It is a dash: no preset.
+pub const NONE: &str = "-";
 
 /// Where a named preset sits in the list, or nothing if it has been renamed
 /// out from under a saved session.

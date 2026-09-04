@@ -431,7 +431,7 @@ impl Default for GainStageParams {
     fn default() -> Self {
         Self {
             editor_state: crate::editor::default_state(),
-            preset_name: Mutex::new(String::from("Init")),
+            preset_name: Mutex::new(String::from(crate::presets::NONE)),
 
             input_trim: decibels("Input", 24.0),
 

@@ -117,7 +117,7 @@ impl Session {
             .preset_name
             .lock()
             .map(|n| n.clone())
-            .unwrap_or_else(|_| String::from("Init"));
+            .unwrap_or_else(|_| String::from(presets::NONE));
         let entries = presets::load_all(&*params);
         let reference = entries
             .iter()
