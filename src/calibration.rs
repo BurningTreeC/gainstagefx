@@ -79,6 +79,22 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.147426,
         make_up_db: [-6.06, -8.88, -12.40, -16.45, -20.87, -25.52, -30.33, -35.23, -40.17],
     },
+    // TS808 with a valve: 0.0154 V in, 12.0 % distortion, 11.7 % third.
+    Calibration {
+        drive_volts: 0.015404,
+        make_up_db: [21.08, 20.99, 20.76, 20.25, 19.13, 16.95, 13.41, 9.36, 6.95],
+    },
+    // Big Muff with a valve: 0.2828 V in, 30.0 % distortion, 18.5 % third. This voice cannot reach
+    // its intended figure at any level, so this is its peak.
+    Calibration {
+        drive_volts: 0.282843,
+        make_up_db: [26.84, 24.08, 23.87, 23.76, 23.69, 23.64, 23.61, 23.59, 23.49],
+    },
+    // Mark IIC+ with a valve: 2.1275 V in, 40.0 % distortion, 29.1 % third.
+    Calibration {
+        drive_volts: 2.127474,
+        make_up_db: [29.39, 6.67, -3.80, -12.07, -18.93, -23.44, -25.70, -25.89, -25.88],
+    },
 ];
 
 /// Insertion loss of each output transformer, measured where the

@@ -348,6 +348,13 @@ pub struct Selector {
     param: ParamWidgetBase,
     /// What to write under each segment.
     labels: Vec<&'static str>,
+    /// Where these segments sit in the parameter's own list, and how long
+    /// that list is. A row can show part of an enumeration -- the circuits
+    /// are split into topologies and modelled units, which is two rows and
+    /// one parameter -- and the mapping to normalised values has to be made
+    /// against the whole list, not the row.
+    offset: usize,
+    total: usize,
     /// Whether the row is live. A greyed row still draws, so the panel does
     /// not change shape when a control stops applying -- it just stops
     /// claiming to mean anything.
@@ -368,11 +375,35 @@ impl Selector {
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
+        let span = labels.len().max(1);
+        Self::window(cx, params, params_to_param, labels, enabled, 0, span)
+    }
+
+    /// A row showing `labels` starting at `offset` of a `total`-long list.
+    #[allow(clippy::too_many_arguments)]
+    pub fn window<'a, L, Params, P, FMap>(
+        cx: &'a mut Context,
+        params: L,
+        params_to_param: FMap,
+        labels: Vec<&'static str>,
+        enabled: bool,
+        offset: usize,
+        total: usize,
+    ) -> Handle<'a, Self>
+    where
+        L: Lens<Target = Params> + Clone,
+        Params: 'static,
+        P: Param + 'static,
+        FMap: Fn(&Params) -> &P + Copy + 'static,
+    {
         let count = labels.len().max(1);
         let captions = labels.clone();
+        let (start, span) = (offset, total.max(1));
         Self {
             param: ParamWidgetBase::new(cx, params, params_to_param),
             labels,
+            offset,
+            total,
             enabled,
         }
         .build(
@@ -394,8 +425,8 @@ impl Selector {
                             .child_bottom(Stretch(1.0))
                             .font_size(11.0)
                             .color(value.map(move |v| {
-                                let selected = (v * (count - 1) as f32).round() as usize;
-                                match (enabled, selected.min(count - 1) == index) {
+                                let selected = (v * (span - 1) as f32).round() as usize;
+                                match (enabled, selected == start + index) {
                                     (false, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
                                     (true, true) => Color::rgb(0xff, 0xb2, 0x6a),
                                     (true, false) => Color::rgb(0xa8, 0xb2, 0xba),
@@ -416,15 +447,17 @@ impl Selector {
     /// same way the parameter itself does, so this cannot drift from what the
     /// host thinks is selected.
     fn selected(&self) -> usize {
-        let count = self.labels.len().max(1);
+        let total = self.total.max(1);
         let v = self.param.unmodulated_normalized_value();
-        ((v * (count - 1) as f32).round() as usize).min(count - 1)
+        let absolute = ((v * (total - 1) as f32).round() as usize).min(total - 1);
+        absolute.wrapping_sub(self.offset)
     }
 
     fn pick(&self, cx: &mut EventContext, index: usize) {
-        let count = self.labels.len().max(1);
-        let normalised = if count > 1 {
-            index.min(count - 1) as f32 / (count - 1) as f32
+        let total = self.total.max(1);
+        let absolute = (self.offset + index).min(total - 1);
+        let normalised = if total > 1 {
+            absolute as f32 / (total - 1) as f32
         } else {
             0.0
         };
@@ -456,9 +489,12 @@ impl View for Selector {
             // The wheel steps through the list, which is what it does on every
             // other row and on the preset menu.
             WindowEvent::MouseScroll(_, y) => {
-                let current = self.selected() as i64;
-                let next = (current - y.signum() as i64)
-                    .clamp(0, self.labels.len().saturating_sub(1) as i64);
+                let current = self.selected();
+                // Only step within this row: the wheel over a row of pedals
+                // should not walk off into the amplifiers.
+                let last = self.labels.len().saturating_sub(1) as i64;
+                let from = if current > self.labels.len() { 0 } else { current as i64 };
+                let next = (from - y.signum() as i64).clamp(0, last);
                 self.pick(cx, next as usize);
                 meta.consume();
             }

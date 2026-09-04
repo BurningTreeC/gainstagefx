@@ -24,7 +24,7 @@ pub const HEADER_H: f32 = 32.0;
 /// they can be read once.
 pub const SECTIONS: [(&str, &str, f32); 6] = [
     ("1", "INPUT", 74.0),
-    ("2", "CIRCUIT", 148.0),
+    ("2", "CIRCUIT", 178.0),
     ("3", "DRIVE", 76.0),
     ("4", "TONE", 104.0),
     ("5", "CABINET", 44.0),

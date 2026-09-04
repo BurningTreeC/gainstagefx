@@ -22,7 +22,7 @@
 //! away from it. So the numbers are measured, and the audio thread only ever
 //! interpolates five of them.
 
-use crate::circuits::{cabinet, clipper, iron, preamp, studio, tone};
+use crate::circuits::{bigmuff, cabinet, clipper, iron, markiic, preamp, studio, tone, ts808};
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::Oversampler;
@@ -62,10 +62,20 @@ pub enum Gain {
     /// headroom. The one to reach for when the point is not to hear the
     /// preamplifier.
     Studio,
+    // --- modelled from schematics ---------------------------------------
+    // The ones above are topologies: a valve cascade, a clipper, a channel.
+    // These are particular circuits, parts and values off a drawing, and each
+    // is checked against arithmetic done from that drawing.
+    /// Ibanez TS808.
+    Screamer,
+    /// Electro-Harmonix Big Muff Pi, the 1973 Ram's Head.
+    Muff,
+    /// Mesa Boogie Mark IIC+, the lead channel preamplifier.
+    Boogie,
 }
 
 impl Gain {
-    pub const ALL: [Gain; 7] = [
+    pub const ALL: [Gain; 10] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -73,6 +83,9 @@ impl Gain {
         Gain::Distortion,
         Gain::Console,
         Gain::Studio,
+        Gain::Screamer,
+        Gain::Muff,
+        Gain::Boogie,
     ];
 
     pub fn name(self) -> &'static str {
@@ -84,7 +97,47 @@ impl Gain {
             Gain::Distortion => "Distortion",
             Gain::Console => "Console",
             Gain::Studio => "Studio",
+            Gain::Screamer => "TS808",
+            Gain::Muff => "Big Muff",
+            Gain::Boogie => "Mark IIC+",
         }
+    }
+
+    /// Which control on this circuit the Drive knob turns.
+    ///
+    /// The topologies all put it first because they were written that way.
+    /// A modelled circuit puts its controls where the drawing does, and the
+    /// Mark IIC+ has treble, bass and middle before its lead drive -- so a
+    /// Drive knob that always turned control zero would be turning its treble.
+    pub fn drive_control(self) -> usize {
+        match self {
+            Gain::Boogie => markiic::LEAD_DRIVE,
+            Gain::Screamer => ts808::DRIVE,
+            Gain::Muff => bigmuff::SUSTAIN,
+            _ => clipper::GAIN,
+        }
+    }
+
+    /// The circuit's own tone controls, where it has some: bass, middle,
+    /// treble. A Mark IIC+ carries a Fender stack of its own, and using the
+    /// plugin's generic one instead of it would be modelling the amplifier
+    /// and then ignoring the part everyone recognises.
+    pub fn own_tone(self) -> Option<(usize, usize, usize)> {
+        match self {
+            Gain::Boogie => Some((markiic::BASS, markiic::MIDDLE, markiic::TREBLE)),
+            // The TS808 and the Muff have a single tone control, which the
+            // Treble knob takes.
+            Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
+            Gain::Muff => Some((usize::MAX, usize::MAX, bigmuff::TONE)),
+            _ => None,
+        }
+    }
+
+    /// Whether this is a model of a particular circuit rather than a
+    /// topology. The panel says so, because "an overdrive" and "a TS808" are
+    /// different kinds of claim.
+    pub fn is_modelled(self) -> bool {
+        matches!(self, Gain::Screamer | Gain::Muff | Gain::Boogie)
     }
 
     /// Whether the choice of amplifying part reaches this circuit.
@@ -196,7 +249,7 @@ impl Diode {
 /// the circuit while playing allocates nothing. Laid out by walking `Gain::ALL`
 /// and giving each topology one slot per part it can be built with, so adding
 /// a circuit does not move the ones already there.
-pub const VOICES: usize = 15;
+pub const VOICES: usize = 18;
 
 /// Where a topology's first slot is.
 fn first_of(gain: Gain) -> usize {
@@ -266,6 +319,11 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
             v.amplifier = amplifier.spec();
             studio::build(&v, SOURCE, LOAD)
         }
+        // The modelled circuits take their own source and load, because those
+        // are part of what the drawing specifies.
+        Gain::Screamer => ts808::build(10_000.0, 470_000.0),
+        Gain::Muff => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
+        Gain::Boogie => markiic::build(10_000.0, 1_000_000.0),
     }
 }
 
@@ -706,7 +764,8 @@ impl Chain {
     /// what the plugin costs while a knob is moving.
     pub fn set_drive(&mut self, drive: f64) {
         self.drive = drive.clamp(0.0, 1.0);
-        self.gains[self.gain].set_control(clipper::GAIN, self.drive);
+        let which = voice_at(self.gain).0.drive_control();
+        self.gains[self.gain].set_control(which, self.drive);
         let calibration = CALIBRATION[self.gain];
         // A nominal digital signal has to arrive as the stated voltage.
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
@@ -719,6 +778,22 @@ impl Chain {
         if let Some(i) = self.tone {
             self.tones[i].0.set_control(which, position);
         }
+    }
+
+    /// The three tone knobs, sent to whichever stack is actually in the path:
+    /// the circuit's own where it has one, the plugin's otherwise.
+    fn set_tone_knobs(&mut self, bass: f64, mid: f64, treble: f64) {
+        if let Some((b, m, t)) = voice_at(self.gain).0.own_tone() {
+            let sim = &mut self.gains[self.gain];
+            for (which, value) in [(b, bass), (m, mid), (t, treble)] {
+                if which != usize::MAX {
+                    sim.set_control(which, value);
+                }
+            }
+        }
+        self.set_tone(crate::circuits::tone::BASS, bass);
+        self.set_tone(crate::circuits::tone::MID, mid);
+        self.set_tone(crate::circuits::tone::TREBLE, treble);
     }
 
     /// Sets the oversampling factor -- and tells the circuit about it.
@@ -773,9 +848,7 @@ impl Chain {
         self.set_cabinet(s.cabinet);
         self.set_oversampling(s.oversampling);
         self.set_drive(s.drive);
-        self.set_tone(crate::circuits::tone::BASS, s.bass);
-        self.set_tone(crate::circuits::tone::MID, s.mid);
-        self.set_tone(crate::circuits::tone::TREBLE, s.treble);
+        self.set_tone_knobs(s.bass, s.mid, s.treble);
     }
 
     /// One figure, always. See `LATENCY`.

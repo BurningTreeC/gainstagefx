@@ -1,6 +1,5 @@
 //! A circuit made playable, and the two joins that has to get right.
 
-use gainstagefx::circuits::clipper::GAIN;
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
 use gainstagefx::voice::{self, Cabinet, Chain, Gain, Tone as ToneSection, CALIBRATION};
@@ -54,7 +53,7 @@ fn the_calibration_table_still_describes_the_circuits() {
         let netlist = voice::build_voice(gain, diode, amplifier).expect("builds");
         for (i, expected) in c.make_up_db.iter().enumerate() {
             let mut sim = Simulation::new(netlist.clone(), RATE);
-            sim.set_control(GAIN, i as f64 / (POINTS - 1) as f64);
+            sim.set_control(gain.drive_control(), i as f64 / (POINTS - 1) as f64);
             let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);
             let got = -measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x)).gain_db();
             assert!(
@@ -174,7 +173,7 @@ fn the_voices_are_in_the_order_their_names_claim() {
             voice::Amplifier::Valve,
         )];
         let mut sim = Simulation::new(netlist, RATE);
-        sim.set_control(GAIN, 1.0);
+        sim.set_control(gain.drive_control(), 1.0);
         let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);
         measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x)).thd_percent()
     };

@@ -315,15 +315,37 @@ fn circuit(cx: &mut Context) {
     // two do not, and the ones that do not are greyed rather than hidden --
     // a panel that changes shape as the selection moves is harder to aim at,
     // and a control that vanishes is one you cannot see the state of.
-    row(cx, top + 8.0, "topology", |p| &p.circuit,
-        Circuit::ALL.iter().map(|c| c.name()).collect(), true, body_w() - 76.0);
+    // Two rows for one control. The first seven entries are topologies -- a
+    // valve cascade, a clipper, a channel -- and the rest are models of
+    // particular circuits built from their schematics. Those are different
+    // kinds of claim and deserve to look it, and ten segments on one row was
+    // already too many before the rest of the models arrive.
+    let names: Vec<&'static str> = Circuit::ALL.iter().map(|c| c.name()).collect();
+    let modelled = Circuit::ALL.iter().filter(|c| !c.is_modelled()).count();
+    label(cx, "topology", body_x() + 30.0, top + 18.0, 9.5, 76.0, 0x7e8a96);
+    Selector::window(cx, Panel::params, |p| &p.circuit,
+        names[..modelled].to_vec(), true, 0, names.len())
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(body_x() + 76.0))
+        .top(Pixels(top + 8.0))
+        .width(Pixels(body_w() - 76.0))
+        .height(Pixels(20.0));
+
+    label(cx, "modelled", body_x() + 30.0, top + 48.0, 9.5, 76.0, 0x7e8a96);
+    Selector::window(cx, Panel::params, |p| &p.circuit,
+        names[modelled..].to_vec(), true, modelled, names.len())
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(body_x() + 76.0))
+        .top(Pixels(top + 38.0))
+        .width(Pixels(body_w() - 76.0))
+        .height(Pixels(20.0));
 
     Binding::new(
         cx,
         Panel::params.map(|p| p.circuit.value().has_diodes()),
         |cx, live| {
             let live = live.get(cx);
-            row(cx, section_top(1) + 38.0, "clipping", |p| &p.diode,
+            row(cx, section_top(1) + 68.0, "clipping", |p| &p.diode,
                 Diode::ALL.iter().map(|d| d.name()).collect(), live, 210.0);
         },
     );
@@ -333,7 +355,7 @@ fn circuit(cx: &mut Context) {
         Panel::params.map(|p| p.circuit.value().has_amplifier()),
         |cx, live| {
             let live = live.get(cx);
-            row(cx, section_top(1) + 68.0, "amplifier", |p| &p.amplifier,
+            row(cx, section_top(1) + 98.0, "amplifier", |p| &p.amplifier,
                 Amplifier::ALL.iter().map(|a| a.name()).collect(), live, 210.0);
         },
     );
@@ -341,7 +363,7 @@ fn circuit(cx: &mut Context) {
     // Iron applies to everything, which is the point of it being a control
     // rather than part of a circuit: a transformer belongs after a distortion
     // pedal exactly as much as after a console channel.
-    row(cx, top + 98.0, "iron", |p| &p.iron,
+    row(cx, top + 128.0, "iron", |p| &p.iron,
         Iron::ALL.iter().map(|i| i.name()).collect(), true, 268.0);
 
     // The one piece of prose that earns its space: it changes with the
@@ -349,7 +371,7 @@ fn circuit(cx: &mut Context) {
     Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 122.0))
+        .top(Pixels(top + 152.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
         .child_top(Stretch(1.0))
@@ -405,6 +427,15 @@ fn describe(circuit: Circuit) -> String {
                              few decibels before it does.",
         Circuit::Studio => "An op-amp on a studio rail: nothing of its own \
                             anywhere in the band. Add iron to give it some.",
+        Circuit::Screamer => "Ibanez TS808, from the schematic. Its gain leg \
+                              leaves the bottom end alone, which is why one \
+                              sits in front of an amplifier.",
+        Circuit::Muff => "Big Muff Pi, 1973 Ram's Head. Four stages, diodes in \
+                          two of their feedback loops, and the tone control is \
+                          the mid scoop.",
+        Circuit::Boogie => "Mesa Mark IIC+ lead channel: four triodes with a \
+                            Fender stack between the first two, and its own \
+                            treble, bass and middle on those knobs.",
     }
     .to_string()
 }

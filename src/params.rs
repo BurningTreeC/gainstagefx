@@ -52,6 +52,18 @@ pub enum Circuit {
     #[id = "studio"]
     #[name = "Studio"]
     Studio,
+    // Models of particular circuits, built from their schematics, rather than
+    // topologies. Appended so the positions the shipped presets refer to do
+    // not move under them.
+    #[id = "ts808"]
+    #[name = "TS808"]
+    Screamer,
+    #[id = "bigmuff"]
+    #[name = "Big Muff"]
+    Muff,
+    #[id = "markiic"]
+    #[name = "Mark IIC+"]
+    Boogie,
 }
 
 impl Circuit {
@@ -66,9 +78,12 @@ impl Circuit {
             Circuit::Distortion => "Distortion",
             Circuit::Console => "Console",
             Circuit::Studio => "Studio",
+            Circuit::Screamer => "TS808",
+            Circuit::Muff => "Big Muff",
+            Circuit::Boogie => "Mark IIC+",
         }
     }
-    pub const ALL: [Circuit; 7] = [
+    pub const ALL: [Circuit; 10] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -76,6 +91,9 @@ impl Circuit {
         Circuit::Distortion,
         Circuit::Console,
         Circuit::Studio,
+        Circuit::Screamer,
+        Circuit::Muff,
+        Circuit::Boogie,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -87,12 +105,22 @@ impl Circuit {
             Circuit::Distortion => voice::Gain::Distortion,
             Circuit::Console => voice::Gain::Console,
             Circuit::Studio => voice::Gain::Studio,
+            Circuit::Screamer => voice::Gain::Screamer,
+            Circuit::Muff => voice::Gain::Muff,
+            Circuit::Boogie => voice::Gain::Boogie,
         }
     }
 
     /// Whether the choice of amplifying part reaches this circuit.
     pub fn has_amplifier(self) -> bool {
         self.voice().has_amplifier()
+    }
+
+    /// Whether this is a model of a particular circuit rather than a
+    /// topology. The panel puts the two on separate rows, because "an
+    /// overdrive" and "a TS808" are different kinds of claim.
+    pub fn is_modelled(self) -> bool {
+        self.voice().is_modelled()
     }
 
     /// Whether the diode choice reaches this circuit. A valve stage has no

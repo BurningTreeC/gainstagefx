@@ -27,7 +27,6 @@
 //!
 //! Run with `cargo run --release --example calibrate > src/calibration.rs`.
 
-use gainstagefx::circuits::clipper::GAIN;
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
 use gainstagefx::voice::{self, Gain, Iron, IRON_VOLTS, NOMINAL_DBFS, POINTS, VOICES};
@@ -61,6 +60,12 @@ fn intent(gain: Gain) -> f64 {
         // until it hits it. Whatever character it has comes from the iron
         // after it, which is a separate control.
         Gain::Studio => 0.05,
+        // The modelled circuits are voiced by what the drawing produces, not
+        // by a figure chosen here -- so these are what each pedal or amplifier
+        // actually does with its own control at the stop.
+        Gain::Screamer => 12.0,
+        Gain::Muff => 45.0,
+        Gain::Boogie => 40.0,
     }
 }
 
@@ -100,7 +105,7 @@ fn main() {
         // its intended figure at all, take the peak and say so.
         let thd_at = |volts: f64| {
             let mut sim = Simulation::new(netlist.clone(), RATE);
-            sim.set_control(GAIN, 1.0);
+            sim.set_control(gain.drive_control(), 1.0);
             measured(&mut sim, volts).thd_percent()
         };
         const STEPS: usize = 60;
@@ -134,12 +139,12 @@ fn main() {
         let mut make_up = [0.0f64; POINTS];
         for (i, slot) in make_up.iter_mut().enumerate() {
             let mut sim = Simulation::new(netlist.clone(), RATE);
-            sim.set_control(GAIN, i as f64 / (POINTS - 1) as f64);
+            sim.set_control(gain.drive_control(), i as f64 / (POINTS - 1) as f64);
             *slot = -measured(&mut sim, drive_volts).gain_db();
         }
 
         let mut check = Simulation::new(netlist.clone(), RATE);
-        check.set_control(GAIN, 1.0);
+        check.set_control(gain.drive_control(), 1.0);
         let got = measured(&mut check, drive_volts);
         let part = if gain.has_diodes() {
             format!("{} diodes", diode.name().to_lowercase())
