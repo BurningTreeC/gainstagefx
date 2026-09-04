@@ -4,6 +4,10 @@
 //!
 //! **The input level.** A circuit works in volts and a plugin is handed
 //! numbers near one, and the join between them is a choice rather than a fact.
+//! These figures were once half what they are, and the whole catalogue was
+//! far cleaner than its names: a preset called Scooped Metal made three per
+//! cent distortion on a nominal signal. What a pedal called Distortion does
+//! with its knob at the stop is squared off, not mildly bent.
 //! The choice made here is that each circuit does what its *name* says with a
 //! nominal signal in front of it and the drive control **all the way up**: a
 //! Clean voice barely bending, a Distortion voice thoroughly squared off.
@@ -36,12 +40,18 @@ fn intent(gain: Gain) -> f64 {
     match gain {
         // Barely working. This is the sound of a signal having been through
         // something, not the sound of distortion.
-        Gain::Clean => 1.5,
-        Gain::Crunch => 8.0,
+        Gain::Clean => 3.0,
+        Gain::Crunch => 15.0,
         // Past this the character stops changing and only the level does.
-        Gain::HighGain => 25.0,
-        Gain::Overdrive => 12.0,
-        Gain::Distortion => 30.0,
+        Gain::HighGain => 40.0,
+        Gain::Overdrive => 20.0,
+        // Not higher. A symmetric pair to ground squares the wave off, and a
+        // square wave is about 43 per cent distortion and no more -- asking
+        // for 45 sent the search to the top of its range looking for a level
+        // that does not exist, and would have handed the pedal four volts for
+        // a nominal signal. Slammed that hard it never cleans up again when
+        // the playing does.
+        Gain::Distortion => 38.0,
         // A microphone preamplifier is built not to run out of room, which is
         // the opposite of what a guitar preamplifier is for. These sit where
         // the character is audible and the channel is still doing its job.

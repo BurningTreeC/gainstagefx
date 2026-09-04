@@ -40,7 +40,13 @@ pub struct Preset {
 }
 
 /// A preset with everything at its resting position, which the entries below
-/// then vary. Written this way so that reading one says only what makes it
+/// then vary.
+///
+/// The drive figures are read off `examples/curve.rs`, which measures what the
+/// circuit's own distortion does against knob position at a nominal input.
+/// They were chosen by eye before that existed, and the catalogue was far
+/// cleaner than its names claimed: a preset called Classic Distortion sat at
+/// under 8 per cent and Scooped Metal at 3. Written this way so that reading one says only what makes it
 /// different, and so that adding a control later does not mean editing every
 /// preset in the file.
 const fn base(group: &'static str, name: &'static str) -> Preset {
@@ -72,20 +78,20 @@ pub const PRESETS: &[Preset] = &[
     // before they do, or in the iron rather than the gain stage. The cabinet
     // is off throughout: a speaker in front of a microphone preamplifier makes
     // no sense at all.
-    Preset { drive: 0.55, circuit: Circuit::Console, amplifier: Amplifier::Jfet, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Console Channel") },
-    Preset { drive: 0.80, circuit: Circuit::Console, amplifier: Amplifier::Jfet, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Console, Driven") },
-    Preset { drive: 0.60, circuit: Circuit::Console, amplifier: Amplifier::Valve, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Valve Mic Pre") },
-    Preset { drive: 0.85, circuit: Circuit::Console, amplifier: Amplifier::Valve, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Valve, Pushed") },
-    Preset { drive: 0.50, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Off, tone: ToneStack::Off, ..base("Studio", "Studio Preamp") },
-    Preset { drive: 0.70, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Studio, Iron Out") },
-    Preset { drive: 0.60, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Amorphous, tone: ToneStack::Off, ..base("Studio", "Clean Line Amp") },
+    Preset { drive: 0.62, circuit: Circuit::Console, amplifier: Amplifier::Jfet, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Console Channel") },
+    Preset { drive: 0.88, circuit: Circuit::Console, amplifier: Amplifier::Jfet, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Console, Driven") },
+    Preset { drive: 0.68, circuit: Circuit::Console, amplifier: Amplifier::Valve, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Valve Mic Pre") },
+    Preset { drive: 0.92, circuit: Circuit::Console, amplifier: Amplifier::Valve, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Valve, Pushed") },
+    Preset { drive: 0.55, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Off, tone: ToneStack::Off, ..base("Studio", "Studio Preamp") },
+    Preset { drive: 0.75, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Studio, Iron Out") },
+    Preset { drive: 0.62, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Amorphous, tone: ToneStack::Off, ..base("Studio", "Clean Line Amp") },
     // The one that is nothing but the transformer: an op-amp contributes
     // nothing of its own anywhere in the band, so everything heard here is
     // the core running out of room -- and because flux is the integral of
     // voltage, all of it is at the bottom.
-    Preset { drive: 0.95, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Transformer Colour") },
-    Preset { drive: 0.55, circuit: Circuit::Studio, amplifier: Amplifier::Jfet, iron: Iron::Off, tone: ToneStack::Off, ..base("Studio", "JFET Direct") },
-    Preset { drive: 0.75, circuit: Circuit::Studio, amplifier: Amplifier::Jfet, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Discrete Colour") },
+    Preset { drive: 0.96, circuit: Circuit::Studio, amplifier: Amplifier::OpAmp, iron: Iron::Nickel, tone: ToneStack::Off, ..base("Studio", "Transformer Colour") },
+    Preset { drive: 0.60, circuit: Circuit::Studio, amplifier: Amplifier::Jfet, iron: Iron::Off, tone: ToneStack::Off, ..base("Studio", "JFET Direct") },
+    Preset { drive: 0.80, circuit: Circuit::Studio, amplifier: Amplifier::Jfet, iron: Iron::Steel, tone: ToneStack::Off, ..base("Studio", "Discrete Colour") },
 
     // --- Preamplifier ----------------------------------------------------
     // The quiet end. A valve stage barely working, which is the sound of a
@@ -93,32 +99,32 @@ pub const PRESETS: &[Preset] = &[
     // effect. Everything here has the cabinet off: a speaker in front of a
     // preamplifier sound is wrong, and it is the commonest way these end up
     // sounding muffled.
-    Preset { drive: 0.30, ..base("Preamp", "Init") },
-    Preset { drive: 0.45, circuit: Circuit::Clean, tone: ToneStack::Off, ..base("Preamp", "Valve Colour") },
-    Preset { drive: 0.72, circuit: Circuit::Clean, tone: ToneStack::Off, ..base("Preamp", "Driven Preamp") },
-    Preset { drive: 0.58, circuit: Circuit::Clean, treble: 0.62, bass: 0.45, ..base("Preamp", "Bright Front End") },
-    Preset { drive: 0.85, circuit: Circuit::Clean, tone: ToneStack::Off, mix: 0.45, ..base("Preamp", "Parallel Warmth") },
+    Preset { drive: 0.45, ..base("Preamp", "Init") },
+    Preset { drive: 0.55, circuit: Circuit::Clean, tone: ToneStack::Off, ..base("Preamp", "Valve Colour") },
+    Preset { drive: 0.85, circuit: Circuit::Clean, tone: ToneStack::Off, ..base("Preamp", "Driven Preamp") },
+    Preset { drive: 0.65, circuit: Circuit::Clean, treble: 0.62, bass: 0.45, ..base("Preamp", "Bright Front End") },
+    Preset { drive: 0.95, circuit: Circuit::Clean, tone: ToneStack::Off, mix: 0.45, ..base("Preamp", "Parallel Warmth") },
 
     // --- Crunch ----------------------------------------------------------
     // Two stages, which is where the harmonics start compounding rather than
     // adding. The cabinet comes in here: past this point there is enough
     // going on at the top of the band that leaving it bare is audible.
-    Preset { drive: 0.42, mid: 0.6, cabinet: Cabinet::Combo, ..base("Crunch", "Edge of Breakup") },
-    Preset { drive: 0.62, mid: 0.58, cabinet: Cabinet::Combo, ..base("Crunch", "Blues Crunch") },
-    Preset { drive: 0.78, bass: 0.45, mid: 0.55, treble: 0.62, cabinet: Cabinet::Stack, ..base("Crunch", "Classic Rock") },
-    Preset { drive: 0.88, bass: 0.42, treble: 0.68, cabinet: Cabinet::Stack, ..base("Crunch", "British Crunch") },
-    Preset { drive: 0.70, tone: ToneStack::Scooping, mid: 0.35, cabinet: Cabinet::Combo, ..base("Crunch", "Hollow Crunch") },
+    Preset { drive: 0.55, mid: 0.6, cabinet: Cabinet::Combo, ..base("Crunch", "Edge of Breakup") },
+    Preset { drive: 0.70, mid: 0.58, cabinet: Cabinet::Combo, ..base("Crunch", "Blues Crunch") },
+    Preset { drive: 0.85, bass: 0.45, mid: 0.55, treble: 0.62, cabinet: Cabinet::Stack, ..base("Crunch", "Classic Rock") },
+    Preset { drive: 0.95, bass: 0.42, treble: 0.68, cabinet: Cabinet::Stack, ..base("Crunch", "British Crunch") },
+    Preset { drive: 0.78, tone: ToneStack::Scooping, mid: 0.35, cabinet: Cabinet::Combo, ..base("Crunch", "Hollow Crunch") },
 
     // --- High gain -------------------------------------------------------
     // Three stages, all of them clipping on every note.
-    Preset { drive: 0.62, bass: 0.55, mid: 0.5, treble: 0.6, cabinet: Cabinet::Stack, ..base("High Gain", "Modern Rhythm") },
+    Preset { drive: 0.78, bass: 0.55, mid: 0.5, treble: 0.6, cabinet: Cabinet::Stack, ..base("High Gain", "Modern Rhythm") },
     // The one the whole exercise was aimed at. Three cascaded stages for the
     // harmonics, the scooping voicing with the mid control right down for the
     // dip -- a resonant leg rather than a shelf at each end, which is why it
     // is a scoop and not just less middle -- and a stack behind it, because
     // that much energy above 4 kHz is unlistenable without a speaker.
     Preset {
-        drive: 0.86,
+        drive: 0.93,
         circuit: Circuit::HighGain,
         tone: ToneStack::Scooping,
         bass: 0.78,
@@ -128,30 +134,30 @@ pub const PRESETS: &[Preset] = &[
         output_trim: -1.5,
         ..base("High Gain", "Scooped Metal")
     },
-    Preset { drive: 0.92, circuit: Circuit::HighGain, tone: ToneStack::Scooping, bass: 0.7, mid: 0.2, treble: 0.75, cabinet: Cabinet::Stack, ..base("High Gain", "Thrash Rhythm") },
-    Preset { drive: 0.75, circuit: Circuit::HighGain, bass: 0.6, mid: 0.62, treble: 0.55, cabinet: Cabinet::Stack, ..base("High Gain", "Lead Sustain") },
-    Preset { drive: 1.0, circuit: Circuit::HighGain, tone: ToneStack::Scooping, bass: 0.85, mid: 0.05, treble: 0.7, cabinet: Cabinet::Stack, output_trim: -2.0, ..base("High Gain", "Everything Up") },
-    Preset { drive: 0.80, circuit: Circuit::HighGain, bass: 0.35, mid: 0.45, treble: 0.7, cabinet: Cabinet::Stack, ..base("High Gain", "Tight Low End") },
+    Preset { drive: 0.96, circuit: Circuit::HighGain, tone: ToneStack::Scooping, bass: 0.7, mid: 0.2, treble: 0.75, cabinet: Cabinet::Stack, ..base("High Gain", "Thrash Rhythm") },
+    Preset { drive: 0.85, circuit: Circuit::HighGain, bass: 0.6, mid: 0.62, treble: 0.55, cabinet: Cabinet::Stack, ..base("High Gain", "Lead Sustain") },
+    Preset { drive: 1.00, circuit: Circuit::HighGain, tone: ToneStack::Scooping, bass: 0.85, mid: 0.05, treble: 0.7, cabinet: Cabinet::Stack, output_trim: -2.0, ..base("High Gain", "Everything Up") },
+    Preset { drive: 0.88, circuit: Circuit::HighGain, bass: 0.35, mid: 0.45, treble: 0.7, cabinet: Cabinet::Stack, ..base("High Gain", "Tight Low End") },
 
     // --- Overdrive -------------------------------------------------------
     // Diodes in the loop, which lower the gain rather than stopping the
     // output -- so these keep following what is played and clean up when the
     // playing gets quieter. Mostly with the cabinet off, because an overdrive
     // is usually in front of an amplifier rather than instead of one.
-    Preset { drive: 0.55, circuit: Circuit::Overdrive, mid: 0.62, oversampling: Oversampling::Four, ..base("Overdrive", "Green Overdrive") },
-    Preset { drive: 0.35, circuit: Circuit::Overdrive, tone: ToneStack::Off, oversampling: Oversampling::Four, ..base("Overdrive", "Transparent Boost") },
-    Preset { drive: 0.70, circuit: Circuit::Overdrive, diode: Diode::Germanium, mid: 0.6, oversampling: Oversampling::Four, ..base("Overdrive", "Germanium Warmth") },
-    Preset { drive: 0.85, circuit: Circuit::Overdrive, diode: Diode::Led, treble: 0.58, oversampling: Oversampling::Four, ..base("Overdrive", "LED Headroom") },
-    Preset { drive: 0.80, circuit: Circuit::Overdrive, mid: 0.7, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Overdrive", "Overdriven Combo") },
+    Preset { drive: 0.85, circuit: Circuit::Overdrive, mid: 0.62, oversampling: Oversampling::Four, ..base("Overdrive", "Green Overdrive") },
+    Preset { drive: 0.70, circuit: Circuit::Overdrive, tone: ToneStack::Off, oversampling: Oversampling::Four, ..base("Overdrive", "Transparent Boost") },
+    Preset { drive: 0.90, circuit: Circuit::Overdrive, diode: Diode::Germanium, mid: 0.6, oversampling: Oversampling::Four, ..base("Overdrive", "Germanium Warmth") },
+    Preset { drive: 0.95, circuit: Circuit::Overdrive, diode: Diode::Led, treble: 0.58, oversampling: Oversampling::Four, ..base("Overdrive", "LED Headroom") },
+    Preset { drive: 0.92, circuit: Circuit::Overdrive, mid: 0.7, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Overdrive", "Overdriven Combo") },
 
     // --- Distortion ------------------------------------------------------
     // Diodes to ground: a ceiling the output stops at, so the wave is squared
     // off and the harmonics reach the top of the band. These want a cabinet.
-    Preset { drive: 0.60, circuit: Circuit::Distortion, mid: 0.45, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Classic Distortion") },
-    Preset { drive: 0.85, circuit: Circuit::Distortion, tone: ToneStack::Scooping, bass: 0.7, mid: 0.15, treble: 0.75, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "Scooped Pedal") },
-    Preset { drive: 0.75, circuit: Circuit::Distortion, diode: Diode::Germanium, bass: 0.65, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Woolly Fuzz") },
-    Preset { drive: 0.95, circuit: Circuit::Distortion, diode: Diode::Led, bass: 0.55, treble: 0.7, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "LED Wall") },
-    Preset { drive: 0.90, circuit: Circuit::Distortion, mix: 0.6, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Blended Grit") },
+    Preset { drive: 0.78, circuit: Circuit::Distortion, mid: 0.45, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Classic Distortion") },
+    Preset { drive: 0.90, circuit: Circuit::Distortion, tone: ToneStack::Scooping, bass: 0.7, mid: 0.15, treble: 0.75, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "Scooped Pedal") },
+    Preset { drive: 0.85, circuit: Circuit::Distortion, diode: Diode::Germanium, bass: 0.65, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Woolly Fuzz") },
+    Preset { drive: 0.97, circuit: Circuit::Distortion, diode: Diode::Led, bass: 0.55, treble: 0.7, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "LED Wall") },
+    Preset { drive: 0.92, circuit: Circuit::Distortion, mix: 0.6, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Blended Grit") },
 ];
 
 /// The groups, in the order they should be shown: quietest first, so the list

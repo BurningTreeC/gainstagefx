@@ -133,12 +133,10 @@ fn the_gain_control_reaches_every_stage() {
 /// Composing a stage has to give the same amplifier as writing one out.
 ///
 /// The one-stage preamplifier is a written-out stage plus its gain control, so
-/// it has exactly one node more -- the pot's wiper -- and that is the whole
-/// difference. Turned all the way up the wiper sits on the input, and the only
-/// thing left between the two circuits is the pot's own million ohms loading
-/// the source. Against a ten thousand ohm source that is a small, calculable
-/// loss, and it is the tolerance below rather than a fudge factor: a bare
-/// divider of 1 M against 10 k gives 20*log10(1M / 1.01M), which is 0.086 dB.
+/// it has exactly two nodes more -- the pot's wiper, and the foot of its track
+/// where the resistor that bounds its range sits. Turned all the way up the
+/// wiper is at the top of the track, and what is left between the two circuits
+/// is the pot and its floor loading the source.
 #[test]
 fn a_composed_stage_matches_the_written_one() {
     const SOURCE: f64 = 10_000.0;
@@ -147,8 +145,8 @@ fn a_composed_stage_matches_the_written_one() {
     let composed = preamp::build(&preamp::CLEAN, SOURCE, LEAK).expect("builds");
     assert_eq!(
         composed.nodes,
-        written.nodes + 1,
-        "the gain control is one node: a wiper"
+        written.nodes + 2,
+        "the gain control is a wiper and the foot of its track"
     );
 
     // Every control all the way up in both, rather than one by name. The two
@@ -168,10 +166,13 @@ fn a_composed_stage_matches_the_written_one() {
     };
     let a = gain(written);
     let b = gain(composed);
-    let expected = 20.0 * (LEAK / (LEAK + SOURCE)).log10();
+    // The pot's track and its floor sit across the source in series, so the
+    // wide-open loss is the divider they make with it.
+    let track = LEAK + gainstagefx::circuits::preamp::floor_of(LEAK);
+    let expected = 20.0 * (track / (track + SOURCE)).log10();
     assert!(
-        (b - a - expected).abs() < 0.05,
-        "the volume pot should cost {expected:.3} dB and cost {:.3}: \
+        (b - a - expected).abs() < 0.2,
+        "the volume pot should cost about {expected:.3} dB and cost {:.3}: \
          {a:.4} dB written against {b:.4} dB composed",
         b - a
     );

@@ -168,6 +168,42 @@ impl Diode {
         Self { a, k, spec, voltage: 0.0, delta: 0.0, clamped: false }
     }
 
+    /// Keeps a junction voltage from running away, in the way a junction
+    /// wants rather than by a flat cap.
+    ///
+    /// A fixed cap of a couple of thermal voltages is fine while the answer is
+    /// near, and hopeless when it is not: an LED conducts at about 1.8 V and
+    /// the cap is 0.1, so walking there takes twenty-odd iterations. Measured,
+    /// the LED Wall preset was taking ten Newton passes a sample against two
+    /// or three for everything else, and cost four times as much because of
+    /// it.
+    ///
+    /// This is the standard junction limiter instead. Above the critical
+    /// voltage -- where the exponential starts to run away -- the step is
+    /// taken in the logarithm, so a long way is covered in one iteration
+    /// without overshooting into an overflow.
+    fn limit_junction(&mut self, wanted: f64, scale: f64) -> f64 {
+        let old = self.voltage;
+        // Where the curve's own slope makes a Newton step overshoot.
+        let critical = scale * (scale / (std::f64::consts::SQRT_2 * self.spec.saturation)).ln();
+        if wanted > critical && (wanted - old).abs() > 2.0 * scale {
+            self.clamped = true;
+            if old > 0.0 {
+                let arg = 1.0 + (wanted - old) / scale;
+                if arg > 0.0 {
+                    old + scale * arg.ln()
+                } else {
+                    critical
+                }
+            } else {
+                scale * (wanted / scale).ln()
+            }
+        } else {
+            self.clamped = false;
+            wanted
+        }
+    }
+
     /// The Shockley current, exposed so tests can check the slope the stamp
     /// uses against the curve it claims to be the slope of.
     pub fn current(&self, v: f64) -> f64 {
@@ -180,8 +216,7 @@ impl Diode {
 impl Device for Diode {
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let scale = self.spec.emission * VT;
-        let (guess, clamped) = limit(across(v, self.a, self.k), self.voltage, scale);
-        self.clamped = clamped;
+        let guess = self.limit_junction(across(v, self.a, self.k), scale);
         self.delta = (guess - self.voltage).abs();
         self.voltage = guess;
 
@@ -190,9 +225,6 @@ impl Device for Diode {
         // needed -- where a central difference asked for two more.
         let x = guess / scale;
         let (i, g) = if x >= CLAMP {
-            // Held below the point where the exponential overflows. Past it
-            // the current no longer moves with the voltage, so neither does
-            // the slope, and the limiter above is what walks the solve back.
             (self.spec.saturation * (CLAMP.exp() - 1.0), 1e-12)
         } else {
             let e = x.exp();
@@ -386,10 +418,25 @@ impl Device for OpAmp {
         let output = if self.out == GROUND { 0.0 } else { v[self.out] };
         let error = across(v, self.plus, self.minus);
 
-        // Decide which state to be in from where the last solve put the
-        // output. Hysteresis is not needed: the two states agree at the rail.
+        // Which state to be in, from where the last solve put the output --
+        // and, once against a rail, from whether the input still asks for
+        // more.
+        //
+        // That second half is not a refinement. Deciding purely on the output
+        // chatters: solved linear the output wants five volts, which is past
+        // the rail, so the next pass pins it at three and a half -- where it
+        // is no longer *past* the rail, so the pass after that goes linear
+        // again and asks for five. Measured at high drive, more than half of
+        // all samples never converged at all and the solver simply gave up on
+        // them after thirty-two passes. A saturated amplifier stays saturated
+        // while its input goes on demanding more, which is both what the
+        // hardware does and what breaks the loop.
         let was = self.clamped;
-        self.clamped = if output > self.rail {
+        self.clamped = if was > 0.0 {
+            if error >= 0.0 { self.rail } else { 0.0 }
+        } else if was < 0.0 {
+            if error <= 0.0 { -self.rail } else { 0.0 }
+        } else if output > self.rail {
             self.rail
         } else if output < -self.rail {
             -self.rail

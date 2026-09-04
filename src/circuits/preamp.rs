@@ -34,6 +34,29 @@ use crate::dsp::netlist::{Circuit, Fault, Netlist, Taper};
 /// The gain control: the volume between the stages.
 pub const GAIN: usize = 0;
 
+/// How far down the gain control can turn the stage that follows it.
+///
+/// A volume pot goes to silence, and a gain control that goes to silence is
+/// a gain control whose whole useful range is crammed into its last tenth.
+/// Measured with one: the High Gain voice made 0.1 % distortion at a quarter
+/// turn, 1.9 at eight tenths, and 25 at the stop -- everything that matters
+/// happened after nine tenths, which is not a control, it is a switch with a
+/// long approach.
+///
+/// So the pot works into a resistor rather than to ground, and the span
+/// between the two ends is this. Eighteen decibels, which is about what the
+/// gain control on an amplifier of this kind actually covers.
+///
+/// The track is then shaped to sweep those decibels evenly: with the wiper
+/// feeding `floor + f * track`, an even sweep wants `f = (k^p - 1)/(k - 1)`
+/// for `k` the ratio of the two ends, which is exactly `Taper::Log`.
+pub const SPAN: f64 = 8.0;
+
+/// The resistance the track works into, from its own value.
+pub fn floor_of(track: f64) -> f64 {
+    track / (SPAN - 1.0)
+}
+
 /// The cathode bypasses, left fully in circuit unless something asks
 /// otherwise. This is a separate control so it can be exposed later without
 /// disturbing the gain knob.
@@ -78,7 +101,9 @@ pub fn build(p: &Preamp, source: f64, load: f64) -> Result<Circuit, Fault> {
 
     // One stage has no "between", so the volume goes in front of it.
     if stages == 1 {
-        net.pot("in", "vol", "gnd", p.interstage, Taper::Audio, GAIN);
+        let floor = floor_of(p.interstage);
+        net.pot("in", "vol", "vol_floor", p.interstage, Taper::Log { span: SPAN }, GAIN)
+            .resistor("vol_floor", "gnd", floor);
         node = String::from("vol");
     }
 
@@ -93,7 +118,10 @@ pub fn build(p: &Preamp, source: f64, load: f64) -> Result<Circuit, Fault> {
             // The volume pot *is* the grid leak here: its whole track loads
             // the plate and its wiper feeds the next grid.
             let wiper = format!("{prefix}_vol");
-            net.pot(&out, &wiper, "gnd", p.interstage, Taper::Audio, GAIN);
+            let floor_node = format!("{prefix}_vol_floor");
+            let floor = floor_of(p.interstage);
+            net.pot(&out, &wiper, &floor_node, p.interstage, Taper::Log { span: SPAN }, GAIN)
+                .resistor(&floor_node, "gnd", floor);
             node = wiper;
         } else {
             net.resistor(&out, "gnd", p.interstage);

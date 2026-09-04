@@ -19,7 +19,7 @@
 //! from the output transformer rather than gradually from the gain device.
 //! This is the one to reach for when the point is not to hear the preamplifier.
 
-use super::{iron, jfet, valve};
+use super::{iron, jfet, preamp, valve};
 use crate::dsp::device::OpAmp;
 use crate::dsp::netlist::{Circuit, Fault, Netlist, Taper};
 
@@ -111,12 +111,16 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
         // character as it crossed the middle. In front, the stage itself
         // drives the iron at a constant impedance and turning down cleans up,
         // which is what the control is for and what the hardware does.
+        // The same span-limited control as the guitar preamplifiers use, and
+        // for the same reason -- see `preamp::SPAN`.
         Amplifier::Valve => {
-            net.pot(&node, "vol", "gnd", 1_000_000.0, Taper::Audio, GAIN);
+            net.pot(&node, "vol", "vol_floor", 1_000_000.0, Taper::Log { span: preamp::SPAN }, GAIN)
+                .resistor("vol_floor", "gnd", preamp::floor_of(1_000_000.0));
             valve::stage(&mut net, "v", "vol", &valve::CLASSIC, BYPASS)
         }
         Amplifier::Jfet => {
-            net.pot(&node, "vol", "gnd", 1_000_000.0, Taper::Audio, GAIN);
+            net.pot(&node, "vol", "vol_floor", 1_000_000.0, Taper::Log { span: preamp::SPAN }, GAIN)
+                .resistor("vol_floor", "gnd", preamp::floor_of(1_000_000.0));
             jfet::stage(&mut net, "j", "vol", &jfet::CLASSIC, BYPASS)
         }
         Amplifier::OpAmp => {

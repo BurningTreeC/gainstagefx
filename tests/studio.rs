@@ -176,23 +176,48 @@ fn turning_the_gain_down_cleans_up() {
     }
 }
 
-/// And the gain control has to be a gain control.
+/// The gain control covers the span it is designed to and no more.
+///
+/// Not "as much as possible". It used to run to silence, which is eighty
+/// decibels, and eighty decibels of travel put everything worth hearing in the
+/// last tenth of the knob: the High Gain voice made 0.1 per cent distortion at
+/// a quarter turn and 25 at the stop. The pot works into a resistor now, and
+/// the span between its ends is `preamp::SPAN` -- about eighteen decibels,
+/// which is what the gain control on an amplifier of this kind covers.
+///
+/// Both bounds matter. Too little and the control does nothing; too much and
+/// it does nothing until the end.
 #[test]
-fn the_gain_control_has_range() {
-    for (name, v) in [
-        ("console", studio::CONSOLE),
-        ("valve channel", studio::VALVE_CHANNEL),
-        ("studio", studio::STUDIO),
-    ] {
-        let shut = run(&v, 220.0, 0.001, 0.0).gain_db();
-        let open = run(&v, 220.0, 0.001, 1.0).gain_db();
-        println!("{name}: {shut:.1} dB to {open:.1} dB");
+fn the_gain_control_covers_its_designed_span() {
+    let span_of = |v: &Values| {
+        run(v, 220.0, 0.001, 1.0).gain_db() - run(v, 220.0, 0.001, 0.0).gain_db()
+    };
+
+    // The channels built round a valve or a transistor put the control where
+    // the hardware does, as a volume in front of the stage.
+    let designed = 20.0 * gainstagefx::circuits::preamp::SPAN.log10();
+    for (name, v) in [("console", studio::CONSOLE), ("valve channel", studio::VALVE_CHANNEL)] {
+        let span = span_of(&v);
+        println!("{name}: a span of {span:.1} dB against {designed:.1} designed");
         assert!(
-            open - shut > 30.0,
-            "{name} only moves {:.1} dB end to end",
-            open - shut
+            (span - designed).abs() < 4.0,
+            "{name} moves {span:.1} dB end to end, against the {designed:.1} \
+             it is built for"
         );
     }
+
+    // The op-amp channel is a different control: the pot is in the feedback
+    // path, so its range is the ratio of that path to the leg rather than
+    // anything to do with a volume in front of a valve.
+    let span = span_of(&studio::STUDIO);
+    let feedback = 20.0
+        * ((studio::STUDIO.leg + studio::STUDIO.feedback) / studio::STUDIO.leg).log10();
+    println!("studio: a span of {span:.1} dB, feedback path allows {feedback:.1}");
+    assert!(
+        span > 25.0 && span <= feedback + 1.0,
+        "the op-amp channel moves {span:.1} dB, and its feedback path allows \
+         {feedback:.1}"
+    );
 }
 
 /// A microphone preamplifier is built not to run out of room, which is the

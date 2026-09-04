@@ -32,11 +32,11 @@ pictured, so it is sharp at any of them.
 
 | Voice | What it is | Measured at full drive |
 |---|---|---|
-| Clean | One valve stage barely working | 1.5 % distortion, almost all second harmonic |
-| Crunch | Two stages, the second driven by the first | 8 % |
-| High Gain | Three stages, all clipping on every note | 25 %, 11.7 % third harmonic |
-| Overdrive | Diodes across the feedback resistor | 12 %, and it cleans up when hit harder |
-| Distortion | Diodes across the signal to ground | 30 %, a ceiling the output stops at |
+| Clean | One valve stage barely working | 3 % distortion, almost all second harmonic |
+| Crunch | Two stages, the second driven by the first | 15 % |
+| High Gain | Three stages, all clipping on every note | 40 % |
+| Overdrive | Diodes across the feedback resistor | 20 %, and it cleans up when hit harder |
+| Distortion | Diodes across the signal to ground | 38 %, a ceiling the output stops at |
 | Console | A step-up transformer into a discrete stage | 5 %, essentially all second harmonic |
 | Studio | An op-amp on a studio rail | 0.00 % across the band — see below |
 
