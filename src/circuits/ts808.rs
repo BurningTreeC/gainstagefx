@@ -86,10 +86,13 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     net.resistor("u1a", "tone_in", 1_000.0) // R7
         .capacitor("tone_in", "gnd", 220e-9) // C5
         .resistor("tone_in", "vref", 10_000.0) // R10
-        .pot("tone_in", "tone_w", "tone_end", 20_000.0, Taper::Linear, TONE)
+        // The far end of the tone pot *is* the inverting input -- they are the
+        // same node on the drawing. Joining them with a small resistor instead
+        // buys an extra unknown in the matrix for nothing, and the matrix is
+        // solved a hundred thousand times a second.
+        .pot("tone_in", "tone_w", "minus_b", 20_000.0, Taper::Linear, TONE)
         .capacitor("tone_w", "r8", 220e-9) // C6
         .resistor("r8", "gnd", 220.0) // R8
-        .resistor("tone_end", "minus_b", 0.1)
         .opamp_biased("u1b", "tone_in", "minus_b", "vref", RAIL)
         .resistor("minus_b", "u1b", 1_000.0); // R9
 

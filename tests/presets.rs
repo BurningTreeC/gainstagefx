@@ -505,3 +505,23 @@ fn nothing_loaded_is_not_a_preset() {
     // And it cannot be deleted, since it is not a file.
     assert!(gainstagefx::presets::index_of(gainstagefx::presets::NONE).is_none());
 }
+
+/// A circuit's description has to fit the line it is drawn on.
+///
+/// A label wider than its box in vizia is neither wrapped nor clipped -- it
+/// spills out across whatever is beside it. The description sits on a line of
+/// its own that is `body_w()` wide, which at the size it is set holds a little
+/// over a hundred characters, so this is the length that fits rather than a
+/// style preference.
+#[test]
+fn every_circuit_description_fits_its_row() {
+    for circuit in Circuit::ALL {
+        let text = gainstagefx::editor::describe(circuit);
+        assert!(
+            text.len() <= 105,
+            "the {} description is {} characters and the row holds about 105:\n  {text}",
+            circuit.name(),
+            text.len()
+        );
+    }
+}

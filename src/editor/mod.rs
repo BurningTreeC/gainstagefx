@@ -408,12 +408,16 @@ fn row<P, F>(
 }
 
 /// One line saying what the selected circuit actually is. It changes with the
-/// selection, so it is a single line rather than five pieces of permanent
+/// selection, so it is a single line rather than a dozen pieces of permanent
 /// small print nobody reads.
-fn describe(circuit: Circuit) -> String {
+///
+/// Public so a test can check each one fits the row it is drawn on: a label
+/// wider than its box is not wrapped or clipped, it spills across whatever is
+/// beside it.
+pub fn describe(circuit: Circuit) -> String {
     match circuit {
-        Circuit::Clean => "One valve stage barely working. The sound of a signal \
-                           having been through something, not of distortion.",
+        Circuit::Clean => "One valve stage barely working: a signal having been \
+                           through something, not distortion.",
         Circuit::Crunch => "Two stages, the second driven by the first, so each \
                             amplifies the last one's distortion as well.",
         Circuit::HighGain => "Three stages run hard, all clipping on every note. \
@@ -422,20 +426,16 @@ fn describe(circuit: Circuit) -> String {
                                gain, so it keeps following and cleans up.",
         Circuit::Distortion => "Diodes across the signal to ground: a ceiling. The \
                                 wave is squared off, top to bottom of the band.",
-        Circuit::Console => "A step-up transformer into a discrete stage. Built \
-                             not to run out of room, so it happens in the last \
-                             few decibels before it does.",
+        Circuit::Console => "A step-up transformer into a discrete stage, built \
+                             not to run out of room.",
         Circuit::Studio => "An op-amp on a studio rail: nothing of its own \
                             anywhere in the band. Add iron to give it some.",
-        Circuit::Screamer => "Ibanez TS808, from the schematic. Its gain leg \
-                              leaves the bottom end alone, which is why one \
-                              sits in front of an amplifier.",
-        Circuit::Muff => "Big Muff Pi, 1973 Ram's Head. Four stages, diodes in \
-                          two of their feedback loops, and the tone control is \
-                          the mid scoop.",
-        Circuit::Boogie => "Mesa Mark IIC+ lead channel: four triodes with a \
-                            Fender stack between the first two, and its own \
-                            treble, bass and middle on those knobs.",
+        Circuit::Screamer => "Ibanez TS808. Its gain leg leaves the bottom end \
+                              alone, which is why one goes in front of an amp.",
+        Circuit::Muff => "Big Muff Pi, 1973 Ram's Head. Four stages, and the \
+                          tone control is the mid scoop.",
+        Circuit::Boogie => "Mesa Mark IIC+ lead channel: four triodes, and its \
+                            own tone stack on the tone knobs.",
     }
     .to_string()
 }

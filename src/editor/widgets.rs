@@ -396,7 +396,6 @@ impl Selector {
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
-        let count = labels.len().max(1);
         let captions = labels.clone();
         let (start, span) = (offset, total.max(1));
         Self {
