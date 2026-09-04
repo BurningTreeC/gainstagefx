@@ -79,6 +79,12 @@ pub struct Simulation {
     /// lock, and a lock on the audio thread is a dropout.
     scratch: Vec<f64>,
     previous: Vec<f64>,
+    /// The answer before that, so the next sample can be started from where
+    /// the last two were heading rather than from where the last one was.
+    earlier: Vec<f64>,
+    /// Whether the next solve may be started from an extrapolation. False if
+    /// anything in the circuit switches rather than bends.
+    predictable: bool,
     dirty: bool,
     /// How much work the solver is actually doing, which is the only way to
     /// tell a circuit that costs what it should from one iterating itself to
@@ -113,6 +119,8 @@ impl Simulation {
             guess: vec![0.0; n],
             scratch: vec![0.0; n],
             previous: vec![0.0; n],
+            earlier: vec![0.0; n],
+            predictable: false,
             dirty: true,
             solves: 0,
             newton_passes: 0,
@@ -264,6 +272,7 @@ impl Simulation {
                 }
             }
         }
+        self.predictable = !self.devices.iter().any(|d| d.switches());
         self.base = base;
         self.base_dc = base_dc;
         self.source = source;
@@ -381,7 +390,27 @@ impl Simulation {
             substitute(&self.matrix, &self.pivots, &mut self.rhs, n, &mut self.scratch);
             self.voltage.copy_from_slice(&self.rhs);
         } else {
-            self.previous.copy_from_slice(&self.voltage);
+            // Start from where the last two samples were heading, not from
+            // where the last one was. Audio is smooth over a sample, so a
+            // straight line through the last two lands much closer to the
+            // answer than the last one does, and Newton then has less to do:
+            // measured, the passes drop from 2.9 a sample to the floor of 2.
+            //
+            // Only where nothing in the circuit switches. Carried through an
+            // op-amp deciding which rail it is against, the prediction put its
+            // output at -90 V against a 3.5 V rail and left it there: two
+            // passes is enough for a device that bends and not for one that
+            // steps, and a settled wrong state still reports itself settled.
+            if self.predictable {
+                for k in 0..n {
+                    let predicted = 2.0 * self.voltage[k] - self.earlier[k];
+                    self.earlier[k] = self.voltage[k];
+                    self.voltage[k] = predicted;
+                }
+            } else {
+                self.earlier.copy_from_slice(&self.voltage);
+            }
+            self.previous.copy_from_slice(&self.earlier);
             let mut settled = false;
             for _ in 0..MAX_ITERATIONS {
                 self.newton_passes += 1;

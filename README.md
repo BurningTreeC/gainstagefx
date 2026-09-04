@@ -87,12 +87,17 @@ overtakes it when driven hard.
 
 ## What it costs
 
-One channel at 48 kHz, as a fraction of the time available, at the
-oversampling each voice actually needs:
+One channel at 48 kHz, as a fraction of the time available, with each preset
+set up exactly as it ships. The heaviest sound in the catalogue is Scooped
+Metal — three cascaded valve stages — at 22 %; most sit between 5 and 16 %.
 
-| Clean | Crunch | High Gain | Overdrive | Distortion | Console | Studio |
-|---|---|---|---|---|---|---|
-| 6.8 % | 15.4 % | 28.1 % | 11.3 % | 11.1 % | 10.6 % | 4.5 % |
+| Studio Preamp | Valve Colour | Green Overdrive | Blues Crunch | Console Channel | Scooped Metal |
+|---|---|---|---|---|---|
+| 4.6 % | 6.8 % | 12.0 % | 13.8 % | 15.2 % | 22.2 % |
+
+Doubling the Quality setting roughly doubles the cost: Scooped Metal is 22 % at
+two times and 45 % at four. The presets ask for what their own sound needs, so
+raise it only when you want to hear the difference.
 
 The Quality control is part of the sound rather than only of the cost, and the
 presets set it. Measured against an eight times reference at 3 kHz, a diode

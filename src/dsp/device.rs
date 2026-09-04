@@ -112,6 +112,18 @@ pub trait Device: Send {
     }
     /// Called once the sample is settled.
     fn advance(&mut self) {}
+
+    /// Whether this device jumps between states rather than bending smoothly.
+    ///
+    /// An op-amp is either following its input or against a rail, and which
+    /// one it is changes in a step. That matters to whoever is choosing where
+    /// to start the next solve: a straight line through the last two answers
+    /// is a good guess for something that bends and a bad one for something
+    /// that switches, because it can carry the device into the wrong state --
+    /// where, being stable, it reports itself settled and stays.
+    fn switches(&self) -> bool {
+        false
+    }
 }
 
 fn across(v: &[f64], a: usize, b: usize) -> f64 {
@@ -366,6 +378,10 @@ impl OpAmp {
 }
 
 impl Device for OpAmp {
+    fn switches(&self) -> bool {
+        true
+    }
+
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let output = if self.out == GROUND { 0.0 } else { v[self.out] };
         let error = across(v, self.plus, self.minus);

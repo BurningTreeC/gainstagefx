@@ -708,6 +708,18 @@ impl Chain {
         self.set_oversampling(self.over.factor());
     }
 
+    /// How many Newton passes the gain circuit is averaging, which is the
+    /// number that says whether a setting is expensive because the circuit is
+    /// large or because the solve is struggling.
+    pub fn passes_per_sample(&self) -> f64 {
+        let (solves, passes, _, _) = self.gains[self.gain].statistics();
+        if solves == 0 {
+            0.0
+        } else {
+            passes as f64 / solves as f64
+        }
+    }
+
     /// One figure, always. See `LATENCY`.
     pub fn latency(&self) -> u32 {
         LATENCY
