@@ -510,6 +510,47 @@ impl Delay {
     }
 }
 
+/// Every panel setting that reaches the circuits, as plain values.
+///
+/// This exists so the step from "what the panel says" to "what the chain is
+/// set to" is one function that can be tested. It was not, and the four
+/// controls that move a circuit -- drive, bass, mid, treble -- were silently
+/// dropped from the plugin's block loop in an edit. Nothing noticed, because
+/// every test drove the chain directly and none of them went through the
+/// plugin at all: the knobs simply did nothing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Settings {
+    pub gain: Gain,
+    pub diode: Diode,
+    pub amplifier: Amplifier,
+    pub iron: Iron,
+    pub tone: Tone,
+    pub cabinet: Cabinet,
+    pub drive: f64,
+    pub bass: f64,
+    pub mid: f64,
+    pub treble: f64,
+    pub oversampling: usize,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            gain: Gain::Crunch,
+            diode: Diode::Silicon,
+            amplifier: Amplifier::Jfet,
+            iron: Iron::Off,
+            tone: Tone::Wide,
+            cabinet: Cabinet::Off,
+            drive: 0.5,
+            bass: 0.5,
+            mid: 0.5,
+            treble: 0.5,
+            oversampling: 2,
+        }
+    }
+}
+
 /// The whole signal path, in the order the signal goes through it.
 ///
 /// It owns *every* circuit that can be selected and switches by index, rather
@@ -718,6 +759,23 @@ impl Chain {
         } else {
             passes as f64 / solves as f64
         }
+    }
+
+    /// Puts a whole panel's worth of settings onto the chain.
+    ///
+    /// Every one of them, in one place. Anything that reaches a circuit has to
+    /// go through here, so that forgetting one is a change to this function
+    /// rather than a line quietly missing from a loop somewhere.
+    pub fn apply(&mut self, s: &Settings) {
+        self.set_voice(s.gain, s.diode, s.amplifier);
+        self.set_iron(s.iron);
+        self.set_tone_section(s.tone);
+        self.set_cabinet(s.cabinet);
+        self.set_oversampling(s.oversampling);
+        self.set_drive(s.drive);
+        self.set_tone(crate::circuits::tone::BASS, s.bass);
+        self.set_tone(crate::circuits::tone::MID, s.mid);
+        self.set_tone(crate::circuits::tone::TREBLE, s.treble);
     }
 
     /// One figure, always. See `LATENCY`.

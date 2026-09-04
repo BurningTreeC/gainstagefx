@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::meters::Meters;
 use crate::params::{Amplifier, Diode, GainStageParams, Oversampling};
-use crate::voice::{Chain, LATENCY, NOMINAL_DBFS};
+use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
@@ -112,9 +112,6 @@ impl Plugin for GainStageFx {
         let oversampling = self.params.oversampling.value();
         if oversampling != self.oversampling {
             self.oversampling = oversampling;
-            for chain in &mut self.channels {
-                chain.set_oversampling(oversampling.factor());
-            }
         }
 
         let circuit = self.params.circuit.value();
@@ -122,25 +119,36 @@ impl Plugin for GainStageFx {
         // rather than left wherever the greyed-out control happens to sit --
         // otherwise the same patch would load into a different array slot
         // depending on a control that does nothing.
-        let diode = if circuit.has_diodes() {
-            self.params.diode.value()
-        } else {
-            Diode::Silicon
-        };
-        let amplifier = if circuit.has_amplifier() {
-            self.params.amplifier.value()
-        } else {
-            Amplifier::Valve
+        let settings = Settings {
+            gain: circuit.voice(),
+            diode: if circuit.has_diodes() {
+                self.params.diode.value().voice()
+            } else {
+                Diode::Silicon.voice()
+            },
+            amplifier: if circuit.has_amplifier() {
+                self.params.amplifier.value().voice()
+            } else {
+                Amplifier::Valve.voice()
+            },
+            iron: self.params.iron.value().voice(),
+            tone: self.params.tone.value().voice(),
+            cabinet: self.params.cabinet.value().voice(),
+            drive: self.params.drive.value() as f64,
+            bass: self.params.bass.value() as f64,
+            mid: self.params.mid.value() as f64,
+            treble: self.params.treble.value() as f64,
+            oversampling: oversampling.factor(),
         };
 
-        // The selections move once a block, not once a sample: switching a
-        // circuit resets it, and doing that at audio rate would be a click on
-        // every sample rather than a control.
+        // Everything that reaches a circuit moves once a block, not once a
+        // sample. Switching a circuit resets it, and moving a control
+        // invalidates the matrix so the next sample rebuilds it and hunts the
+        // operating point again -- either of those at audio rate is ruinous.
+        // It all goes through `Chain::apply`, so that forgetting one is a
+        // change to that function rather than a line missing from here.
         for chain in &mut self.channels {
-            chain.set_voice(circuit.voice(), diode.voice(), amplifier.voice());
-            chain.set_iron(self.params.iron.value().voice());
-            chain.set_tone_section(self.params.tone.value().voice());
-            chain.set_cabinet(self.params.cabinet.value().voice());
+            chain.apply(&settings);
         }
 
         let input_trim = util::db_to_gain(self.params.input_trim.value()) as f64;

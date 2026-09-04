@@ -57,6 +57,10 @@ pub fn create(
     create_vizia_editor(editor_state, ViziaTheming::None, move |cx, _| {
         assets::register_noto_sans_regular(cx);
         assets::register_noto_sans_bold(cx);
+        // The only styling the panel takes from a sheet rather than from its
+        // own drawing: the scroll bar, which vizia builds but cannot size or
+        // colour without a theme.
+        let _ = cx.add_stylesheet(session::SCROLLBAR);
 
         Panel {
             params: params.clone(),

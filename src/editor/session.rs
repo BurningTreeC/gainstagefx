@@ -592,6 +592,25 @@ impl View for SizeRow {
 // The list
 // ---------------------------------------------------------------------------
 
+/// What the scroll bar looks like.
+///
+/// vizia builds one for a vertical `ScrollView` on its own, but the plugin
+/// runs with no theme at all -- deliberately, so that nothing arrives looking
+/// like a default toolkit -- and with no theme the bar has no width, no
+/// colour and no thumb. It is there, and it is invisible, so the list scrolls
+/// with no sign that it can.
+pub const SCROLLBAR: &str = r#"
+scrollbar {
+    width: 8px;
+    background-color: #00000055;
+}
+scrollbar .thumb {
+    width: 8px;
+    background-color: #ffffff40;
+    corner-radius: 4px;
+}
+"#;
+
 pub fn menu(cx: &mut Context) {
     Binding::new(cx, Session::open, |cx, open| {
         if !open.get(cx) {
