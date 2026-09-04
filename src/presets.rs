@@ -143,7 +143,12 @@ pub const PRESETS: &[Preset] = &[
     // output -- so these keep following what is played and clean up when the
     // playing gets quieter. Mostly with the cabinet off, because an overdrive
     // is usually in front of an amplifier rather than instead of one.
-    Preset { drive: 0.85, circuit: Circuit::Overdrive, mid: 0.62, oversampling: Oversampling::Four, ..base("Overdrive", "Green Overdrive") },
+    // The name was always describing a particular green box, and now it is
+    // one: the modelled TS808 rather than the generic loop clipper. Its tone
+    // control is the circuit's own, so the plugin's stack is out of the path
+    // and the Treble knob is what the pedal has.
+    Preset { drive: 0.85, circuit: Circuit::Screamer, tone: ToneStack::Off, treble: 0.5, oversampling: Oversampling::Off, ..base("Overdrive", "Green Overdrive") },
+    Preset { drive: 0.40, circuit: Circuit::Screamer, tone: ToneStack::Off, treble: 0.65, output_trim: 1.5, oversampling: Oversampling::Off, ..base("Overdrive", "Screamer Boost") },
     Preset { drive: 0.70, circuit: Circuit::Overdrive, tone: ToneStack::Off, oversampling: Oversampling::Four, ..base("Overdrive", "Transparent Boost") },
     Preset { drive: 0.90, circuit: Circuit::Overdrive, diode: Diode::Germanium, mid: 0.6, oversampling: Oversampling::Four, ..base("Overdrive", "Germanium Warmth") },
     Preset { drive: 0.95, circuit: Circuit::Overdrive, diode: Diode::Led, treble: 0.58, oversampling: Oversampling::Four, ..base("Overdrive", "LED Headroom") },
@@ -157,12 +162,36 @@ pub const PRESETS: &[Preset] = &[
     Preset { drive: 0.85, circuit: Circuit::Distortion, diode: Diode::Germanium, bass: 0.65, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Woolly Fuzz") },
     Preset { drive: 0.97, circuit: Circuit::Distortion, diode: Diode::Led, bass: 0.55, treble: 0.7, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "LED Wall") },
     Preset { drive: 0.92, circuit: Circuit::Distortion, mix: 0.6, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Blended Grit") },
+    // The modelled four stage fuzz. Its tone control is a scoop rather than a
+    // treble cut -- turning it *down* is what makes the notch -- so the stack
+    // is off and the Treble knob is the pedal's own.
+    Preset { drive: 0.90, circuit: Circuit::Muff, tone: ToneStack::Off, treble: 0.35, cabinet: Cabinet::Stack, oversampling: Oversampling::Off, ..base("Distortion", "Sustain Fuzz") },
+
+    // --- Modelled amplifiers ---------------------------------------------
+    // Whole preamplifiers rather than pedals: the circuits in src/circuits
+    // that were built from a drawing, with the controls where the drawing
+    // puts them. The Mark IIC+ carries its own tone stack, so the stack is
+    // off and the three knobs are the amplifier's; the 5150's stack could not
+    // be traced, so it borrows the plugin's.
+    Preset { drive: 0.85, circuit: Circuit::Boogie, tone: ToneStack::Off, bass: 0.60, mid: 0.25, treble: 0.70, cabinet: Cabinet::Stack, oversampling: Oversampling::Off, ..base("Amplifier", "Boutique Lead") },
+    Preset { drive: 0.95, circuit: Circuit::Boogie, tone: ToneStack::Off, bass: 0.70, mid: 0.15, treble: 0.75, cabinet: Cabinet::Stack, oversampling: Oversampling::Off, ..base("Amplifier", "Boutique Rhythm") },
+    Preset { drive: 0.90, circuit: Circuit::Peavey, tone: ToneStack::Scooping, bass: 0.70, mid: 0.15, treble: 0.75, cabinet: Cabinet::Stack, oversampling: Oversampling::Off, ..base("Amplifier", "Ultra Lead") },
+    Preset { drive: 0.75, circuit: Circuit::Peavey, tone: ToneStack::Wide, bass: 0.45, mid: 0.50, treble: 0.65, cabinet: Cabinet::Stack, oversampling: Oversampling::Off, ..base("Amplifier", "Ultra Rhythm") },
 ];
 
 /// The groups, in the order they should be shown: quietest first, so the list
 /// itself reads as a range rather than as an alphabetical accident.
-pub const GROUPS: [&str; 6] =
-    ["Studio", "Preamp", "Crunch", "High Gain", "Overdrive", "Distortion"];
+pub const GROUPS: [&str; 7] = [
+    "Studio",
+    "Preamp",
+    "Crunch",
+    "High Gain",
+    "Overdrive",
+    "Distortion",
+    // Last because it is a different kind of entry: not a topology set up to
+    // make a sound, but a particular amplifier modelled from its drawing.
+    "Amplifier",
+];
 
 impl Preset {
     /// The preset as parameter ids and the values the panel would show, which

@@ -14,3 +14,9 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Manufacturers' schematics. They are what the models in src/circuits were
+# built from and they belong on the bench, not in the repository: they are
+# somebody else's drawings, and publishing them is not ours to do. The modules
+# quote the values and say what they mean, which is the part that is ours.
+/docs/schematics/

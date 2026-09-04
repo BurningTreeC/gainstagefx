@@ -1,6 +1,5 @@
 //! What the plugin ships knowing how to sound like.
 
-use gainstagefx::circuits::clipper::GAIN;
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::params::{Cabinet, Circuit, ToneStack};
 use gainstagefx::presets::{GROUPS, PRESETS};
@@ -74,17 +73,40 @@ fn every_preset_is_within_range() {
     }
 }
 
-/// The pedals alias audibly below four times oversampling and the valve
-/// cascades do not, so each preset has to ask for what its own sound needs.
-/// Measured against an eight times reference at 3 kHz: a clipper to ground is
-/// 31 dB down at two times and 71 at four, while a three stage valve cascade
-/// is already 55 dB down at two -- and it is the cascade that costs anything.
+/// What the modelled circuits cost, measured rather than assumed.
+///
+/// The four models run at the host rate because they are expensive, and this
+/// is the one place in the plugin where sound was traded for cost -- so the
+/// price is written down here rather than left to be discovered.
+///
+/// Per channel at 48 kHz, and the error against an 8x reference on a 3 kHz
+/// tone, which is the worst case because its third harmonic is already past
+/// Nyquist:
+///
+/// ```text
+///                 1x            2x            4x
+///   TS808      25.6%  -36 dB  37.0%  -45 dB  75.4%  -59 dB
+///   Big Muff   24.7%  -12 dB  43.6%  -35 dB  83.5%  -49 dB
+///   Mark IIC+  22.3%  -24 dB  35.1%  -36 dB  66.4%  -46 dB
+///   5150       33.8%  -16 dB  61.6%  -22 dB  116.9% -34 dB
+/// ```
+///
+/// Two things are worth reading off that. Going from 2x to 1x saves only
+/// about a third, not half, because the solver needs more Newton passes when
+/// the signal moves further between steps -- so the saving is smaller than it
+/// looks. And what it buys is 12 to 23 dB of alias rejection, which on the
+/// Muff and the 5150 is audible.
+///
+/// It is one word per preset to put back.
 #[test]
 fn the_pedals_ask_for_the_oversampling_they_need() {
     use gainstagefx::params::Oversampling;
     for preset in PRESETS {
         let wanted = match preset.circuit {
             Circuit::Overdrive | Circuit::Distortion => Oversampling::Four,
+            // The modelled circuits run at the host rate, which is a decision
+            // about cost and not about sound -- see the note on this test.
+            c if c.is_modelled() => Oversampling::Off,
             _ => Oversampling::Two,
         };
         assert_eq!(
@@ -209,7 +231,10 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
         let netlist =
             gainstagefx::voice::build_voice(gain, diode, amplifier).expect("builds");
         let mut sim = gainstagefx::dsp::time::Simulation::new(netlist, RATE);
-        sim.set_control(GAIN, preset.drive as f64);
+        // Whichever control the Drive knob actually turns. The topologies all
+        // put it first; a modelled circuit puts its controls where the drawing
+        // does, so on a Mark IIC+ control zero is the treble.
+        sim.set_control(gain.drive_control(), preset.drive as f64);
         let tone = Tone::near(RATE, 16_384, 220.0, CALIBRATION[index].drive_volts);
         measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x)).thd_percent()
     };

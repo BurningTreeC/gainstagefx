@@ -231,9 +231,13 @@ impl Model for Session {
                     self.sizing = false;
                     self.scale = *scale;
                     cx.set_user_scale_factor(*scale);
+                    // And into the state the host saves and sizes the window
+                    // from, which vizia does not do for us. See the note on
+                    // `remember_scale`.
+                    crate::editor::remember_scale(&self.params.editor_state, *scale);
                     // The host is told to give the window its new size. Done
-                    // after the scale is set, because the size it asks for is
-                    // read back from it.
+                    // after both, because the size it asks for is read back
+                    // from what they just set.
                     cx.emit(GuiContextEvent::Resize);
                 }
                 SessionEvent::Close => {

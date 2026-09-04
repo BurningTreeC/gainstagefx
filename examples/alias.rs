@@ -34,6 +34,10 @@ fn main() {
         voice::Gain::Distortion,
         voice::Gain::Console,
         voice::Gain::Studio,
+        voice::Gain::Screamer,
+        voice::Gain::Muff,
+        voice::Gain::Boogie,
+        voice::Gain::Peavey,
     ] {
         // 3 kHz: its third harmonic is already past Nyquist at this rate, so
         // everything above that has to fold somewhere.

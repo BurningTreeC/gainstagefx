@@ -13,7 +13,7 @@
 //! is a claim about how a thing works; that one made no claim at all.
 
 mod panel;
-mod session;
+pub mod session;
 mod sprites;
 mod style;
 mod widgets;
@@ -40,6 +40,36 @@ impl Model for Panel {}
 
 pub fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (PANEL_W as u32, WINDOW_H as u32))
+}
+
+/// Writes the chosen size into the state the host saves and reads the window
+/// size from.
+///
+/// `cx.set_user_scale_factor` changes what vizia *draws* at, and that is all
+/// it changes. Two other things depend on the figure, and both of them read it
+/// out of `ViziaState` instead: `Editor::size`, which is what the host is told
+/// to make the window, and the serialised editor state, which is what comes
+/// back next session.
+///
+/// nih-plug copies the figure across on a `GeometryChanged`, and that does not
+/// fire here: `Resize` asks for `inner_logical_size`, which is the size
+/// *before* scaling and has not moved, so vizia sees the same window size it
+/// already had and says nothing. The scale was therefore never stored -- which
+/// is why the setting did not survive a session, and why the host kept sizing
+/// the window for the old scale while the panel drew itself at the new one.
+/// That mismatch is the "broken scaling": on a platform whose host honours the
+/// size it was given, the panel is drawn larger than the window it is in.
+///
+/// So it is written here, directly. `PersistentField::set` is the only door
+/// into that field and it takes a whole `ViziaState`, so one is made to carry
+/// the number in and is dropped on the way out. Its size function is never
+/// asked anything -- `set` copies the scale and nothing else.
+pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
+    use nih_plug::params::persist::PersistentField;
+    let carrier = ViziaState::new_with_default_scale_factor(|| (0, 0), scale);
+    if let Ok(carrier) = Arc::try_unwrap(carrier) {
+        PersistentField::set(state, carrier);
+    }
 }
 
 /// Height of a label box, which is centred on its anchor point.
