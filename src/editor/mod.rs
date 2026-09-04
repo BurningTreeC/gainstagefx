@@ -39,7 +39,7 @@ pub struct Panel {
 impl Model for Panel {}
 
 pub fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (PANEL_W as u32, WINDOW_H as u32))
+    ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 2.0)
 }
 
 /// Writes the chosen size into the state the host saves and reads the window
