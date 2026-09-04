@@ -48,6 +48,19 @@ pub struct Values {
     pub leg: f64,
     pub leg_c: f64,
     pub rail: f64,
+    /// How many diodes in series each way.
+    ///
+    /// Equal numbers make a symmetric clipper, and a symmetric clipper works
+    /// both halves of the wave identically -- so the waveform has half wave
+    /// symmetry and *cannot* make an even harmonic. Measured, these read
+    /// exactly 0.0 per cent second, fourth and sixth, and nothing but odd
+    /// harmonics is what a hard, hollow distortion sounds like.
+    ///
+    /// Unequal numbers clip one half sooner than the other, which is what a
+    /// great many pedals do on purpose and where their warmth comes from. It
+    /// is also what a valve does by its nature, which is why a valve stage
+    /// makes second harmonic without being asked.
+    pub stack: (usize, usize),
 }
 
 /// The overdrive arrangement: silicon in the loop, and a capacitor in the gain
@@ -61,6 +74,7 @@ pub const OVERDRIVE: Values = Values {
     leg: 4_700.0,
     leg_c: 47e-9,
     rail: OpAmp::NINE_VOLT,
+    stack: (2, 1),
 };
 
 /// The distortion arrangement: a great deal of gain into diodes that hold the
@@ -84,7 +98,26 @@ pub const DISTORTION: Values = Values {
     leg: 4_700.0,
     leg_c: 1e-6,
     rail: OpAmp::NINE_VOLT,
+    stack: (2, 1),
 };
+
+/// A run of diodes nose to tail between two nodes.
+///
+/// More of them in series means that side of the wave has to reach a higher
+/// voltage before it clips, which is the whole mechanism behind asymmetric
+/// clipping.
+fn series(net: &mut Netlist, from: &str, to: &str, count: usize, spec: DiodeSpec, tag: &str) {
+    let mut node = String::from(from);
+    for i in 0..count.max(1) {
+        let next = if i + 1 == count.max(1) {
+            String::from(to)
+        } else {
+            format!("{tag}{i}")
+        };
+        net.diode(&node, &next, spec);
+        node = next;
+    }
+}
 
 pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("clipper");
@@ -109,19 +142,18 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
 
     match v.placement {
         Placement::InTheLoop => {
-            net.diode("amp", "minus", v.diode)
-                .diode("minus", "amp", v.diode)
-                .resistor("amp", "out", 1_000.0)
-                .resistor("out", "gnd", load);
+            series(&mut net, "amp", "minus", v.stack.0, v.diode, "fl");
+            series(&mut net, "minus", "amp", v.stack.1, v.diode, "rl");
+            net.resistor("amp", "out", 1_000.0).resistor("out", "gnd", load);
         }
         Placement::ToGround => {
             // The series resistor is what stops the pair being a short across
             // the output, and with the diodes' own capacitance it is the only
             // thing rounding the corners at all.
-            net.resistor("amp", "out", 10_000.0)
-                .diode("out", "gnd", v.diode)
-                .diode("gnd", "out", v.diode)
-                .resistor("out", "gnd", load);
+            net.resistor("amp", "out", 10_000.0);
+            series(&mut net, "out", "gnd", v.stack.0, v.diode, "fg");
+            series(&mut net, "gnd", "out", v.stack.1, v.diode, "rg");
+            net.resistor("out", "gnd", load);
         }
     }
     net.build("out")

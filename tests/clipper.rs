@@ -20,10 +20,11 @@ fn run(v: &Values, volts: f64, gain: f64) -> measure::Measured {
 /// have. Not approximately none: none.
 #[test]
 fn a_symmetric_pair_makes_no_even_harmonics() {
-    for (name, v) in [
+    for (name, mut v) in [
         ("in the loop", clipper::OVERDRIVE),
         ("to ground", clipper::DISTORTION),
     ] {
+        v.stack = (1, 1);
         let m = run(&v, 0.2, 0.6);
         assert!(
             m.harmonic_percent(2) < 0.2,
@@ -34,6 +35,36 @@ fn a_symmetric_pair_makes_no_even_harmonics() {
             m.harmonic_percent(3) > 5.0,
             "{name} should be making third: {:.2} %",
             m.harmonic_percent(3)
+        );
+    }
+}
+
+/// And an unequal number each way clips one half sooner than the other, which
+/// breaks that symmetry and is the only way these circuits can make an even
+/// harmonic at all.
+///
+/// It is what a great many pedals do on purpose. Symmetric, the catalogue
+/// measured exactly 0.0 per cent second, fourth and sixth -- nothing but odd
+/// harmonics, which is what a hard and hollow distortion sounds like.
+#[test]
+fn an_uneven_stack_is_what_makes_the_even_harmonics() {
+    for (name, values) in [
+        ("in the loop", clipper::OVERDRIVE),
+        ("to ground", clipper::DISTORTION),
+    ] {
+        assert_ne!(values.stack.0, values.stack.1, "{name} ships symmetric");
+        let m = run(&values, 0.2, 0.6);
+        assert!(
+            m.harmonic_percent(2) > 2.0,
+            "{name} is asymmetric and still made only {:.2} % second harmonic",
+            m.harmonic_percent(2)
+        );
+        let mut even = values;
+        even.stack = (1, 1);
+        assert!(
+            m.harmonic_percent(2) > run(&even, 0.2, 0.6).harmonic_percent(2) * 10.0,
+            "{name} should make far more second harmonic than the symmetric \
+             arrangement does"
         );
     }
 }
