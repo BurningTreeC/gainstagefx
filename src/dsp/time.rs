@@ -12,7 +12,7 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
-use super::device::{Core, Device, Diode, Jfet, OpAmp, Stamper, Triode};
+use super::device::{Bipolar, Core, Device, Diode, Jfet, OpAmp, Stamper, Triode};
 use super::netlist::{Circuit, Part, GROUND};
 
 /// How still the solve has to get before it is called settled, in volts.
@@ -252,6 +252,9 @@ impl Simulation {
                     Part::Jfet { d, g, s: source_pin, spec } => {
                         self.devices
                             .push(Box::new(Jfet::new(d, g, source_pin, spec)));
+                    }
+                    Part::Bipolar { c, b, e, spec } => {
+                        self.devices.push(Box::new(Bipolar::new(c, b, e, spec)));
                     }
                     Part::Core { a, b, spec } => {
                         // The only device that has to be told the rate: it

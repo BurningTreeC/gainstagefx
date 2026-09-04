@@ -135,6 +135,37 @@ impl CoreSpec {
     pub const AMORPHOUS: CoreSpec = CoreSpec { henry: 150.0, knee: 0.030, sharpness: 9.0 };
 }
 
+/// A bipolar transistor, by the Ebers-Moll transport model.
+///
+/// Saturation current, forward and reverse current gain, and the Early
+/// voltage that gives the collector its finite output resistance.
+#[derive(Clone, Copy, Debug)]
+pub struct BipolarSpec {
+    pub saturation: f64,
+    pub forward_beta: f64,
+    pub reverse_beta: f64,
+    pub early: f64,
+}
+
+impl BipolarSpec {
+    /// The small-signal NPN in a great deal of Japanese pedal circuitry --
+    /// the 2SC3378 and its relatives. High beta, low noise.
+    pub const NPN_2SC3378: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-14,
+        forward_beta: 320.0,
+        reverse_beta: 4.0,
+        early: 100.0,
+    };
+    /// A general purpose small-signal NPN, for where a circuit only needs
+    /// "a transistor".
+    pub const NPN: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-14,
+        forward_beta: 200.0,
+        reverse_beta: 3.0,
+        early: 80.0,
+    };
+}
+
 /// One part.
 #[derive(Clone, Debug)]
 pub enum Part {
@@ -170,6 +201,8 @@ pub enum Part {
     /// A transformer's magnetising branch, which is the part that saturates.
     /// Put across a winding, alongside the `Transformer` that sets the ratio.
     Core { a: usize, b: usize, spec: CoreSpec },
+    /// A bipolar transistor: collector, base, emitter.
+    Bipolar { c: usize, b: usize, e: usize, spec: BipolarSpec },
 }
 
 /// Saturation current and emission coefficient.
@@ -223,6 +256,7 @@ impl Part {
             Part::Transformer { p1, p2, s1, s2, .. } => vec![p1, p2, s1, s2],
             Part::Jfet { d, g, s, .. } => vec![d, g, s],
             Part::Core { a, b, .. } => vec![a, b],
+            Part::Bipolar { c, b, e, .. } => vec![c, b, e],
         }
     }
 
@@ -248,6 +282,7 @@ impl Part {
                 | Part::OpAmp { .. }
                 | Part::Jfet { .. }
                 | Part::Core { .. }
+                | Part::Bipolar { .. }
         )
     }
 
@@ -263,6 +298,7 @@ impl Part {
             Part::Triode { .. } => "triode",
             Part::Jfet { .. } => "JFET",
             Part::Core { .. } => "core",
+            Part::Bipolar { .. } => "transistor",
             Part::OpAmp { .. } => "op-amp",
             Part::Transformer { .. } => "transformer",
         }
@@ -391,6 +427,12 @@ impl Netlist {
         self
     }
 
+    pub fn bipolar(&mut self, c: &str, b: &str, e: &str, spec: BipolarSpec) -> &mut Self {
+        let (c, b, e) = (self.pin(c), self.pin(b), self.pin(e));
+        self.parts.push(Part::Bipolar { c, b, e, spec });
+        self
+    }
+
     /// The magnetising branch of a winding: what makes iron sound like iron.
     pub fn core(&mut self, a: &str, b: &str, spec: CoreSpec) -> &mut Self {
         let (a, b) = (self.pin(a), self.pin(b));
@@ -465,6 +507,12 @@ impl Netlist {
                 Part::Jfet { spec, .. } => spec.idss <= 0.0 || spec.pinch_off >= 0.0,
                 Part::Core { spec, .. } => {
                     spec.henry <= 0.0 || spec.knee <= 0.0 || spec.sharpness <= 1.0
+                }
+                Part::Bipolar { spec, .. } => {
+                    spec.saturation <= 0.0
+                        || spec.forward_beta <= 0.0
+                        || spec.reverse_beta <= 0.0
+                        || spec.early <= 0.0
                 }
                 Part::OpAmp { rail, .. } => rail <= 0.0,
                 Part::Transformer { ratio, .. } => ratio <= 0.0,

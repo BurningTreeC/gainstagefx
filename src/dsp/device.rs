@@ -12,7 +12,7 @@
 //! Three evaluations of a closed-form curve is not the expensive part of a
 //! circuit solve.
 
-use super::netlist::{CoreSpec, DiodeSpec, JfetSpec, TriodeSpec, GROUND};
+use super::netlist::{BipolarSpec, CoreSpec, DiodeSpec, JfetSpec, TriodeSpec, GROUND};
 
 /// Thermal voltage at room temperature.
 const VT: f64 = 0.025_852;
@@ -677,5 +677,102 @@ impl Device for Core {
     fn advance(&mut self) {
         self.last_flux = self.flux;
         self.last_volts = self.volts;
+    }
+}
+
+/// A bipolar transistor, by the Ebers-Moll transport model.
+///
+/// Both junctions, not just the forward one. A transistor in a pedal spends a
+/// good deal of its time driven into saturation -- collector pulled down to
+/// near the emitter -- and what it does there is a large part of how the
+/// circuit sounds. Modelling only the base-emitter junction gives a device
+/// that amplifies forever and never runs out of collector.
+///
+/// The Early voltage gives the collector its finite output resistance, which
+/// is what stops a common-emitter stage having infinite gain.
+pub struct Bipolar {
+    c: usize,
+    b: usize,
+    e: usize,
+    spec: BipolarSpec,
+    vbe: f64,
+    vbc: f64,
+    delta: f64,
+    clamped: bool,
+}
+
+impl Bipolar {
+    pub fn new(c: usize, b: usize, e: usize, spec: BipolarSpec) -> Self {
+        Self { c, b, e, spec, vbe: 0.0, vbc: 0.0, delta: 0.0, clamped: false }
+    }
+
+    /// The junction limiter, as for a diode: a flat cap on the step is
+    /// hopeless when the answer is a long way off, and an exponential
+    /// overflows if it is let run.
+    fn limit_junction(&self, wanted: f64, old: f64) -> (f64, bool) {
+        let critical = VT * (VT / (std::f64::consts::SQRT_2 * self.spec.saturation)).ln();
+        if wanted > critical && (wanted - old).abs() > 2.0 * VT {
+            if old > 0.0 {
+                let arg = 1.0 + (wanted - old) / VT;
+                (if arg > 0.0 { old + VT * arg.ln() } else { critical }, true)
+            } else {
+                (VT * (wanted / VT).ln().max(-40.0), true)
+            }
+        } else {
+            (wanted, false)
+        }
+    }
+}
+
+impl Device for Bipolar {
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        let (vbe, held_e) = self.limit_junction(across(v, self.b, self.e), self.vbe);
+        let (vbc, held_c) = self.limit_junction(across(v, self.b, self.c), self.vbc);
+        self.clamped = held_e || held_c;
+        self.delta = (vbe - self.vbe).abs().max((vbc - self.vbc).abs());
+        self.vbe = vbe;
+        self.vbc = vbc;
+
+        // Both junctions, each with its own slope -- and the slope of
+        // `Is (e^x - 1)` is `(i + Is) / VT`, so it comes from the same
+        // exponential rather than a second one.
+        let cap = 60.0;
+        let ef = (vbe / VT).min(cap).exp();
+        let er = (vbc / VT).min(cap).exp();
+        let forward = self.spec.saturation * (ef - 1.0);
+        let reverse = self.spec.saturation * (er - 1.0);
+        let gf = (self.spec.saturation * ef / VT).max(1e-12);
+        let gr = (self.spec.saturation * er / VT).max(1e-12);
+
+        // The Early effect: the collector current rises slightly with the
+        // voltage across it, which is the stage's finite output resistance.
+        let vce = vbe - vbc;
+        let early = 1.0 + (vce / self.spec.early).max(-0.9);
+
+        let ic = (forward - reverse) * early - reverse / self.spec.reverse_beta;
+        let ib = forward / self.spec.forward_beta + reverse / self.spec.reverse_beta;
+
+        let dic_dvbe = gf * early;
+        let dic_dvbc = -gr * (early + 1.0 / self.spec.reverse_beta);
+        let dib_dvbe = gf / self.spec.forward_beta;
+        let dib_dvbc = gr / self.spec.reverse_beta;
+
+        // Collector current, controlled by both junctions.
+        s.transconductance(self.c, self.e, self.b, self.e, dic_dvbe);
+        s.transconductance(self.c, self.e, self.b, self.c, dic_dvbc);
+        s.current(self.c, self.e, ic - dic_dvbe * vbe - dic_dvbc * vbc);
+
+        // And the base current it takes to get it.
+        s.transconductance(self.b, self.e, self.b, self.e, dib_dvbe);
+        s.transconductance(self.b, self.e, self.b, self.c, dib_dvbc);
+        s.current(self.b, self.e, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
+    }
+
+    fn settled(&self, _tolerance: f64) -> bool {
+        !self.clamped
     }
 }
