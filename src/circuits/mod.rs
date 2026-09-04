@@ -7,4 +7,5 @@ pub mod jfet;
 pub mod preamp;
 pub mod studio;
 pub mod tone;
+pub mod ts808;
 pub mod valve;

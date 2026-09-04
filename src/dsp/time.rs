@@ -262,10 +262,11 @@ impl Simulation {
                         // depends on how long a sample lasts.
                         self.devices.push(Box::new(Core::new(a, b, spec, self.rate)));
                     }
-                    Part::OpAmp { out, plus, minus, rail } => {
+                    Part::OpAmp { out, plus, minus, reference, rail } => {
                         let branch = self.circuit.branch_of(index);
-                        self.devices
-                            .push(Box::new(OpAmp::new(out, plus, minus, branch, rail)));
+                        self.devices.push(Box::new(OpAmp::new(
+                            out, plus, minus, reference, branch, rail,
+                        )));
                     }
                     Part::Transformer { p1, p2, s1, s2, ratio } => {
                         let branch = self.circuit.branch_of(index);

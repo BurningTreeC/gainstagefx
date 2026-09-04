@@ -391,6 +391,10 @@ pub struct OpAmp {
     out: usize,
     plus: usize,
     minus: usize,
+    /// What the rails are measured from. Ground on a split supply; the bias
+    /// point on a pedal running off one battery, where the whole circuit --
+    /// op-amp output included -- sits at half the supply and clips about that.
+    reference: usize,
     branch: usize,
     rail: f64,
     /// Which rail it is against, if any.
@@ -404,8 +408,15 @@ impl OpAmp {
     /// And on a studio rail.
     pub const STUDIO: f64 = 15.0;
 
-    pub fn new(out: usize, plus: usize, minus: usize, branch: usize, rail: f64) -> Self {
-        Self { out, plus, minus, branch, rail, clamped: 0.0, delta: 0.0 }
+    pub fn new(
+        out: usize,
+        plus: usize,
+        minus: usize,
+        reference: usize,
+        branch: usize,
+        rail: f64,
+    ) -> Self {
+        Self { out, plus, minus, reference, branch, rail, clamped: 0.0, delta: 0.0 }
     }
 }
 
@@ -415,7 +426,10 @@ impl Device for OpAmp {
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
-        let output = if self.out == GROUND { 0.0 } else { v[self.out] };
+        // Measured from the reference, so a circuit biased at half its supply
+        // clips about that rather than about ground.
+        let output = across(v, self.out, self.reference);
+        let reference = if self.reference == GROUND { 0.0 } else { v[self.reference] };
         let error = across(v, self.plus, self.minus);
 
         // Which state to be in, from where the last solve put the output --
@@ -458,7 +472,11 @@ impl Device for OpAmp {
         } else {
             // Against a rail: the output is that rail.
             s.branch_constraint(self.branch, self.out, 1.0);
+            if self.reference != GROUND {
+                s.branch_constraint(self.branch, self.reference, -1.0);
+            }
             s.branch_value(self.branch, self.clamped);
+            let _ = reference;
         }
     }
 

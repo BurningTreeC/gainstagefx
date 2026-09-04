@@ -192,7 +192,10 @@ pub enum Part {
     Triode { p: usize, g: usize, k: usize, spec: TriodeSpec },
     /// An operational amplifier, holding its inputs together by whatever it
     /// has to put on its output -- until it runs out of rail.
-    OpAmp { out: usize, plus: usize, minus: usize, rail: f64 },
+    /// An op-amp. `reference` is what its rails are measured from -- ground
+    /// for a split supply, and the bias point for a pedal running off one
+    /// battery, where the whole circuit sits at half the supply.
+    OpAmp { out: usize, plus: usize, minus: usize, reference: usize, rail: f64 },
     /// An ideal transformer, `ratio` primary turns to one secondary turn.
     /// Everything that colours a real one hangs off it as ordinary parts.
     Transformer { p1: usize, p2: usize, s1: usize, s2: usize, ratio: f64 },
@@ -252,7 +255,7 @@ impl Part {
             Part::Input { node, .. } | Part::Supply { node, .. } => vec![node],
             Part::Diode { a, k, .. } => vec![a, k],
             Part::Triode { p, g, k, .. } => vec![p, g, k],
-            Part::OpAmp { out, plus, minus, .. } => vec![out, plus, minus],
+            Part::OpAmp { out, plus, minus, reference, .. } => vec![out, plus, minus, reference],
             Part::Transformer { p1, p2, s1, s2, .. } => vec![p1, p2, s1, s2],
             Part::Jfet { d, g, s, .. } => vec![d, g, s],
             Part::Core { a, b, .. } => vec![a, b],
@@ -446,9 +449,26 @@ impl Netlist {
         self
     }
 
+    /// An op-amp on a split supply, clipping symmetrically about ground.
     pub fn opamp(&mut self, out: &str, plus: &str, minus: &str, rail: f64) -> &mut Self {
         let (out, plus, minus) = (self.pin(out), self.pin(plus), self.pin(minus));
-        self.parts.push(Part::OpAmp { out, plus, minus, rail });
+        self.parts.push(Part::OpAmp { out, plus, minus, reference: GROUND, rail });
+        self
+    }
+
+    /// An op-amp on a single supply, clipping about the bias point the whole
+    /// circuit sits at.
+    pub fn opamp_biased(
+        &mut self,
+        out: &str,
+        plus: &str,
+        minus: &str,
+        reference: &str,
+        rail: f64,
+    ) -> &mut Self {
+        let (out, plus, minus, reference) =
+            (self.pin(out), self.pin(plus), self.pin(minus), self.pin(reference));
+        self.parts.push(Part::OpAmp { out, plus, minus, reference, rail });
         self
     }
 
