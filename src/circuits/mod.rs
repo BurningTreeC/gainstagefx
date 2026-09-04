@@ -1,5 +1,6 @@
 //! The catalogue, as netlists.
 
+pub mod bigmuff;
 pub mod cabinet;
 pub mod clipper;
 pub mod iron;

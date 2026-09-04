@@ -125,7 +125,7 @@ where
     F: Fn(&Arc<GainStageParams>) -> &nih_plug::prelude::FloatParam + Copy + 'static,
     P: Fn(&Arc<GainStageParams>) -> String + Clone + 'static,
 {
-    Knob::new(cx, Panel::params, to_param, radius)
+    Knob::new(cx, Panel::params, to_param, radius, true)
         .position_type(PositionType::SelfDirected)
         .left(Pixels(x - radius))
         .top(Pixels(y - radius));
@@ -446,14 +446,34 @@ fn tone(cx: &mut Context) {
         ("MID", |p| &p.mid),
         ("TREBLE", |p| &p.treble),
     ];
-    for (i, (name, to_param)) in names.into_iter().enumerate() {
-        let x = body_x() + 46.0 + i as f32 * 84.0;
-        Knob::new(cx, Panel::params, to_param, 18.0)
-            .position_type(PositionType::SelfDirected)
-            .left(Pixels(x - 18.0))
-            .top(Pixels(top + 40.0));
-        label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
-    }
+    // Greyed when the stack is out of circuit, because then they reach
+    // nothing at all -- and fourteen of the shipped presets switch it out. A
+    // knob that turns and changes nothing is indistinguishable from a fault,
+    // which is exactly how it was reported.
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.tone.value() != ToneStack::Off),
+        move |cx, live| {
+            let live = live.get(cx);
+            let top = section_top(3);
+            for (i, (name, to_param)) in names.into_iter().enumerate() {
+                let x = body_x() + 46.0 + i as f32 * 84.0;
+                Knob::new(cx, Panel::params, to_param, 18.0, live)
+                    .position_type(PositionType::SelfDirected)
+                    .left(Pixels(x - 18.0))
+                    .top(Pixels(top + 40.0));
+                label(
+                    cx,
+                    name,
+                    x,
+                    top + 86.0,
+                    9.5,
+                    80.0,
+                    if live { 0x9aa6b0 } else { 0x5a636b },
+                );
+            }
+        },
+    );
 
     // Kept to lines that fit the space rather than sentences that overflow
     // it: text wider than its box is simply clipped, with no warning.

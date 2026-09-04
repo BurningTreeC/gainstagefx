@@ -19,6 +19,12 @@ pub struct Knob {
     face: Sprite,
     dragging: bool,
     last_y: f32,
+    /// Whether the control reaches anything at the moment. A knob that does
+    /// nothing has to look like one: the tone controls are wired to a stack
+    /// that can be switched out of circuit, and fourteen of the shipped
+    /// presets switch it out. Left bright, they are three knobs that turn and
+    /// change nothing, which is indistinguishable from a fault.
+    live: bool,
 }
 
 impl Knob {
@@ -27,6 +33,7 @@ impl Knob {
         params: L,
         params_to_param: FMap,
         radius: f32,
+        live: bool,
     ) -> Handle<'_, Self>
     where
         L: Lens<Target = Params> + Clone,
@@ -40,6 +47,7 @@ impl Knob {
             face: Sprite::new(),
             dragging: false,
             last_y: 0.0,
+            live,
         }
         .build(
             cx,
@@ -99,7 +107,7 @@ impl View for Knob {
             ),
         );
 
-        self.face.draw(canvas, sprites::KNOB, mx, my, r * 2.0, 1.0);
+        self.face.draw(canvas, sprites::KNOB, mx, my, r * 2.0, if self.live { 1.0 } else { 0.28 });
 
         // The pointer, and only the pointer, turns.
         let angle = knob_angle(self.param.modulated_normalized_value());
@@ -160,6 +168,9 @@ impl View for Knob {
                 cx.needs_redraw();
             }
         });
+        if !self.live {
+            return;
+        }
         event.map(|window_event, meta| match window_event {
             WindowEvent::MouseDown(MouseButton::Left)
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
