@@ -158,8 +158,37 @@ impl Plugin for GainStageFx {
         // A peak that falls slowly enough to read but still follows playing.
         let decay = (-1.0 / (0.3 * self.sample_rate)).exp();
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
+        // The schematic models are physical mono devices: pedals and guitar
+        // preamps with one input and one output. Run their wet path once for
+        // a stereo host buffer, then present that mono device signal on both
+        // channels. This halves their solver load, which is essential for
+        // live use because each nonlinear model is already costly at the
+        // host rate. Dry remains per-channel, so partial wet/dry mixes retain
+        // the source channel layout.
+        let mono_modelled = circuit.is_modelled() && self.channels.len() == 2;
 
         for mut frame in buffer.iter_samples() {
+            if mono_modelled && frame.len() == 2 {
+                let left = *frame.get_mut(0).expect("stereo left sample") as f64 * input_trim;
+                let right = *frame.get_mut(1).expect("stereo right sample") as f64 * input_trim;
+                let wet = self.channels[0].process((left + right) * 0.5);
+                let dry_left = self.channels[0].delayed_dry(left);
+                let dry_right = self.channels[1].delayed_dry(right);
+
+                *frame.get_mut(0).expect("stereo left sample") =
+                    ((dry_left * (1.0 - mix) + wet * mix) * output_trim) as f32;
+                *frame.get_mut(1).expect("stereo right sample") =
+                    ((dry_right * (1.0 - mix) + wet * mix) * output_trim) as f32;
+
+                let level = left.abs().max(right.abs());
+                self.peak = if level > self.peak {
+                    level
+                } else {
+                    self.peak * decay
+                };
+                continue;
+            }
+
             for (index, sample) in frame.iter_mut().enumerate() {
                 let Some(chain) = self.channels.get_mut(index) else {
                     continue;
