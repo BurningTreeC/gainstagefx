@@ -253,3 +253,40 @@ fn the_dry_path_lines_up_with_the_wet_one() {
         );
     }
 }
+
+/// Resetting has to leave the circuit at rest, not flat.
+///
+/// The host calls reset when the transport starts. What keeps a valve plate's
+/// couple of hundred volts out of the output is the charge standing on the
+/// coupling capacitor -- so emptying every capacitor without putting the
+/// operating point back means the circuit charges up through them from
+/// nothing, and that arrives as a loud pop at the moment playback begins.
+#[test]
+fn resetting_does_not_pop() {
+    for index in 0..VOICES {
+        let (gain, diode, amplifier) = voice::voice_at(index);
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(gain, diode, amplifier);
+        chain.set_drive(0.7);
+        chain.settle();
+
+        // Play a little, as a host would before stopping.
+        for i in 0..2000 {
+            chain.process(0.05 * (i as f64 * 0.01).sin());
+        }
+        chain.reset();
+
+        // Transport starts again: silence in should be silence out.
+        let mut worst: f64 = 0.0;
+        for _ in 0..(RATE as usize / 4) {
+            worst = worst.max(chain.process(0.0).abs());
+        }
+        assert!(
+            worst < 0.02,
+            "{} / {} / {} put out {worst:.4} after a reset, which is a pop",
+            gain.name(),
+            diode.name(),
+            amplifier.name(),
+        );
+    }
+}

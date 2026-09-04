@@ -353,12 +353,9 @@ impl Simulation {
             moved = moved.max((self.guess[k] - self.voltage[k]).abs());
         }
         self.voltage.copy_from_slice(&self.guess);
-        let devices_still = self
-            .devices
-            .iter()
-            .map(|d| d.moved())
-            .fold(0.0f64, f64::max);
-        moved < TOLERANCE && devices_still < TOLERANCE
+        // Every device has to agree it is done, and each says so in the way
+        // that suits it -- see `Device::settled`.
+        moved < TOLERANCE && self.devices.iter().all(|d| d.settled(TOLERANCE))
     }
 
     /// One sample in, one out.
@@ -444,6 +441,16 @@ impl Simulation {
     }
 
     /// Empties every reactance, so the next sample starts from rest.
+    /// Empties every reactance and puts the circuit back at its operating
+    /// point, so the next sample starts from rest rather than from flat.
+    ///
+    /// Those are not the same thing, and the difference is audible. A valve
+    /// plate sits a couple of hundred volts above ground, and what keeps that
+    /// out of the output is the charge standing on the coupling capacitor.
+    /// Zero the capacitors without re-establishing the operating point and the
+    /// circuit charges up through them from nothing over the next few
+    /// milliseconds -- which arrives at the output as a loud pop, once, at the
+    /// moment the host starts the transport and calls this.
     pub fn reset(&mut self) {
         for c in &mut self.capacitors {
             c.history = 0.0;
@@ -454,6 +461,13 @@ impl Simulation {
             l.current = 0.0;
         }
         self.voltage.iter_mut().for_each(|v| *v = 0.0);
+        for device in &mut self.devices {
+            device.advance();
+        }
+        if self.dirty {
+            self.rebuild();
+        }
+        self.find_operating_point();
     }
 }
 

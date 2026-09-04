@@ -95,6 +95,21 @@ pub trait Device: Send {
     /// How far the last stamp's terminal voltages moved, so the solver can
     /// tell whether it has stopped moving.
     fn moved(&self) -> f64;
+    /// Whether this device is done moving.
+    ///
+    /// A solve whose node voltages have stopped moving is converged -- unless
+    /// a device was not allowed to go where it wanted, in which case the
+    /// stillness is the limiter's rather than the circuit's.
+    ///
+    /// The default compares how far the device moved, which is what a device
+    /// with a state rather than a limiter needs. For the ones whose step *is*
+    /// limited, asking the limiter directly is both more precise and much
+    /// cheaper: their `moved` is the distance from the *previous pass*, so it
+    /// is stale by one, and testing it forced every sample to take a third
+    /// pass purely to notice that the second one had settled.
+    fn settled(&self, tolerance: f64) -> bool {
+        self.moved() < tolerance
+    }
     /// Called once the sample is settled.
     fn advance(&mut self) {}
 }
@@ -111,15 +126,15 @@ fn across(v: &[f64], a: usize, b: usize) -> f64 {
 /// of about ten to the seventeenth, the next iteration overcorrects, and the
 /// solve oscillates or overflows. Limiting the step is what makes Newton
 /// usable on a diode at all.
-fn limit(new: f64, old: f64, scale: f64) -> f64 {
+fn limit(new: f64, old: f64, scale: f64) -> (f64, bool) {
     let step = new - old;
     let most = 2.0 * scale;
     if step > most {
-        old + most
+        (old + most, true)
     } else if step < -most {
-        old - most
+        (old - most, true)
     } else {
-        new
+        (new, false)
     }
 }
 
@@ -132,11 +147,13 @@ pub struct Diode {
     spec: DiodeSpec,
     voltage: f64,
     delta: f64,
+    /// Whether the limiter held the last step back.
+    clamped: bool,
 }
 
 impl Diode {
     pub fn new(a: usize, k: usize, spec: DiodeSpec) -> Self {
-        Self { a, k, spec, voltage: 0.0, delta: 0.0 }
+        Self { a, k, spec, voltage: 0.0, delta: 0.0, clamped: false }
     }
 
     /// The Shockley current, exposed so tests can check the slope the stamp
@@ -151,7 +168,8 @@ impl Diode {
 impl Device for Diode {
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let scale = self.spec.emission * VT;
-        let guess = limit(across(v, self.a, self.k), self.voltage, scale);
+        let (guess, clamped) = limit(across(v, self.a, self.k), self.voltage, scale);
+        self.clamped = clamped;
         self.delta = (guess - self.voltage).abs();
         self.voltage = guess;
 
@@ -178,6 +196,10 @@ impl Device for Diode {
     fn moved(&self) -> f64 {
         self.delta
     }
+
+    fn settled(&self, _tolerance: f64) -> bool {
+        !self.clamped
+    }
 }
 
 /// A triode, by Koren's equations.
@@ -196,11 +218,13 @@ pub struct Triode {
     vpk: f64,
     vgk: f64,
     delta: f64,
+    /// Whether the limiter held the last step back.
+    clamped: bool,
 }
 
 impl Triode {
     pub fn new(p: usize, g: usize, k: usize, spec: TriodeSpec) -> Self {
-        Self { p, g, k, spec, vpk: 0.0, vgk: -1.0, delta: 0.0 }
+        Self { p, g, k, spec, vpk: 0.0, vgk: -1.0, delta: 0.0, clamped: false }
     }
 
     /// Plate current for a pair of terminal voltages.
@@ -276,7 +300,8 @@ impl Triode {
 impl Device for Triode {
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let vpk = across(v, self.p, self.k).max(0.0);
-        let vgk = limit(across(v, self.g, self.k), self.vgk, 0.5);
+        let (vgk, clamped) = limit(across(v, self.g, self.k), self.vgk, 0.5);
+        self.clamped = clamped;
         self.delta = (vpk - self.vpk).abs().max((vgk - self.vgk).abs());
         self.vpk = vpk;
         self.vgk = vgk;
@@ -298,6 +323,10 @@ impl Device for Triode {
 
     fn moved(&self) -> f64 {
         self.delta
+    }
+
+    fn settled(&self, _tolerance: f64) -> bool {
+        !self.clamped
     }
 }
 
@@ -396,11 +425,13 @@ pub struct Jfet {
     vgs: f64,
     vds: f64,
     delta: f64,
+    /// Whether the limiter held the last step back.
+    clamped: bool,
 }
 
 impl Jfet {
     pub fn new(d: usize, g: usize, s: usize, spec: JfetSpec) -> Self {
-        Self { d, g, s, spec, vgs: 0.0, vds: 0.0, delta: 0.0 }
+        Self { d, g, s, spec, vgs: 0.0, vds: 0.0, delta: 0.0, clamped: false }
     }
 
     /// Drain current for a pair of terminal voltages.
@@ -430,8 +461,9 @@ impl Device for Jfet {
         // A square law is gentle enough not to need the limiter a junction
         // does, but the gate can still be walked a long way in one iteration
         // by whatever is in front of it.
-        let vgs = limit(across(v, self.g, self.s), self.vgs, 0.5);
-        let vds = limit(across(v, self.d, self.s), self.vds, 2.0);
+        let (vgs, held_g) = limit(across(v, self.g, self.s), self.vgs, 0.5);
+        let (vds, held_d) = limit(across(v, self.d, self.s), self.vds, 2.0);
+        self.clamped = held_g || held_d;
         self.delta = (vgs - self.vgs).abs().max((vds - self.vds).abs());
         self.vgs = vgs;
         self.vds = vds;
@@ -450,6 +482,10 @@ impl Device for Jfet {
 
     fn moved(&self) -> f64 {
         self.delta
+    }
+
+    fn settled(&self, _tolerance: f64) -> bool {
+        !self.clamped
     }
 }
 
@@ -485,6 +521,8 @@ pub struct Core {
     /// Half the timestep, which is what trapezoidal integration of the voltage
     /// comes to.
     half_step: f64,
+    /// Whether the limiter held the last step back.
+    clamped: bool,
 }
 
 impl Core {
@@ -498,6 +536,7 @@ impl Core {
             last_volts: 0.0,
             volts: 0.0,
             delta: 0.0,
+            clamped: false,
             half_step: 0.5 / rate,
         }
     }
@@ -541,7 +580,8 @@ impl Device for Core {
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         // The winding voltage is what drives the flux, and a long way in one
         // iteration is how a steep curve makes the solve oscillate.
-        let volts = limit(across(v, self.a, self.b), self.volts, 4.0);
+        let (volts, clamped) = limit(across(v, self.a, self.b), self.volts, 4.0);
+        self.clamped = clamped;
         self.delta = (volts - self.volts).abs();
         self.volts = volts;
 
@@ -565,6 +605,10 @@ impl Device for Core {
 
     fn moved(&self) -> f64 {
         self.delta
+    }
+
+    fn settled(&self, _tolerance: f64) -> bool {
+        !self.clamped
     }
 
     fn advance(&mut self) {
