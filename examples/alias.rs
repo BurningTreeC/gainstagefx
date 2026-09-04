@@ -11,7 +11,7 @@ const RATE: f64 = 48_000.0;
 
 fn render(gain: voice::Gain, factor: usize, hz: f64, n: usize) -> Vec<f64> {
     let mut chain = Chain::new(RATE);
-    chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+    chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Jfet);
     chain.set_oversampling(factor);
     chain.set_drive(0.85);
     let w = std::f64::consts::TAU * hz / RATE;
@@ -26,13 +26,20 @@ fn render(gain: voice::Gain, factor: usize, hz: f64, n: usize) -> Vec<f64> {
 
 fn main() {
     let n = 16_384;
-    for gain in [voice::Gain::HighGain, voice::Gain::Distortion, voice::Gain::Clean] {
+    for gain in [
+        voice::Gain::Clean,
+        voice::Gain::Crunch,
+        voice::Gain::HighGain,
+        voice::Gain::Overdrive,
+        voice::Gain::Distortion,
+        voice::Gain::Console,
+        voice::Gain::Studio,
+    ] {
         // 3 kHz: its third harmonic is already past Nyquist at this rate, so
         // everything above that has to fold somewhere.
-        for hz in [1000.0, 3000.0] {
+        for hz in [3000.0] {
             let reference = render(gain, 8, hz, n);
-            let ref_rms = (reference.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt();
-            print!("{:<12}{hz:>6.0} Hz  ref rms {ref_rms:.5}  ", gain.name());
+            print!("{:<12}{hz:>6.0} Hz  ", gain.name());
             for factor in [1, 2, 4] {
                 let got = render(gain, factor, hz, n);
                 let (mut err, mut sig) = (0.0, 0.0);
@@ -41,8 +48,7 @@ fn main() {
                     sig += b * b;
                 }
                 let db = 10.0 * (err / sig.max(1e-30)).max(1e-30).log10();
-                let rms = (got.iter().map(|v| v * v).sum::<f64>() / n as f64).sqrt();
-                print!("{factor}x {db:>7.1} dB rms {rms:.5}   ");
+                print!("{factor}x {db:>7.1} dB   ");
             }
             println!();
         }

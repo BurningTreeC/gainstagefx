@@ -19,7 +19,13 @@ fn main() {
         .map(|i| {
             let mut c = Chain::new(RATE);
             c.set_voice(voices[(i / 2) % voices.len()], voice::Diode::Silicon, voice::Amplifier::Valve);
-            c.set_oversampling(factor);
+            // What the presets now ask for: the pedals need four times, the
+            // valve cascades do not.
+            let per_voice = match voices[(i / 2) % voices.len()] {
+                voice::Gain::Overdrive | voice::Gain::Distortion => 4,
+                _ => 2,
+            };
+            c.set_oversampling(if factor == 0 { per_voice } else { factor });
             c.set_drive(0.7);
             c.settle();
             c
@@ -37,8 +43,9 @@ fn main() {
     }
     let took = start.elapsed().as_secs_f64();
     println!(
-        "{factor}x: ten stereo instances took {took:.2}s of audio time {SECONDS}s \
+        "{}: ten stereo instances took {took:.2}s of audio time {SECONDS}s \
          = {:.0}% of one core ({:.1} cores){}",
+        if factor == 0 { String::from("as the presets ask") } else { format!("{factor}x") },
         took / SECONDS * 100.0,
         took / SECONDS,
         if acc.is_nan() { " NaN" } else { "" }

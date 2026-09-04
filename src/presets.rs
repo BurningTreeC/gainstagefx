@@ -9,7 +9,7 @@
 //! They are grouped by what they are for rather than by which circuit they
 //! use, because that is how somebody looking for a sound is thinking.
 
-use crate::params::{Amplifier, Cabinet, Circuit, Diode, Iron, ToneStack};
+use crate::params::{Amplifier, Cabinet, Circuit, Diode, Iron, Oversampling, ToneStack};
 
 pub struct Preset {
     pub group: &'static str,
@@ -27,6 +27,16 @@ pub struct Preset {
     pub input_trim: f32,
     pub output_trim: f32,
     pub mix: f32,
+    /// How much faster than the host this sound needs the circuit solved.
+    ///
+    /// Carried by the preset, which is a correction. It was left out on the
+    /// grounds that it is about what the plugin costs rather than what it
+    /// sounds like, and measured against a reference at 3 kHz that is simply
+    /// untrue for the pedals: a diode clipper to ground aliases 16 dB down at
+    /// one times and 31 at two, and needs the four it has. The valve cascades
+    /// are the opposite -- 55 dB down at two times, and they are the ones that
+    /// cost anything, so paying for four there buys nothing audible.
+    pub oversampling: Oversampling,
 }
 
 /// A preset with everything at its resting position, which the entries below
@@ -50,6 +60,7 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         input_trim: 0.0,
         output_trim: 0.0,
         mix: 1.0,
+        oversampling: Oversampling::Two,
     }
 }
 
@@ -127,20 +138,20 @@ pub const PRESETS: &[Preset] = &[
     // output -- so these keep following what is played and clean up when the
     // playing gets quieter. Mostly with the cabinet off, because an overdrive
     // is usually in front of an amplifier rather than instead of one.
-    Preset { drive: 0.55, circuit: Circuit::Overdrive, mid: 0.62, ..base("Overdrive", "Green Overdrive") },
-    Preset { drive: 0.35, circuit: Circuit::Overdrive, tone: ToneStack::Off, ..base("Overdrive", "Transparent Boost") },
-    Preset { drive: 0.70, circuit: Circuit::Overdrive, diode: Diode::Germanium, mid: 0.6, ..base("Overdrive", "Germanium Warmth") },
-    Preset { drive: 0.85, circuit: Circuit::Overdrive, diode: Diode::Led, treble: 0.58, ..base("Overdrive", "LED Headroom") },
-    Preset { drive: 0.80, circuit: Circuit::Overdrive, mid: 0.7, cabinet: Cabinet::Combo, ..base("Overdrive", "Overdriven Combo") },
+    Preset { drive: 0.55, circuit: Circuit::Overdrive, mid: 0.62, oversampling: Oversampling::Four, ..base("Overdrive", "Green Overdrive") },
+    Preset { drive: 0.35, circuit: Circuit::Overdrive, tone: ToneStack::Off, oversampling: Oversampling::Four, ..base("Overdrive", "Transparent Boost") },
+    Preset { drive: 0.70, circuit: Circuit::Overdrive, diode: Diode::Germanium, mid: 0.6, oversampling: Oversampling::Four, ..base("Overdrive", "Germanium Warmth") },
+    Preset { drive: 0.85, circuit: Circuit::Overdrive, diode: Diode::Led, treble: 0.58, oversampling: Oversampling::Four, ..base("Overdrive", "LED Headroom") },
+    Preset { drive: 0.80, circuit: Circuit::Overdrive, mid: 0.7, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Overdrive", "Overdriven Combo") },
 
     // --- Distortion ------------------------------------------------------
     // Diodes to ground: a ceiling the output stops at, so the wave is squared
     // off and the harmonics reach the top of the band. These want a cabinet.
-    Preset { drive: 0.60, circuit: Circuit::Distortion, mid: 0.45, cabinet: Cabinet::Combo, ..base("Distortion", "Classic Distortion") },
-    Preset { drive: 0.85, circuit: Circuit::Distortion, tone: ToneStack::Scooping, bass: 0.7, mid: 0.15, treble: 0.75, cabinet: Cabinet::Stack, ..base("Distortion", "Scooped Pedal") },
-    Preset { drive: 0.75, circuit: Circuit::Distortion, diode: Diode::Germanium, bass: 0.65, cabinet: Cabinet::Combo, ..base("Distortion", "Woolly Fuzz") },
-    Preset { drive: 0.95, circuit: Circuit::Distortion, diode: Diode::Led, bass: 0.55, treble: 0.7, cabinet: Cabinet::Stack, ..base("Distortion", "LED Wall") },
-    Preset { drive: 0.90, circuit: Circuit::Distortion, mix: 0.6, cabinet: Cabinet::Combo, ..base("Distortion", "Blended Grit") },
+    Preset { drive: 0.60, circuit: Circuit::Distortion, mid: 0.45, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Classic Distortion") },
+    Preset { drive: 0.85, circuit: Circuit::Distortion, tone: ToneStack::Scooping, bass: 0.7, mid: 0.15, treble: 0.75, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "Scooped Pedal") },
+    Preset { drive: 0.75, circuit: Circuit::Distortion, diode: Diode::Germanium, bass: 0.65, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Woolly Fuzz") },
+    Preset { drive: 0.95, circuit: Circuit::Distortion, diode: Diode::Led, bass: 0.55, treble: 0.7, cabinet: Cabinet::Stack, oversampling: Oversampling::Four, ..base("Distortion", "LED Wall") },
+    Preset { drive: 0.90, circuit: Circuit::Distortion, mix: 0.6, cabinet: Cabinet::Combo, oversampling: Oversampling::Four, ..base("Distortion", "Blended Grit") },
 ];
 
 /// The groups, in the order they should be shown: quietest first, so the list
@@ -157,7 +168,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 13] {
+    pub fn dials(&self) -> [(&'static str, f32); 14] {
         [
             ("in_trim", self.input_trim),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
@@ -172,6 +183,7 @@ impl Preset {
             ("cabinet", index_in(&Cabinet::ALL, self.cabinet)),
             ("mix", self.mix),
             ("out_trim", self.output_trim),
+            ("oversampling", index_in(&Oversampling::ALL, self.oversampling)),
         ]
     }
 }
@@ -232,9 +244,9 @@ pub struct Stored {
 }
 
 /// Controls that are about the plugin rather than the sound, and so have no
-/// business in a preset. Loading a sound should not resize the window or
-/// change what the plugin costs.
-const EXCLUDED: [&str; 1] = ["oversampling"];
+/// business in a preset. There are none at the moment: oversampling was here
+/// until it was measured, and for the pedals it is audibly part of the sound.
+const EXCLUDED: [&str; 0] = [];
 
 /// Where saved presets live.
 pub fn preset_dir() -> Option<PathBuf> {

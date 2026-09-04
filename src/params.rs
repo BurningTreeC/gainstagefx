@@ -452,7 +452,7 @@ impl Default for GainStageParams {
             mix: position("Mix", 1.0),
             output_trim: decibels("Output", 24.0),
 
-            oversampling: EnumParam::new("Oversampling", Oversampling::Four),
+            oversampling: EnumParam::new("Oversampling", Oversampling::Two),
         }
     }
 }

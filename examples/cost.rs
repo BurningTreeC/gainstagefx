@@ -37,6 +37,11 @@ fn main() {
         let (gain, diode, amplifier) = voice::voice_at(index);
         let mut chain = Chain::new(RATE);
         chain.set_voice(gain, diode, amplifier);
+        // What the presets ask for, which is what a song actually runs.
+        chain.set_oversampling(match gain {
+            voice::Gain::Overdrive | voice::Gain::Distortion => 4,
+            _ => 2,
+        });
         chain.set_drive(0.7);
         let part = if gain.has_diodes() {
             diode.name()

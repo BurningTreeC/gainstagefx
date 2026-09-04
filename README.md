@@ -85,6 +85,22 @@ by forward voltage, which is the whole reason anyone swaps them: measured,
 germanium is already bending at 20 mV where an LED has not started, and the LED
 overtakes it when driven hard.
 
+## What it costs
+
+One channel at 48 kHz, as a fraction of the time available, at the
+oversampling each voice actually needs:
+
+| Clean | Crunch | High Gain | Overdrive | Distortion | Console | Studio |
+|---|---|---|---|---|---|---|
+| 6.8 % | 15.4 % | 28.1 % | 11.3 % | 11.1 % | 10.6 % | 4.5 % |
+
+The Quality control is part of the sound rather than only of the cost, and the
+presets set it. Measured against an eight times reference at 3 kHz, a diode
+clipper to ground aliases 31 dB down at two times and 71 at four, so the pedals
+ask for four; a three stage valve cascade is already 55 dB down at two, and it
+is the cascade that costs anything, so paying for four there buys nothing
+audible. Raise it by hand if you want to hear the difference.
+
 ## Presets
 
 Thirty-six, in six groups, ordered quietest first so the list reads as a range.
@@ -125,7 +141,7 @@ cargo test --release                        # the measurements
 ```
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs eighty-nine of them.
+measures it. `cargo test --release` runs ninety-three of them.
 
 ## How it is built
 

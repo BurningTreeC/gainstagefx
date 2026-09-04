@@ -74,6 +74,29 @@ fn every_preset_is_within_range() {
     }
 }
 
+/// The pedals alias audibly below four times oversampling and the valve
+/// cascades do not, so each preset has to ask for what its own sound needs.
+/// Measured against an eight times reference at 3 kHz: a clipper to ground is
+/// 31 dB down at two times and 71 at four, while a three stage valve cascade
+/// is already 55 dB down at two -- and it is the cascade that costs anything.
+#[test]
+fn the_pedals_ask_for_the_oversampling_they_need() {
+    use gainstagefx::params::Oversampling;
+    for preset in PRESETS {
+        let wanted = match preset.circuit {
+            Circuit::Overdrive | Circuit::Distortion => Oversampling::Four,
+            _ => Oversampling::Two,
+        };
+        assert_eq!(
+            preset.oversampling, wanted,
+            "'{}' is a {} and asks for {}",
+            preset.name,
+            preset.circuit.name(),
+            preset.oversampling.name(),
+        );
+    }
+}
+
 /// A preset that chooses a part its circuit does not contain is not wrong so
 /// much as misleading: it records a choice that has no effect, the panel greys
 /// the control out, and the preset still claims it. Every one should leave
@@ -305,11 +328,11 @@ fn every_preset_id_is_a_parameter_that_exists() {
         .iter()
         .filter(|k| !mentioned.contains(&k.as_str()))
         .collect();
+    let empty: Vec<&String> = Vec::new();
     assert_eq!(
-        unmentioned,
-        vec!["oversampling"],
-        "the only control a preset should leave alone is the one about what \
-         the plugin costs rather than what it sounds like"
+        unmentioned, empty,
+        "a control a preset never mentions cannot be recalled, so this list \
+         should stay empty unless something is deliberately left out"
     );
 }
 
@@ -387,11 +410,7 @@ fn each_id_names_the_parameter_it_claims() {
 
     // And the capture reads through those same ids.
     let live = presets::live_values(&params);
-    assert!(
-        !live.contains_key("oversampling"),
-        "oversampling is about what the plugin costs, not what it sounds like"
-    );
-    for id in named.keys().filter(|k| *k != "oversampling") {
+    for id in named.keys() {
         assert!(live.contains_key(id), "'{id}' was not captured");
     }
 }

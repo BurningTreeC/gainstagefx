@@ -42,9 +42,9 @@ fn saved_presets_survive_the_round_trip() {
     let captured = presets::capture(&params, "  Test Sound  ");
     assert_eq!(captured.name, "Test Sound", "the name should be trimmed");
     assert!(
-        !captured.values.contains_key("oversampling"),
-        "oversampling is about what the plugin costs, not what it sounds like, \
-         and has no business in a preset"
+        captured.values.contains_key("oversampling"),
+        "a saved preset should carry the oversampling: measured, it is part of \
+         how the pedals sound rather than only what they cost"
     );
     presets::save(&captured).expect("saves");
 
