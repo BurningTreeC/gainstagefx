@@ -34,20 +34,20 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.067173,
         make_up_db: [-11.18, -13.44, -15.80, -18.23, -20.70, -23.21, -25.29, -26.32, -26.84],
     },
-    // Distortion with silicon diodes: 0.0900 V in, 38.0 % distortion, 30.2 % third.
+    // Distortion with silicon diodes: 0.0557 V in, 38.0 % distortion, 30.6 % third.
     Calibration {
-        drive_volts: 0.089952,
-        make_up_db: [-5.43, -7.98, -10.87, -13.28, -14.83, -15.83, -16.52, -17.07, -17.50],
+        drive_volts: 0.055657,
+        make_up_db: [-9.62, -12.59, -15.61, -17.87, -19.27, -20.17, -20.83, -21.34, -21.55],
     },
-    // Distortion with germanium diodes: 0.1086 V in, 38.0 % distortion, 29.5 % third.
+    // Distortion with germanium diodes: 0.0617 V in, 38.0 % distortion, 30.5 % third.
     Calibration {
-        drive_volts: 0.108600,
-        make_up_db: [-1.45, -2.73, -3.98, -5.10, -6.07, -6.91, -7.65, -8.30, -8.85],
+        drive_volts: 0.061678,
+        make_up_db: [-5.97, -7.51, -8.88, -10.04, -11.02, -11.86, -12.59, -13.21, -13.41],
     },
-    // Distortion with led diodes: 0.1183 V in, 38.0 % distortion, 30.8 % third.
+    // Distortion with led diodes: 0.0825 V in, 38.0 % distortion, 31.5 % third.
     Calibration {
-        drive_volts: 0.118281,
-        make_up_db: [-5.46, -8.07, -11.23, -14.79, -18.60, -21.86, -23.13, -23.72, -24.07],
+        drive_volts: 0.082515,
+        make_up_db: [-9.66, -12.69, -16.11, -19.79, -23.60, -25.75, -26.58, -26.91, -27.02],
     },
     // Console with a valve: 0.3308 V in, 3.0 % distortion, 0.3 % third.
     Calibration {

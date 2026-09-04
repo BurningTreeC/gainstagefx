@@ -64,14 +64,25 @@ pub const OVERDRIVE: Values = Values {
 };
 
 /// The distortion arrangement: a great deal of gain into diodes that hold the
-/// output flat.
+/// output flat, and the whole band taken up to them.
+///
+/// The capacitor in the gain leg is the difference between this and the
+/// overdrive above, and it is the difference between fat and thin. At 100 nF
+/// against the 4.7 k leg the corner sits at 340 Hz, so everything below it is
+/// amplified far less and therefore clipped far less: measured, the stage had
+/// 15 dB less gain at 60 Hz than at 3 kHz, and the bottom of the signal went
+/// through clean while the middle distorted. That is right for a screamer in
+/// front of an amplifier, which is what the overdrive is; it is wrong for a
+/// distortion, where the point is that all of it is squared off.
+///
+/// At 1 uF the corner is 34 Hz and the whole band goes to the diodes together.
 pub const DISTORTION: Values = Values {
     placement: Placement::ToGround,
     diode: DiodeSpec::SILICON,
     feedback: 10_000.0,
     sweep: 470_000.0,
     leg: 4_700.0,
-    leg_c: 100e-9,
+    leg_c: 1e-6,
     rail: OpAmp::NINE_VOLT,
 };
 
