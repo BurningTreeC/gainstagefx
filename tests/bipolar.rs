@@ -46,7 +46,10 @@ fn run(c: &Circuit, volts: f64) -> measure::Measured {
 #[test]
 fn a_common_emitter_stage_amplifies_by_its_resistor_ratio() {
     let (rc, re) = (4_700.0, 1_000.0);
-    let m = run(&common_emitter(rc, re, false, BipolarSpec::NPN_2SC3378), 0.001);
+    let m = run(
+        &common_emitter(rc, re, false, BipolarSpec::NPN_2SC3378),
+        0.001,
+    );
     let gain = m.gain_db();
     let expected = 20.0 * (rc / re).log10();
     println!("gain {gain:.1} dB, resistor ratio says {expected:.1} dB");
@@ -60,8 +63,16 @@ fn a_common_emitter_stage_amplifies_by_its_resistor_ratio() {
 /// More collector load, more gain.
 #[test]
 fn more_collector_load_is_more_gain() {
-    let small = run(&common_emitter(2_200.0, 1_000.0, false, BipolarSpec::NPN_2SC3378), 0.001).gain_db();
-    let large = run(&common_emitter(4_700.0, 1_000.0, false, BipolarSpec::NPN_2SC3378), 0.001).gain_db();
+    let small = run(
+        &common_emitter(2_200.0, 1_000.0, false, BipolarSpec::NPN_2SC3378),
+        0.001,
+    )
+    .gain_db();
+    let large = run(
+        &common_emitter(4_700.0, 1_000.0, false, BipolarSpec::NPN_2SC3378),
+        0.001,
+    )
+    .gain_db();
     println!("2.2k {small:.1} dB, 4.7k {large:.1} dB");
     let expected = 20.0 * (4_700.0f64 / 2_200.0).log10();
     assert!(
@@ -103,8 +114,16 @@ fn it_makes_even_harmonics_and_bends_further_when_driven() {
 /// there.
 #[test]
 fn bypassing_the_emitter_is_where_the_gain_comes_from() {
-    let plain = run(&common_emitter(4_700.0, 1_000.0, false, BipolarSpec::NPN_2SC3378), 0.001).gain_db();
-    let bypassed = run(&common_emitter(4_700.0, 1_000.0, true, BipolarSpec::NPN_2SC3378), 0.0002).gain_db();
+    let plain = run(
+        &common_emitter(4_700.0, 1_000.0, false, BipolarSpec::NPN_2SC3378),
+        0.001,
+    )
+    .gain_db();
+    let bypassed = run(
+        &common_emitter(4_700.0, 1_000.0, true, BipolarSpec::NPN_2SC3378),
+        0.0002,
+    )
+    .gain_db();
     println!("unbypassed {plain:.1} dB, bypassed {bypassed:.1} dB");
     assert!(
         bypassed > plain + 15.0,

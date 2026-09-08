@@ -1,60 +1,102 @@
-//! What each oversampling setting is worth, measured against the best one.
+//! How much of what comes out is not the note.
 //!
-//! Not by looking at a spectrum and calling some of it aliasing, but by
-//! running the same signal through the same circuit at each setting and
-//! comparing it with the setting nothing is above. Whatever the difference is,
-//! that is what the cheaper setting costs.
+//! A nonlinear stage makes harmonics, and harmonics above half the sample rate
+//! fold back down onto frequencies that have nothing to do with what was
+//! played. Total harmonic distortion cannot see any of it -- it looks only
+//! where harmonics belong -- so a circuit can alias badly and measure exactly
+//! the same.
+//!
+//! It matters most for whichever circuit makes the most harmonics highest up,
+//! which here is the 5150: six triodes, one run cold, squaring the wave off
+//! completely. And the modelled circuits are pinned to the host rate however
+//! the oversampling control is set, so unlike the topologies they have no way
+//! to be given more room.
+//!
+//! Run at 48 kHz, which is the rate a session is actually in.
+//!
+//! `cargo run --release --example alias`
 
-use gainstagefx::voice::{self, Chain};
+use gainstagefx::dsp::measure::{self, Tone};
+use gainstagefx::voice::{self, Cabinet, Chain, Gain, Tone as ToneSection, NOMINAL_DBFS};
 
 const RATE: f64 = 48_000.0;
 
-fn render(gain: voice::Gain, factor: usize, hz: f64, n: usize) -> Vec<f64> {
+fn measured(gain: Gain, drive: f64, hz: f64, over: usize) -> measure::Measured {
     let mut chain = Chain::new(RATE);
-    chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Jfet);
-    chain.set_oversampling(factor);
-    chain.set_drive(0.85);
-    let w = std::f64::consts::TAU * hz / RATE;
-    // Settle, then capture.
-    for i in 0..(RATE as usize / 4) {
-        chain.process(0.4 * (w * i as f64).sin());
-    }
-    (0..n)
-        .map(|i| chain.process(0.4 * (w * (i + RATE as usize / 4) as f64).sin()))
-        .collect()
+    chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+    chain.set_tone_section(ToneSection::Off);
+    chain.set_cabinet(Cabinet::Off);
+    chain.set_iron(voice::Iron::Off);
+    chain.set_oversampling(over);
+    chain.set_drive(drive);
+    let amplitude = 10f64.powf(NOMINAL_DBFS / 20.0);
+    let tone = Tone::near(RATE, 16_384, hz, amplitude);
+    measure::run(tone, (RATE / 4.0) as usize, |x| chain.process(x))
 }
 
 fn main() {
-    let n = 16_384;
+    println!("Inharmonic energy -- everything out that is neither the note nor");
+    println!("one of its harmonics -- as a percentage of the fundamental.");
+    println!("48 kHz, drive at the stop, tone stack and cabinet out.\n");
+
+    let notes = [82.4, 110.0, 220.0, 440.0, 880.0, 1760.0];
+    print!("  {:<12}{:>10}", "circuit", "over");
+    for hz in notes {
+        print!("{:>9}", format!("{hz:.0} Hz"));
+    }
+    println!();
+
     for gain in [
-        voice::Gain::Clean,
-        voice::Gain::Crunch,
-        voice::Gain::HighGain,
-        voice::Gain::Overdrive,
-        voice::Gain::Distortion,
-        voice::Gain::Console,
-        voice::Gain::Studio,
-        voice::Gain::Screamer,
-        voice::Gain::Muff,
-        voice::Gain::Boogie,
-        voice::Gain::Peavey,
+        Gain::Peavey,
+        Gain::Boogie,
+        Gain::Muff,
+        Gain::Screamer,
+        Gain::Distortion,
     ] {
-        // 3 kHz: its third harmonic is already past Nyquist at this rate, so
-        // everything above that has to fold somewhere.
-        for hz in [3000.0] {
-            let reference = render(gain, 8, hz, n);
-            print!("{:<12}{hz:>6.0} Hz  ", gain.name());
-            for factor in [1, 2, 4] {
-                let got = render(gain, factor, hz, n);
-                let (mut err, mut sig) = (0.0, 0.0);
-                for (a, b) in got.iter().zip(&reference) {
-                    err += (a - b) * (a - b);
-                    sig += b * b;
-                }
-                let db = 10.0 * (err / sig.max(1e-30)).max(1e-30).log10();
-                print!("{factor}x {db:>7.1} dB   ");
+        for over in [1usize, 4, 8] {
+            let mut chain = Chain::new(RATE);
+            chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+            chain.set_oversampling(over);
+            let actual = chain.effective_oversampling();
+            // A modelled circuit refuses the setting, so printing the request
+            // rather than what it did would be a table of fiction.
+            print!("  {:<12}{:>10}", gain.name(), format!("{actual}x"));
+            for hz in notes {
+                print!(
+                    "{:>9.1}",
+                    measured(gain, 1.0, hz, over).inharmonic_percent()
+                );
             }
             println!();
+            if actual == 1 && over > 1 {
+                // Every row would be identical; say so once and move on.
+                println!(
+                    "  {:<12}{:>10}  -- pinned to the host rate, so 4x and 8x are the same row",
+                    "", ""
+                );
+                break;
+            }
         }
+    }
+
+    println!("\nFor comparison, the harmonic total at the same settings.\n");
+    print!("  {:<12}{:>10}", "circuit", "over");
+    for hz in notes {
+        print!("{:>9}", format!("{hz:.0} Hz"));
+    }
+    println!();
+    for gain in [Gain::Peavey, Gain::Boogie, Gain::Muff, Gain::Distortion] {
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_oversampling(1);
+        print!(
+            "  {:<12}{:>10}",
+            gain.name(),
+            format!("{}x", chain.effective_oversampling())
+        );
+        for hz in notes {
+            print!("{:>9.1}", measured(gain, 1.0, hz, 1).thd_percent());
+        }
+        println!();
     }
 }

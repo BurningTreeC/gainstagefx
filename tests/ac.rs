@@ -25,7 +25,11 @@ fn a_first_order_low_pass_is_exactly_first_order() {
     let at = |hz: f64| ac::solve(&circuit, &[], hz).db();
     let phase = |hz: f64| ac::solve(&circuit, &[], hz).phase();
 
-    assert!((at(corner) - -3.0103).abs() < 0.01, "corner: {}", at(corner));
+    assert!(
+        (at(corner) - -3.0103).abs() < 0.01,
+        "corner: {}",
+        at(corner)
+    );
     assert!(
         (phase(corner) - -45.0).abs() < 0.1,
         "corner phase: {}",
@@ -61,7 +65,11 @@ fn a_first_order_high_pass_is_its_mirror() {
     let circuit = net.build("out").expect("builds");
 
     let at = |hz: f64| ac::solve(&circuit, &[], hz).db();
-    assert!((at(corner) - -3.0103).abs() < 0.01, "corner: {}", at(corner));
+    assert!(
+        (at(corner) - -3.0103).abs() < 0.01,
+        "corner: {}",
+        at(corner)
+    );
     assert!(
         (ac::solve(&circuit, &[], corner).phase() - 45.0).abs() < 0.1,
         "corner phase"
@@ -103,8 +111,14 @@ fn a_series_lc_to_ground_is_a_notch_and_not_a_shelf() {
     let below = at(hz / 8.0);
     let above = at(hz * 8.0);
 
-    assert!(deep < below - 6.0, "not cut at resonance: {deep} vs {below}");
-    assert!(deep < above - 6.0, "not cut at resonance: {deep} vs {above}");
+    assert!(
+        deep < below - 6.0,
+        "not cut at resonance: {deep} vs {below}"
+    );
+    assert!(
+        deep < above - 6.0,
+        "not cut at resonance: {deep} vs {above}"
+    );
     // A shelf would leave one side low; a notch returns on both.
     assert!(
         (below - above).abs() < 1.5,
@@ -148,7 +162,8 @@ fn sections_load_each_other() {
             .resistor("in", "mid", 10_000.0)
             .capacitor("mid", "gnd", c);
         if second {
-            net.resistor("mid", "out", 10_000.0).capacitor("out", "gnd", c);
+            net.resistor("mid", "out", 10_000.0)
+                .capacitor("out", "gnd", c);
         } else {
             net.resistor("mid", "out", 10_000.0)
                 .resistor("out", "gnd", 1_000_000_000.0);

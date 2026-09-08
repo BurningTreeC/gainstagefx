@@ -12,7 +12,7 @@
 //! Three evaluations of a closed-form curve is not the expensive part of a
 //! circuit solve.
 
-use super::netlist::{BipolarSpec, CoreSpec, DiodeSpec, JfetSpec, TriodeSpec, GROUND};
+use super::netlist::{BipolarSpec, CoreSpec, DiodeSpec, JfetSpec, PentodeSpec, TriodeSpec, GROUND};
 
 /// Thermal voltage at room temperature.
 const VT: f64 = 0.025_852;
@@ -165,7 +165,14 @@ pub struct Diode {
 
 impl Diode {
     pub fn new(a: usize, k: usize, spec: DiodeSpec) -> Self {
-        Self { a, k, spec, voltage: 0.0, delta: 0.0, clamped: false }
+        Self {
+            a,
+            k,
+            spec,
+            voltage: 0.0,
+            delta: 0.0,
+            clamped: false,
+        }
     }
 
     /// Keeps a junction voltage from running away, in the way a junction
@@ -268,7 +275,16 @@ pub struct Triode {
 
 impl Triode {
     pub fn new(p: usize, g: usize, k: usize, spec: TriodeSpec) -> Self {
-        Self { p, g, k, spec, vpk: 0.0, vgk: -1.0, delta: 0.0, clamped: false }
+        Self {
+            p,
+            g,
+            k,
+            spec,
+            vpk: 0.0,
+            vgk: -1.0,
+            delta: 0.0,
+            clamped: false,
+        }
     }
 
     /// Plate current for a pair of terminal voltages.
@@ -279,7 +295,11 @@ impl Triode {
         }
         let inner = s.kp * (1.0 / s.mu + vgk / (s.kvb + vpk * vpk).sqrt());
         // ln(1 + e^x) without overflowing for large x.
-        let soft = if inner > 30.0 { inner } else { inner.exp().ln_1p() };
+        let soft = if inner > 30.0 {
+            inner
+        } else {
+            inner.exp().ln_1p()
+        };
         let e1 = vpk / s.kp * soft;
         if e1 <= 0.0 {
             0.0
@@ -374,6 +394,189 @@ impl Device for Triode {
     }
 }
 
+/// A beam tetrode or pentode, by Koren's equations.
+///
+/// The difference from a triode is where the cathode current comes from. In a
+/// triode the plate pulls the electrons through and the plate voltage
+/// therefore sets the current; in a pentode the *screen* does that job and the
+/// plate mostly collects what arrives. So the controlling term is the screen
+/// voltage rather than the plate's, and the plate's own influence survives
+/// only as the `arctan` knee that lifts the current out of zero at low plate
+/// voltages and then flattens.
+///
+/// That flat shelf is the whole character of a power stage. It is why a power
+/// tube behaves as a current source into the transformer's primary, why the
+/// two halves of a push-pull pair hand over the way they do, and why the
+/// clipping is hard at the top and asymmetric once the grids draw.
+///
+/// The screen is a terminal here rather than an assumed voltage, so the drop
+/// across the screen resistor -- and whatever the supply behind it is doing at
+/// the time -- falls out of the solve. That is what screen sag *is*, and it is
+/// most of what a hundred and twenty watt amplifier does when it is asked for
+/// a hundred and thirty.
+pub struct Pentode {
+    p: usize,
+    g: usize,
+    k: usize,
+    s: usize,
+    /// How many tubes in parallel this part stands for.
+    count: f64,
+    spec: PentodeSpec,
+    vpk: f64,
+    vgk: f64,
+    vsk: f64,
+    delta: f64,
+    clamped: bool,
+}
+
+impl Pentode {
+    pub fn new(p: usize, g: usize, k: usize, s: usize, count: f64, spec: PentodeSpec) -> Self {
+        Self {
+            p,
+            g,
+            k,
+            s,
+            count,
+            spec,
+            vpk: 0.0,
+            vgk: -30.0,
+            vsk: 0.0,
+            delta: 0.0,
+            clamped: false,
+        }
+    }
+
+    /// Plate and screen current and their slopes, from one evaluation.
+    ///
+    /// Koren gives the two electrodes separate formulae over a shared `E1`:
+    /// the plate takes `E1^ex / Kg1` through a knee that lifts it out of zero
+    /// at low plate voltages and then flattens, and the screen takes
+    /// `E1^ex / Kg2` with no knee at all, because what the screen collects
+    /// does not depend on what the plate is doing.
+    ///
+    /// Same trick as the triode: every piece of the derivative is something
+    /// the currents already computed, so this costs one `powf`, one `exp` and
+    /// one `atan` rather than four evaluations of the whole thing.
+    ///
+    /// Returns `(ip, ig2, dip/dvpk, dip/dvgk, dip/dvsk, dig2/dvgk, dig2/dvsk)`.
+    #[allow(clippy::type_complexity)]
+    fn split_with_slopes(
+        &self,
+        vpk: f64,
+        vgk: f64,
+        vsk: f64,
+    ) -> (f64, f64, f64, f64, f64, f64, f64) {
+        let c = &self.spec;
+        if vsk <= 0.0 || vpk <= 0.0 {
+            return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+        let inner = c.kp * (1.0 / c.mu + vgk / vsk);
+        let (soft, sigma) = if inner > 30.0 {
+            (inner, 1.0)
+        } else {
+            let e = inner.exp();
+            (e.ln_1p(), e / (1.0 + e))
+        };
+        let e1 = vsk / c.kp * soft;
+        if e1 <= 0.0 {
+            return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        }
+        let powered = e1.powf(c.ex);
+
+        // The knee. Below a few tens of volts the plate cannot collect what
+        // the screen has launched and the current falls away; above it the
+        // curve is the long flat shelf that makes a power tube a current
+        // source into its transformer.
+        let knee = (vpk / c.kvb).atan();
+        let d_knee = 1.0 / (c.kvb * (1.0 + (vpk / c.kvb).powi(2)));
+
+        let plate_base = powered / c.kg1;
+        let screen_base = powered / c.kg2;
+        let ip = self.count * plate_base * knee;
+        let ig2 = self.count * screen_base;
+
+        // dE1 with respect to each terminal, and d(E1^ex)/dE1 = ex * E1^ex / E1.
+        let d_e1_vgk = sigma;
+        let d_e1_vsk = soft / c.kp - vgk * sigma / vsk;
+        let d_plate = c.ex * plate_base / e1;
+        let d_screen = c.ex * screen_base / e1;
+
+        (
+            ip,
+            ig2,
+            self.count * plate_base * d_knee,
+            self.count * d_plate * d_e1_vgk * knee,
+            self.count * d_plate * d_e1_vsk * knee,
+            self.count * d_screen * d_e1_vgk,
+            self.count * d_screen * d_e1_vsk,
+        )
+    }
+
+    /// Plate and screen current at a set of terminal voltages, for checking
+    /// the model against a data sheet without going through a solve.
+    pub fn currents(&self, vpk: f64, vgk: f64, vsk: f64) -> (f64, f64) {
+        let (ip, ig2, ..) = self.split_with_slopes(vpk, vgk, vsk);
+        (ip, ig2)
+    }
+
+    /// Grid current. Nothing until the grid goes positive, then it conducts
+    /// like the junction it is. A power tube's grid draws far harder than a
+    /// preamp triode's, and what it does to the coupling capacitor in front of
+    /// it is the blocking distortion a driven amplifier is known for.
+    fn grid(&self, vgk: f64) -> f64 {
+        if vgk < 0.0 {
+            0.0
+        } else {
+            self.count * vgk / 600.0
+        }
+    }
+}
+
+impl Device for Pentode {
+    fn stamp(&mut self, st: &mut Stamper, v: &[f64]) {
+        let vpk = across(v, self.p, self.k).max(0.0);
+        let vsk = across(v, self.s, self.k).max(0.0);
+        let (vgk, clamped) = limit(across(v, self.g, self.k), self.vgk, 4.0);
+        self.clamped = clamped;
+        self.delta = (vpk - self.vpk)
+            .abs()
+            .max((vgk - self.vgk).abs())
+            .max((vsk - self.vsk).abs());
+        self.vpk = vpk;
+        self.vgk = vgk;
+        self.vsk = vsk;
+
+        let (ip, ig2, gp, gm, gs, gm2, gs2) = self.split_with_slopes(vpk, vgk, vsk);
+
+        // Plate branch: its own conductance, plus the two transconductances
+        // that say how the grid and the screen move it.
+        let rp = gp.max(1e-12);
+        st.conductance(self.p, self.k, rp);
+        st.transconductance(self.p, self.k, self.g, self.k, gm);
+        st.transconductance(self.p, self.k, self.s, self.k, gs);
+        st.current(self.p, self.k, ip - rp * vpk - gm * vgk - gs * vsk);
+
+        // Screen branch. No knee, so nothing here depends on the plate.
+        let rs = gs2.max(1e-12);
+        st.conductance(self.s, self.k, rs);
+        st.transconductance(self.s, self.k, self.g, self.k, gm2);
+        st.current(self.s, self.k, ig2 - rs * vsk - gm2 * vgk);
+
+        let ig = self.grid(vgk);
+        let gg = if vgk < 0.0 { 1e-12 } else { self.count / 600.0 };
+        st.conductance(self.g, self.k, gg);
+        st.current(self.g, self.k, ig - gg * vgk);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
+    }
+
+    fn settled(&self, _tolerance: f64) -> bool {
+        !self.clamped
+    }
+}
+
 /// An operational amplifier, as two linear states.
 ///
 /// Not a huge gain fed through a `tanh`. That is the obvious model and it does
@@ -416,7 +619,16 @@ impl OpAmp {
         branch: usize,
         rail: f64,
     ) -> Self {
-        Self { out, plus, minus, reference, branch, rail, clamped: 0.0, delta: 0.0 }
+        Self {
+            out,
+            plus,
+            minus,
+            reference,
+            branch,
+            rail,
+            clamped: 0.0,
+            delta: 0.0,
+        }
     }
 }
 
@@ -429,7 +641,11 @@ impl Device for OpAmp {
         // Measured from the reference, so a circuit biased at half its supply
         // clips about that rather than about ground.
         let output = across(v, self.out, self.reference);
-        let reference = if self.reference == GROUND { 0.0 } else { v[self.reference] };
+        let reference = if self.reference == GROUND {
+            0.0
+        } else {
+            v[self.reference]
+        };
         let error = across(v, self.plus, self.minus);
 
         // Which state to be in, from where the last solve put the output --
@@ -447,9 +663,17 @@ impl Device for OpAmp {
         // hardware does and what breaks the loop.
         let was = self.clamped;
         self.clamped = if was > 0.0 {
-            if error >= 0.0 { self.rail } else { 0.0 }
+            if error >= 0.0 {
+                self.rail
+            } else {
+                0.0
+            }
         } else if was < 0.0 {
-            if error <= 0.0 { -self.rail } else { 0.0 }
+            if error <= 0.0 {
+                -self.rail
+            } else {
+                0.0
+            }
         } else if output > self.rail {
             self.rail
         } else if output < -self.rail {
@@ -512,7 +736,16 @@ pub struct Jfet {
 
 impl Jfet {
     pub fn new(d: usize, g: usize, s: usize, spec: JfetSpec) -> Self {
-        Self { d, g, s, spec, vgs: 0.0, vds: 0.0, delta: 0.0, clamped: false }
+        Self {
+            d,
+            g,
+            s,
+            spec,
+            vgs: 0.0,
+            vds: 0.0,
+            delta: 0.0,
+            clamped: false,
+        }
     }
 
     /// Drain current for a pair of terminal voltages.
@@ -552,8 +785,8 @@ impl Device for Jfet {
         let id = self.drain(vgs, vds);
         let step = 1e-4;
         let gm = (self.drain(vgs + step, vds) - self.drain(vgs - step, vds)) / (2.0 * step);
-        let gds = ((self.drain(vgs, vds + step) - self.drain(vgs, vds - step)) / (2.0 * step))
-            .max(1e-9);
+        let gds =
+            ((self.drain(vgs, vds + step) - self.drain(vgs, vds - step)) / (2.0 * step)).max(1e-9);
 
         // Drain to source conductance, and the gate's control of it.
         s.conductance(self.d, self.s, gds);
@@ -676,8 +909,7 @@ impl Device for Core {
         let step = self.spec.knee * 1e-3;
         // d(current)/d(volts) is d(current)/d(flux) times the half step, which
         // is what the integration contributes.
-        let slope = (self.magnetising(flux + step) - self.magnetising(flux - step))
-            / (2.0 * step);
+        let slope = (self.magnetising(flux + step) - self.magnetising(flux - step)) / (2.0 * step);
         let g = (slope * self.half_step).max(1e-12);
 
         s.conductance(self.a, self.b, g);
@@ -721,7 +953,16 @@ pub struct Bipolar {
 
 impl Bipolar {
     pub fn new(c: usize, b: usize, e: usize, spec: BipolarSpec) -> Self {
-        Self { c, b, e, spec, vbe: 0.0, vbc: 0.0, delta: 0.0, clamped: false }
+        Self {
+            c,
+            b,
+            e,
+            spec,
+            vbe: 0.0,
+            vbc: 0.0,
+            delta: 0.0,
+            clamped: false,
+        }
     }
 
     /// The junction limiter, as for a diode: a flat cap on the step is
@@ -732,7 +973,14 @@ impl Bipolar {
         if wanted > critical && (wanted - old).abs() > 2.0 * VT {
             if old > 0.0 {
                 let arg = 1.0 + (wanted - old) / VT;
-                (if arg > 0.0 { old + VT * arg.ln() } else { critical }, true)
+                (
+                    if arg > 0.0 {
+                        old + VT * arg.ln()
+                    } else {
+                        critical
+                    },
+                    true,
+                )
             } else {
                 (VT * (wanted / VT).ln().max(-40.0), true)
             }

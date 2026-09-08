@@ -32,7 +32,10 @@ fn a_node_with_nothing_on_it_is_refused() {
             assert_eq!(node, "orphan");
             assert_eq!(connections, 1);
         }
-        other => panic!("expected a dangling node, got {other:?}", other = other.map(|_| "a circuit")),
+        other => panic!(
+            "expected a dangling node, got {other:?}",
+            other = other.map(|_| "a circuit")
+        ),
     }
 }
 
@@ -52,14 +55,18 @@ fn an_unreachable_output_is_refused() {
             assert_eq!(from, "in");
             assert_eq!(to, "out");
         }
-        other => panic!("expected an unreachable output, got {other:?}", other = other.map(|_| "a circuit")),
+        other => panic!(
+            "expected an unreachable output, got {other:?}",
+            other = other.map(|_| "a circuit")
+        ),
     }
 }
 
 #[test]
 fn a_circuit_needs_an_input_and_a_real_output() {
     let mut net = Netlist::new("no input");
-    net.resistor("a", "b", 1_000.0).resistor("b", "gnd", 1_000.0);
+    net.resistor("a", "b", 1_000.0)
+        .resistor("b", "gnd", 1_000.0);
     assert!(matches!(net.build("b"), Err(Fault::Malformed(_))));
 
     let mut net = Netlist::new("no such output");
@@ -82,7 +89,9 @@ fn a_part_worth_nothing_is_refused() {
 #[test]
 fn the_reverse_tapers_are_the_mirror_of_the_others() {
     for p in [0.0, 0.25, 0.5, 0.75, 1.0] {
-        assert!((Taper::Linear.fraction(p) - (1.0 - Taper::ReverseLinear.fraction(p))).abs() < 1e-12);
+        assert!(
+            (Taper::Linear.fraction(p) - (1.0 - Taper::ReverseLinear.fraction(p))).abs() < 1e-12
+        );
         assert!((Taper::Audio.fraction(p) - (1.0 - Taper::ReverseAudio.fraction(p))).abs() < 1e-12);
     }
     assert!(Taper::Linear.fraction(0.0) < Taper::Linear.fraction(1.0));

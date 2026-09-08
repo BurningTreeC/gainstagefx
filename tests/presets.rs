@@ -110,7 +110,8 @@ fn the_pedals_ask_for_the_oversampling_they_need() {
             _ => Oversampling::Two,
         };
         assert_eq!(
-            preset.oversampling, wanted,
+            preset.oversampling,
+            wanted,
             "'{}' is a {} and asks for {}",
             preset.name,
             preset.circuit.name(),
@@ -172,19 +173,15 @@ fn every_combination_on_the_panel_builds() {
     for circuit in Circuit::ALL {
         for diode in gainstagefx::params::Diode::ALL {
             for amplifier in Amplifier::ALL {
-                gainstagefx::voice::build_voice(
-                    circuit.voice(),
-                    diode.voice(),
-                    amplifier.voice(),
-                )
-                .unwrap_or_else(|f| {
-                    panic!(
-                        "{} / {} / {} does not build: {f:?}",
-                        circuit.name(),
-                        diode.name(),
-                        amplifier.name()
-                    )
-                });
+                gainstagefx::voice::build_voice(circuit.voice(), diode.voice(), amplifier.voice())
+                    .unwrap_or_else(|f| {
+                        panic!(
+                            "{} / {} / {} does not build: {f:?}",
+                            circuit.name(),
+                            diode.name(),
+                            amplifier.name()
+                        )
+                    });
             }
         }
     }
@@ -228,8 +225,7 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
         let diode = preset.diode.voice();
         let amplifier = preset.amplifier.voice();
         let index = gainstagefx::voice::voice_index(gain, diode, amplifier);
-        let netlist =
-            gainstagefx::voice::build_voice(gain, diode, amplifier).expect("builds");
+        let netlist = gainstagefx::voice::build_voice(gain, diode, amplifier).expect("builds");
         let mut sim = gainstagefx::dsp::time::Simulation::new(netlist, RATE);
         // Whichever control the Drive knob actually turns. The topologies all
         // put it first; a modelled circuit puts its controls where the drawing
@@ -238,14 +234,8 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
         let tone = Tone::near(RATE, 16_384, 220.0, CALIBRATION[index].drive_volts);
         measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x)).thd_percent()
     };
-    let quietest = PRESETS
-        .iter()
-        .map(thd_of)
-        .fold(f64::MAX, f64::min);
-    let loudest = PRESETS
-        .iter()
-        .map(thd_of)
-        .fold(f64::MIN, f64::max);
+    let quietest = PRESETS.iter().map(thd_of).fold(f64::MAX, f64::min);
+    let loudest = PRESETS.iter().map(thd_of).fold(f64::MIN, f64::max);
     println!("the catalogue runs from {quietest:.2} % to {loudest:.1} % distortion");
     assert!(
         quietest < 1.0,
@@ -457,7 +447,10 @@ fn the_edited_mark_clears_when_a_control_goes_back() {
 
     let mut moved = live.clone();
     moved.insert(String::from("drive"), 0.7);
-    assert!(!same_as(&live, &moved), "a moved control should show as edited");
+    assert!(
+        !same_as(&live, &moved),
+        "a moved control should show as edited"
+    );
 
     moved.insert(String::from("drive"), 0.5);
     assert!(
@@ -471,13 +464,19 @@ fn the_edited_mark_clears_when_a_control_goes_back() {
     // preset that always reads as edited is a preset nobody trusts.
     let mut nudged = live.clone();
     nudged.insert(String::from("drive"), 0.5 + 1e-7);
-    assert!(same_as(&live, &nudged), "floating point noise is not an edit");
+    assert!(
+        same_as(&live, &nudged),
+        "floating point noise is not an edit"
+    );
 
     // An id the preset does not mention is not a difference. A preset written
     // before a control existed should keep loading, with that control left
     // where it is rather than jumping to a default the preset never chose.
     let older: BTreeMap<String, f32> = [("drive".to_string(), 0.5f32)].into_iter().collect();
-    assert!(same_as(&live, &older), "a preset need not mention everything");
+    assert!(
+        same_as(&live, &older),
+        "a preset need not mention everything"
+    );
 
     // And an id the panel no longer has cannot differ from anything.
     let mut retired = live.clone();

@@ -28,8 +28,14 @@ fn level_through(chain: &mut Chain, amplitude: f64) -> f64 {
 fn the_whole_catalogue_builds() {
     for index in 0..VOICES {
         let (gain, diode, amplifier) = voice::voice_at(index);
-        voice::build_voice(gain, diode, amplifier)
-            .unwrap_or_else(|f| panic!("{} / {} / {}: {f:?}", gain.name(), diode.name(), amplifier.name()));
+        voice::build_voice(gain, diode, amplifier).unwrap_or_else(|f| {
+            panic!(
+                "{} / {} / {}: {f:?}",
+                gain.name(),
+                diode.name(),
+                amplifier.name()
+            )
+        });
     }
     for t in ToneSection::ALL {
         if let Some(built) = t.build() {
@@ -48,7 +54,13 @@ fn the_whole_catalogue_builds() {
 /// make a DAW miss its real-time deadline.
 #[test]
 fn modelled_circuits_stay_at_host_rate() {
-    for gain in [Gain::Screamer, Gain::Muff, Gain::Boogie, Gain::Peavey] {
+    for gain in [
+        Gain::Screamer,
+        Gain::Muff,
+        Gain::Boogie,
+        Gain::Peavey,
+        Gain::Neve,
+    ] {
         let mut chain = Chain::new(RATE);
         chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
         chain.set_oversampling(8);
@@ -78,11 +90,26 @@ fn the_calibration_table_still_describes_the_circuits() {
     for (index, c) in CALIBRATION.iter().enumerate() {
         let (gain, diode, amplifier) = voice::voice_at(index);
         let netlist = voice::build_voice(gain, diode, amplifier).expect("builds");
+        // A voice is two circuits where it has a power stage, and measuring
+        // only the first would describe a preamplifier that no longer reaches
+        // the output on its own.
+        let behind = voice::build_power(gain).map(|b| b.expect("builds"));
         for (i, expected) in c.make_up_db.iter().enumerate() {
             let mut sim = Simulation::new(netlist.clone(), RATE);
-            sim.set_control(gain.drive_control(), i as f64 / (POINTS - 1) as f64);
+            let mut power = behind
+                .clone()
+                .map(|netlist| Simulation::new(netlist, RATE));
+            // The knots are not evenly spaced -- see `voice::knot_position`.
+            sim.set_control(gain.drive_control(), voice::knot_position(i));
             let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);
-            let got = -measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x)).gain_db();
+            let got = -measure::run(tone, (RATE / 10.0) as usize, |x| {
+                let y = sim.process(x);
+                match power {
+                    Some(ref mut p) => p.process(y),
+                    None => y,
+                }
+            })
+            .gain_db();
             assert!(
                 (got - expected).abs() < 0.5,
                 "{} / {} / {} at drive {}/{}: the table says {expected:.2} dB \
@@ -191,14 +218,10 @@ fn the_passive_sections_do_not_cost_the_level() {
 #[test]
 fn the_voices_are_in_the_order_their_names_claim() {
     let thd = |gain: Gain| {
-        let netlist =
-            voice::build_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve)
-                .expect("builds");
-        let c = CALIBRATION[voice::voice_index(
-            gain,
-            voice::Diode::Silicon,
-            voice::Amplifier::Valve,
-        )];
+        let netlist = voice::build_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve)
+            .expect("builds");
+        let c =
+            CALIBRATION[voice::voice_index(gain, voice::Diode::Silicon, voice::Amplifier::Valve)];
         let mut sim = Simulation::new(netlist, RATE);
         sim.set_control(gain.drive_control(), 1.0);
         let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);

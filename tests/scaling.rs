@@ -15,7 +15,11 @@ use nih_plug::params::Params;
 #[test]
 fn choosing_a_size_reaches_the_state_the_host_reads() {
     let state = default_state();
-    assert_eq!(state.user_scale_factor(), 1.0, "a fresh panel opens at 100 %");
+    assert_eq!(
+        state.user_scale_factor(),
+        1.0,
+        "a fresh panel opens at 100 %"
+    );
     remember_scale(&state, 1.25);
     assert_eq!(
         state.user_scale_factor(),
@@ -25,7 +29,10 @@ fn choosing_a_size_reaches_the_state_the_host_reads() {
     let (w, h) = state.inner_logical_size();
     let (sw, sh) = state.scaled_logical_size();
     println!("{w}x{h} logical, {sw}x{sh} at 125 %");
-    assert!(sw > w && sh > h, "the window the host is told to make did not grow");
+    assert!(
+        sw > w && sh > h,
+        "the window the host is told to make did not grow"
+    );
 }
 
 /// And it has to come back. This is exactly what the host does: serialise the
@@ -39,7 +46,10 @@ fn the_size_survives_a_session() {
 
         let restored = GainStageParams::default();
         restored.deserialize_fields(&fields);
-        println!("{scale:.2} saved, {:.2} restored", restored.editor_state.user_scale_factor());
+        println!(
+            "{scale:.2} saved, {:.2} restored",
+            restored.editor_state.user_scale_factor()
+        );
         assert_eq!(
             restored.editor_state.user_scale_factor(),
             scale,

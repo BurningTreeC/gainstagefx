@@ -34,26 +34,44 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("Mark IIC+ preamp");
 
     // --- V1A --------------------------------------------------------------
-    // R1 grid leak, R2 with C1 across it at the cathode. C1 is only .47 uF,
-    // which against 1.5 k bypasses from about 220 Hz upwards rather than all
-    // the way down -- the bottom of the band keeps its degeneration, and that
-    // is where this amplifier's tightness comes from.
+    // R1 grid leak, and a cathode with two capacitors on it rather than one.
+    // C1 is .47 uF straight to ground, which against 1.5 k bypasses from about
+    // 226 Hz upwards and leaves the bottom of the band its degeneration --
+    // that is where this amplifier's tightness starts. C2 is 22 uF through
+    // R3 15 k, so below C1's corner the cathode still sees 1.5 k in parallel
+    // with 15 k rather than 1.5 k alone.
+    //
+    // The PULL SHIFT BASS switch shorts R3, which puts 22 uF straight across
+    // the cathode and turns the whole stage into a fully bypassed one. It is
+    // a front-panel control and it is not modelled: the switch is out, which
+    // is the stock position and the one the amplifier is known for.
     net.input("in", source)
         .resistor("in", "gnd", 1_000_000.0) // R1
         .resistor("v1a_k", "gnd", 1_500.0) // R2
         .capacitor("v1a_k", "gnd", 0.47e-6) // C1
+        .capacitor("v1a_k", "v1a_shift", 22e-6) // C2
+        .resistor("v1a_shift", "gnd", 15_000.0) // R3, shorted by PULL SHIFT BASS
         .supply("v1a_p", 150_000.0, SUPPLY) // R4
         .triode("v1a_p", "in", "v1a_k", ECC83);
 
     // --- the tone stack ---------------------------------------------------
-    // A Fender stack, read off the drawing: C5 and C6 in parallel are the
-    // treble capacitor, R6 sits across C6, R5 is the slope resistor, and C4
-    // and C3 feed the bass and middle legs. The output is the treble wiper,
-    // and the bass reaches it through the lower half of that same pot -- which
-    // is what makes the three controls interact the way they famously do.
-    net.capacitor("v1a_p", "t_top", 750e-12) // C6
+    // A Fender stack, read off the drawing. R5 is the slope resistor, C4 and
+    // C3 feed the bass and middle legs, the output is the treble wiper, and
+    // the bass reaches that wiper through the lower half of the same pot --
+    // which is what makes the three controls interact the way they famously
+    // do.
+    //
+    // The treble capacitor is the part worth getting right. C5 250 pF goes
+    // straight to the top of the treble pot; C6 750 pF gets there only
+    // through R6, which is **10 M**, so with the TREBLE SHIFT light-dependent
+    // resistor dark C6 contributes nothing and the treble cap is 250 pF.
+    // LDR1A shorts R6 and makes it 1000 pF. This was built with R6 across the
+    // pair instead of in series with C6, which is the treble shift jammed
+    // permanently on -- a four-to-one error in the capacitor that decides
+    // where the treble control works.
+    net.capacitor("v1a_p", "c6", 750e-12) // C6
+        .resistor("c6", "t_top", 10_000_000.0) // R6, shorted by TREBLE SHIFT
         .capacitor("v1a_p", "t_top", 250e-12) // C5
-        .resistor("v1a_p", "t_top", 10_000_000.0) // R6, across C6
         .pot("t_top", "ts_out", "t_bot", 250_000.0, Taper::Linear, TREBLE)
         .resistor("v1a_p", "slope", 100_000.0) // R5
         .capacitor("slope", "t_bot", 0.1e-6) // C4
@@ -63,25 +81,75 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         // *shorts them out* at the top of the travel and both controls run
         // backwards. Turned up they have to have more resistance in circuit,
         // not less.
-        .pot("t_bot", "b_bot", "b_bot", 250_000.0, Taper::ReverseLinear, BASS)
-        .pot("b_bot", "gnd", "gnd", 10_000.0, Taper::ReverseLinear, MIDDLE);
+        .pot(
+            "t_bot",
+            "b_bot",
+            "b_bot",
+            250_000.0,
+            Taper::ReverseLinear,
+            BASS,
+        )
+        .pot(
+            "b_bot",
+            "gnd",
+            "gnd",
+            10_000.0,
+            Taper::ReverseLinear,
+            MIDDLE,
+        );
 
     // --- Volume 1 and V1B --------------------------------------------------
-    net.pot("ts_out", "v1b_g", "gnd", 1_000_000.0, Taper::Audio, VOLUME)
+    // Volume 1 is not a level control and the manual is emphatic about it:
+    // "Generally you will want to run the Volume 1 control as high as possible
+    // without causing unwanted distortion, in order to have available the most
+    // possible sustain when switching into the Lead mode... The VOLUME 1
+    // control determines much about the sound and feel of both the Modes, and
+    // is called GAIN in many amplifiers as that is what it meters."
+    //
+    // The plugin has one Drive knob and it turns the Lead Drive, so Volume 1
+    // is a control nobody turns -- and a control nobody turns was sitting at
+    // the middle of its travel, which on an audio track is twenty decibels
+    // down and is the last place the manual would put it. Eight tenths: high,
+    // as asked, and short of the stop so the stage in front of the lead
+    // section is not itself the thing distorting. This is a stated playing
+    // position, not a value off the drawing.
+    net.rest(VOLUME, 0.8)
+        .pot("ts_out", "v1b_g", "gnd", 1_000_000.0, Taper::Audio, VOLUME)
         .resistor("v1b_k", "gnd", 1_500.0) // R7
         .capacitor("v1b_k", "gnd", 22e-6) // C13
         .supply("v1b_p", 100_000.0, SUPPLY) // R8
         .triode("v1b_p", "v1b_g", "v1b_k", ECC83)
-        .capacitor("v1b_p", "lead_in", 0.1e-6); // C7
+        // C7 lands on a node of its own, not on the lead chain. R9 is 91 k
+        // from there to ground -- 100 k on an RP11A, and this is an RP10A --
+        // and it is most of what V1B's plate actually works into: 100 k of
+        // plate load against 91 k of shunt rather than against the megohm the
+        // lead drive presents. C21 then takes the signal on to the lead
+        // section. Both were missing, and V1B was about three decibels louder
+        // than the drawing for it.
+        //
+        // R10 3.3 M with C10 10 pF across it also leaves this node, feeding
+        // the pre-lead signal forward to the lead *return*. That return is
+        // past where this model stops, so the network is not built; it is not
+        // an omission from the lead path.
+        .capacitor("v1b_p", "v1b_out", 0.1e-6) // C7
+        .resistor("v1b_out", "gnd", 91_000.0) // R9, 91 k on RP10A
+        .capacitor("v1b_out", "lead_in", 0.02e-6); // C21
 
     // --- the lead drive control -------------------------------------------
-    // R21 is marked "680K, 1M on ++", and the 330k under the pot is inside
-    // the dashed box marked "++ MOD" -- both belong to the modification, not
-    // to a stock C+. Left in, the pot's bottom never reaches ground and the
-    // control covers only twelve decibels instead of running to silence, so
-    // this is the stock arrangement.
+    // R21 is marked "680K, 1M on ++", and the 330 k drawn beside the pot is
+    // inside the dashed box marked "++ MOD" -- both belong to the
+    // modification, not to a stock C+. The 330 k is across the pot rather
+    // than under it, so leaving it in would load the control rather than lift
+    // its bottom off ground; either way it is not stock.
     net.resistor("lead_in", "ld_top", 680_000.0) // R21
-        .pot("ld_top", "v3b_g", "gnd", 1_000_000.0, Taper::Audio, LEAD_DRIVE);
+        .pot(
+            "ld_top",
+            "v3b_g",
+            "gnd",
+            1_000_000.0,
+            Taper::Audio,
+            LEAD_DRIVE,
+        );
 
     // --- V3B ---------------------------------------------------------------
     net.resistor("v3b_g", "gnd", 475_000.0) // R22
@@ -100,8 +168,18 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .resistor("c25", "v4a_g", 270_000.0) // R25
         .resistor("v4a_g", "gnd", 68_000.0) // R24
         .capacitor("v4a_g", "gnd", 1000e-12) // C24
-        .resistor("v4a_k", "gnd", 6_800.0) // R29
-        .capacitor("v4a_k", "gnd", 0.22e-6) // C29
+        // The cathode network, and it is not the usual resistor-with-a-cap.
+        // R30 3.3 k is the cathode resistor. C29 .22 uF and R29 6.8 k are a
+        // *series* leg in parallel with it, so above C29's corner near 106 Hz
+        // the cathode sees 3.3 k in parallel with 6.8 k -- 2.2 k, not nothing.
+        // This stage keeps its degeneration across the audio band, which is
+        // six decibels of gain and a different way of clipping from a stage
+        // that is simply bypassed. It was built as R29 straight to ground with
+        // C29 across it, which is a fully bypassed stage and neither of those
+        // things. PULL BRIGHT LEAD MASTER shorts R29; the switch is out here.
+        .resistor("v4a_k", "gnd", 3_300.0) // R30
+        .capacitor("v4a_k", "v4a_bright", 0.22e-6) // C29
+        .resistor("v4a_bright", "gnd", 6_800.0) // R29, shorted by PULL BRIGHT
         .supply("v4a_p", 274_000.0, SUPPLY) // R27
         .capacitor("v4a_p", "gnd", 1000e-12) // C27, across R27 to the rail
         .triode("v4a_p", "v4a_g", "v4a_k", ECC83);

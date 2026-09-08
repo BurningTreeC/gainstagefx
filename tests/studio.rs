@@ -189,14 +189,16 @@ fn turning_the_gain_down_cleans_up() {
 /// it does nothing until the end.
 #[test]
 fn the_gain_control_covers_its_designed_span() {
-    let span_of = |v: &Values| {
-        run(v, 220.0, 0.001, 1.0).gain_db() - run(v, 220.0, 0.001, 0.0).gain_db()
-    };
+    let span_of =
+        |v: &Values| run(v, 220.0, 0.001, 1.0).gain_db() - run(v, 220.0, 0.001, 0.0).gain_db();
 
     // The channels built round a valve or a transistor put the control where
     // the hardware does, as a volume in front of the stage.
     let designed = 20.0 * gainstagefx::circuits::preamp::SPAN.log10();
-    for (name, v) in [("console", studio::CONSOLE), ("valve channel", studio::VALVE_CHANNEL)] {
+    for (name, v) in [
+        ("console", studio::CONSOLE),
+        ("valve channel", studio::VALVE_CHANNEL),
+    ] {
         let span = span_of(&v);
         println!("{name}: a span of {span:.1} dB against {designed:.1} designed");
         assert!(
@@ -210,8 +212,8 @@ fn the_gain_control_covers_its_designed_span() {
     // path, so its range is the ratio of that path to the leg rather than
     // anything to do with a volume in front of a valve.
     let span = span_of(&studio::STUDIO);
-    let feedback = 20.0
-        * ((studio::STUDIO.leg + studio::STUDIO.feedback) / studio::STUDIO.leg).log10();
+    let feedback =
+        20.0 * ((studio::STUDIO.leg + studio::STUDIO.feedback) / studio::STUDIO.leg).log10();
     println!("studio: a span of {span:.1} dB, feedback path allows {feedback:.1}");
     assert!(
         span > 25.0 && span <= feedback + 1.0,

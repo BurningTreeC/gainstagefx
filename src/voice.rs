@@ -23,7 +23,7 @@
 //! interpolates five of them.
 
 use crate::circuits::{
-    bigmuff, cabinet, clipper, evh5150, iron, markiic, preamp, studio, tone, ts808,
+    bigmuff, cabinet, clipper, evh5150, iron, markiic, neve, power, preamp, studio, tone, ts808,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -76,10 +76,12 @@ pub enum Gain {
     Boogie,
     /// Peavey EVH 5150, the lead channel preamplifier.
     Peavey,
+    /// Neve 73P microphone preamplifier, two cascaded transistor stages.
+    Neve,
 }
 
 impl Gain {
-    pub const ALL: [Gain; 11] = [
+    pub const ALL: [Gain; 12] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -91,6 +93,7 @@ impl Gain {
         Gain::Muff,
         Gain::Boogie,
         Gain::Peavey,
+        Gain::Neve,
     ];
 
     pub fn name(self) -> &'static str {
@@ -106,6 +109,7 @@ impl Gain {
             Gain::Muff => "Big Muff",
             Gain::Boogie => "Mark IIC+",
             Gain::Peavey => "5150",
+            Gain::Neve => "Neve 73P",
         }
     }
 
@@ -119,6 +123,7 @@ impl Gain {
         match self {
             Gain::Boogie => markiic::LEAD_DRIVE,
             Gain::Peavey => evh5150::PRE,
+            Gain::Neve => neve::GAIN,
             Gain::Screamer => ts808::DRIVE,
             Gain::Muff => bigmuff::SUSTAIN,
             _ => clipper::GAIN,
@@ -136,6 +141,46 @@ impl Gain {
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
             Gain::Muff => Some((usize::MAX, usize::MAX, bigmuff::TONE)),
+            Gain::Neve => None,
+            _ => None,
+        }
+    }
+
+    /// Which of the three tone knobs this circuit carries one of its own for:
+    /// bass, middle, treble.
+    ///
+    /// The panel needs this and `own_tone` will not do, because a control that
+    /// is not there is written `usize::MAX` and a caller that forgets to check
+    /// sets control number eighteen quintillion.
+    pub fn own_tone_knobs(self) -> [bool; 3] {
+        match self.own_tone() {
+            Some((b, m, t)) => [b != usize::MAX, m != usize::MAX, t != usize::MAX],
+            None => [false; 3],
+        }
+    }
+
+    /// Whether the circuit's only tone control is the single knob a pedal has.
+    ///
+    /// A TS808 and a Big Muff each have one, and it is not a treble control:
+    /// the Screamer's is a shelf either side of a fixed corner and the Muff's
+    /// is a blend between a low-pass and a high-pass with a scoop in the
+    /// middle. Both land on the third knob, and the panel says TONE there
+    /// rather than TREBLE so the knob is named after what it turns.
+    pub fn single_tone(self) -> bool {
+        self.own_tone_knobs() == [false, false, true]
+    }
+
+    /// The *valve* power amplifier behind this circuit, where it has one.
+    ///
+    /// Only the two guitar amplifiers do. A pedal has no power stage, and the
+    /// topologies are shapes rather than particular units, so there is nothing
+    /// to put behind them: inventing one would be inventing a sound. The 73P
+    /// has an output block of its own and it is not one of these -- see
+    /// `build_power`.
+    pub fn power_stage(self) -> Option<&'static power::PowerSpec> {
+        match self {
+            Gain::Boogie => Some(&power::PowerSpec::MARKIIC),
+            Gain::Peavey => Some(&power::PowerSpec::EVH5150),
             _ => None,
         }
     }
@@ -144,7 +189,10 @@ impl Gain {
     /// topology. The panel says so, because "an overdrive" and "a TS808" are
     /// different kinds of claim.
     pub fn is_modelled(self) -> bool {
-        matches!(self, Gain::Screamer | Gain::Muff | Gain::Boogie | Gain::Peavey)
+        matches!(
+            self,
+            Gain::Screamer | Gain::Muff | Gain::Boogie | Gain::Peavey | Gain::Neve
+        )
     }
 
     /// Whether the choice of amplifying part reaches this circuit.
@@ -256,7 +304,7 @@ impl Diode {
 /// the circuit while playing allocates nothing. Laid out by walking `Gain::ALL`
 /// and giving each topology one slot per part it can be built with, so adding
 /// a circuit does not move the ones already there.
-pub const VOICES: usize = 19;
+pub const VOICES: usize = 20;
 
 /// Where a topology's first slot is.
 fn first_of(gain: Gain) -> usize {
@@ -289,7 +337,11 @@ pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
             let within = index - at;
             return (
                 gain,
-                if gain.has_diodes() { Diode::ALL[within] } else { Diode::Silicon },
+                if gain.has_diodes() {
+                    Diode::ALL[within]
+                } else {
+                    Diode::Silicon
+                },
                 if gain.has_amplifier() {
                     Amplifier::ALL[within]
                 } else {
@@ -302,7 +354,32 @@ pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
     (Gain::Clean, Diode::Silicon, Amplifier::Valve)
 }
 
-/// Build one gain circuit as a netlist.
+/// The block behind a voice's gain circuit, where it has one.
+///
+/// Three voices do, and they are not the same kind of thing. The two guitar
+/// amplifiers get a push-pull valve power stage from `power.rs`, built from a
+/// `PowerSpec`. The 73P gets its own OUTPUT block -- two BC109C into a TIP3055
+/// and the VTB1148 -- because a microphone preamplifier's line driver is not a
+/// power amplifier and sharing the machinery would mean sharing a topology it
+/// does not have.
+///
+/// Separate netlists rather than one joined onto the end of the other, and the
+/// reason is cost. Solving one circuit of thirty-five nodes is not the same
+/// work as solving two of eighteen: the factorisation goes as the cube of the
+/// size, so joining them costs about three times as much as keeping them
+/// apart. What that separation gives up is the loading between the two, and
+/// there is almost none to give up -- a coupling capacitor into a high
+/// impedance, with a level control in between.
+pub fn build_power(gain: Gain) -> Option<Result<Netlist, Fault>> {
+    match gain {
+        // The card's own load is the line it drives. Ten kilohms is what a
+        // modern input presents; the 73P was designed for six hundred, and
+        // R43's 1.5 k across the secondary means the difference is small.
+        Gain::Neve => Some(neve::output(LOAD, 10_000.0)),
+        _ => gain.power_stage().map(|spec| power::build(spec, 10_000.0)),
+    }
+}
+
 pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Netlist, Fault> {
     match gain {
         Gain::Clean => preamp::build(&preamp::CLEAN, SOURCE, LOAD),
@@ -335,6 +412,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // the far side of R89, and leaving it out would flatter the model by
         // twenty four decibels.
         Gain::Peavey => evh5150::build(10_000.0, evh5150::TONE_STACK_INPUT),
+        Gain::Neve => neve::build(150.0, 10_000.0),
     }
 }
 
@@ -382,7 +460,10 @@ impl Iron {
             Iron::Steel => crate::dsp::netlist::CoreSpec::STEEL,
             Iron::Amorphous => crate::dsp::netlist::CoreSpec::AMORPHOUS,
         };
-        Some(iron::Values { core, ..iron::OUTPUT })
+        Some(iron::Values {
+            core,
+            ..iron::OUTPUT
+        })
     }
 }
 
@@ -405,7 +486,7 @@ pub fn build_iron(material: Iron) -> Result<Netlist, Fault> {
 /// into it takes all three further.
 pub const IRON_VOLTS: f64 = 24.0;
 
-/// The tone section, which can be out of circuit entirely./// The tone section, which can be out of circuit entirely.
+/// The tone section, which can be out of circuit entirely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tone {
     Off,
@@ -476,7 +557,34 @@ impl Cabinet {
 /// curve is not close enough to call the level held. `tests/voice.rs` checks
 /// the interpolation, not just the points.
 /// How many points the make-up curve is measured at.
-pub const POINTS: usize = 9;
+pub const POINTS: usize = 17;
+
+/// How the make-up's sample points are spread across the drive control.
+///
+/// Not evenly, and the reason is that no drive control is even. A pot's law is
+/// logarithmic and the stage after it saturates, so a circuit's gain climbs
+/// most of its range inside the first eighth of the travel and then flattens:
+/// the Mark IIC+ moves 47 dB between a shut Lead Drive and an eighth of a turn,
+/// and 9 dB over the remaining seven eighths. Nine points evenly spaced sample
+/// that first cliff exactly twice, and a straight line between those two
+/// samples was **24 dB** away from the curve at a knob position of 0.03 --
+/// which is heard as the level lurching as the knob comes off its stop, and
+/// was reported as "at 0% Gain the meter goes way UP".
+///
+/// More even points do not fix it. The curve goes as `log(position)` near the
+/// bottom, so a straight line across the first segment is wrong by an amount
+/// that does not shrink usefully however narrow the segment gets.
+///
+/// So the points are spread by a cube law: knot `i` sits at
+/// `(i / (POINTS - 1))^3`. That puts eight of the seventeen inside the first
+/// eighth of the travel, where the gain is, and leaves the flat top end
+/// sampled coarsely, where coarse is all it needs.
+const KNOT_SHAPE: f64 = 3.0;
+
+/// Where the make-up's `i`th sample point sits on the drive control.
+pub fn knot_position(i: usize) -> f64 {
+    (i as f64 / (POINTS - 1) as f64).powf(KNOT_SHAPE)
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Calibration {
@@ -490,7 +598,9 @@ pub struct Calibration {
 impl Calibration {
     /// The make-up at a drive position, between the measured points.
     pub fn make_up_db_at(&self, drive: f64) -> f64 {
-        let x = drive.clamp(0.0, 1.0) * (POINTS - 1) as f64;
+        // Into knot space, which is where the points are evenly spaced. The
+        // cube root is the inverse of `knot_position`.
+        let x = drive.clamp(0.0, 1.0).powf(1.0 / KNOT_SHAPE) * (POINTS - 1) as f64;
         let i = (x as usize).min(POINTS - 2);
         let f = x - i as f64;
         self.make_up_db[i] * (1.0 - f) + self.make_up_db[i + 1] * f
@@ -535,6 +645,12 @@ fn peak_gain(circuit: &Netlist, controls: &[f64]) -> f64 {
 /// shorter settings are padded up to it.
 pub const LATENCY: u32 = 180;
 
+/// Number of samples to crossfade when switching circuits or presets.
+/// At 48 kHz this is about 5.3 ms -- long enough to mask the capacitor
+/// reset discontinuity even for high-gain circuits like the Mark IIC+,
+/// short enough to be imperceptible as a level dip.
+const FADE_LEN: usize = 256;
+
 /// A whole number of samples of delay.
 struct Delay {
     buf: Vec<f64>,
@@ -543,7 +659,10 @@ struct Delay {
 
 impl Delay {
     fn new(len: usize) -> Self {
-        Self { buf: vec![0.0; len], pos: 0 }
+        Self {
+            buf: vec![0.0; len],
+            pos: 0,
+        }
     }
 
     /// A length of zero means no delay at all, and has to mean that.
@@ -629,6 +748,10 @@ impl Default for Settings {
 /// holding all of them costs less than the machinery to avoid it would.
 pub struct Chain {
     gains: Vec<Simulation>,
+    /// The power amplifier behind each voice that has one, indexed alongside
+    /// `gains`. Two of them are `Some`; the rest are pedals and topologies,
+    /// which have nothing behind them.
+    powers: Vec<Option<Simulation>>,
     /// The three output transformers. Nonlinear, so unlike the tone stack and
     /// the cabinet these cannot be normalised by asking the AC solver: their
     /// trim is measured and baked with the voices.
@@ -662,12 +785,25 @@ pub struct Chain {
     /// -- so the make-up is glided rather than stepped, which costs three
     /// arithmetic operations and saves a click on every automation step.
     out_of_target: f64,
+    /// Crossfade state for circuit/preset switches. When a switch is detected,
+    /// the output is faded from the last sample of the old circuit to the first
+    /// sample of the new one over `FADE_LEN` samples, masking the capacitor
+    /// reset discontinuity.
+    fade_remaining: usize,
+    prev_output: f64,
+    /// When a circuit switch also changes the oversampling factor, the
+    /// oversampler reset is deferred until after the crossfade completes.
+    /// Resetting the oversampler mid-crossfade zeroes its filter histories,
+    /// creating a second discontinuity that the crossfade cannot mask.
+    deferred_oversample: Option<usize>,
 }
 
 impl Chain {
     pub fn new(rate: f64) -> Self {
         let section = |built: Option<Result<Netlist, Fault>>| {
-            let netlist = built.expect("a section that exists").expect("catalogue builds");
+            let netlist = built
+                .expect("a section that exists")
+                .expect("catalogue builds");
             let controls = vec![0.5; netlist.controls];
             let trim = 1.0 / peak_gain(&netlist, &controls);
             let mut sim = Simulation::new(netlist, rate);
@@ -684,6 +820,12 @@ impl Chain {
                         build_voice(gain, diode, amplifier).expect("catalogue builds"),
                         rate,
                     )
+                })
+                .collect(),
+            powers: (0..VOICES)
+                .map(|i| {
+                    build_power(voice_at(i).0)
+                        .map(|built| Simulation::new(built.expect("catalogue builds"), rate))
                 })
                 .collect(),
             irons: [Iron::Nickel, Iron::Steel, Iron::Amorphous]
@@ -711,6 +853,9 @@ impl Chain {
             into: 1.0,
             out_of: 1.0,
             out_of_target: 1.0,
+            fade_remaining: 0,
+            prev_output: 0.0,
+            deferred_oversample: None,
         };
         chain.set_oversampling(4);
         chain.set_drive(0.5);
@@ -729,6 +874,10 @@ impl Chain {
             self.gains[index].reset();
             self.set_oversampling(self.requested_oversampling);
             self.set_drive(self.drive);
+            // Crossfade from the old circuit's last output to the new
+            // circuit's first output so the capacitor-reset discontinuity
+            // is inaudible.
+            self.fade_remaining = FADE_LEN;
         }
     }
 
@@ -740,6 +889,7 @@ impl Chain {
                 self.irons[i].reset();
             }
             self.iron = next;
+            self.fade_remaining = FADE_LEN;
         }
     }
 
@@ -754,6 +904,7 @@ impl Chain {
                 self.tones[i].0.reset();
             }
             self.tone = next;
+            self.fade_remaining = FADE_LEN;
         }
     }
 
@@ -768,6 +919,7 @@ impl Chain {
                 self.cabinets[i].0.reset();
             }
             self.cabinet = next;
+            self.fade_remaining = FADE_LEN;
         }
     }
 
@@ -787,8 +939,7 @@ impl Chain {
         // A nominal digital signal has to arrive as the stated voltage.
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
         self.into = calibration.drive_volts / nominal;
-        self.out_of_target =
-            10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into;
+        self.out_of_target = 10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into;
     }
 
     pub fn set_tone(&mut self, which: usize, position: f64) {
@@ -824,29 +975,30 @@ impl Chain {
     /// valve voices almost nothing, so nothing but the clipper would have
     /// shown it.
     pub fn set_oversampling(&mut self, factor: usize) {
-        // The schematic models solve a much larger nonlinear matrix than the
-        // generic gain stages. Running them at 4x (the default) makes their
-        // per-channel cost exceed a real-time audio budget and the host then
-        // falls behind: crackles, interrupted live input, and slow playback
-        // are the result. Their presets have always requested host-rate
-        // processing, but the global oversampling control accidentally
-        // overrode that when a user selected one from the panel.
-        //
-        // Keep this policy here, next to the resampling boundary, so it holds
-        // for every host and every caller of `Chain`, rather than relying on
-        // a particular preset or UI state.
         self.requested_oversampling = factor;
         let factor = if voice_at(self.gain).0.is_modelled() {
             1
         } else {
             factor
         };
-        self.over.set_factor(factor);
+        // If a crossfade is active, defer the oversampler reset until it
+        // completes. Resetting mid-crossfade zeroes the filter histories and
+        // creates a second discontinuity that the crossfade cannot mask.
+        if self.fade_remaining > 0 && factor != self.over.factor() {
+            self.deferred_oversample = Some(factor);
+        } else {
+            self.over.set_factor(factor);
+        }
         self.pad
             .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
         let inner = self.rate * self.over.factor() as f64;
         for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
             sim.set_rate(inner);
+        }
+        // The power stage is outside the oversampler, so it keeps the host's
+        // rate rather than the inner one. See the note in `process`.
+        for sim in self.powers.iter_mut().flatten() {
+            sim.set_rate(self.rate);
         }
     }
 
@@ -905,6 +1057,21 @@ impl Chain {
 
     #[inline]
     pub fn process(&mut self, x: f64) -> f64 {
+        // Apply any deferred oversampler reset at the START of the crossfade,
+        // before the oversampler processes this sample. This way the entire
+        // reset discontinuity is covered by the crossfade blending.
+        if self.fade_remaining == FADE_LEN {
+            if let Some(factor) = self.deferred_oversample.take() {
+                self.over.set_factor(factor);
+                self.pad
+                    .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+                let inner = self.rate * self.over.factor() as f64;
+                for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
+                    sim.set_rate(inner);
+                }
+            }
+        }
+
         // Only the gain circuit can fold anything back into the band, so only
         // the gain circuit runs at the higher rate. The tone stack and the
         // cabinet are linear and cost nothing extra by staying down here.
@@ -917,8 +1084,32 @@ impl Chain {
         let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
         let mut iron = self.iron.map(|i| &mut self.irons[i]);
         let out_of = self.out_of;
+        let mut power = self.powers[self.gain].as_mut();
         let mut y = self.over.process(x * self.into, &mut |v| {
-            let amplified = gain.process(v) * out_of;
+            // The power amplifier goes here, in volts, *before* the make-up.
+            //
+            // Not after it, which is where the signal order would otherwise
+            // put it. The make-up holds the preamplifier's output at a
+            // constant level whatever the Drive knob is doing -- that is its
+            // whole job -- so a power stage behind it would be handed the same
+            // level at every setting and would never be driven any harder.
+            // Which is the one thing a power amplifier is for.
+            //
+            // What that costs is the plugin's tone section, which then sits
+            // *after* the power stage rather than before it. For the 5150 that
+            // section stands in for the amplifier's own stack, so its loss
+            // lands in the wrong place; the master volume absorbs the level,
+            // and the voicing being post-power is an approximation worth
+            // naming. It also means the power stage runs at the host rate
+            // rather than inside the oversampling -- which costs nothing
+            // today, because a modelled circuit is pinned to the host rate
+            // anyway (see `set_oversampling` and BUG-017), and would have to
+            // move if that ever changed.
+            let mut amplified = gain.process(v);
+            if let Some(ref mut sim) = power {
+                amplified = sim.process(amplified);
+            }
+            let amplified = amplified * out_of;
             match iron {
                 Some(ref mut sim) => {
                     // Handed volts rather than a number near one, because what
@@ -939,6 +1130,14 @@ impl Chain {
             let (sim, trim) = &mut self.cabinets[i];
             y = sim.process(y) * *trim;
         }
+        // Crossfade from the old circuit's last output to the new one so that
+        // a capacitor-reset discontinuity is inaudible.
+        if self.fade_remaining > 0 {
+            let t = self.fade_remaining as f64 / FADE_LEN as f64;
+            self.fade_remaining -= 1;
+            y = self.prev_output * t + y * (1.0 - t);
+        }
+        self.prev_output = y;
         y
     }
 
@@ -948,9 +1147,71 @@ impl Chain {
         self.out_of = self.out_of_target;
     }
 
+    /// The operating point voltage vector of the active gain circuit, for
+    /// sharing with an identical channel.
+    pub fn operating_point(&self) -> &[f64] {
+        self.gains[self.gain].operating_point()
+    }
+
+    /// The operating point voltage vector of the active iron stage, if any.
+    ///
+    /// A borrow rather than a copy: this is read from `process`, and a `Vec`
+    /// there is an allocation on the audio thread.
+    pub fn iron_operating_point(&self) -> Option<&[f64]> {
+        self.iron.map(|i| self.irons[i].operating_point())
+    }
+
+    /// Whether the active gain circuit still has its DC hunt in front of it,
+    /// which is the only moment at which its solution is worth sharing. See
+    /// `Simulation::needs_operating_point`.
+    pub fn needs_operating_point(&self) -> bool {
+        self.gains[self.gain].needs_operating_point()
+    }
+
+    /// The operating point of the active voice's power stage, if it has one.
+    pub fn power_operating_point(&self) -> Option<&[f64]> {
+        self.powers[self.gain].as_ref().map(|s| s.operating_point())
+    }
+
+    /// Apply a pre-computed operating point to the active voice's power stage.
+    pub fn share_power_operating_point_from(&mut self, op: &[f64]) {
+        if let Some(sim) = self.powers[self.gain].as_mut() {
+            sim.apply_operating_point(op);
+        }
+    }
+
+    /// Hunts the operating point now rather than on the next sample, so that
+    /// an identical channel can be handed the answer.
+    pub fn find_operating_point(&mut self) -> bool {
+        let gain = self.gains[self.gain].find_operating_point();
+        let iron = self.iron.map(|i| self.irons[i].find_operating_point());
+        let power = self.powers[self.gain]
+            .as_mut()
+            .map(|s| s.find_operating_point());
+        gain && iron.unwrap_or(true) && power.unwrap_or(true)
+    }
+
+    /// Apply a pre-computed operating point to the active gain circuit.
+    /// Used when sharing a DC solution between identical channels.
+    pub fn share_operating_point_from(&mut self, gain_op: &[f64]) {
+        self.gains[self.gain].apply_operating_point(gain_op);
+    }
+
+    /// Apply a pre-computed operating point to the active iron stage.
+    pub fn share_iron_operating_point_from(&mut self, iron_op: &[f64]) {
+        if let Some(i) = self.iron {
+            self.irons[i].apply_operating_point(iron_op);
+        }
+    }
+
     pub fn reset(&mut self) {
         self.out_of = self.out_of_target;
-        for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
+        for sim in self
+            .gains
+            .iter_mut()
+            .chain(self.irons.iter_mut())
+            .chain(self.powers.iter_mut().flatten())
+        {
             sim.reset();
         }
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {

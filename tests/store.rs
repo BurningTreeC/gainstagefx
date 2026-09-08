@@ -60,7 +60,10 @@ fn saved_presets_survive_the_round_trip() {
     );
 
     // --- what is and is not taken ------------------------------------------
-    assert!(presets::name_taken("test sound", &all), "matched case-insensitively");
+    assert!(
+        presets::name_taken("test sound", &all),
+        "matched case-insensitively"
+    );
     assert!(
         !presets::name_taken("Scooped Metal", &all),
         "saving under a shipped preset's name writes a new file beside it and \

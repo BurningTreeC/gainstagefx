@@ -30,9 +30,14 @@ fn at(v: &Voicing, node: &str, hz: f64, volts: f64, sus: f64, tone: f64) -> meas
 fn the_tone_control_is_the_mid_scoop() {
     let v = bigmuff::RAMS_HEAD;
     let network = |hz: f64, tone: f64| {
-        at(&v, "wiper", hz, 1e-4, 1.0, tone).gain_db() - at(&v, "q2c", hz, 1e-4, 1.0, tone).gain_db()
+        at(&v, "wiper", hz, 1e-4, 1.0, tone).gain_db()
+            - at(&v, "q2c", hz, 1e-4, 1.0, tone).gain_db()
     };
-    let (low, notch, high) = (network(80.0, 0.5), network(1000.0, 0.5), network(8000.0, 0.5));
+    let (low, notch, high) = (
+        network(80.0, 0.5),
+        network(1000.0, 0.5),
+        network(8000.0, 0.5),
+    );
     println!("at noon: {low:.1} dB at 80 Hz, {notch:.1} at 1 kHz, {high:.1} at 8 kHz");
     assert!(
         notch < low - 3.0 && notch < high - 3.0,
@@ -45,11 +50,15 @@ fn the_tone_control_is_the_mid_scoop() {
 fn the_tone_control_runs_from_dark_to_bright() {
     let v = bigmuff::RAMS_HEAD;
     let network = |hz: f64, tone: f64| {
-        at(&v, "wiper", hz, 1e-4, 1.0, tone).gain_db() - at(&v, "q2c", hz, 1e-4, 1.0, tone).gain_db()
+        at(&v, "wiper", hz, 1e-4, 1.0, tone).gain_db()
+            - at(&v, "q2c", hz, 1e-4, 1.0, tone).gain_db()
     };
     let dark = (network(80.0, 0.0), network(8000.0, 0.0));
     let bright = (network(80.0, 1.0), network(8000.0, 1.0));
-    println!("shut: {:.1} / {:.1};  open: {:.1} / {:.1}", dark.0, dark.1, bright.0, bright.1);
+    println!(
+        "shut: {:.1} / {:.1};  open: {:.1} / {:.1}",
+        dark.0, dark.1, bright.0, bright.1
+    );
     assert!(dark.0 > dark.1 + 10.0, "shut it should be a low pass");
     assert!(bright.1 > bright.0 + 10.0, "open it should be a high pass");
 }
@@ -62,8 +71,14 @@ fn the_gain_builds_through_four_stages() {
     let g = |node: &str| at(&v, node, 1000.0, 1e-4, 1.0, 0.5).gain_db();
     let (first, second, third) = (g("q4c"), g("q3c"), g("q2c"));
     println!("stages: {first:.1} -> {second:.1} -> {third:.1} dB");
-    assert!(second > first + 10.0 && third > second + 10.0, "each stage should add gain");
-    assert!(third > 45.0, "three stages should reach real gain: {third:.1} dB");
+    assert!(
+        second > first + 10.0 && third > second + 10.0,
+        "each stage should add gain"
+    );
+    assert!(
+        third > 45.0,
+        "three stages should reach real gain: {third:.1} dB"
+    );
 }
 
 /// Matched pairs of 1N914 across each feedback loop are symmetric, so a Muff
@@ -77,8 +92,14 @@ fn it_clips_symmetrically() {
         m.harmonic_percent(2),
         m.harmonic_percent(3)
     );
-    assert!(m.harmonic_percent(2) < 1.5, "symmetric clipping makes no even harmonic");
-    assert!(m.thd_percent() > 50.0, "a Muff should be thoroughly squared off");
+    assert!(
+        m.harmonic_percent(2) < 1.5,
+        "symmetric clipping makes no even harmonic"
+    );
+    assert!(
+        m.thd_percent() > 50.0,
+        "a Muff should be thoroughly squared off"
+    );
 }
 
 /// The sustain control has to take it from nearly clean to all of it.
@@ -97,14 +118,20 @@ fn the_sustain_control_covers_the_range() {
 #[test]
 fn the_versions_differ() {
     let thd = |v: &Voicing| at(v, "out", 1000.0, 0.03, 1.0, 0.5).thd_percent();
-    let (rams, triangle, supa) =
-        (thd(&bigmuff::RAMS_HEAD), thd(&bigmuff::TRIANGLE), thd(&bigmuff::SUPA));
+    let (rams, triangle, supa) = (
+        thd(&bigmuff::RAMS_HEAD),
+        thd(&bigmuff::TRIANGLE),
+        thd(&bigmuff::SUPA),
+    );
     println!("Ram's Head {rams:.1} %, Triangle {triangle:.1} %, Supa {supa:.1} %");
     assert!(
         (rams - triangle).abs() > 2.0 || (rams - supa).abs() > 2.0,
         "three versions that measure the same are one version"
     );
-    assert!(supa < rams, "a stage with its diodes removed should clip less");
+    assert!(
+        supa < rams,
+        "a stage with its diodes removed should clip less"
+    );
 }
 
 /// Every version builds and settles, and silence in is silence out.

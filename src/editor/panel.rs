@@ -53,6 +53,46 @@ impl View for Faceplate {
             ),
         );
 
+        // The light, at the top left corner.
+        //
+        // This is not decoration: it is the same light the knob is rendered
+        // under. `assets/knob.sh` renders the model with assetgen's panel rig,
+        // whose key sits up and to the left of the camera, and a knob lit from
+        // one corner sitting on a face lit from nowhere reads as a sticker.
+        // Measured off the render, its top-left quadrant is 136 against 83 for
+        // its bottom right; the pool below is what puts the same fall across
+        // the face behind it.
+        //
+        // Wide and shallow. A steel panel under a room light has no visible
+        // hotspot -- what it has is a corner that is a little brighter than
+        // the far one, and an edge that catches.
+        let (lx, ly) = (b.x + b.w * 0.06, b.y + b.h * 0.02);
+        canvas.fill_path(
+            &face,
+            &vg::Paint::radial_gradient(
+                lx,
+                ly,
+                0.0,
+                (b.w + b.h) * 0.58,
+                rgba(0xffffff, 0.090),
+                rgba(0xffffff, 0.0),
+            ),
+        );
+        // And the far corner falls away, which is the other half of the same
+        // statement. Without it the pool only ever adds, and the panel ends up
+        // brighter overall rather than lit from somewhere.
+        canvas.fill_path(
+            &face,
+            &vg::Paint::radial_gradient(
+                b.x + b.w,
+                b.y + b.h,
+                (b.w + b.h) * 0.14,
+                (b.w + b.h) * 0.70,
+                rgba(0x000000, 0.0),
+                rgba(0x000000, 0.20),
+            ),
+        );
+
         // Brushed grain: fine horizontal lines, which is the direction a panel
         // is actually linished in.
         for i in 0..(b.h as usize / 3) {

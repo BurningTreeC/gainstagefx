@@ -48,10 +48,21 @@ use crate::dsp::netlist::{Circuit, Fault, Netlist, Taper, TriodeSpec};
 pub const PRE: usize = 0;
 
 /// The plate supply. The drawing names two rails, V1 and V2, and prints the
-/// voltage of neither -- see the note above. One figure for both, and the
-/// first thing to change if the stages turn out not to bias where the real
-/// amplifier does.
-pub const SUPPLY: f64 = 400.0;
+/// voltage of neither -- see the note above. One figure for both.
+///
+/// It was 400, which was a guess. Service discussion of Peavey's 6L6 hundred
+/// watt amplifiers puts the preamplifier nodes at three hundred to three fifty
+/// (diyAudio, "peavey 5150/6505/6505+ HT"), so this is the middle of a sourced
+/// range rather than the top of an unsourced one. It is still an
+/// approximation: a forum rule of thumb is the bottom of `CLAUDE.md` §3.3's
+/// hierarchy, and the real amplifier drops its two rails through an RC ladder
+/// that this does not model.
+///
+/// Measured, it moves the preamplifier's ceiling and nothing else: 37.7 dB at
+/// the tone stack on 400 V against 35.8 on 330, with the ULTRA PRE control
+/// behaving identically at both. So it is not the reason this amplifier
+/// saturates where it does.
+pub const SUPPLY: f64 = 330.0;
 
 /// What the tone stack presents to R89.
 ///

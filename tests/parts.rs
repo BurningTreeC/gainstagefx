@@ -75,7 +75,10 @@ fn a_jfet_bends_further_the_harder_it_is_driven() {
         );
         last = thd;
     }
-    assert!(last > 20.0, "driven hard it should be well bent: {last:.1} %");
+    assert!(
+        last > 20.0,
+        "driven hard it should be well bent: {last:.1} %"
+    );
 }
 
 /// The parts differ, and by the thing they are chosen for.
@@ -190,7 +193,10 @@ fn the_cores_are_not_the_same_iron() {
         at(CoreSpec::NICKEL, 1.0),
         at(CoreSpec::AMORPHOUS, 1.0),
     );
-    println!("at 1 V: steel {:.3} %, nickel {:.3} %, amorphous {:.3} %", quiet.0, quiet.1, quiet.2);
+    println!(
+        "at 1 V: steel {:.3} %, nickel {:.3} %, amorphous {:.3} %",
+        quiet.0, quiet.1, quiet.2
+    );
     assert!(
         quiet.1 > quiet.0 * 5.0 && quiet.1 > quiet.2 * 5.0,
         "nickel should be the one that colours a quiet signal: {:.3} % against \
@@ -206,7 +212,10 @@ fn the_cores_are_not_the_same_iron() {
         at(CoreSpec::NICKEL, 32.0),
         at(CoreSpec::AMORPHOUS, 32.0),
     );
-    println!("at 32 V: steel {:.1} %, nickel {:.1} %, amorphous {:.1} %", loud.0, loud.1, loud.2);
+    println!(
+        "at 32 V: steel {:.1} %, nickel {:.1} %, amorphous {:.1} %",
+        loud.0, loud.1, loud.2
+    );
     assert!(
         loud.0 > loud.1 * 1.5,
         "steel should go further than nickel when pushed: {:.1} % against {:.1} %",

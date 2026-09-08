@@ -124,9 +124,7 @@ impl Session {
             .find(|p| p.name == current)
             .map(|p| p.values.clone())
             .unwrap_or_default();
-        let deletable = entries
-            .iter()
-            .any(|p| !p.built_in && p.name == current);
+        let deletable = entries.iter().any(|p| !p.built_in && p.name == current);
         Self {
             open: false,
             sizing: false,
@@ -289,16 +287,14 @@ impl Model for Session {
                         }
                     }
                     Dialog::Overwrite => self.store(),
-                    Dialog::Delete => {
-                        match presets::delete(&self.current) {
-                            Ok(()) => {
-                                self.dialog = Dialog::None;
-                                self.error.clear();
-                                self.refresh();
-                            }
-                            Err(err) => self.error = err.to_string(),
+                    Dialog::Delete => match presets::delete(&self.current) {
+                        Ok(()) => {
+                            self.dialog = Dialog::None;
+                            self.error.clear();
+                            self.refresh();
                         }
-                    }
+                        Err(err) => self.error = err.to_string(),
+                    },
                     Dialog::None => {}
                 },
             }
@@ -440,7 +436,12 @@ impl View for Press {
     }
 
     fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
-        frame(canvas, cx.bounds(), cx.scale_factor(), self.strong && self.enabled);
+        frame(
+            canvas,
+            cx.bounds(),
+            cx.scale_factor(),
+            self.strong && self.enabled,
+        );
     }
 }
 
@@ -796,8 +797,7 @@ pub fn dialogs(cx: &mut Context) {
                 Dialog::Overwrite => {
                     note(
                         cx,
-                        Session::draft
-                            .map(|n| format!("You already have a preset called {n}.")),
+                        Session::draft.map(|n| format!("You already have a preset called {n}.")),
                     );
                 }
                 Dialog::Delete => {

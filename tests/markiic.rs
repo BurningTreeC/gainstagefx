@@ -14,7 +14,13 @@ struct Panel {
     drive: f64,
 }
 
-const NOON: Panel = Panel { treble: 0.5, bass: 0.5, middle: 0.5, volume: 0.5, drive: 0.5 };
+const NOON: Panel = Panel {
+    treble: 0.5,
+    bass: 0.5,
+    middle: 0.5,
+    volume: 0.5,
+    drive: 0.5,
+};
 
 fn at(node: &str, hz: f64, volts: f64, p: &Panel) -> measure::Measured {
     let c = markiic::tap(10_000.0, 1_000_000.0, node).expect("builds");
@@ -37,7 +43,10 @@ fn at(node: &str, hz: f64, volts: f64, p: &Panel) -> measure::Measured {
 fn the_first_stage_leaves_the_bottom_end_degenerated() {
     let corner = 1.0 / (std::f64::consts::TAU * 1_500.0 * 0.47e-6);
     println!("cathode bypass corner: {corner:.0} Hz");
-    assert!((corner - 226.0).abs() < 15.0, "the arithmetic itself has moved");
+    assert!(
+        (corner - 226.0).abs() < 15.0,
+        "the arithmetic itself has moved"
+    );
 
     let low = at("v1a_p", 50.0, 1e-5, &NOON).gain_db();
     let mid = at("v1a_p", 2_000.0, 1e-5, &NOON).gain_db();
@@ -53,7 +62,10 @@ fn the_first_stage_leaves_the_bottom_end_degenerated() {
 /// of the band.
 #[test]
 fn the_tone_stack_scoops() {
-    let scooped = Panel { middle: 0.0, ..NOON };
+    let scooped = Panel {
+        middle: 0.0,
+        ..NOON
+    };
     let notch = at("ts_out", 250.0, 1e-5, &scooped).gain_db();
     let top = at("ts_out", 5_000.0, 1e-5, &scooped).gain_db();
     println!("with the middle down: {notch:.1} dB at 250 Hz against {top:.1} at 5 kHz");
@@ -69,8 +81,26 @@ fn the_tone_stack_scoops() {
 /// because a variable resistor keeps what is *left* of its track.
 #[test]
 fn the_middle_control_goes_the_way_it_is_labelled() {
-    let down = at("ts_out", 250.0, 1e-5, &Panel { middle: 0.0, ..NOON }).gain_db();
-    let up = at("ts_out", 250.0, 1e-5, &Panel { middle: 1.0, ..NOON }).gain_db();
+    let down = at(
+        "ts_out",
+        250.0,
+        1e-5,
+        &Panel {
+            middle: 0.0,
+            ..NOON
+        },
+    )
+    .gain_db();
+    let up = at(
+        "ts_out",
+        250.0,
+        1e-5,
+        &Panel {
+            middle: 1.0,
+            ..NOON
+        },
+    )
+    .gain_db();
     println!("middle down {down:.1} dB, up {up:.1} dB at 250 Hz");
     assert!(
         up > down + 2.0,
@@ -99,21 +129,45 @@ fn the_lead_drive_runs_from_silence_to_everything() {
         "a lead drive control should cover the lot: only {:.1} dB",
         open - shut
     );
-    assert!(open > 60.0, "four triodes should reach some gain: {open:.1} dB");
+    // Forty, not sixty. Sixty was measured against a model whose treble
+    // capacitor was four times too big, whose V1B worked into a megohm
+    // instead of R9's 91 k, and whose V4A was fully bypassed instead of
+    // keeping 2.2 k of degeneration -- thirteen decibels between them, all of
+    // it traced back to the drawing. What is left is what the drawing gives:
+    // four triodes' worth of raw gain, less sixteen decibels in the stack and
+    // ten in the R31/R32 divider on the way out. See
+    // `docs/experiments/markiic-5150-stage-trace.md`.
+    assert!(
+        open > 40.0,
+        "four triodes should reach some gain: {open:.1} dB"
+    );
 }
 
 /// Turned up it distorts, and being valves it leads with second harmonic.
 #[test]
 fn it_distorts_and_leads_with_second_harmonic() {
-    let hard = Panel { drive: 1.0, volume: 0.8, middle: 0.2, ..NOON };
-    let m = at("lead_out", 1_000.0, 0.01, &hard);
+    let hard = Panel {
+        drive: 1.0,
+        volume: 0.8,
+        middle: 0.2,
+        ..NOON
+    };
+    // Fifty millivolts, which is a guitar. It was ten, chosen when the model
+    // was thirteen decibels hotter than its drawing; the same ten now lands
+    // the stage below its rails and measures the amplifier being linear
+    // rather than the amplifier bending.
+    let m = at("lead_out", 1_000.0, 0.05, &hard);
     println!(
         "{:.1} % distortion, 2nd {:.1} %, 3rd {:.1} %",
         m.thd_percent(),
         m.harmonic_percent(2),
         m.harmonic_percent(3)
     );
-    assert!(m.thd_percent() > 10.0, "driven hard it should bend: {:.1} %", m.thd_percent());
+    assert!(
+        m.thd_percent() > 10.0,
+        "driven hard it should bend: {:.1} %",
+        m.thd_percent()
+    );
 }
 
 /// And every stage has to build and settle, which a four-triode chain on a

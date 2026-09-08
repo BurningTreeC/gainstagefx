@@ -13,7 +13,11 @@ use gainstagefx::dsp::time::Simulation;
 const RATE: f64 = 96_000.0;
 
 fn node(circuit: &gainstagefx::dsp::netlist::Circuit, name: &str) -> usize {
-    circuit.names.iter().position(|n| n == name).expect("named node")
+    circuit
+        .names
+        .iter()
+        .position(|n| n == name)
+        .expect("named node")
 }
 
 /// A 12AX7 with a hundred kilohm load on a three hundred volt rail sits with
@@ -25,7 +29,10 @@ fn the_valve_stage_sits_where_the_data_sheet_says() {
     let circuit = valve::build(&valve::CLASSIC, 10_000.0, 1_000_000.0).expect("builds");
     let mut sim = Simulation::new(circuit.clone(), RATE);
     sim.set_control(valve::BYPASS, 1.0);
-    assert!(sim.find_operating_point(), "the operating point did not settle");
+    assert!(
+        sim.find_operating_point(),
+        "the operating point did not settle"
+    );
 
     let plate = sim.voltage_at(node(&circuit, "plate"));
     let cathode = sim.voltage_at(node(&circuit, "cathode"));
@@ -101,7 +108,10 @@ fn the_valve_is_second_harmonic_first() {
     );
     // And it amplifies: a 12AX7 stage of this shape is in the high fifties.
     let gain = 10f64.powf(quiet.gain_db() / 20.0);
-    assert!((45.0..70.0).contains(&gain), "the stage gives {gain:.1} times");
+    assert!(
+        (45.0..70.0).contains(&gain),
+        "the stage gives {gain:.1} times"
+    );
 }
 
 /// Backing the bypass off puts the cathode resistor back in the signal path,
@@ -160,8 +170,14 @@ fn the_diodes_clip_at_their_own_thresholds() {
     let si = clip(DiodeSpec::SILICON, 3.0).fundamental().magnitude();
     let ge = clip(DiodeSpec::GERMANIUM, 3.0).fundamental().magnitude();
     let led = clip(DiodeSpec::LED, 3.0).fundamental().magnitude();
-    assert!(ge < si, "germanium should hold lower: {ge:.3} V against {si:.3} V");
-    assert!(led > si, "an LED should hold higher: {led:.3} V against {si:.3} V");
+    assert!(
+        ge < si,
+        "germanium should hold lower: {ge:.3} V against {si:.3} V"
+    );
+    assert!(
+        led > si,
+        "an LED should hold higher: {led:.3} V against {si:.3} V"
+    );
 
     // A symmetric pair cannot make even harmonics. Not approximately: the
     // waveform has half wave symmetry, so the second harmonic is absent.

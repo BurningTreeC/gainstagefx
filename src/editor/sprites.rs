@@ -1,12 +1,18 @@
-//! The photographs the panel is built from.
+//! The rendered parts the panel is built from.
 //!
-//! The knob is drawn without ever being turned. Rotating a photograph rotates
-//! the light baked into it, so the highlight travels round with the control
-//! instead of staying where the panel light is -- and on a knurled aluminium
-//! knob that is glaring. Its printed indicator was patched out of the
-//! photograph instead, and the pointer is drawn on top at whatever angle the
-//! value asks for. The body never moves; only the line does, which is what
-//! happens when you turn a real one.
+//! The knob is rendered from `assets/knob.glb` by `assets/knob.sh`, under the
+//! same lighting rig every other rendered control on these panels uses: a key
+//! up and to the left of the camera. It used to be a photograph, which brought
+//! its own studio with it and agreed with nothing else on the panel about
+//! where the light was.
+//!
+//! It is drawn without ever being turned. Rotating a sprite rotates the light
+//! baked into it, so the highlight would travel round with the control instead
+//! of staying at the corner the panel is lit from -- and on a knurled
+//! aluminium knob that is glaring. The model therefore carries no indicator;
+//! the pointer is drawn on top at whatever angle the value asks for. The body
+//! never moves, only the line does, which is what happens when you turn a real
+//! one.
 
 use nih_plug_vizia::vizia::prelude::Canvas;
 use nih_plug_vizia::vizia::vg;
@@ -23,7 +29,9 @@ pub struct Sprite {
 
 impl Sprite {
     pub const fn new() -> Self {
-        Self { id: Cell::new(None) }
+        Self {
+            id: Cell::new(None),
+        }
     }
 
     fn id(&self, canvas: &mut Canvas, bytes: &[u8]) -> Option<vg::ImageId> {
@@ -41,7 +49,15 @@ impl Sprite {
 
     /// Draws the photograph centred on a point, at a given height, keeping its
     /// proportions. `tint` fades it towards the panel.
-    pub fn draw(&self, canvas: &mut Canvas, bytes: &[u8], cx: f32, cy: f32, height: f32, tint: f32) {
+    pub fn draw(
+        &self,
+        canvas: &mut Canvas,
+        bytes: &[u8],
+        cx: f32,
+        cy: f32,
+        height: f32,
+        tint: f32,
+    ) {
         let Some(id) = self.id(canvas, bytes) else {
             return;
         };
@@ -55,5 +71,4 @@ impl Sprite {
         path.rect(x, y, w, h);
         canvas.fill_path(&path, &vg::Paint::image(id, x, y, w, h, 0.0, tint));
     }
-
 }

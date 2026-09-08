@@ -35,8 +35,16 @@ fn the_presence_region_is_a_lift() {
 #[test]
 fn the_top_goes_away() {
     for (name, v) in [("1x12", cabinet::COMBO), ("4x12", cabinet::STACK)] {
-        assert!(at(v, 6_000.0) < -8.0, "{name} at 6 kHz: {:.1} dB", at(v, 6_000.0));
-        assert!(at(v, 12_000.0) < -20.0, "{name} at 12 kHz: {:.1} dB", at(v, 12_000.0));
+        assert!(
+            at(v, 6_000.0) < -8.0,
+            "{name} at 6 kHz: {:.1} dB",
+            at(v, 6_000.0)
+        );
+        assert!(
+            at(v, 12_000.0) < -20.0,
+            "{name} at 12 kHz: {:.1} dB",
+            at(v, 12_000.0)
+        );
     }
 }
 

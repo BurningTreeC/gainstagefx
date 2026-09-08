@@ -33,8 +33,19 @@ const BC549: BipolarSpec = BipolarSpec {
     early: 100.0,
 };
 
-/// D1 and D2, 1N4148.
-const D1N4148: DiodeSpec = DiodeSpec { saturation: 4.352e-9, emission: 1.906 };
+/// D1 and D2, the 1N914/1N4148 silicon switching pair the drawing calls for.
+///
+/// A saturation current of a few nanoamps and an emission coefficient near two
+/// is what puts the knee where a silicon switching diode's is. This was once
+/// changed to a Schottky-like part -- a hundred nanoamps and an emission of
+/// 1.5 -- to make the pedal saturate sooner. It did, and it also pulled the
+/// clipping stage's small-signal gain twelve decibels below the arithmetic its
+/// own resistors say, because diodes that soft conduct before the stage has
+/// finished amplifying. See `docs/experiments/ts808-diode-choice.md`.
+const D1N4148: DiodeSpec = DiodeSpec {
+    saturation: 4.352e-9,
+    emission: 1.906,
+};
 
 /// The NE5532 runs on the 9 V rail and swings to within about a volt and a
 /// half of each end of it, which from the 4.5 V bias point is this.
@@ -52,7 +63,8 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // The supply, and the half-supply bias every stage sits on. R16 and R17
     // are 10 k each from 9 V, so the bias is 4.5 V behind 5 k, and C11 47 uF
     // is what makes it a signal ground rather than a shared impedance.
-    net.supply("vref", 5_000.0, 4.5).capacitor("vref", "gnd", 47e-6);
+    net.supply("vref", 5_000.0, 4.5)
+        .capacitor("vref", "gnd", 47e-6);
 
     // --- input buffer, Q1 -------------------------------------------------
     net.input("in", source)
@@ -90,7 +102,21 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         // same node on the drawing. Joining them with a small resistor instead
         // buys an extra unknown in the matrix for nothing, and the matrix is
         // solved a hundred thousand times a second.
-        .pot("tone_in", "tone_w", "minus_b", 20_000.0, Taper::Linear, TONE)
+        //
+        // The inverting input is the `a` end, which is where the wiper sits
+        // with the knob fully clockwise. That is the bright end: the shorter
+        // the path from the wiper to pin 6, the more of the current C6 and R8
+        // draw has to come back through R9, and it is that current through R9
+        // that lifts the top. Wired the other way round the Tone knob darkens
+        // as it is turned up, which is what it used to do here.
+        .pot(
+            "minus_b",
+            "tone_w",
+            "tone_in",
+            20_000.0,
+            Taper::Linear,
+            TONE,
+        )
         .capacitor("tone_w", "r8", 220e-9) // C6
         .resistor("r8", "gnd", 220.0) // R8
         .opamp_biased("u1b", "tone_in", "minus_b", "vref", RAIL)

@@ -21,6 +21,7 @@ pub struct GainStageFx {
 
 impl Default for GainStageFx {
     fn default() -> Self {
+        crate::dsp::time::enable_ftz_daz();
         Self {
             params: Arc::new(GainStageParams::default()),
             meters: Arc::new(Meters::default()),
@@ -52,7 +53,7 @@ impl Plugin for GainStageFx {
         },
     ];
 
-    const SAMPLE_ACCURATE_AUTOMATION: bool = false;
+    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
     type SysExMessage = ();
     type BackgroundTask = ();
@@ -109,6 +110,7 @@ impl Plugin for GainStageFx {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        let samples = buffer.samples() as u32;
         let oversampling = self.params.oversampling.value();
         if oversampling != self.oversampling {
             self.oversampling = oversampling;
@@ -134,10 +136,17 @@ impl Plugin for GainStageFx {
             iron: self.params.iron.value().voice(),
             tone: self.params.tone.value().voice(),
             cabinet: self.params.cabinet.value().voice(),
-            drive: self.params.drive.value() as f64,
-            bass: self.params.bass.value() as f64,
-            mid: self.params.mid.value() as f64,
-            treble: self.params.treble.value() as f64,
+            // `next_step`, not `next`. These four reach a circuit, and
+            // anything that reaches a circuit moves once a block -- so the
+            // smoother has to be advanced by the whole block, not by one
+            // sample. Advancing it by one made a twenty millisecond ramp take
+            // twenty milliseconds times the block size, which at 512 samples
+            // is ten seconds, and made the ramp's length depend on the host's
+            // buffer setting.
+            drive: self.params.drive.smoothed.next_step(samples) as f64,
+            bass: self.params.bass.smoothed.next_step(samples) as f64,
+            mid: self.params.mid.smoothed.next_step(samples) as f64,
+            treble: self.params.treble.smoothed.next_step(samples) as f64,
             oversampling: oversampling.factor(),
         };
 
@@ -151,43 +160,45 @@ impl Plugin for GainStageFx {
             chain.apply(&settings);
         }
 
-        let input_trim = util::db_to_gain(self.params.input_trim.value()) as f64;
-        let output_trim = util::db_to_gain(self.params.output_trim.value()) as f64;
-        let mix = self.params.mix.value() as f64;
+        // Both channels run the same circuit with the same settings, so their
+        // DC operating point is identical and only one of them needs to hunt
+        // it. Channel 0 does, and the rest are handed the answer.
+        //
+        // Only when there is an answer to hand over. `apply_operating_point`
+        // sets every capacitor's charge from the voltages it is given, so
+        // calling it on a channel that is already running does not seed a
+        // solve -- it throws that channel's running state away and replaces it
+        // with channel 0's. Done once a block, as this used to be, the right
+        // channel of a TS808 measured three decibels of residual against the
+        // same channel run on its own, and its output changed with the host's
+        // buffer size: 64 against 512 samples differed by three and a half
+        // decibels of residual. `examples/sharing.rs` is that measurement.
+        //
+        // `split_at_mut` rather than a copy into a scratch vector, because a
+        // `Vec` here is an allocation on the audio thread.
+        if self.channels.len() >= 2 && self.channels[0].needs_operating_point() {
+            let (first, rest) = self.channels.split_at_mut(1);
+            first[0].find_operating_point();
+            for chain in rest {
+                chain.share_operating_point_from(first[0].operating_point());
+                if let Some(op) = first[0].iron_operating_point() {
+                    chain.share_iron_operating_point_from(op);
+                }
+            }
+        }
 
         // A peak that falls slowly enough to read but still follows playing.
         let decay = (-1.0 / (0.3 * self.sample_rate)).exp();
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
-        // The schematic models are physical mono devices: pedals and guitar
-        // preamps with one input and one output. Run their wet path once for
-        // a stereo host buffer, then present that mono device signal on both
-        // channels. This halves their solver load, which is essential for
-        // live use because each nonlinear model is already costly at the
-        // host rate. Dry remains per-channel, so partial wet/dry mixes retain
-        // the source channel layout.
-        let mono_modelled = circuit.is_modelled() && self.channels.len() == 2;
 
         for mut frame in buffer.iter_samples() {
-            if mono_modelled && frame.len() == 2 {
-                let left = *frame.get_mut(0).expect("stereo left sample") as f64 * input_trim;
-                let right = *frame.get_mut(1).expect("stereo right sample") as f64 * input_trim;
-                let wet = self.channels[0].process((left + right) * 0.5);
-                let dry_left = self.channels[0].delayed_dry(left);
-                let dry_right = self.channels[1].delayed_dry(right);
-
-                *frame.get_mut(0).expect("stereo left sample") =
-                    ((dry_left * (1.0 - mix) + wet * mix) * output_trim) as f32;
-                *frame.get_mut(1).expect("stereo right sample") =
-                    ((dry_right * (1.0 - mix) + wet * mix) * output_trim) as f32;
-
-                let level = left.abs().max(right.abs());
-                self.peak = if level > self.peak {
-                    level
-                } else {
-                    self.peak * decay
-                };
-                continue;
-            }
+            // Float parameters are read per-sample through nih-plug's 20ms
+            // linear smoothers so that knob movements are ramped instead of
+            // jumping at block boundaries.  Enum parameters (circuit, diode,
+            // iron, ...) are read once per block in `settings` above.
+            let input_trim = util::db_to_gain(self.params.input_trim.smoothed.next()) as f64;
+            let output_trim = util::db_to_gain(self.params.output_trim.smoothed.next()) as f64;
+            let mix = self.params.mix.smoothed.next() as f64;
 
             for (index, sample) in frame.iter_mut().enumerate() {
                 let Some(chain) = self.channels.get_mut(index) else {

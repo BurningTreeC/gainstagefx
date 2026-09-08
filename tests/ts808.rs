@@ -59,7 +59,10 @@ fn the_clipping_stage_has_the_gain_its_resistors_say() {
 fn the_gain_leg_puts_the_corner_where_the_arithmetic_says() {
     let corner = 1.0 / (std::f64::consts::TAU * R4 * C3);
     println!("corner from the values: {corner:.0} Hz");
-    assert!((corner - 720.0).abs() < 40.0, "the arithmetic itself has moved");
+    assert!(
+        (corner - 720.0).abs() < 40.0,
+        "the arithmetic itself has moved"
+    );
 
     let plateau = at("u1a", 4.0 * corner, 0.0002, 1.0, 0.5).gain_db();
     let at_corner = at("u1a", corner, 0.0002, 1.0, 0.5).gain_db();
@@ -107,6 +110,11 @@ fn the_stock_pedal_clips_symmetrically() {
 
 /// The tone control works on the top of the band and leaves the bottom where
 /// it is -- C6 and R8 only come into it once the capacitor is worth something.
+///
+/// And it works the way the knob is marked: clockwise is bright. The wiper
+/// then sits at the inverting-input end of the track, so the current C6 and R8
+/// draw comes back through R9 and lifts the top. This test used to assert the
+/// opposite, and the pedal's Tone knob darkened as it was turned up.
 #[test]
 fn the_tone_control_works_on_the_top_of_the_band() {
     let bottom = (
@@ -128,8 +136,8 @@ fn the_tone_control_works_on_the_top_of_the_band() {
         bottom.1
     );
     assert!(
-        (top.0 - top.1) > 6.0,
-        "the top should move a great deal: {:.1} against {:.1}",
+        (top.1 - top.0) > 6.0,
+        "the top should move a great deal, and upwards: {:.1} against {:.1}",
         top.0,
         top.1
     );

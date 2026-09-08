@@ -93,13 +93,20 @@ impl View for Knob {
         let (mx, my) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
 
         // The shadow it casts on the panel.
+        //
+        // Down and to the right, because the light is at the top left corner:
+        // the panel's own pool of light is drawn from there and the knob
+        // sprite is rendered under a rig whose key is there too. A shadow that
+        // falls straight down under a knob lit from the corner is the detail
+        // that gives a drawn panel away.
+        let (sx, sy) = (mx + r * 0.10, my + r * 0.15);
         let mut shadow = vg::Path::new();
-        shadow.ellipse(mx, my + r * 0.16, r * 1.16, r * 1.10);
+        shadow.ellipse(sx, sy, r * 1.16, r * 1.10);
         canvas.fill_path(
             &shadow,
             &vg::Paint::radial_gradient(
-                mx,
-                my + r * 0.16,
+                sx,
+                sy,
                 r * 0.74,
                 r * 1.16,
                 rgba(0x000000, 0.55),
@@ -107,7 +114,14 @@ impl View for Knob {
             ),
         );
 
-        self.face.draw(canvas, sprites::KNOB, mx, my, r * 2.0, if self.live { 1.0 } else { 0.28 });
+        self.face.draw(
+            canvas,
+            sprites::KNOB,
+            mx,
+            my,
+            r * 2.0,
+            if self.live { 1.0 } else { 0.28 },
+        );
 
         // The pointer, and only the pointer, turns.
         let angle = knob_angle(self.param.modulated_normalized_value());
@@ -123,8 +137,11 @@ impl View for Knob {
                 .with_line_width(r * 0.085)
                 .with_line_cap(vg::LineCap::Round),
         );
-        let (lx0, ly0) = polar(mx, my + r * 0.022, r * 0.26, angle);
-        let (lx1, ly1) = polar(mx, my + r * 0.022, r * 0.70, angle);
+        // The lit lip sits on the side of the groove the light can reach:
+        // down and to the right of it, matching the corner the panel is lit
+        // from.
+        let (lx0, ly0) = polar(mx + r * 0.015, my + r * 0.020, r * 0.26, angle);
+        let (lx1, ly1) = polar(mx + r * 0.015, my + r * 0.020, r * 0.70, angle);
         let mut lip = vg::Path::new();
         lip.move_to(lx0, ly0);
         lip.line_to(lx1, ly1);
@@ -209,7 +226,9 @@ impl View for Knob {
             // Anything that means this window is no longer the one being used.
             // These are the events that do arrive when a drag is interrupted;
             // the check in `MouseMove` covers the times none of them does.
-            WindowEvent::FocusOut | WindowEvent::WindowClose | WindowEvent::MouseCaptureOutEvent => {
+            WindowEvent::FocusOut
+            | WindowEvent::WindowClose
+            | WindowEvent::MouseCaptureOutEvent => {
                 self.finish(cx);
             }
             WindowEvent::MouseMove(_, y) => {
@@ -302,13 +321,23 @@ impl View for Meter {
         let low = self.position(-Self::WORKING);
         let high = self.position(Self::WORKING);
         let mut band = vg::Path::new();
-        band.rect(b.x + b.w * low, b.y + 2.0 * scale, b.w * (high - low), b.h - 4.0 * scale);
+        band.rect(
+            b.x + b.w * low,
+            b.y + 2.0 * scale,
+            b.w * (high - low),
+            b.h - 4.0 * scale,
+        );
         canvas.fill_path(&band, &vg::Paint::color(rgba(GLOW, 0.16)));
 
         // Nominal itself.
         let mid = b.x + b.w * self.position(0.0);
         let mut centre = vg::Path::new();
-        centre.rect(mid - 0.5 * scale, b.y + 2.0 * scale, scale, b.h - 4.0 * scale);
+        centre.rect(
+            mid - 0.5 * scale,
+            b.y + 2.0 * scale,
+            scale,
+            b.h - 4.0 * scale,
+        );
         canvas.fill_path(&centre, &vg::Paint::color(rgba(0xffffff, 0.35)));
 
         let db = self.meters.input_db();
@@ -333,7 +362,6 @@ impl View for Meter {
         };
         canvas.fill_path(&bar, &vg::Paint::color(colour));
     }
-
 }
 
 /// A row of choices, one lit.
@@ -492,7 +520,11 @@ impl View for Selector {
                 // Only step within this row: the wheel over a row of pedals
                 // should not walk off into the amplifiers.
                 let last = self.labels.len().saturating_sub(1) as i64;
-                let from = if current > self.labels.len() { 0 } else { current as i64 };
+                let from = if current > self.labels.len() {
+                    0
+                } else {
+                    current as i64
+                };
                 let next = (from - y.signum() as i64).clamp(0, last);
                 self.pick(cx, next as usize);
                 meta.consume();
@@ -513,13 +545,7 @@ impl View for Selector {
             let lit = index == selected;
 
             let mut cell = vg::Path::new();
-            cell.rounded_rect(
-                x + 1.5 * scale,
-                b.y,
-                seg - 3.0 * scale,
-                b.h,
-                3.0 * scale,
-            );
+            cell.rounded_rect(x + 1.5 * scale, b.y, seg - 3.0 * scale, b.h, 3.0 * scale);
             let ground = if lit {
                 rgba(GLOW, if self.enabled { 0.22 } else { 0.07 })
             } else {
@@ -531,7 +557,6 @@ impl View for Selector {
                 &vg::Paint::color(rgba(0xffffff, if lit { 0.20 } else { 0.07 }))
                     .with_line_width(scale),
             );
-
         }
     }
 }

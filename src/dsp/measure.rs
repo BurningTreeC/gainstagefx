@@ -38,7 +38,12 @@ impl Tone {
     /// still get an aligned tone.
     pub fn near(rate: f64, window: usize, hz: f64, amplitude: f64) -> Self {
         let bin = (hz * window as f64 / rate).round().max(1.0);
-        Self { rate, window, bin, amplitude }
+        Self {
+            rate,
+            window,
+            bin,
+            amplitude,
+        }
     }
 
     pub fn hz(&self) -> f64 {
@@ -98,6 +103,45 @@ impl Measured {
         sum.sqrt() / f1 * 100.0
     }
 
+    /// Everything that came out which is not the fundamental and not one of
+    /// its harmonics, as a percentage of the fundamental.
+    ///
+    /// This is the aliasing measure. A nonlinear stage makes harmonics, and
+    /// harmonics above half the sample rate do not simply vanish -- they fold
+    /// back down and land on frequencies that have nothing to do with the note
+    /// being played. `thd_percent` cannot see any of it, because it looks only
+    /// at the bins where harmonics belong, so a circuit can alias badly and
+    /// still measure exactly the same total.
+    ///
+    /// What it sounds like is not more distortion. Folded partials are
+    /// inharmonic, so they do not thicken the note; they sit beside it and
+    /// buzz, and they move the wrong way when the note does. `CLAUDE.md` §22
+    /// asks for this to be inspected rather than assumed.
+    ///
+    /// A tone at a bin, run through something time-invariant, puts all of its
+    /// legitimate output on multiples of that bin. So everything in between is
+    /// either fold-back or numerical noise, and the two are told apart by
+    /// their size.
+    pub fn inharmonic_percent(&self) -> f64 {
+        let n = self.samples.len();
+        let f1 = self.fundamental().magnitude().max(1e-30);
+        let step = self.tone.bin.max(1.0);
+        let mut sum = 0.0;
+        let mut bin = 1.0;
+        while bin < n as f64 / 2.0 {
+            // Skip the fundamental and its harmonics, and the bin either side
+            // of each: a window that is not an exact number of cycles leaks a
+            // little into its neighbours, and that leakage is not aliasing.
+            let nearest = (bin / step).round() * step;
+            if (bin - nearest).abs() > 1.5 {
+                let m = self.bin(bin).magnitude();
+                sum += m * m;
+            }
+            bin += 1.0;
+        }
+        sum.sqrt() / f1 * 100.0
+    }
+
     /// One harmonic, as a percentage of the fundamental.
     pub fn harmonic_percent(&self, which: u32) -> f64 {
         let f1 = self.fundamental().magnitude().max(1e-30);
@@ -116,6 +160,8 @@ pub fn run(tone: Tone, settle: usize, mut step: impl FnMut(f64) -> f64) -> Measu
     for i in 0..settle {
         step(tone.at(i));
     }
-    let samples = (0..tone.window).map(|i| step(tone.at(settle + i))).collect();
+    let samples = (0..tone.window)
+        .map(|i| step(tone.at(settle + i)))
+        .collect();
     Measured { tone, samples }
 }

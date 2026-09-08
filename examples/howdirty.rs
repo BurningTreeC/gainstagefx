@@ -14,13 +14,18 @@ fn main() {
         print!("{:>10}", format!("{l:.0} dBFS"));
     }
     println!();
-    for preset in PRESETS.iter().filter(|p| {
-        matches!(p.group, "Distortion" | "Overdrive") || p.name == "Scooped Metal"
-    }) {
+    for preset in PRESETS
+        .iter()
+        .filter(|p| matches!(p.group, "Distortion" | "Overdrive") || p.name == "Scooped Metal")
+    {
         print!("{:<24}", format!("{} ({:.2})", preset.name, preset.drive));
         for level in levels {
             let mut chain = Chain::new(RATE);
-            chain.set_voice(preset.circuit.voice(), preset.diode.voice(), preset.amplifier.voice());
+            chain.set_voice(
+                preset.circuit.voice(),
+                preset.diode.voice(),
+                preset.amplifier.voice(),
+            );
             chain.set_iron(preset.iron.voice());
             chain.set_tone_section(preset.tone.voice());
             chain.set_cabinet(preset.cabinet.voice());

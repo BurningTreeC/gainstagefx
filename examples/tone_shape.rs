@@ -4,14 +4,21 @@ use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::presets::PRESETS;
 use gainstagefx::voice::{Chain, NOMINAL_DBFS};
 const RATE: f64 = 96_000.0;
-const BANDS: [f64; 9] = [80.0, 120.0, 200.0, 350.0, 500.0, 800.0, 1200.0, 2500.0, 4000.0];
+const BANDS: [f64; 9] = [
+    80.0, 120.0, 200.0, 350.0, 500.0, 800.0, 1200.0, 2500.0, 4000.0,
+];
 fn main() {
     let amplitude = 10f64.powf(NOMINAL_DBFS / 20.0);
     print!("{:<20}", "response, dB");
-    for f in BANDS { print!("{:>7.0}", f); }
+    for f in BANDS {
+        print!("{:>7.0}", f);
+    }
     println!();
     for p in PRESETS.iter().filter(|p| {
-        matches!(p.name, "Scooped Metal" | "Thrash Rhythm" | "Scooped Pedal" | "Tight Low End" | "Modern Rhythm")
+        matches!(
+            p.name,
+            "Scooped Metal" | "Thrash Rhythm" | "Scooped Pedal" | "Tight Low End" | "Modern Rhythm"
+        )
     }) {
         print!("{:<20}", p.name);
         let mut out = Vec::new();
@@ -31,7 +38,9 @@ fn main() {
             out.push(measure::run(t, (RATE / 2.0) as usize, |x| c.process(x)).gain_db());
         }
         let peak = out.iter().cloned().fold(f64::MIN, f64::max);
-        for v in &out { print!("{:>7.1}", v - peak); }
+        for v in &out {
+            print!("{:>7.1}", v - peak);
+        }
         println!();
     }
 }

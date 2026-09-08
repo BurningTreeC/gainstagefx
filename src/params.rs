@@ -67,10 +67,12 @@ pub enum Circuit {
     #[id = "evh5150"]
     #[name = "5150"]
     Peavey,
+    #[id = "neve"]
+    #[name = "Neve 73P"]
+    Neve,
 }
 
 impl Circuit {
-
     /// The name the panel puts on it, which is the same name the host shows.
     pub fn name(self) -> &'static str {
         match self {
@@ -85,9 +87,10 @@ impl Circuit {
             Circuit::Muff => "Big Muff",
             Circuit::Boogie => "Mark IIC+",
             Circuit::Peavey => "5150",
+            Circuit::Neve => "Neve 73P",
         }
     }
-    pub const ALL: [Circuit; 11] = [
+    pub const ALL: [Circuit; 12] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -99,6 +102,7 @@ impl Circuit {
         Circuit::Muff,
         Circuit::Boogie,
         Circuit::Peavey,
+        Circuit::Neve,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -114,6 +118,7 @@ impl Circuit {
             Circuit::Muff => voice::Gain::Muff,
             Circuit::Boogie => voice::Gain::Boogie,
             Circuit::Peavey => voice::Gain::Peavey,
+            Circuit::Neve => voice::Gain::Neve,
         }
     }
 
@@ -141,6 +146,24 @@ impl Circuit {
     pub fn is_valve(self) -> bool {
         !self.has_diodes()
     }
+
+    /// Which of the three tone knobs this circuit carries one of its own for.
+    ///
+    /// The panel needs it to decide which knobs are live. A knob that turns
+    /// and reaches nothing is indistinguishable from a fault, and so is a
+    /// greyed-out knob that would have reached something -- which is what the
+    /// TS808 and the Big Muff had: a tone control on the drawing, wired up in
+    /// the voice, and greyed on the panel because the plugin's own stack was
+    /// switched out.
+    pub fn own_tone_knobs(self) -> [bool; 3] {
+        self.voice().own_tone_knobs()
+    }
+
+    /// Whether this circuit's only tone control is the single knob a pedal
+    /// has, which the panel calls TONE rather than TREBLE.
+    pub fn single_tone(self) -> bool {
+        self.voice().single_tone()
+    }
 }
 
 /// The clipping part, chosen separately from the circuit it sits in.
@@ -162,7 +185,6 @@ pub enum Diode {
 }
 
 impl Diode {
-
     /// The name the panel puts on it, which is the same name the host shows.
     pub fn name(self) -> &'static str {
         match self {
@@ -280,7 +302,6 @@ pub enum ToneStack {
 }
 
 impl ToneStack {
-
     /// The name the panel puts on it, which is the same name the host shows.
     pub fn name(self) -> &'static str {
         match self {
@@ -315,7 +336,6 @@ pub enum Cabinet {
 }
 
 impl Cabinet {
-
     /// The name the panel puts on it, which is the same name the host shows.
     pub fn name(self) -> &'static str {
         match self {
@@ -357,7 +377,6 @@ pub enum Oversampling {
 }
 
 impl Oversampling {
-
     /// The name the panel puts on it, which is the same name the host shows.
     pub fn name(self) -> &'static str {
         match self {
@@ -451,14 +470,23 @@ fn position(name: &str, default: f32) -> FloatParam {
         .with_smoother(SmoothingStyle::Linear(20.0))
         .with_unit(" %")
         .with_value_to_string(Arc::new(|v| format!("{:.0}", v * 100.0)))
-        .with_string_to_value(Arc::new(|s| s.trim().parse::<f32>().ok().map(|v| v / 100.0)))
+        .with_string_to_value(Arc::new(|s| {
+            s.trim().parse::<f32>().ok().map(|v| v / 100.0)
+        }))
 }
 
 fn decibels(name: &str, span: f32) -> FloatParam {
-    FloatParam::new(name, 0.0, FloatRange::Linear { min: -span, max: span })
-        .with_smoother(SmoothingStyle::Linear(20.0))
-        .with_unit(" dB")
-        .with_step_size(0.1)
+    FloatParam::new(
+        name,
+        0.0,
+        FloatRange::Linear {
+            min: -span,
+            max: span,
+        },
+    )
+    .with_smoother(SmoothingStyle::Linear(20.0))
+    .with_unit(" dB")
+    .with_step_size(0.1)
 }
 
 impl Default for GainStageParams {

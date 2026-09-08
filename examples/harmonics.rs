@@ -6,10 +6,20 @@ use gainstagefx::voice::{Cabinet, Chain, Tone as ToneSection, NOMINAL_DBFS};
 const RATE: f64 = 96_000.0;
 fn main() {
     let amplitude = 10f64.powf(NOMINAL_DBFS / 20.0);
-    println!("{:<22}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}", "circuit only", "2nd", "3rd", "4th", "5th", "6th", "7th");
+    println!(
+        "{:<22}{:>8}{:>8}{:>8}{:>8}{:>8}{:>8}",
+        "circuit only", "2nd", "3rd", "4th", "5th", "6th", "7th"
+    );
     for p in PRESETS.iter().filter(|p| {
-        matches!(p.name, "Green Overdrive" | "Classic Distortion" | "Scooped Pedal"
-                       | "Scooped Metal" | "Valve Colour" | "Blues Crunch")
+        matches!(
+            p.name,
+            "Green Overdrive"
+                | "Classic Distortion"
+                | "Scooped Pedal"
+                | "Scooped Metal"
+                | "Valve Colour"
+                | "Blues Crunch"
+        )
     }) {
         let mut c = Chain::new(RATE);
         c.set_voice(p.circuit.voice(), p.diode.voice(), p.amplifier.voice());

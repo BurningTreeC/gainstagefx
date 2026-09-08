@@ -54,13 +54,7 @@ pub const HOT: Values = Values {
 /// `"b_grid"` and gets its own, where hand numbered nodes would mean either
 /// copying the whole builder or keeping a running offset by hand -- which is
 /// the bookkeeping that produced the worst bugs in the previous version.
-pub fn stage(
-    net: &mut Netlist,
-    prefix: &str,
-    input: &str,
-    v: &Values,
-    control: usize,
-) -> String {
+pub fn stage(net: &mut Netlist, prefix: &str, input: &str, v: &Values, control: usize) -> String {
     let grid = format!("{prefix}_grid");
     let plate = format!("{prefix}_plate");
     let cathode = format!("{prefix}_cathode");
@@ -75,7 +69,14 @@ pub fn stage(
         // equally out of circuit, so a linear track spends seven eighths of
         // its travel doing nothing and then moves six decibels in the last.
         // The track sweeps the resistance geometrically instead.
-        .pot(&cathode, &leg, &leg, 25_000.0, Taper::Log { span: BYPASS_SPAN }, control)
+        .pot(
+            &cathode,
+            &leg,
+            &leg,
+            25_000.0,
+            Taper::Log { span: BYPASS_SPAN },
+            control,
+        )
         .capacitor(&leg, "gnd", 22e-6)
         .triode(&plate, &grid, &cathode, v.triode)
         .capacitor(&plate, &out, 22e-9);
@@ -98,7 +99,14 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
         // is the cathode resistor itself, so a track that spends most of its
         // travel far above 1.5k is a control that does nothing until the very
         // end of it.
-        .pot("cathode", "bypass_leg", "bypass_leg", 25_000.0, Taper::Log { span: BYPASS_SPAN }, BYPASS)
+        .pot(
+            "cathode",
+            "bypass_leg",
+            "bypass_leg",
+            25_000.0,
+            Taper::Log { span: BYPASS_SPAN },
+            BYPASS,
+        )
         .capacitor("bypass_leg", "gnd", 22e-6)
         .triode("plate", "grid", "cathode", v.triode)
         // Off the plate and into the next stage's grid leak.

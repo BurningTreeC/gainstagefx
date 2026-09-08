@@ -114,13 +114,27 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
         // The same span-limited control as the guitar preamplifiers use, and
         // for the same reason -- see `preamp::SPAN`.
         Amplifier::Valve => {
-            net.pot(&node, "vol", "vol_floor", 1_000_000.0, Taper::Log { span: preamp::SPAN }, GAIN)
-                .resistor("vol_floor", "gnd", preamp::floor_of(1_000_000.0));
+            net.pot(
+                &node,
+                "vol",
+                "vol_floor",
+                1_000_000.0,
+                Taper::Log { span: preamp::SPAN },
+                GAIN,
+            )
+            .resistor("vol_floor", "gnd", preamp::floor_of(1_000_000.0));
             valve::stage(&mut net, "v", "vol", &valve::CLASSIC, BYPASS)
         }
         Amplifier::Jfet => {
-            net.pot(&node, "vol", "vol_floor", 1_000_000.0, Taper::Log { span: preamp::SPAN }, GAIN)
-                .resistor("vol_floor", "gnd", preamp::floor_of(1_000_000.0));
+            net.pot(
+                &node,
+                "vol",
+                "vol_floor",
+                1_000_000.0,
+                Taper::Log { span: preamp::SPAN },
+                GAIN,
+            )
+            .resistor("vol_floor", "gnd", preamp::floor_of(1_000_000.0));
             jfet::stage(&mut net, "j", "vol", &jfet::CLASSIC, BYPASS)
         }
         Amplifier::OpAmp => {
@@ -134,7 +148,9 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
                     "feedback",
                     "feedback",
                     v.feedback,
-                    Taper::ReverseLog { span: (v.leg + v.feedback) / v.leg },
+                    Taper::ReverseLog {
+                        span: (v.leg + v.feedback) / v.leg,
+                    },
                     GAIN,
                 )
                 .resistor("feedback", "minus", v.leg)

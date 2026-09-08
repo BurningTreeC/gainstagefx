@@ -32,7 +32,10 @@ fn the_interstage_dividers_throw_away_what_the_drawing_says() {
     // the stage's own gain, so it must be well short of a bare triode's.
     let v2b = at("v2b_p", 1_000.0, 1e-6, 0.5).gain_db();
     let v5b = at("v5b_p", 1_000.0, 1e-6, 0.5).gain_db();
-    println!("V2B plate {v2b:.1} dB, V5B plate {v5b:.1} dB, step {:.1}", v5b - v2b);
+    println!(
+        "V2B plate {v2b:.1} dB, V5B plate {v5b:.1} dB, step {:.1}",
+        v5b - v2b
+    );
     assert!(
         v5b - v2b < 20.0,
         "a stage behind a 21 dB divider cannot gain {:.1} dB",
@@ -48,7 +51,10 @@ fn the_interstage_dividers_throw_away_what_the_drawing_says() {
 fn the_cold_clipper_makes_almost_no_gain() {
     let before = at("v1b_p", 1_000.0, 1e-6, 0.5).gain_db();
     let after = at("v2a_p", 1_000.0, 1e-6, 0.5).gain_db();
-    println!("V1B plate {before:.1} dB, V2A plate {after:.1} dB, step {:.1}", after - before);
+    println!(
+        "V1B plate {before:.1} dB, V2A plate {after:.1} dB, step {:.1}",
+        after - before
+    );
     assert!(
         (after - before) < 6.0,
         "the cold clipper gained {:.1} dB, so it is not running cold",
@@ -59,7 +65,10 @@ fn the_cold_clipper_makes_almost_no_gain() {
     // comparison mean anything.
     let v1a = at("v1a_p", 1_000.0, 1e-6, 0.5).gain_db();
     println!("V1A, fully bypassed: {v1a:.1} dB");
-    assert!(v1a > 25.0, "a bypassed 12AX7 should gain more than that: {v1a:.1} dB");
+    assert!(
+        v1a > 25.0,
+        "a bypassed 12AX7 should gain more than that: {v1a:.1} dB"
+    );
 }
 
 /// R88 is 1 M from the output back to V5A's grid, and V5A is driven through
@@ -75,7 +84,10 @@ fn the_cold_clipper_makes_almost_no_gain() {
 fn the_last_stage_is_a_unity_gain_driver() {
     let v5b = at("v5b_p", 1_000.0, 1e-6, 1.0).gain_db();
     let out = at("out", 1_000.0, 1e-6, 1.0).gain_db();
-    println!("V5B plate {v5b:.1} dB, output {out:.1} dB, V5A round trip {:.1}", out - v5b);
+    println!(
+        "V5B plate {v5b:.1} dB, output {out:.1} dB, V5A round trip {:.1}",
+        out - v5b
+    );
     assert!(
         (out - v5b).abs() < 6.0,
         "R87 into R88 is unity, so V5A should come out level: {:.1} dB",
@@ -89,8 +101,7 @@ fn the_last_stage_is_a_unity_gain_driver() {
 fn the_tone_stack_is_handed_a_quiet_signal() {
     let out = at("out", 1_000.0, 1e-6, 1.0).gain_db();
     let stack = at("stack", 1_000.0, 1e-6, 1.0).gain_db();
-    let arithmetic =
-        20.0 * (TONE_STACK_INPUT / (470_000.0 + TONE_STACK_INPUT)).log10();
+    let arithmetic = 20.0 * (TONE_STACK_INPUT / (470_000.0 + TONE_STACK_INPUT)).log10();
     println!("{out:.1} dB to {stack:.1} dB, arithmetic says {arithmetic:.1}");
     assert!(
         ((stack - out) - arithmetic).abs() < 1.5,
@@ -122,7 +133,10 @@ fn the_pre_gain_covers_the_whole_range() {
     let open = at("stack", 1_000.0, 1e-4, 1.0).gain_db();
     println!("pre gain: {shut:.1} dB to {open:.1} dB");
     assert!(open - shut > 40.0, "only {:.1} dB of control", open - shut);
-    assert!(open > 80.0, "six triodes should reach some gain: {open:.1} dB");
+    assert!(
+        open > 80.0,
+        "six triodes should reach some gain: {open:.1} dB"
+    );
 }
 
 /// Driven, it distorts, and a cold clipper in the middle of the chain means
@@ -137,7 +151,11 @@ fn it_distorts_and_leads_with_odd_harmonics() {
         m.harmonic_percent(3),
         m.harmonic_percent(5)
     );
-    assert!(m.thd_percent() > 25.0, "only {:.1} % distortion", m.thd_percent());
+    assert!(
+        m.thd_percent() > 25.0,
+        "only {:.1} % distortion",
+        m.thd_percent()
+    );
     assert!(
         m.harmonic_percent(3) > m.harmonic_percent(2),
         "third {:.1} % against second {:.1} %",
@@ -150,7 +168,9 @@ fn it_distorts_and_leads_with_odd_harmonics() {
 /// rail is not guaranteed to do.
 #[test]
 fn every_stage_reaches_an_operating_point() {
-    for node in ["v1a_p", "pre_w", "v1b_p", "v2a_p", "v2b_p", "v5b_p", "out", "stack"] {
+    for node in [
+        "v1a_p", "pre_w", "v1b_p", "v2a_p", "v2b_p", "v5b_p", "out", "stack",
+    ] {
         let c = evh5150::tap(10_000.0, TONE_STACK_INPUT, node).expect("builds");
         let mut sim = Simulation::new(c, RATE);
         assert!(sim.find_operating_point(), "{node} never settled");

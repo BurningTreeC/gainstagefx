@@ -93,7 +93,11 @@ fn plugin_dir(kind: &str) -> io::Result<PathBuf> {
         Ok(local.join("Programs").join("Common").join(kind))
     } else if cfg!(target_os = "macos") {
         let home = env_path("HOME").ok_or_else(|| missing("HOME"))?;
-        Ok(home.join("Library").join("Audio").join("Plug-Ins").join(kind))
+        Ok(home
+            .join("Library")
+            .join("Audio")
+            .join("Plug-Ins")
+            .join(kind))
     } else {
         let home = env_path("HOME").ok_or_else(|| missing("HOME"))?;
         Ok(home.join(format!(".{}", kind.to_lowercase())))

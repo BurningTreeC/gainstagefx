@@ -4,7 +4,7 @@
 //! and that budget is shared with the host and everything else in the project.
 //! Anything over about a tenth of it for a single instance is unusable.
 
-use gainstagefx::voice::{self, Chain, Iron, Tone as ToneSection, Cabinet, VOICES};
+use gainstagefx::voice::{self, Cabinet, Chain, Iron, Tone as ToneSection, VOICES};
 
 const RATE: f64 = 48_000.0;
 const SECONDS: f64 = 2.0;
@@ -55,18 +55,30 @@ fn main() {
 
     println!();
     let mut chain = Chain::new(RATE);
-    chain.set_voice(voice::Gain::Crunch, voice::Diode::Silicon, voice::Amplifier::Valve);
+    chain.set_voice(
+        voice::Gain::Crunch,
+        voice::Diode::Silicon,
+        voice::Amplifier::Valve,
+    );
     chain.set_iron(Iron::Steel);
     measure("Crunch + iron", chain, false);
 
     let mut chain = Chain::new(RATE);
-    chain.set_voice(voice::Gain::Crunch, voice::Diode::Silicon, voice::Amplifier::Valve);
+    chain.set_voice(
+        voice::Gain::Crunch,
+        voice::Diode::Silicon,
+        voice::Amplifier::Valve,
+    );
     chain.set_tone_section(ToneSection::Scooping);
     chain.set_cabinet(Cabinet::Stack);
     measure("Crunch + tone + cabinet", chain, false);
 
     println!();
     let mut chain = Chain::new(RATE);
-    chain.set_voice(voice::Gain::Crunch, voice::Diode::Silicon, voice::Amplifier::Valve);
+    chain.set_voice(
+        voice::Gain::Crunch,
+        voice::Diode::Silicon,
+        voice::Amplifier::Valve,
+    );
     measure("Crunch, drive moving", chain, true);
 }

@@ -140,7 +140,10 @@ fn the_gain_control_sweeps_evenly() {
     // Small enough that nothing is clipping, so this measures the gain and
     // not the ceiling.
     let (shut, half, open) = (at(0.0), at(0.5), at(1.0));
-    assert!(open > shut + 12.0, "the control barely moves: {shut:.1} to {open:.1} dB");
+    assert!(
+        open > shut + 12.0,
+        "the control barely moves: {shut:.1} to {open:.1} dB"
+    );
     let travelled = (half - shut) / (open - shut);
     assert!(
         (0.3..0.7).contains(&travelled),

@@ -13,10 +13,15 @@ fn main() {
 
     println!("=== small signal gain, circuit only: is the bottom amplified at all? ===");
     print!("{:<22}", "");
-    for f in BANDS { print!("{:>8.0}", f); }
+    for f in BANDS {
+        print!("{:>8.0}", f);
+    }
     println!();
     for p in PRESETS.iter().filter(|p| {
-        matches!(p.name, "Classic Distortion" | "Scooped Pedal" | "Green Overdrive" | "Scooped Metal")
+        matches!(
+            p.name,
+            "Classic Distortion" | "Scooped Pedal" | "Green Overdrive" | "Scooped Metal"
+        )
     }) {
         print!("{:<22}", p.name);
         for f in BANDS {
@@ -28,17 +33,25 @@ fn main() {
             c.set_drive(p.drive as f64);
             c.settle();
             let t = Tone::near(RATE, 16_384, f, amplitude * 0.01);
-            print!("{:>8.1}", measure::run(t, (RATE / 2.0) as usize, |x| c.process(x)).gain_db());
+            print!(
+                "{:>8.1}",
+                measure::run(t, (RATE / 2.0) as usize, |x| c.process(x)).gain_db()
+            );
         }
         println!();
     }
 
     println!("\n=== distortion by frequency, at playing level ===");
     print!("{:<22}", "");
-    for f in BANDS { print!("{:>8.0}", f); }
+    for f in BANDS {
+        print!("{:>8.0}", f);
+    }
     println!();
     for p in PRESETS.iter().filter(|p| {
-        matches!(p.name, "Classic Distortion" | "Scooped Pedal" | "Green Overdrive" | "Scooped Metal")
+        matches!(
+            p.name,
+            "Classic Distortion" | "Scooped Pedal" | "Green Overdrive" | "Scooped Metal"
+        )
     }) {
         print!("{:<22}", p.name);
         for f in BANDS {
@@ -54,7 +67,10 @@ fn main() {
             c.set_tone(tone::TREBLE, p.treble as f64);
             c.settle();
             let t = Tone::near(RATE, 16_384, f, amplitude);
-            print!("{:>7.1}%", measure::run(t, (RATE / 2.0) as usize, |x| c.process(x)).thd_percent());
+            print!(
+                "{:>7.1}%",
+                measure::run(t, (RATE / 2.0) as usize, |x| c.process(x)).thd_percent()
+            );
         }
         println!();
     }

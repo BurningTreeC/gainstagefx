@@ -66,7 +66,14 @@ pub fn stage(net: &mut Netlist, prefix: &str, input: &str, v: &Values, control: 
         // In series with the capacitor, not across the resistor. Across it,
         // the source is bypassed at every setting and the control does nothing
         // to the gain at all.
-        .pot(&source, &leg, &leg, 10_000.0, Taper::Log { span: BYPASS_SPAN }, control)
+        .pot(
+            &source,
+            &leg,
+            &leg,
+            10_000.0,
+            Taper::Log { span: BYPASS_SPAN },
+            control,
+        )
         .capacitor(&leg, "gnd", 100e-6)
         .jfet(&drain, &gate, &source, v.jfet)
         // The drain sits well above ground and this is how the hardware sheds

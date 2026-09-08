@@ -101,7 +101,14 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                 };
                 stamp(&mut y, a, b, adm);
             }
-            Part::Pot { a, wiper, b, ohms, taper, control } => {
+            Part::Pot {
+                a,
+                wiper,
+                b,
+                ohms,
+                taper,
+                control,
+            } => {
                 let position = controls.get(control).copied().unwrap_or(0.5);
                 // Clamped off both ends: a pot wound hard against a stop is a
                 // zero ohm link, and an infinite conductance is a singular row.
@@ -125,7 +132,9 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             }
             // Small signal, an op-amp holds its inputs together: whatever
             // current its output has to carry to do that is the unknown.
-            Part::OpAmp { out, plus, minus, .. } => {
+            Part::OpAmp {
+                out, plus, minus, ..
+            } => {
                 let branch = circuit.branch_of(index);
                 if out != GROUND {
                     y[out * n + branch] = y[out * n + branch] + C::real(1.0);
@@ -140,7 +149,13 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             // An ideal transformer: the primary is `ratio` times the secondary
             // in volts and one over that in amps, which is the same statement
             // twice and is why one unknown covers both.
-            Part::Transformer { p1, p2, s1, s2, ratio } => {
+            Part::Transformer {
+                p1,
+                p2,
+                s1,
+                s2,
+                ratio,
+            } => {
                 let branch = circuit.branch_of(index);
                 for (node, sign) in [(p1, 1.0), (p2, -1.0)] {
                     if node != GROUND {
@@ -157,6 +172,7 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             }
             Part::Diode { .. }
             | Part::Triode { .. }
+            | Part::Pentode { .. }
             | Part::Jfet { .. }
             | Part::Core { .. }
             | Part::Bipolar { .. } => unreachable!("checked above"),

@@ -12,8 +12,9 @@ fn at(node: &str, hz: f64, volts: f64, pre: f64) -> measure::Measured {
     measure::run(tone, (RATE / 2.0) as usize, |x| sim.process(x))
 }
 
-const NODES: [&str; 7] =
-    ["v1a_p", "pre_w", "v1b_p", "v2a_p", "v2b_p", "v5b_p", "stack"];
+const NODES: [&str; 7] = [
+    "v1a_p", "pre_w", "v1b_p", "v2a_p", "v2b_p", "v5b_p", "stack",
+];
 
 fn main() {
     println!("=== gain through the chain, small signal, pre gain at noon ===");

@@ -237,7 +237,15 @@ fn gutter(cx: &mut Context) {
 // ---------------------------------------------------------------------------
 
 fn strip(cx: &mut Context) {
-    label(cx, "GAINSTAGEFX", 62.0, HEADER_H / 2.0, 10.5, 116.0, 0xe8eef4);
+    label(
+        cx,
+        "GAINSTAGEFX",
+        62.0,
+        HEADER_H / 2.0,
+        10.5,
+        116.0,
+        0xe8eef4,
+    );
 
     let row = HEADER_H / 2.0 - 10.0;
     session::PresetButton::build_into(cx)
@@ -258,13 +266,9 @@ fn strip(cx: &mut Context) {
     // dim rather than by disappearing -- a strip that changes shape as the
     // selection moves is harder to aim at.
     Binding::new(cx, session::Session::deletable, |cx, deletable| {
-        session::Press::build_into(
-            cx,
-            "Delete",
-            deletable.get(cx),
-            false,
-            || session::SessionEvent::OpenDelete,
-        )
+        session::Press::build_into(cx, "Delete", deletable.get(cx), false, || {
+            session::SessionEvent::OpenDelete
+        })
         .position_type(PositionType::SelfDirected)
         .left(Pixels(326.0))
         .top(Pixels(HEADER_H / 2.0 - 10.0))
@@ -292,7 +296,15 @@ fn strip(cx: &mut Context) {
         Oversampling::ALL.iter().map(|o| o.name()).collect(),
         true,
     );
-    label(cx, "quality", left - 26.0, HEADER_H / 2.0, 9.5, 44.0, 0x7e8a96);
+    label(
+        cx,
+        "quality",
+        left - 26.0,
+        HEADER_H / 2.0,
+        9.5,
+        44.0,
+        0x7e8a96,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -355,31 +367,68 @@ fn circuit(cx: &mut Context) {
     // already too many before the rest of the models arrive.
     let names: Vec<&'static str> = Circuit::ALL.iter().map(|c| c.name()).collect();
     let modelled = Circuit::ALL.iter().filter(|c| !c.is_modelled()).count();
-    label(cx, "topology", body_x() + 30.0, top + 18.0, 9.5, 76.0, 0x7e8a96);
-    Selector::window(cx, Panel::params, |p| &p.circuit,
-        names[..modelled].to_vec(), true, 0, names.len())
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(body_x() + 76.0))
-        .top(Pixels(top + 8.0))
-        .width(Pixels(body_w() - 76.0))
-        .height(Pixels(20.0));
+    label(
+        cx,
+        "topology",
+        body_x() + 30.0,
+        top + 18.0,
+        9.5,
+        76.0,
+        0x7e8a96,
+    );
+    Selector::window(
+        cx,
+        Panel::params,
+        |p| &p.circuit,
+        names[..modelled].to_vec(),
+        true,
+        0,
+        names.len(),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 76.0))
+    .top(Pixels(top + 8.0))
+    .width(Pixels(body_w() - 76.0))
+    .height(Pixels(20.0));
 
-    label(cx, "modelled", body_x() + 30.0, top + 48.0, 9.5, 76.0, 0x7e8a96);
-    Selector::window(cx, Panel::params, |p| &p.circuit,
-        names[modelled..].to_vec(), true, modelled, names.len())
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(body_x() + 76.0))
-        .top(Pixels(top + 38.0))
-        .width(Pixels(body_w() - 76.0))
-        .height(Pixels(20.0));
+    label(
+        cx,
+        "modelled",
+        body_x() + 30.0,
+        top + 48.0,
+        9.5,
+        76.0,
+        0x7e8a96,
+    );
+    Selector::window(
+        cx,
+        Panel::params,
+        |p| &p.circuit,
+        names[modelled..].to_vec(),
+        true,
+        modelled,
+        names.len(),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 76.0))
+    .top(Pixels(top + 38.0))
+    .width(Pixels(body_w() - 76.0))
+    .height(Pixels(20.0));
 
     Binding::new(
         cx,
         Panel::params.map(|p| p.circuit.value().has_diodes()),
         |cx, live| {
             let live = live.get(cx);
-            row(cx, section_top(1) + 68.0, "clipping", |p| &p.diode,
-                Diode::ALL.iter().map(|d| d.name()).collect(), live, 210.0);
+            row(
+                cx,
+                section_top(1) + 68.0,
+                "clipping",
+                |p| &p.diode,
+                Diode::ALL.iter().map(|d| d.name()).collect(),
+                live,
+                210.0,
+            );
         },
     );
 
@@ -388,16 +437,30 @@ fn circuit(cx: &mut Context) {
         Panel::params.map(|p| p.circuit.value().has_amplifier()),
         |cx, live| {
             let live = live.get(cx);
-            row(cx, section_top(1) + 98.0, "amplifier", |p| &p.amplifier,
-                Amplifier::ALL.iter().map(|a| a.name()).collect(), live, 210.0);
+            row(
+                cx,
+                section_top(1) + 98.0,
+                "amplifier",
+                |p| &p.amplifier,
+                Amplifier::ALL.iter().map(|a| a.name()).collect(),
+                live,
+                210.0,
+            );
         },
     );
 
     // Iron applies to everything, which is the point of it being a control
     // rather than part of a circuit: a transformer belongs after a distortion
     // pedal exactly as much as after a console channel.
-    row(cx, top + 128.0, "iron", |p| &p.iron,
-        Iron::ALL.iter().map(|i| i.name()).collect(), true, 268.0);
+    row(
+        cx,
+        top + 128.0,
+        "iron",
+        |p| &p.iron,
+        Iron::ALL.iter().map(|i| i.name()).collect(),
+        true,
+        268.0,
+    );
 
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
@@ -449,28 +512,54 @@ fn row<P, F>(
 /// beside it.
 pub fn describe(circuit: Circuit) -> String {
     match circuit {
-        Circuit::Clean => "One valve stage barely working: a signal having been \
-                           through something, not distortion.",
-        Circuit::Crunch => "Two stages, the second driven by the first, so each \
-                            amplifies the last one's distortion as well.",
-        Circuit::HighGain => "Three stages run hard, all clipping on every note. \
-                              Where the gain stops being a texture.",
-        Circuit::Overdrive => "Diodes across the feedback resistor: they lower the \
-                               gain, so it keeps following and cleans up.",
-        Circuit::Distortion => "Diodes across the signal to ground: a ceiling. The \
-                                wave is squared off, top to bottom of the band.",
-        Circuit::Console => "A step-up transformer into a discrete stage, built \
-                             not to run out of room.",
-        Circuit::Studio => "An op-amp on a studio rail: nothing of its own \
-                            anywhere in the band. Add iron to give it some.",
-        Circuit::Screamer => "Ibanez TS808. Its gain leg leaves the bottom end \
-                              alone, which is why one goes in front of an amp.",
-        Circuit::Muff => "Big Muff Pi, 1973 Ram's Head. Four stages, and the \
-                          tone control is the mid scoop.",
-        Circuit::Boogie => "Mesa Mark IIC+ lead channel: four triodes, and its \
-                            own tone stack on the tone knobs.",
-        Circuit::Peavey => "Peavey EVH 5150 lead channel: six triodes, one of \
-                            them run cold to square off the bottom.",
+        Circuit::Clean => {
+            "One valve stage barely working: a signal having been \
+                           through something, not distortion."
+        }
+        Circuit::Crunch => {
+            "Two stages, the second driven by the first, so each \
+                            amplifies the last one's distortion as well."
+        }
+        Circuit::HighGain => {
+            "Three stages run hard, all clipping on every note. \
+                              Where the gain stops being a texture."
+        }
+        Circuit::Overdrive => {
+            "Diodes across the feedback resistor: they lower the \
+                               gain, so it keeps following and cleans up."
+        }
+        Circuit::Distortion => {
+            "Diodes across the signal to ground: a ceiling. The \
+                                wave is squared off, top to bottom of the band."
+        }
+        Circuit::Console => {
+            "A step-up transformer into a discrete stage, built \
+                             not to run out of room."
+        }
+        Circuit::Studio => {
+            "An op-amp on a studio rail: nothing of its own \
+                            anywhere in the band. Add iron to give it some."
+        }
+        Circuit::Screamer => {
+            "Ibanez TS808. Its gain leg leaves the bottom end \
+                              alone, which is why one goes in front of an amp."
+        }
+        Circuit::Muff => {
+            "Big Muff Pi, 1973 Ram's Head. Four stages, and the \
+                          tone control is the mid scoop."
+        }
+        Circuit::Boogie => {
+            "Mesa Mark IIC+ lead channel: four triodes, and its \
+                            own tone stack on the tone knobs."
+        }
+        Circuit::Peavey => {
+            "Peavey EVH 5150 lead channel: six triodes, one of \
+                            them run cold to square off the bottom."
+        }
+        Circuit::Neve => {
+            "Neve 73P microphone preamplifier: two cascaded \
+                          transistor stages with a step-up transformer."
+        }
     }
     .to_string()
 }
@@ -493,60 +582,155 @@ fn drive(cx: &mut Context) {
     );
 
     let x = body_x() + 90.0 + (body_w() - 100.0) / 2.0;
-    label(cx, "All the way up is the sound the circuit is named for; down from", x, top + 26.0, 9.5, body_w() - 100.0, 0x86929c);
-    label(cx, "there only cleans up. The level is held across the whole travel.", x, top + 42.0, 9.5, body_w() - 100.0, 0x86929c);
+    label(
+        cx,
+        "All the way up is the sound the circuit is named for; down from",
+        x,
+        top + 26.0,
+        9.5,
+        body_w() - 100.0,
+        0x86929c,
+    );
+    label(
+        cx,
+        "there only cleans up. The level is held across the whole travel.",
+        x,
+        top + 42.0,
+        9.5,
+        body_w() - 100.0,
+        0x86929c,
+    );
 }
 
 // ---------------------------------------------------------------------------
 // 4 Tone
 // ---------------------------------------------------------------------------
 
+/// What the three tone knobs are, for the panel as it stands: which of them
+/// reach anything, and what to call them.
+///
+/// A type rather than a pair of bindings because vizia rebuilds on one lens at
+/// a time, and both the stack selector and the circuit selector change the
+/// answer. Public so a test can ask the same question the panel does.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ToneKnobs {
+    /// Bass, middle, treble: whether each reaches a control.
+    pub live: [bool; 3],
+    /// What the panel writes under each.
+    pub names: [&'static str; 3],
+}
+
+// Written out rather than derived: vizia's derive asks every field to be
+// `Data` itself, and an array is not one.
+impl Data for ToneKnobs {
+    fn same(&self, other: &Self) -> bool {
+        self == other
+    }
+}
+
+impl ToneKnobs {
+    pub fn of(params: &Arc<GainStageParams>) -> Self {
+        Self::for_state(params.circuit.value(), params.tone.value())
+    }
+
+    pub fn for_state(circuit: Circuit, stack: ToneStack) -> Self {
+        let in_circuit = stack != ToneStack::Off;
+        let own = circuit.own_tone_knobs();
+        // The third knob is the pedal's own control only when the plugin's
+        // stack is out of the way. With the stack in circuit the same knob
+        // turns the stack's treble as well, and calling it TONE while its two
+        // neighbours say BASS and MID would be naming it after the smaller
+        // half of what it does.
+        let sole = circuit.single_tone() && !in_circuit;
+        Self {
+            live: [
+                in_circuit || own[0],
+                in_circuit || own[1],
+                in_circuit || own[2],
+            ],
+            names: ["BASS", "MID", if sole { "TONE" } else { "TREBLE" }],
+        }
+    }
+}
+
 fn tone(cx: &mut Context) {
     let top = section_top(3);
 
-    row(cx, top + 8.0, "stack", |p| &p.tone,
-        ToneStack::ALL.iter().map(|t| t.name()).collect(), true, 230.0);
-
-    let names: [(&str, ToKnob); 3] = [
-        ("BASS", |p| &p.bass),
-        ("MID", |p| &p.mid),
-        ("TREBLE", |p| &p.treble),
-    ];
-    // Greyed when the stack is out of circuit, because then they reach
-    // nothing at all -- and fourteen of the shipped presets switch it out. A
-    // knob that turns and changes nothing is indistinguishable from a fault,
-    // which is exactly how it was reported.
-    Binding::new(
+    row(
         cx,
-        Panel::params.map(|p| p.tone.value() != ToneStack::Off),
-        move |cx, live| {
-            let live = live.get(cx);
-            let top = section_top(3);
-            for (i, (name, to_param)) in names.into_iter().enumerate() {
-                let x = body_x() + 46.0 + i as f32 * 84.0;
-                Knob::new(cx, Panel::params, to_param, 18.0, live)
-                    .position_type(PositionType::SelfDirected)
-                    .left(Pixels(x - 18.0))
-                    .top(Pixels(top + 40.0));
-                label(
-                    cx,
-                    name,
-                    x,
-                    top + 86.0,
-                    9.5,
-                    80.0,
-                    if live { 0x9aa6b0 } else { 0x5a636b },
-                );
-            }
-        },
+        top + 8.0,
+        "stack",
+        |p| &p.tone,
+        ToneStack::ALL.iter().map(|t| t.name()).collect(),
+        true,
+        230.0,
     );
+
+    let knobs: [ToKnob; 3] = [|p| &p.bass, |p| &p.mid, |p| &p.treble];
+    // A knob is live when it reaches something, and there are two ways it can:
+    // the plugin's own stack when that is in circuit, or the selected
+    // circuit's own tone controls where it has any.
+    //
+    // Greying on the stack alone was wrong in both directions. Fourteen of the
+    // shipped presets switch the stack out, and a knob that turns and changes
+    // nothing is indistinguishable from a fault -- which is how it was
+    // reported, and why the greying went in. But a TS808 and a Big Muff each
+    // have a tone control of their own on the drawing, wired to this knob in
+    // `voice::set_tone_knobs`, and those presets switch the stack out too. So
+    // the pedals' tone knobs were greyed out while still working, which is the
+    // same fault the other way round.
+    Binding::new(cx, Panel::params.map(ToneKnobs::of), move |cx, state| {
+        let state = state.get(cx);
+        let top = section_top(3);
+        for (i, to_param) in knobs.into_iter().enumerate() {
+            let live = state.live[i];
+            let x = body_x() + 46.0 + i as f32 * 84.0;
+            Knob::new(cx, Panel::params, to_param, 18.0, live)
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(x - 18.0))
+                .top(Pixels(top + 40.0));
+            label(
+                cx,
+                state.names[i],
+                x,
+                top + 86.0,
+                9.5,
+                80.0,
+                if live { 0x9aa6b0 } else { 0x5a636b },
+            );
+        }
+    });
 
     // Kept to lines that fit the space rather than sentences that overflow
     // it: text wider than its box is simply clipped, with no warning.
     let x = body_x() + 340.0;
-    label(cx, "A passive stack only ever cuts.", x, top + 44.0, 9.5, 240.0, 0x86929c);
-    label(cx, "The scooping voicing has a resonant", x, top + 60.0, 9.5, 240.0, 0x86929c);
-    label(cx, "leg, which dips the middle.", x, top + 76.0, 9.5, 240.0, 0x86929c);
+    label(
+        cx,
+        "A passive stack only ever cuts.",
+        x,
+        top + 44.0,
+        9.5,
+        240.0,
+        0x86929c,
+    );
+    label(
+        cx,
+        "The scooping voicing has a resonant",
+        x,
+        top + 60.0,
+        9.5,
+        240.0,
+        0x86929c,
+    );
+    label(
+        cx,
+        "leg, which dips the middle.",
+        x,
+        top + 76.0,
+        9.5,
+        240.0,
+        0x86929c,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -556,16 +740,39 @@ fn tone(cx: &mut Context) {
 fn cabinet(cx: &mut Context) {
     let top = section_top(4);
 
-    row(cx, top + 12.0, "speaker", |p| &p.cabinet,
-        Cabinet::ALL.iter().map(|c| c.name()).collect(), true, 230.0);
+    row(
+        cx,
+        top + 12.0,
+        "speaker",
+        |p| &p.cabinet,
+        Cabinet::ALL.iter().map(|c| c.name()).collect(),
+        true,
+        230.0,
+    );
 
     // Two lines rather than one. A label wider than its box is not wrapped or
     // clipped to it -- it spills out over whatever is beside it, which here
     // was the selector it sits next to.
     let x = body_x() + 76.0 + 230.0 + (body_w() - 306.0) / 2.0;
     let w = body_w() - 306.0;
-    label(cx, "Most of what a distorted amplifier", x, top + 14.0, 9.5, w, 0x86929c);
-    label(cx, "sounds like. A preamp wants it off.", x, top + 30.0, 9.5, w, 0x86929c);
+    label(
+        cx,
+        "Most of what a distorted amplifier",
+        x,
+        top + 14.0,
+        9.5,
+        w,
+        0x86929c,
+    );
+    label(
+        cx,
+        "sounds like. A preamp wants it off.",
+        x,
+        top + 30.0,
+        9.5,
+        w,
+        0x86929c,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -595,6 +802,22 @@ fn output(cx: &mut Context) {
     );
 
     let x = body_x() + 340.0;
-    label(cx, "The dry signal is delayed to match, so", x, top + 26.0, 9.5, 250.0, 0x86929c);
-    label(cx, "mixing the two is a mix and not a comb.", x, top + 42.0, 9.5, 250.0, 0x86929c);
+    label(
+        cx,
+        "The dry signal is delayed to match, so",
+        x,
+        top + 26.0,
+        9.5,
+        250.0,
+        0x86929c,
+    );
+    label(
+        cx,
+        "mixing the two is a mix and not a comb.",
+        x,
+        top + 42.0,
+        9.5,
+        250.0,
+        0x86929c,
+    );
 }

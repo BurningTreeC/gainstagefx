@@ -12,16 +12,57 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
-use super::device::{Bipolar, Core, Device, Diode, Jfet, OpAmp, Stamper, Triode};
+use super::device::{Bipolar, Core, Device, Diode, Jfet, OpAmp, Pentode, Stamper, Triode};
 use super::netlist::{Circuit, Part, GROUND};
+
+/// Enable flush-to-zero and denormals-are-zero in the MXCSR register.
+/// Called once at startup. Without this, denormal f64 values cause 10-100x
+/// slower arithmetic on x86/x64, producing crackling when signals get small.
+pub fn enable_ftz_daz() {
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        let mut mxcsr: i32 = 0;
+        std::arch::asm!("stmxcsr [{0}]", in(reg) &mut mxcsr, options(nostack, preserves_flags));
+        mxcsr |= 0x8040;
+        std::arch::asm!("ldmxcsr [{0}]", in(reg) &mxcsr, options(nostack, preserves_flags));
+    }
+}
 
 /// How still the solve has to get before it is called settled, in volts.
 const TOLERANCE: f64 = 1e-6;
+
+/// The relative part of the convergence test. See `iterate`.
+const RELATIVE: f64 = 1e-6;
 /// How many passes a sample may take before the last good answer is used
 /// instead. A circuit driven somewhere absurd should go quiet, not explode.
+///
+/// This was briefly eight, on the reasoning that the extrapolation from the
+/// previous two samples converges in two or three passes and the rest are
+/// rare enough not to matter. The first half is true and the second is not.
+/// Measured on the 5150 lead channel with `examples/drivecheck.rs`: at eight
+/// passes a 0.82 V input reads 190 % distortion, 3.3 V reads 107 % and 6.6 V
+/// reads 428 %, and at thirty-two the same three read 49 %, 48 % and 52 %. A
+/// hundred per cent distortion is not a quality setting, it is an unconverged
+/// solve leaving the callback. The cost is real and belongs in the
+/// formulation, not in the iteration count -- see
+/// `docs/experiments/solver-iteration-bound.md`.
 const MAX_ITERATIONS: usize = 32;
 /// The operating point is hunted once and can afford to be patient.
 const DC_ITERATIONS: usize = 500;
+
+/// What an inductor is stamped as in the direct-current matrix.
+///
+/// A tenth of a milliohm: a short by any measure that matters -- a hundred
+/// milliamps through it drops nine microvolts -- while staying close enough to
+/// the megohm grid leaks in the same matrix that the solve still converges.
+/// It was a millionth of an ohm, and twelve orders of magnitude across one
+/// matrix is more than the arithmetic has to give: the operating point came
+/// out right and the residual never reached the tolerance, so a circuit
+/// working at four hundred volts reported that it had not settled when it had.
+///
+/// It is also where an inductor's standing *current* comes from. See
+/// `find_operating_point`.
+const INDUCTOR_DC: f64 = 1e4;
 
 /// A capacitor's companion, by the trapezoidal rule.
 #[derive(Clone, Copy)]
@@ -57,10 +98,27 @@ pub struct Simulation {
     /// The working matrix, and its factorisation.
     matrix: Vec<f64>,
     pivots: Vec<usize>,
+    /// Per row, the column its last nonzero sits in. See `factorise`.
+    reach: Vec<usize>,
     rhs: Vec<f64>,
     voltage: Vec<f64>,
     capacitors: Vec<Capacitor>,
     inductors: Vec<Inductor>,
+    /// What each reactance was carrying, held across a rebuild. See `rebuild`.
+    carried_c: Vec<(f64, f64)>,
+    carried_l: Vec<f64>,
+    /// The rate the device list was built at. A device outlives a rebuild
+    /// unless the timestep it was built with has moved. See `rebuild`.
+    device_rate: f64,
+    /// Whether there is any audio in flight to protect.
+    ///
+    /// True from construction, a reset, or an explicit hunt, until the first
+    /// sample goes through. It decides what a moved control means: with
+    /// nothing in flight the circuit should simply settle where the control
+    /// now puts it, and mid-signal it must not, because settling means solving
+    /// the circuit with no signal in it and then setting every capacitor from
+    /// that answer. See `process`.
+    at_rest: bool,
     controls: Vec<f64>,
     /// The drive the input source injects for one volt in.
     source: Vec<f64>,
@@ -98,7 +156,16 @@ pub struct Simulation {
 impl Simulation {
     pub fn new(circuit: Circuit, rate: f64) -> Self {
         let n = circuit.unknowns();
-        let controls = vec![0.5; circuit.controls.max(1)];
+        let initial_voltages = circuit.initial_voltages.clone();
+        // The middle, except where the circuit says otherwise: a front-panel
+        // control the plugin does not expose still has to sit where a player
+        // leaves it rather than at half its travel. See `Netlist::rest`.
+        let mut controls = vec![0.5; circuit.controls.max(1)];
+        for &(which, position) in &circuit.resting {
+            if which < controls.len() {
+                controls[which] = position;
+            }
+        }
         let mut sim = Self {
             circuit,
             rate,
@@ -107,10 +174,15 @@ impl Simulation {
             base_dc: vec![0.0; n * n],
             matrix: vec![0.0; n * n],
             pivots: vec![0; n],
+            reach: vec![0; n],
             rhs: vec![0.0; n],
             voltage: vec![0.0; n],
             capacitors: Vec::new(),
             inductors: Vec::new(),
+            carried_c: Vec::new(),
+            carried_l: Vec::new(),
+            device_rate: f64::NAN,
+            at_rest: true,
             controls,
             source: vec![0.0; n],
             bias: vec![0.0; n],
@@ -128,13 +200,32 @@ impl Simulation {
             rebuilds: 0,
         };
         sim.rebuild();
+        // Apply initial voltages from the circuit to help the DC solver
+        // find the operating point for circuits with floating nodes.
+        for &(node, volts) in &initial_voltages {
+            if node != GROUND && node < sim.voltage.len() {
+                sim.voltage[node] = volts;
+            }
+        }
         sim.find_operating_point();
         sim
     }
 
     /// Solves, Newton passes, solves that never settled, and matrix rebuilds.
+    /// How big the matrix is: a row per node plus one per part that imposes a
+    /// voltage. The factorisation costs the cube of this, so it is the first
+    /// number to look at when a circuit turns out to be expensive.
+    pub fn unknowns(&self) -> usize {
+        self.n
+    }
+
     pub fn statistics(&self) -> (u64, u64, u64, u64) {
-        (self.solves, self.newton_passes, self.unsettled, self.rebuilds)
+        (
+            self.solves,
+            self.newton_passes,
+            self.unsettled,
+            self.rebuilds,
+        )
     }
 
     pub fn is_linear(&self) -> bool {
@@ -146,6 +237,58 @@ impl Simulation {
     /// data sheet also has.
     pub fn voltage_at(&self, node: usize) -> f64 {
         self.voltage.get(node).copied().unwrap_or(0.0)
+    }
+
+    /// The operating point voltage vector. Used to share a DC solution between
+    /// identical channels so the second one does not have to hunt it again.
+    ///
+    /// After the first sample this is the *running* state, not the operating
+    /// point, so it is only meaningful to share it while `needs_operating_point`
+    /// is still true. See `apply_operating_point`.
+    pub fn operating_point(&self) -> &[f64] {
+        &self.voltage
+    }
+
+    /// Whether a control has moved since the last solve, so the next sample
+    /// would rebuild the matrix and hunt the operating point again.
+    ///
+    /// The one moment at which sharing a solution between identical channels
+    /// is sound: before it, there is nothing new to share; after it, what
+    /// would be shared is a running state and not an operating point.
+    pub fn needs_operating_point(&self) -> bool {
+        self.dirty
+    }
+
+    /// Apply an operating point from another identical simulation. Rebuilds
+    /// the matrix (so component values are current), sets the node voltages,
+    /// initialises the reactance state to steady state, and clears the dirty
+    /// flag so the next `process` call skips the expensive DC hunt.
+    ///
+    /// This sets every capacitor's stored charge from the voltages it is
+    /// handed, so it does not only seed a solve -- it *replaces* the running
+    /// state. Calling it on a channel that is already running discards
+    /// whatever that channel was doing. Measured with `examples/sharing.rs`:
+    /// doing it once a block put the right channel of a TS808 three decibels
+    /// from where it should have been, and made the output depend on the host
+    /// buffer size. Call it only when `needs_operating_point` says there is
+    /// nothing to discard.
+    pub fn apply_operating_point(&mut self, voltage: &[f64]) {
+        if self.dirty {
+            self.rebuild();
+        }
+        self.voltage.copy_from_slice(voltage);
+        for c in &mut self.capacitors {
+            let v = across(&self.voltage, c.a, c.b);
+            c.voltage = v;
+            c.history = c.conductance * v;
+        }
+        for l in &mut self.inductors {
+            l.current = INDUCTOR_DC * across(&self.voltage, l.a, l.b);
+            l.history = -l.current;
+        }
+        self.previous.copy_from_slice(&self.voltage);
+        self.earlier.copy_from_slice(&self.voltage);
+        self.dirty = false;
     }
 
     pub fn controls(&self) -> usize {
@@ -175,9 +318,59 @@ impl Simulation {
         self.base_dc.iter_mut().for_each(|x| *x = 0.0);
         self.source.iter_mut().for_each(|x| *x = 0.0);
         self.bias.iter_mut().for_each(|x| *x = 0.0);
+        // Carry every reactance's state across the rebuild.
+        //
+        // A rebuild happens when a control moves, and a control moving is a
+        // resistance changing. Nothing else about the circuit changes: the
+        // parts are the same parts in the same order, and every capacitor
+        // still holds the charge it held. Rebuilding the lists from scratch
+        // and leaving them at zero threw that charge away, and the only thing
+        // standing between that and silence was a DC hunt from `process`,
+        // which replaced the running audio with the operating point.
+        //
+        // Measured with `examples/knobmove.rs`: a knob nudged by one part in a
+        // million at every block boundary -- a move that cannot change the
+        // circuit -- put an error *louder than the signal* through the Mark
+        // IIC+ and the 73P, and moved every other voice by four to fifteen
+        // decibels. That is what a knob sounded like while it was turning.
+        //
+        // What is carried is the branch current, not the companion term,
+        // because the companion term depends on the conductance and the
+        // conductance moves with the sample rate.
+        self.carried_c.clear();
+        for c in &self.capacitors {
+            self.carried_c
+                .push((c.voltage, c.history - c.conductance * c.voltage));
+        }
+        self.carried_l.clear();
+        for l in &self.inductors {
+            self.carried_l.push(l.current);
+        }
+        // A device outlives a rebuild unless the timestep has moved.
+        //
+        // Nothing a control does reaches a device: a diode is a diode, and a
+        // pot is a conductance in the matrix. But a device can have a state --
+        // a saturating core integrates the voltage across it and remembers the
+        // flux -- and rebuilding the list threw that away. It is the same
+        // fault as the reactances above and it showed up in the same
+        // measurement: with the capacitors carried across but the devices
+        // still rebuilt, the 73P, whose input transformer has a core in it,
+        // was still 40 dB from where it should have been while its knob moved,
+        // against 100 dB or better for every voice without one.
+        //
+        // Only while there is signal in flight, though. At rest the circuit is
+        // being established from nothing -- and a device with a state settles
+        // to a different answer depending on where it starts, so a Console
+        // channel re-settled around a core carrying the *previous* setting's
+        // flux read two decibels off its own calibration.
+        let keep_devices = !self.at_rest
+            && !self.devices.is_empty()
+            && (self.rate - self.device_rate).abs() < 1e-9;
         self.capacitors.clear();
         self.inductors.clear();
-        self.devices.clear();
+        if !keep_devices {
+            self.devices.clear();
+        }
         let step = 1.0 / self.rate;
 
         let mut base = std::mem::take(&mut self.base);
@@ -196,11 +389,25 @@ impl Simulation {
                     Part::Resistor { a, b, ohms } => {
                         stamp_both(&mut base, &mut base_dc, n, a, b, 1.0 / ohms)
                     }
-                    Part::Pot { a, wiper, b, ohms, taper, control } => {
+                    Part::Pot {
+                        a,
+                        wiper,
+                        b,
+                        ohms,
+                        taper,
+                        control,
+                    } => {
                         let position = self.controls.get(control).copied().unwrap_or(0.5);
                         let f = taper.fraction(position).clamp(1e-4, 1.0 - 1e-4);
                         stamp_both(&mut base, &mut base_dc, n, wiper, b, 1.0 / (ohms * f));
-                        stamp_both(&mut base, &mut base_dc, n, a, wiper, 1.0 / (ohms * (1.0 - f)));
+                        stamp_both(
+                            &mut base,
+                            &mut base_dc,
+                            n,
+                            a,
+                            wiper,
+                            1.0 / (ohms * (1.0 - f)),
+                        );
                     }
                     Part::Input { node, series } => {
                         let g = 1.0 / series;
@@ -225,9 +432,22 @@ impl Simulation {
                     }
                     Part::Inductor { a, b, henry } => {
                         // And at DC an inductor is a piece of wire.
+                        //
+                        // A tenth of a milliohm of wire, not a millionth. The
+                        // figure was 1e6 siemens, which is a short by any
+                        // measure that matters -- a hundred milliamps through
+                        // it drops ninety nanovolts -- and it sat in the same
+                        // matrix as a megohm grid leak at 4.5e-6. Twelve orders
+                        // of magnitude across one matrix is more than the
+                        // solve's arithmetic has to give, and in a circuit
+                        // working at four hundred and fifty volts the residual
+                        // never came down to the tolerance: the operating point
+                        // was right and the solver would not say so. At 1e4 the
+                        // same current drops nine microvolts, which is still
+                        // nothing, and the spread is a hundred times narrower.
                         let conductance = step / (2.0 * henry);
                         stamp_matrix(&mut base, n, a, b, conductance);
-                        stamp_matrix(&mut base_dc, n, a, b, 1e6);
+                        stamp_matrix(&mut base_dc, n, a, b, INDUCTOR_DC);
                         self.inductors.push(Inductor {
                             a,
                             b,
@@ -236,7 +456,11 @@ impl Simulation {
                             current: 0.0,
                         });
                     }
-                    Part::Supply { node, series, volts } => {
+                    Part::Supply {
+                        node,
+                        series,
+                        volts,
+                    } => {
                         let g = 1.0 / series;
                         stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
@@ -244,31 +468,72 @@ impl Simulation {
                         }
                     }
                     Part::Diode { a, k, spec } => {
-                        self.devices.push(Box::new(Diode::new(a, k, spec)));
+                        if !keep_devices {
+                            self.devices.push(Box::new(Diode::new(a, k, spec)));
+                        }
                     }
                     Part::Triode { p, g, k, spec } => {
-                        self.devices.push(Box::new(Triode::new(p, g, k, spec)));
+                        if !keep_devices {
+                            self.devices.push(Box::new(Triode::new(p, g, k, spec)));
+                        }
                     }
-                    Part::Jfet { d, g, s: source_pin, spec } => {
+                    Part::Pentode {
+                        p,
+                        g,
+                        k,
+                        s,
+                        count,
+                        spec,
+                    } => {
+                        if !keep_devices {
+                            self.devices
+                                .push(Box::new(Pentode::new(p, g, k, s, count, spec)));
+                        }
+                    }
+                    Part::Jfet {
+                        d,
+                        g,
+                        s: source_pin,
+                        spec,
+                    } => {
                         self.devices
                             .push(Box::new(Jfet::new(d, g, source_pin, spec)));
                     }
                     Part::Bipolar { c, b, e, spec } => {
-                        self.devices.push(Box::new(Bipolar::new(c, b, e, spec)));
+                        if !keep_devices {
+                            self.devices.push(Box::new(Bipolar::new(c, b, e, spec)));
+                        }
                     }
                     Part::Core { a, b, spec } => {
                         // The only device that has to be told the rate: it
                         // integrates the voltage across it, so its answer
                         // depends on how long a sample lasts.
-                        self.devices.push(Box::new(Core::new(a, b, spec, self.rate)));
+                        if !keep_devices {
+                            self.devices
+                                .push(Box::new(Core::new(a, b, spec, self.rate)));
+                        }
                     }
-                    Part::OpAmp { out, plus, minus, reference, rail } => {
+                    Part::OpAmp {
+                        out,
+                        plus,
+                        minus,
+                        reference,
+                        rail,
+                    } => {
                         let branch = self.circuit.branch_of(index);
-                        self.devices.push(Box::new(OpAmp::new(
-                            out, plus, minus, reference, branch, rail,
-                        )));
+                        if !keep_devices {
+                            self.devices.push(Box::new(OpAmp::new(
+                                out, plus, minus, reference, branch, rail,
+                            )));
+                        }
                     }
-                    Part::Transformer { p1, p2, s1, s2, ratio } => {
+                    Part::Transformer {
+                        p1,
+                        p2,
+                        s1,
+                        s2,
+                        ratio,
+                    } => {
                         let branch = self.circuit.branch_of(index);
                         stamp_branch(&mut base, n, branch, p1, p2, s1, s2, ratio);
                         stamp_branch(&mut base_dc, n, branch, p1, p2, s1, s2, ratio);
@@ -276,6 +541,24 @@ impl Simulation {
                 }
             }
         }
+        // And put it back. `history = G v + i` for a capacitor and
+        // `-(i + G v)` for an inductor, which is the shape the advance step
+        // writes and the shape `inject` expects.
+        if self.carried_c.len() == self.capacitors.len() {
+            for (c, &(v, i)) in self.capacitors.iter_mut().zip(&self.carried_c) {
+                c.voltage = v;
+                c.history = c.conductance * v + i;
+            }
+        }
+        if self.carried_l.len() == self.inductors.len() {
+            for (l, &i) in self.inductors.iter_mut().zip(&self.carried_l) {
+                let v = across(&self.voltage, l.a, l.b);
+                l.current = i;
+                l.history = -(i + l.conductance * v);
+            }
+        }
+
+        self.device_rate = self.rate;
         self.predictable = !self.devices.iter().any(|d| d.switches());
         self.base = base;
         self.base_dc = base_dc;
@@ -287,7 +570,7 @@ impl Simulation {
         // device's own conductance is part of the matrix and moves with the
         // answer.
         self.matrix.copy_from_slice(&self.base);
-        factorise(&mut self.matrix, &mut self.pivots, n);
+        factorise(&mut self.matrix, &mut self.pivots, &mut self.reach, n);
         self.dirty = false;
     }
 
@@ -327,9 +610,31 @@ impl Simulation {
             c.voltage = v;
             c.history = c.conductance * v;
         }
+        // An inductor's standing current, which is not readable the way a
+        // capacitor's charge is.
+        //
+        // At rest a capacitor holds a voltage and no current, so its state is
+        // right there in the node voltages. An inductor is the other way
+        // about: it holds a current and drops no voltage, so the node voltages
+        // say nothing about it and this left every inductor starting from
+        // zero. Nothing noticed for a long time, because the only inductors in
+        // the catalogue were in tone stacks and cabinets, where none of them
+        // carries any standing current.
+        //
+        // The 73P's output transformer does. Its primary is T8's collector
+        // load, so it carries the whole of that transistor's thirty-seven
+        // milliamps -- and starting from zero, the amplifier spent a fifth of
+        // a second climbing to its own operating point and put a thump of 1.5
+        // out through the speaker on the way. The guitar amplifiers' output
+        // chokes carry their plate current the same way.
+        //
+        // The direct-current matrix stamps an inductor as a conductance, so
+        // the current is the small drop across it times that conductance.
         for l in &mut self.inductors {
+            l.current = INDUCTOR_DC * across(&self.voltage, l.a, l.b);
             l.history = -l.current;
         }
+        self.at_rest = true;
         settled
     }
 
@@ -351,33 +656,83 @@ impl Simulation {
         }
 
         {
-            let mut stamper = Stamper { matrix: &mut self.work, rhs: &mut self.rhs, n };
+            let mut stamper = Stamper {
+                matrix: &mut self.work,
+                rhs: &mut self.rhs,
+                n,
+            };
             for device in &mut self.devices {
                 device.stamp(&mut stamper, &self.voltage);
             }
         }
 
         self.guess.copy_from_slice(&self.rhs);
-        factorise(&mut self.work, &mut self.pivots, n);
-        substitute(&self.work, &self.pivots, &mut self.guess, n, &mut self.scratch);
+        factorise(&mut self.work, &mut self.pivots, &mut self.reach, n);
+        substitute(
+            &self.work,
+            &self.pivots,
+            &mut self.guess,
+            n,
+            &mut self.scratch,
+        );
 
+        // How far the solution moved, measured against the scale it is moving
+        // *at*.
+        //
+        // This was an absolute figure: a millionth of a volt, everywhere. On a
+        // grid sitting at a tenth of a volt that is a reasonable demand. On a
+        // plate sitting at four hundred and fifty it asks for nine significant
+        // digits, which is nine orders below anything the circuit does and
+        // about six below what the arithmetic can even carry meaningfully --
+        // so the solve kept iterating long after the answer had stopped
+        // changing in any physical sense.
+        //
+        // The form is the one every circuit simulator uses: a relative part
+        // for the nodes that are large and an absolute floor for the nodes
+        // that are small. SPICE calls them RELTOL and VNTOL and ships defaults
+        // of 1e-3 and 1e-6; this is a thousand times stricter on the relative
+        // part than SPICE and keeps the same absolute floor, because the
+        // absolute floor is what a small-signal node needs and there is no
+        // reason to relax it.
         let mut moved: f64 = 0.0;
         for k in 0..n {
-            moved = moved.max((self.guess[k] - self.voltage[k]).abs());
+            let step = (self.guess[k] - self.voltage[k]).abs();
+            let scale = TOLERANCE + RELATIVE * self.voltage[k].abs();
+            moved = moved.max(step / scale);
         }
+        // `moved` is now in units of "tolerances", so the test below compares
+        // it against one rather than against TOLERANCE.
         self.voltage.copy_from_slice(&self.guess);
         // Every device has to agree it is done, and each says so in the way
         // that suits it -- see `Device::settled`.
-        moved < TOLERANCE && self.devices.iter().all(|d| d.settled(TOLERANCE))
+        moved < 1.0 && self.devices.iter().all(|d| d.settled(TOLERANCE))
     }
 
     /// One sample in, one out.
     pub fn process(&mut self, input: f64) -> f64 {
         self.solves += 1;
+        // A control has moved. What that means depends on whether there is
+        // anything to lose.
+        //
+        // With nothing in flight -- a circuit just built, just reset, or set
+        // up before playback starts -- settle it where the control now puts
+        // it. That is what makes a plugin start at its operating point instead
+        // of climbing to it, and it is what every measurement harness here
+        // relies on to mean "this circuit, at this setting".
+        //
+        // Mid-signal it must not. Hunting the operating point solves the
+        // circuit *with no signal in it* and then sets every capacitor from
+        // that answer, which is to say it deletes the audio in flight. Done
+        // once a block for as long as a knob is turning -- see
+        // `examples/knobmove.rs` and `tests/knobs.rs`.
         if self.dirty {
             self.rebuild();
-            self.find_operating_point();
+            if self.at_rest {
+                self.find_operating_point();
+            }
+            self.dirty = false;
         }
+        self.at_rest = false;
         let n = self.n;
         if self.devices.is_empty() {
             // Nothing bends, so the matrix from `rebuild` still stands and one
@@ -391,7 +746,13 @@ impl Simulation {
             for l in &self.inductors {
                 inject(&mut self.rhs, l.a, l.b, l.history);
             }
-            substitute(&self.matrix, &self.pivots, &mut self.rhs, n, &mut self.scratch);
+            substitute(
+                &self.matrix,
+                &self.pivots,
+                &mut self.rhs,
+                n,
+                &mut self.scratch,
+            );
             self.voltage.copy_from_slice(&self.rhs);
         } else {
             // Start from where the last two samples were heading, not from
@@ -485,6 +846,8 @@ impl Simulation {
     /// milliseconds -- which arrives at the output as a loud pop, once, at the
     /// moment the host starts the transport and calls this.
     pub fn reset(&mut self) {
+        // Nothing is in flight after this, by definition.
+        self.at_rest = true;
         for c in &mut self.capacitors {
             c.history = 0.0;
             c.voltage = 0.0;
@@ -566,7 +929,32 @@ fn inject(rhs: &mut [f64], a: usize, b: usize, current: f64) {
 /// Pivoting is not optional here. The diagonal carries zeros wherever a node's
 /// own admittance cancels, and an unpivoted elimination divides by whatever
 /// happens to be sitting there.
-fn factorise(m: &mut [f64], pivots: &mut [usize], n: usize) {
+fn factorise(m: &mut [f64], pivots: &mut [usize], reach: &mut [usize], n: usize) {
+    // How far right each row actually goes.
+    //
+    // A circuit matrix is nearly all zeros -- a part only ever stamps the nodes
+    // it is connected to, so a row typically holds three or four entries out of
+    // thirty -- and the elimination's inner loop was running the full width of
+    // the matrix regardless, multiplying by zero for most of it. The cost of a
+    // dense factorisation is the cube of the size, and at thirty unknowns and
+    // three Newton passes a sample that is most of what the plugin spends.
+    //
+    // So each row carries the column index of its last nonzero, and the inner
+    // loop stops there. Scanning from the right finds it in a step or two,
+    // because the entries that are there sit near the diagonal. Nothing else
+    // changes: only exact zeros are skipped, so the arithmetic and the pivoting
+    // are bit for bit what they were.
+    for (row, r) in reach.iter_mut().enumerate() {
+        let mut last = row;
+        for k in (row..n).rev() {
+            if m[row * n + k] != 0.0 {
+                last = k;
+                break;
+            }
+        }
+        *r = last;
+    }
+
     for (k, p) in pivots.iter_mut().enumerate() {
         *p = k;
     }
@@ -585,24 +973,29 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], n: usize) {
                 m.swap(col * n + k, best * n + k);
             }
             pivots.swap(col, best);
+            reach.swap(col, best);
         }
         let pivot = m[col * n + col];
         if pivot.abs() < 1e-30 {
             continue;
         }
+        // Nothing to the right of the pivot row's reach can be changed by it.
+        let stop = reach[col];
         for row in (col + 1)..n {
             let factor = m[row * n + col] / pivot;
             m[row * n + col] = factor;
-            // A circuit matrix is mostly zeros: a part only ever stamps the
-            // nodes it is connected to, so most rows have nothing below the
-            // pivot at all. Eliminating with a zero multiplier subtracts
-            // nothing from every remaining column, which for these sizes is
-            // most of the arithmetic in the factorisation.
+            // Most rows have nothing below the pivot at all, and eliminating
+            // with a zero multiplier subtracts nothing from every remaining
+            // column.
             if factor == 0.0 {
                 continue;
             }
-            for k in (col + 1)..n {
+            for k in (col + 1)..=stop {
                 m[row * n + k] -= factor * m[col * n + k];
+            }
+            // The fill-in this just created reaches as far as the pivot row did.
+            if stop > reach[row] {
+                reach[row] = stop;
             }
         }
     }
@@ -625,7 +1018,11 @@ fn substitute(m: &[f64], pivots: &[usize], rhs: &mut [f64], n: usize, permuted: 
             sum -= m[row * n + k] * permuted[k];
         }
         let pivot = m[row * n + row];
-        permuted[row] = if pivot.abs() < 1e-30 { 0.0 } else { sum / pivot };
+        permuted[row] = if pivot.abs() < 1e-30 {
+            0.0
+        } else {
+            sum / pivot
+        };
     }
     rhs.copy_from_slice(&permuted[..n]);
 }

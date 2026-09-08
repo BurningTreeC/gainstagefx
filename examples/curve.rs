@@ -4,8 +4,13 @@ use gainstagefx::voice::{self, Cabinet, Chain, Tone as ToneSection, NOMINAL_DBFS
 const RATE: f64 = 96_000.0;
 fn main() {
     let amplitude = 10f64.powf(NOMINAL_DBFS / 20.0);
-    for gain in [voice::Gain::Clean, voice::Gain::Crunch, voice::Gain::HighGain,
-                 voice::Gain::Overdrive, voice::Gain::Distortion] {
+    for gain in [
+        voice::Gain::Clean,
+        voice::Gain::Crunch,
+        voice::Gain::HighGain,
+        voice::Gain::Overdrive,
+        voice::Gain::Distortion,
+    ] {
         print!("{:<12}", gain.name());
         for d in [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0] {
             let mut c = Chain::new(RATE);
@@ -21,6 +26,8 @@ fn main() {
         println!();
     }
     print!("{:<12}", "drive");
-    for d in [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0] { print!("{d:>7.2}"); }
+    for d in [0.0, 0.2, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0] {
+        print!("{d:>7.2}");
+    }
     println!();
 }

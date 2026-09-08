@@ -98,7 +98,14 @@ pub fn build(v: &Voicing, source: f64, load: f64) -> Result<Circuit, Fault> {
         // travel: at halfway an audio track has already left three per cent of
         // itself in circuit, which is as good as fully cut.
         .resistor("treble_leg", "treble_pot", 1_500.0)
-        .pot("treble_pot", "gnd", "gnd", 100_000.0, Taper::ReverseLinear, TREBLE)
+        .pot(
+            "treble_pot",
+            "gnd",
+            "gnd",
+            100_000.0,
+            Taper::ReverseLinear,
+            TREBLE,
+        )
         // Mid: a series resonant leg to ground through the control. The
         // damping resistance is in series with the pair, not across the
         // capacitor -- across it the leg is a shelf, not a notch.

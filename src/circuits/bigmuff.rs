@@ -22,7 +22,10 @@ pub const TONE: usize = 1;
 pub const VOLUME: usize = 2;
 
 /// 1N914, the clipping diodes in every version.
-const D1N914: DiodeSpec = DiodeSpec { saturation: 4.352e-9, emission: 1.906 };
+const D1N914: DiodeSpec = DiodeSpec {
+    saturation: 4.352e-9,
+    emission: 1.906,
+};
 
 /// The transistors. The traced examples measured hFE between 167 and 193, so
 /// this is the middle of a real pedal rather than a datasheet maximum.
@@ -146,7 +149,14 @@ pub fn tap(v: &Voicing, source: f64, load: f64, at: &str) -> Result<Circuit, Fau
         .resistor("q4e", "gnd", 100.0)
         .bipolar("q4c", "q4b", "q4e", FS36999)
         .capacitor("q4c", "sus_top", v.coupling)
-        .pot("sus_top", "sus", "sus_foot", 100_000.0, Taper::Linear, SUSTAIN)
+        .pot(
+            "sus_top",
+            "sus",
+            "sus_foot",
+            100_000.0,
+            Taper::Linear,
+            SUSTAIN,
+        )
         .resistor("sus_foot", "gnd", v.sustain_foot);
 
     // --- the two clipping stages, Q3 and Q2 -------------------------------

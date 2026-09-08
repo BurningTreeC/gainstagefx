@@ -133,7 +133,9 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
             v.sweep,
             // The span the feedback path covers, which is what the track has
             // to be shaped for.
-            Taper::ReverseLog { span: (v.feedback + v.sweep) / v.feedback },
+            Taper::ReverseLog {
+                span: (v.feedback + v.sweep) / v.feedback,
+            },
             GAIN,
         )
         .resistor("feedback", "minus", v.feedback)
@@ -144,7 +146,8 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
         Placement::InTheLoop => {
             series(&mut net, "amp", "minus", v.stack.0, v.diode, "fl");
             series(&mut net, "minus", "amp", v.stack.1, v.diode, "rl");
-            net.resistor("amp", "out", 1_000.0).resistor("out", "gnd", load);
+            net.resistor("amp", "out", 1_000.0)
+                .resistor("out", "gnd", load);
         }
         Placement::ToGround => {
             // The series resistor is what stops the pair being a short across

@@ -8,7 +8,10 @@ use gainstagefx::dsp::time::Simulation;
 const RATE: f64 = 96_000.0;
 
 fn main() {
-    println!("{:<28}{:>10}{:>9}{:>9}{:>9}", "", "out", "THD", "2nd", "3rd");
+    println!(
+        "{:<28}{:>10}{:>9}{:>9}{:>9}",
+        "", "out", "THD", "2nd", "3rd"
+    );
     for (name, mut v) in [
         ("overdrive, silicon", clipper::OVERDRIVE),
         ("overdrive, germanium", clipper::OVERDRIVE),

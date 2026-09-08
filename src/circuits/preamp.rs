@@ -102,8 +102,15 @@ pub fn build(p: &Preamp, source: f64, load: f64) -> Result<Circuit, Fault> {
     // One stage has no "between", so the volume goes in front of it.
     if stages == 1 {
         let floor = floor_of(p.interstage);
-        net.pot("in", "vol", "vol_floor", p.interstage, Taper::Log { span: SPAN }, GAIN)
-            .resistor("vol_floor", "gnd", floor);
+        net.pot(
+            "in",
+            "vol",
+            "vol_floor",
+            p.interstage,
+            Taper::Log { span: SPAN },
+            GAIN,
+        )
+        .resistor("vol_floor", "gnd", floor);
         node = String::from("vol");
     }
 
@@ -120,8 +127,15 @@ pub fn build(p: &Preamp, source: f64, load: f64) -> Result<Circuit, Fault> {
             let wiper = format!("{prefix}_vol");
             let floor_node = format!("{prefix}_vol_floor");
             let floor = floor_of(p.interstage);
-            net.pot(&out, &wiper, &floor_node, p.interstage, Taper::Log { span: SPAN }, GAIN)
-                .resistor(&floor_node, "gnd", floor);
+            net.pot(
+                &out,
+                &wiper,
+                &floor_node,
+                p.interstage,
+                Taper::Log { span: SPAN },
+                GAIN,
+            )
+            .resistor(&floor_node, "gnd", floor);
             node = wiper;
         } else {
             net.resistor(&out, "gnd", p.interstage);

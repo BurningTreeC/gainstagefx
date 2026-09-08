@@ -50,5 +50,8 @@ fn main() {
             if acc.is_nan() { "  NaN" } else { "" }
         );
     }
-    println!("\nworst: {} at {:.1}% of realtime, one channel", worst.0, worst.1);
+    println!(
+        "\nworst: {} at {:.1}% of realtime, one channel",
+        worst.0, worst.1
+    );
 }

@@ -59,15 +59,57 @@ fn every_control_reaches_the_circuit() {
     let reference = render(&base);
 
     let moved: [(&str, Settings); 9] = [
-        ("drive", Settings { drive: 0.95, ..base }),
+        (
+            "drive",
+            Settings {
+                drive: 0.95,
+                ..base
+            },
+        ),
         ("bass", Settings { bass: 1.0, ..base }),
         ("mid", Settings { mid: 0.0, ..base }),
-        ("treble", Settings { treble: 1.0, ..base }),
-        ("circuit", Settings { gain: Gain::Crunch, ..base }),
-        ("diode", Settings { diode: Diode::Germanium, ..base }),
-        ("iron", Settings { iron: Iron::Steel, ..base }),
-        ("tone section", Settings { tone: Tone::Scooping, ..base }),
-        ("cabinet", Settings { cabinet: Cabinet::Stack, ..base }),
+        (
+            "treble",
+            Settings {
+                treble: 1.0,
+                ..base
+            },
+        ),
+        (
+            "circuit",
+            Settings {
+                gain: Gain::Crunch,
+                ..base
+            },
+        ),
+        (
+            "diode",
+            Settings {
+                diode: Diode::Germanium,
+                ..base
+            },
+        ),
+        (
+            "iron",
+            Settings {
+                iron: Iron::Steel,
+                ..base
+            },
+        ),
+        (
+            "tone section",
+            Settings {
+                tone: Tone::Scooping,
+                ..base
+            },
+        ),
+        (
+            "cabinet",
+            Settings {
+                cabinet: Cabinet::Stack,
+                ..base
+            },
+        ),
     ];
     for (name, settings) in moved {
         let d = difference(&render(&settings), &reference);
@@ -90,11 +132,21 @@ fn the_amplifier_choice_reaches_the_preamplifier_channels() {
         cabinet: Cabinet::Off,
         ..Settings::default()
     };
-    let valve = render(&Settings { amplifier: Amplifier::Valve, ..base });
-    let jfet = render(&Settings { amplifier: Amplifier::Jfet, ..base });
+    let valve = render(&Settings {
+        amplifier: Amplifier::Valve,
+        ..base
+    });
+    let jfet = render(&Settings {
+        amplifier: Amplifier::Jfet,
+        ..base
+    });
     let d = difference(&valve, &jfet);
     println!("valve against JFET: {:.1} %", d * 100.0);
-    assert!(d > 0.01, "the amplifier choice does nothing: {:.4} %", d * 100.0);
+    assert!(
+        d > 0.01,
+        "the amplifier choice does nothing: {:.4} %",
+        d * 100.0
+    );
 }
 
 /// And the oversampling setting, which is part of the sound on the pedals.
@@ -107,8 +159,14 @@ fn the_quality_setting_reaches_the_solver() {
         cabinet: Cabinet::Off,
         ..Settings::default()
     };
-    let coarse = render(&Settings { oversampling: 1, ..base });
-    let fine = render(&Settings { oversampling: 4, ..base });
+    let coarse = render(&Settings {
+        oversampling: 1,
+        ..base
+    });
+    let fine = render(&Settings {
+        oversampling: 4,
+        ..base
+    });
     let d = difference(&coarse, &fine);
     println!("one times against four: {:.3} %", d * 100.0);
     // A small figure, and it should be: the probe tone here is under 400 Hz,
@@ -116,7 +174,11 @@ fn the_quality_setting_reaches_the_solver() {
     // not much to fold. What matters is that the setting does *something* --
     // how much it is worth is measured properly in `examples/alias.rs`, which
     // finds 16 dB at 3 kHz.
-    assert!(d > 1e-4, "the quality setting does nothing at all: {:.4} %", d * 100.0);
+    assert!(
+        d > 1e-4,
+        "the quality setting does nothing at all: {:.4} %",
+        d * 100.0
+    );
 }
 
 use gainstagefx::voice::Amplifier;
