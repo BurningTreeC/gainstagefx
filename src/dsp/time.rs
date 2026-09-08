@@ -100,6 +100,9 @@ pub struct Simulation {
     pivots: Vec<usize>,
     /// Per row, the column its last nonzero sits in. See `factorise`.
     reach: Vec<usize>,
+    /// Per row, the column its L part starts in. The other end of the same
+    /// idea, used by the forward substitution.
+    first: Vec<usize>,
     rhs: Vec<f64>,
     voltage: Vec<f64>,
     capacitors: Vec<Capacitor>,
@@ -175,6 +178,7 @@ impl Simulation {
             matrix: vec![0.0; n * n],
             pivots: vec![0; n],
             reach: vec![0; n],
+            first: vec![0; n],
             rhs: vec![0.0; n],
             voltage: vec![0.0; n],
             capacitors: Vec::new(),
@@ -570,7 +574,13 @@ impl Simulation {
         // device's own conductance is part of the matrix and moves with the
         // answer.
         self.matrix.copy_from_slice(&self.base);
-        factorise(&mut self.matrix, &mut self.pivots, &mut self.reach, n);
+        factorise(
+            &mut self.matrix,
+            &mut self.pivots,
+            &mut self.reach,
+            &mut self.first,
+            n,
+        );
         self.dirty = false;
     }
 
@@ -667,10 +677,18 @@ impl Simulation {
         }
 
         self.guess.copy_from_slice(&self.rhs);
-        factorise(&mut self.work, &mut self.pivots, &mut self.reach, n);
+        factorise(
+            &mut self.work,
+            &mut self.pivots,
+            &mut self.reach,
+            &mut self.first,
+            n,
+        );
         substitute(
             &self.work,
             &self.pivots,
+            &self.reach,
+            &self.first,
             &mut self.guess,
             n,
             &mut self.scratch,
@@ -749,6 +767,8 @@ impl Simulation {
             substitute(
                 &self.matrix,
                 &self.pivots,
+                &self.reach,
+                &self.first,
                 &mut self.rhs,
                 n,
                 &mut self.scratch,
@@ -929,7 +949,13 @@ fn inject(rhs: &mut [f64], a: usize, b: usize, current: f64) {
 /// Pivoting is not optional here. The diagonal carries zeros wherever a node's
 /// own admittance cancels, and an unpivoted elimination divides by whatever
 /// happens to be sitting there.
-fn factorise(m: &mut [f64], pivots: &mut [usize], reach: &mut [usize], n: usize) {
+fn factorise(
+    m: &mut [f64],
+    pivots: &mut [usize],
+    reach: &mut [usize],
+    first: &mut [usize],
+    n: usize,
+) {
     // How far right each row actually goes.
     //
     // A circuit matrix is nearly all zeros -- a part only ever stamps the nodes
@@ -958,6 +984,11 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], reach: &mut [usize], n: usize)
     for (k, p) in pivots.iter_mut().enumerate() {
         *p = k;
     }
+    // Where each row's L part starts. A row with nothing below the diagonal
+    // keeps its own index, which makes the forward substitution's loop empty.
+    for (k, f) in first.iter_mut().enumerate() {
+        *f = k;
+    }
     for col in 0..n {
         let mut best = col;
         let mut magnitude = m[col * n + col].abs();
@@ -974,6 +1005,7 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], reach: &mut [usize], n: usize)
             }
             pivots.swap(col, best);
             reach.swap(col, best);
+            first.swap(col, best);
         }
         let pivot = m[col * n + col];
         if pivot.abs() < 1e-30 {
@@ -982,13 +1014,25 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], reach: &mut [usize], n: usize)
         // Nothing to the right of the pivot row's reach can be changed by it.
         let stop = reach[col];
         for row in (col + 1)..n {
-            let factor = m[row * n + col] / pivot;
-            m[row * n + col] = factor;
+            // Tested before the division, not after it.
+            //
             // Most rows have nothing below the pivot at all, and eliminating
             // with a zero multiplier subtracts nothing from every remaining
-            // column.
-            if factor == 0.0 {
+            // column -- but the old form divided first and asked afterwards,
+            // so a thirty unknown circuit paid about nine hundred divisions a
+            // factorisation to compute `0.0 / pivot`, store it back over the
+            // zero it came from, and then skip. A division is twenty odd
+            // cycles where the loads either side are one, so those were a
+            // sizeable share of the factorisation on their own.
+            let entry = m[row * n + col];
+            if entry == 0.0 {
                 continue;
+            }
+            let factor = entry / pivot;
+            m[row * n + col] = factor;
+            // Where this row's L part starts, for the forward substitution.
+            if col < first[row] {
+                first[row] = col;
             }
             for k in (col + 1)..=stop {
                 m[row * n + k] -= factor * m[col * n + k];
@@ -1001,20 +1045,38 @@ fn factorise(m: &mut [f64], pivots: &mut [usize], reach: &mut [usize], n: usize)
     }
 }
 
-fn substitute(m: &[f64], pivots: &[usize], rhs: &mut [f64], n: usize, permuted: &mut [f64]) {
+/// Solves with the factorisation `factorise` left behind.
+///
+/// Both triangles are walked between the bounds that function recorded rather
+/// than across the full width: `first[row]` is where the row's L part starts
+/// and `reach[row]` is where its U part ends, fill-in included. Everything
+/// outside them is an exact zero, so skipping it subtracts nothing and the
+/// arithmetic is what it was. It is worth doing because a substitution is
+/// otherwise two full triangles -- about nine hundred multiply-adds on a
+/// thirty unknown circuit, of which a circuit matrix means perhaps a tenth
+/// are not multiplying by zero.
+fn substitute(
+    m: &[f64],
+    pivots: &[usize],
+    reach: &[usize],
+    first: &[usize],
+    rhs: &mut [f64],
+    n: usize,
+    permuted: &mut [f64],
+) {
     for (row, &from) in pivots.iter().enumerate() {
         permuted[row] = rhs[from];
     }
     for row in 1..n {
         let mut sum = permuted[row];
-        for k in 0..row {
+        for k in first[row]..row {
             sum -= m[row * n + k] * permuted[k];
         }
         permuted[row] = sum;
     }
     for row in (0..n).rev() {
         let mut sum = permuted[row];
-        for k in (row + 1)..n {
+        for k in (row + 1)..=reach[row] {
             sum -= m[row * n + k] * permuted[k];
         }
         let pivot = m[row * n + row];
