@@ -40,8 +40,18 @@ sleep 0.5
 hyprctl repl 'return hl.dispatch(hl.dsp.window.move({ x = 100, y = 100 }))' >/dev/null
 # The compositor's window opacity lets whatever is behind show through the
 # panel, which is fine to look at and useless in a screenshot.
-hyprctl setprop "address:$addr" alpha 1 lock >/dev/null 2>&1 || true
-hyprctl setprop "address:$addr" alphainactive 1 lock >/dev/null 2>&1 || true
+#
+# It is done with a window rule and not `hyprctl setprop`, because setprop
+# answers "unknown request" to every property name on this Hyprland -- and the
+# two setprop lines that used to be here ended in `|| true`, so they had been
+# failing silently. This panel is dark enough that the 1.5 % Omarchy leaves
+# does not show against a dark backdrop, which is the only reason it was never
+# noticed here; the same lines in pulteqfx put a legible terminal across the
+# faceplate. A rule registered now lands after the ones the config registered,
+# and for opacity the last match wins, so this beats the `default-opacity` tag.
+hyprctl repl 'return hl.window_rule({ match = { title = "^(GainStageFx)$" }, opacity = "1 1 1" })' >/dev/null
+opacity=$(hyprctl getprop "address:$addr" opacity)
+[ "$opacity" = "1" ] || { echo "window is $opacity opaque; the panel would show what is behind it"; exit 1; }
 sleep 1.5
 
 # By address again, not activewindow: moving the window can hand focus back to
