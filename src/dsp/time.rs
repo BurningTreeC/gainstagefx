@@ -253,14 +253,30 @@ impl Simulation {
         &self.voltage
     }
 
-    /// Whether a control has moved since the last solve, so the next sample
-    /// would rebuild the matrix and hunt the operating point again.
+    /// Whether this circuit still has its DC hunt in front of it: a control
+    /// has moved *and* there is no audio in flight to destroy.
     ///
     /// The one moment at which sharing a solution between identical channels
     /// is sound: before it, there is nothing new to share; after it, what
     /// would be shared is a running state and not an operating point.
+    ///
+    /// `at_rest` is the half that was missing, and leaving it out was audible.
+    /// `dirty` means only that a pot has moved, and a pot moves whenever a
+    /// player touches a knob -- so mid-playback this said yes once a block for
+    /// as long as the knob was turning. `Plugin::process` takes that as
+    /// permission to hunt channel 0's operating point and hand it to every
+    /// other channel, and both halves of that are destructive with audio in
+    /// flight: hunting solves the circuit *with no signal in it* and sets
+    /// every capacitor from the answer, and sharing then replaces the other
+    /// channels' running state with it. The audible result is the music with
+    /// a block-rate transient laid over the top of it, worse the harder the
+    /// circuit is driven, for exactly as long as a knob is held.
+    ///
+    /// `Simulation::process` has always drawn this distinction correctly --
+    /// it rebuilds on `dirty` but only hunts `if self.at_rest`. This is the
+    /// same distinction, which is why it is the same flag.
     pub fn needs_operating_point(&self) -> bool {
-        self.dirty
+        self.dirty && self.at_rest
     }
 
     /// Apply an operating point from another identical simulation. Rebuilds

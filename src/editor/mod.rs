@@ -54,25 +54,59 @@ pub fn default_state() -> Arc<ViziaState> {
 /// to make the window, and the serialised editor state, which is what comes
 /// back next session.
 ///
-/// nih-plug copies the figure across on a `GeometryChanged`, and that does not
-/// fire here: `Resize` asks for `inner_logical_size`, which is the size
-/// *before* scaling and has not moved, so vizia sees the same window size it
-/// already had and says nothing. The scale was therefore never stored -- which
-/// is why the setting did not survive a session, and why the host kept sizing
-/// the window for the old scale while the panel drew itself at the new one.
-/// That mismatch is the "broken scaling": on a platform whose host honours the
-/// size it was given, the panel is drawn larger than the window it is in.
-///
 /// So it is written here, directly. `PersistentField::set` is the only door
 /// into that field and it takes a whole `ViziaState`, so one is made to carry
 /// the number in and is dropped on the way out. Its size function is never
 /// asked anything -- `set` copies the scale and nothing else.
+///
+/// This on its own makes the size *persist*. It does not make the window
+/// change size, and on its own it actively prevents it -- see `apply_scale`.
 pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
     use nih_plug::params::persist::PersistentField;
     let carrier = ViziaState::new_with_default_scale_factor(|| (0, 0), scale);
     if let Ok(carrier) = Arc::try_unwrap(carrier) {
         PersistentField::set(state, carrier);
     }
+}
+
+/// Chooses a window size: stores it, then asks the host for it.
+///
+/// The second half is the one that was missing, and the reason is worth
+/// writing down because the first half is what hid it.
+///
+/// Only one thing in the stack actually asks a host to resize a window:
+/// `GuiContext::request_resize`. nih-plug calls it from one place, its
+/// `WindowModel`, when a `GeometryChanged` reaches the root -- and that
+/// handler opens with a guard:
+///
+/// ```text
+/// if logical_size == old_logical_size && scale_factor == old_user_scale_factor {
+///     return;
+/// }
+/// ```
+///
+/// `logical_size` is the size *before* scaling. Our size function is a
+/// constant, so that half never moves and the guard rests entirely on the
+/// scale. `old_user_scale_factor` is read from `ViziaState` -- the very field
+/// `remember_scale` writes. So storing the scale first, which is what the
+/// panel did, made both halves equal by the time the event arrived: the
+/// handler returned early, `request_resize` was never called, and the host was
+/// never told. The panel redrew itself at the new scale inside a window that
+/// stayed the old size, on every platform, which is exactly the reported bug.
+///
+/// Emitting `GuiContextEvent::Resize` does not rescue it either. That handler
+/// sets the window to `inner_logical_size`, the unscaled size, which has not
+/// moved -- so it asks for the size the window already is.
+///
+/// Rather than remove the store and depend on a `GeometryChanged` firing at
+/// the right moment, the request is made directly. `Editor::size` is
+/// `scaled_logical_size`, so once the scale is stored the host is asking for
+/// the right window; the order below is therefore load-bearing. Doing it this
+/// way also means the resize does not depend on vizia emitting anything, which
+/// is what makes it behave the same under every host.
+pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) {
+    remember_scale(state, scale);
+    gui.request_resize();
 }
 
 /// Height of a label box, which is centred on its anchor point.
@@ -87,7 +121,7 @@ pub fn create(
     editor_state: Arc<ViziaState>,
 ) -> Option<Box<dyn Editor>> {
     let state = editor_state.clone();
-    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, _| {
+    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, gui| {
         assets::register_noto_sans_regular(cx);
         assets::register_noto_sans_bold(cx);
         // The only styling the panel takes from a sheet rather than from its
@@ -101,7 +135,7 @@ pub fn create(
         }
         .build(cx);
 
-        session::Session::build_into(cx, params.clone(), state.user_scale_factor());
+        session::Session::build_into(cx, params.clone(), state.user_scale_factor(), gui);
 
         Faceplate::new(cx);
         gutter(cx);

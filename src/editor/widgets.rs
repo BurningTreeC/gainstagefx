@@ -196,10 +196,32 @@ impl View for Knob {
                     self.param
                         .set_normalized_value(cx, self.param.default_normalized_value());
                     self.param.end_set_parameter(cx);
-                } else if !self.dragging {
-                    // Guarded: a second press without an intervening release
-                    // would open a gesture inside a gesture, which is not
-                    // something a host has to make sense of.
+                } else {
+                    // A press while this knob still believes a drag is running
+                    // means the button came up somewhere nothing here ever
+                    // heard about, and the widget has been sitting on the
+                    // capture ever since.
+                    //
+                    // This is the recovery that works when the others cannot.
+                    // The check in `MouseMove` reads vizia's cached button
+                    // state, and that state is exactly what goes stale: it is
+                    // only ever written from a real button event, so if the
+                    // up never arrived it still says `Pressed` and the heal
+                    // never fires. Baseview takes the pointer with
+                    // `SetCapture` on the way down and gives it back on the
+                    // way up, and handles no `WM_CAPTURECHANGED` in between --
+                    // so when the host puts up a dialog, or another window
+                    // takes the pointer mid-drag, there is no up, no capture
+                    // notification, and nothing to notice it with.
+                    //
+                    // A fresh press is proof on its own: the button cannot go
+                    // down without having been up. So the stale drag is closed
+                    // here -- releasing the capture and closing the gesture the
+                    // host still thinks is open -- and the new one starts
+                    // cleanly. That heals the panel on the first click the
+                    // player makes when it looks frozen, which is the first
+                    // thing anybody tries.
+                    self.finish(cx);
                     self.dragging = true;
                     self.last_y = cx.mouse().cursory;
                     cx.capture();

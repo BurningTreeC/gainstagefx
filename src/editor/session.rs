@@ -14,7 +14,7 @@
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::{assets, widgets::GuiContextEvent, widgets::RawParamEvent};
+use nih_plug_vizia::{assets, widgets::RawParamEvent};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -93,6 +93,9 @@ pub struct Session {
     /// The values the current preset was loaded with, which is what `dirty` is
     /// measured against.
     reference: BTreeMap<String, f32>,
+    /// The door back to the host. Choosing a size has to ask it to resize the
+    /// window, and this is the only thing that can. See `editor::apply_scale`.
+    gui: Arc<dyn nih_plug::prelude::GuiContext>,
 }
 
 pub enum SessionEvent {
@@ -112,7 +115,12 @@ pub enum SessionEvent {
 }
 
 impl Session {
-    pub fn build_into(cx: &mut Context, params: Arc<GainStageParams>, scale: f64) {
+    pub fn build_into(
+        cx: &mut Context,
+        params: Arc<GainStageParams>,
+        scale: f64,
+        gui: Arc<dyn nih_plug::prelude::GuiContext>,
+    ) {
         let current = params
             .preset_name
             .lock()
@@ -138,6 +146,7 @@ impl Session {
             entries,
             params,
             reference,
+            gui,
         }
         .build(cx);
     }
@@ -228,15 +237,14 @@ impl Model for Session {
                 SessionEvent::SetScale(scale) => {
                     self.sizing = false;
                     self.scale = *scale;
+                    // What vizia draws at.
                     cx.set_user_scale_factor(*scale);
-                    // And into the state the host saves and sizes the window
-                    // from, which vizia does not do for us. See the note on
-                    // `remember_scale`.
-                    crate::editor::remember_scale(&self.params.editor_state, *scale);
-                    // The host is told to give the window its new size. Done
-                    // after both, because the size it asks for is read back
-                    // from what they just set.
-                    cx.emit(GuiContextEvent::Resize);
+                    // What the host saves, and then what the host is asked to
+                    // make the window. Both, in that order, and neither is
+                    // optional: see `editor::apply_scale` for why storing it
+                    // without asking leaves the panel drawn at the new size
+                    // inside a window still at the old one.
+                    crate::editor::apply_scale(&self.params.editor_state, &*self.gui, *scale);
                 }
                 SessionEvent::Close => {
                     self.open = false;

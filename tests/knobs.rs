@@ -118,3 +118,168 @@ fn moving_it_more_often_does_not_make_it_worse() {
         );
     }
 }
+
+/// The same complaint one level up, where the tests above could not see it.
+///
+/// Everything above runs a single `Simulation`, and a single simulation
+/// handles a moving control correctly: `process` rebuilds the matrix on
+/// `dirty` but only hunts the operating point `if self.at_rest`. What it does
+/// not cover is what `Plugin::process` does *around* the circuits, and that is
+/// where the audible fault was:
+///
+/// ```text
+/// if channels.len() >= 2 && channels[0].needs_operating_point() {
+///     first[0].find_operating_point();
+///     for chain in rest { chain.share_operating_point_from(...) }
+/// }
+/// ```
+///
+/// `needs_operating_point` returned `self.dirty`, and `dirty` is set by any
+/// pot moving. So with a knob under a finger this said yes once a block, and
+/// both halves are destructive with audio in flight: the hunt solves channel 0
+/// with no signal in it and sets every capacitor from the answer, and the
+/// share then replaces every other channel's running state with that. The
+/// second half is the one with a name -- one channel's audio arriving in
+/// another -- and it measured about a tenth of the signal.
+///
+/// Reported as "when playing audio through the plugin and simultaneously
+/// engaging a knob, the audio becomes more distorted, as if an additional
+/// layer of audio would be put above the audio".
+mod through_the_plugin {
+    use gainstagefx::voice::{Cabinet, Chain, Gain, Settings, Tone as ToneSection};
+
+    const RATE: f64 = 48_000.0;
+    const BLOCK: usize = 64;
+    const SECONDS: f64 = 0.25;
+
+    fn settings(gain: Gain, drive: f64) -> Settings {
+        Settings {
+            gain,
+            drive,
+            tone: ToneSection::Scooping,
+            cabinet: Cabinet::Stack,
+            oversampling: 1,
+            ..Settings::default()
+        }
+    }
+
+    fn left(k: usize) -> f64 {
+        0.25 * (k as f64 * 0.031).sin()
+    }
+
+    fn right(k: usize) -> f64 {
+        0.25 * (k as f64 * 0.017).sin() + 0.1 * (k as f64 * 0.09).sin()
+    }
+
+    /// `Plugin::process`, reproduced: settings to every chain once a block,
+    /// the operating-point hand-over under its guard, then the block.
+    fn render(gain: Gain, sources: &[fn(usize) -> f64]) -> Vec<Vec<f64>> {
+        let total = (RATE * SECONDS) as usize;
+        let mut chains: Vec<Chain> = sources
+            .iter()
+            .map(|_| {
+                let mut c = Chain::new(RATE);
+                c.apply(&settings(gain, 0.15));
+                c.settle();
+                c
+            })
+            .collect();
+        let mut out: Vec<Vec<f64>> = sources.iter().map(|_| Vec::new()).collect();
+
+        let mut k = 0;
+        while k < total {
+            let n = BLOCK.min(total - k);
+            // A knob under a finger.
+            let set = settings(gain, 0.15 + 0.7 * (k as f64 / total as f64));
+            for chain in &mut chains {
+                chain.apply(&set);
+            }
+            if chains.len() >= 2 && chains[0].needs_operating_point() {
+                let (first, rest) = chains.split_at_mut(1);
+                first[0].find_operating_point();
+                for chain in rest {
+                    chain.share_operating_point_from(first[0].operating_point());
+                }
+            }
+            for j in 0..n {
+                for (c, chain) in chains.iter_mut().enumerate() {
+                    out[c].push(chain.process(sources[c](k + j)));
+                }
+            }
+            k += n;
+        }
+        out
+    }
+
+    fn residual_db(a: &[f64], b: &[f64]) -> f64 {
+        let mut num = 0.0;
+        let mut den = 0.0;
+        for i in 0..a.len().min(b.len()) {
+            num += (a[i] - b[i]).powi(2);
+            den += a[i] * a[i];
+        }
+        if den <= 0.0 {
+            return f64::NEG_INFINITY;
+        }
+        10.0 * (num / den).log10()
+    }
+
+    /// Two channels carrying different audio, with the same knob swept on
+    /// both, must each come out exactly as they would have alone. The plugin
+    /// is dual mono; one channel cannot reach the other.
+    #[test]
+    fn a_moving_knob_does_not_let_one_channel_into_another() {
+        for gain in [Gain::Peavey, Gain::Boogie, Gain::Screamer, Gain::Crunch] {
+            let both = render(gain, &[left, right]);
+            let alone_l = render(gain, &[left]);
+            let alone_r = render(gain, &[right]);
+
+            for (name, mixed, alone) in [
+                ("left", &both[0], &alone_l[0]),
+                ("right", &both[1], &alone_r[0]),
+            ] {
+                let residual = residual_db(mixed, alone);
+                println!("{} {name}: {residual:.1} dB", gain.name());
+                assert!(
+                    residual < -100.0,
+                    "{}'s {name} channel is {residual:.1} dB from the same \
+                     channel run on its own while a knob moves -- the other \
+                     channel is audible in it",
+                    gain.name()
+                );
+            }
+        }
+    }
+
+    /// And the invariant underneath it, stated directly: once audio is in
+    /// flight there is never anything to hand over, however many controls
+    /// move. `at_rest` is what says so.
+    #[test]
+    fn nothing_is_worth_sharing_once_audio_is_in_flight() {
+        for gain in [Gain::Peavey, Gain::Boogie, Gain::Screamer, Gain::Crunch] {
+            let mut chain = Chain::new(RATE);
+            chain.apply(&settings(gain, 0.2));
+            assert!(
+                chain.needs_operating_point(),
+                "{} has never solved, so its operating point is worth hunting",
+                gain.name()
+            );
+
+            chain.find_operating_point();
+            chain.process(0.1);
+
+            // Now turn knobs, the way a player does.
+            for step in 1..=8 {
+                chain.apply(&settings(gain, 0.2 + 0.08 * step as f64));
+                assert!(
+                    !chain.needs_operating_point(),
+                    "{} asked to be re-hunted after a knob moved with audio in \
+                     flight, which deletes the audio and hands the wreckage to \
+                     every other channel",
+                    gain.name()
+                );
+                chain.process(0.1);
+            }
+        }
+    }
+}
