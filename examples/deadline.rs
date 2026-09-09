@@ -8,8 +8,10 @@
 //!
 //! So this measures the thing the host measures: the wall time of one
 //! `process` callback, over and over, and reports the distribution against
-//! the deadline. At 48 kHz and 64 samples that deadline is 1333 us, and a
-//! stereo instance has to do both channels inside it.
+//! the deadline. At 48 kHz and 64 samples that deadline is 1333 us.
+//!
+//! One chain, because that is what the plugin runs: the host's channels are
+//! summed to mono before the circuit. See the note in `plugin.rs`.
 //!
 //! It also runs the transformer, tone stack and cabinet, because the plugin
 //! does, and reports the solver's own telemetry beside the timing so a change
@@ -23,8 +25,6 @@ const RATE: f64 = 48_000.0;
 const BLOCK: usize = 64;
 /// The callback budget, in microseconds: BLOCK / RATE.
 const DEADLINE: f64 = BLOCK as f64 / RATE * 1e6;
-/// Stereo. Both channels are processed inside the one callback.
-const CHANNELS: usize = 2;
 
 fn chain(gain: Gain) -> Chain {
     let mut c = Chain::new(RATE);
@@ -61,13 +61,13 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 
 fn main() {
     println!(
-        "48 kHz, {BLOCK} samples a callback, {CHANNELS} channels, drive 0.8, \
+        "48 kHz, {BLOCK} samples a callback, one chain, drive 0.8, \
          transformer + tone + cabinet on."
     );
     println!("Deadline is {DEADLINE:.0} us a callback. Over that is a dropout.\n");
     println!(
-        "  {:<12}{:>9}{:>9}{:>9}{:>9}{:>9}{:>8}{:>9}",
-        "voice", "mean", "p50", "p95", "p99", "worst", "over", "passes"
+        "  {:<12}{:>9}{:>9}{:>9}{:>9}{:>9}{:>8}",
+        "voice", "mean", "p50", "p95", "p99", "worst", "over"
     );
 
     for gain in [
@@ -79,13 +79,12 @@ fn main() {
         Gain::Crunch,
         Gain::Overdrive,
         Gain::Distortion,
+        Gain::Twin,
     ] {
-        let mut chains: Vec<Chain> = (0..CHANNELS).map(|_| chain(gain)).collect();
+        let mut chain = chain(gain);
         // Warm, so the operating-point hunt is not in the timing.
         for k in 0..2000 {
-            for c in chains.iter_mut() {
-                std::hint::black_box(c.process(stimulus(k)));
-            }
+            std::hint::black_box(chain.process(stimulus(k)));
         }
         let blocks = RATE as usize / BLOCK; // one second of callbacks
         let mut times = Vec::with_capacity(blocks);
@@ -93,9 +92,7 @@ fn main() {
         for _ in 0..blocks {
             let start = std::time::Instant::now();
             for _ in 0..BLOCK {
-                for c in chains.iter_mut() {
-                    std::hint::black_box(c.process(stimulus(k)));
-                }
+                std::hint::black_box(chain.process(stimulus(k)));
                 k += 1;
             }
             times.push(start.elapsed().as_secs_f64() * 1e6);
@@ -105,7 +102,7 @@ fn main() {
         let mut sorted = times.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
         println!(
-            "  {:<12}{:>8.0}u{:>8.0}u{:>8.0}u{:>8.0}u{:>8.0}u{:>7.1}%{:>9.2}",
+            "  {:<12}{:>8.0}u{:>8.0}u{:>8.0}u{:>8.0}u{:>8.0}u{:>7.1}%",
             gain.name(),
             mean,
             percentile(&sorted, 0.50),
@@ -113,7 +110,6 @@ fn main() {
             percentile(&sorted, 0.99),
             sorted[sorted.len() - 1],
             100.0 * over as f64 / blocks as f64,
-            chains[0].passes_per_sample(),
         );
     }
     println!("\n'over' is the share of callbacks that missed the deadline.");

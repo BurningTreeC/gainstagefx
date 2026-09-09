@@ -44,6 +44,9 @@ fn difference(a: &[f64], b: &[f64]) -> f64 {
 fn every_control_reaches_the_circuit() {
     // A voice with a tone stack and diodes, so that every control applies.
     let base = Settings {
+        reverb: 0.0,
+        speed: 0.4,
+        intensity: 0.0,
         gain: Gain::Distortion,
         diode: Diode::Silicon,
         amplifier: Amplifier::Jfet,
@@ -51,6 +54,8 @@ fn every_control_reaches_the_circuit() {
         tone: Tone::Wide,
         cabinet: Cabinet::Off,
         drive: 0.5,
+        master: 0.5,
+        graphic: [0.5; 5],
         bass: 0.5,
         mid: 0.5,
         treble: 0.5,

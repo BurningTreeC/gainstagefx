@@ -19,11 +19,24 @@ pub struct Preset {
     pub amplifier: Amplifier,
     pub iron: Iron,
     pub drive: f32,
+    /// The circuit's own level control, where its drawing has one. Half is
+    /// where the voice was calibrated. See `Chain::set_master`.
+    pub master: f32,
+    /// The Mark IIC+'s five graphic equaliser sliders, bottom band first.
+    /// Centred is flat, and every preset for anything else leaves them there.
+    pub graphic: [f32; 5],
     pub tone: ToneStack,
     pub bass: f32,
     pub mid: f32,
     pub treble: f32,
     pub cabinet: Cabinet,
+    /// The three the Twin Reverb has and nothing else does. Carried by every
+    /// preset because a preset that does not say leaves them wherever the last
+    /// one put them, and a reverb arriving with a patch that never asked for
+    /// one is the same defect as a knob that reaches nothing.
+    pub reverb: f32,
+    pub speed: f32,
+    pub intensity: f32,
     pub input_trim: f32,
     pub output_trim: f32,
     pub mix: f32,
@@ -58,11 +71,16 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         amplifier: Amplifier::Jfet,
         iron: Iron::Off,
         drive: 0.5,
+        master: 0.5,
+        graphic: [0.5; 5],
         tone: ToneStack::Wide,
         bass: 0.5,
         mid: 0.5,
         treble: 0.5,
         cabinet: Cabinet::Off,
+        reverb: 0.0,
+        speed: 0.4,
+        intensity: 0.0,
         input_trim: 0.0,
         output_trim: 0.0,
         mix: 1.0,
@@ -421,8 +439,20 @@ pub const PRESETS: &[Preset] = &[
     // puts them. The Mark IIC+ carries its own tone stack, so the stack is
     // off and the three knobs are the amplifier's; the 5150's stack could not
     // be traced, so it borrows the plugin's.
+    // Lead Master well down and the graphic doing the voicing, which is the
+    // amplifier's own method: gain in the preamplifier, level at the back, and
+    // the five sliders late in the chain deciding what the power stage is
+    // handed. `master` 0.35 is below the 0.30 the circuit rests its Lead
+    // Master at -- the knob's middle is that resting position, so this is a
+    // little under it.
+    //
+    // The graphic here is the gentle version: 750 backed off and the ends
+    // brought up, which is the same shape as the rhythm setting below but
+    // half as deep, so single notes keep the middle they need to carry.
     Preset {
         drive: 0.85,
+        master: 0.35,
+        graphic: [0.62, 0.55, 0.30, 0.60, 0.58],
         circuit: Circuit::Boogie,
         tone: ToneStack::Off,
         bass: 0.60,
@@ -432,8 +462,15 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Boutique Lead")
     },
+    // And the V everybody sets: 750 on the floor, the ends up. On this
+    // amplifier that is not an equaliser curve applied to the output -- the
+    // sliders are before the power stage, so scooping here changes what the
+    // 6L6s are asked to do, which is why the shape sounds like the record and
+    // not like the same curve on a mixer.
     Preset {
         drive: 0.95,
+        master: 0.30,
+        graphic: [0.75, 0.55, 0.05, 0.68, 0.70],
         circuit: Circuit::Boogie,
         tone: ToneStack::Off,
         bass: 0.70,
@@ -442,6 +479,58 @@ pub const PRESETS: &[Preset] = &[
         cabinet: Cabinet::Stack,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Boutique Rhythm")
+    },
+    // --- Fender Twin Reverb, AB763 ---------------------------------------
+    // The clean reference, and the one thing everybody wants from it: chime,
+    // headroom, and the spring tank underneath. Its own tone stack carries the
+    // three knobs, so the plugin's stack is out of the path.
+    //
+    // Volume at 6. A Twin does not distort where other amplifiers do -- the
+    // whole point of eighty-five watts and four 6L6s is that it does not run
+    // out of room -- so this is loud and firm rather than dirty, and the
+    // calibration measures it at 1.2 per cent even wide open.
+    //
+    // Bass 6, Middle 3.5, Treble 6.5: the blackface scoop. The Twin is the
+    // amplifier that has a real Middle control where the smaller ones have a
+    // fixed resistor, and backing it off is what everybody does with it.
+    //
+    // Reverb at 3.5, which is where a blackface tank sits under a part without
+    // swallowing it. Tremolo off: it is a per-song effect rather than a
+    // default, and the preset below has it.
+    //
+    // Steel iron, because this circuit stops at the phase inverter and has no
+    // output transformer of its own yet -- see `twin.rs`. A 2x12 combo, which
+    // is what a Twin is.
+    Preset {
+        drive: 0.60,
+        circuit: Circuit::Twin,
+        tone: ToneStack::Off,
+        bass: 0.60,
+        mid: 0.35,
+        treble: 0.65,
+        reverb: 0.35,
+        cabinet: Cabinet::Combo,
+        iron: Iron::Steel,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Blackface Clean")
+    },
+    // The same amplifier with its tremolo running: speed a little under half,
+    // intensity well up, because the neon bulb does not strike at all below
+    // about a third and the control's useful travel starts there.
+    Preset {
+        drive: 0.55,
+        circuit: Circuit::Twin,
+        tone: ToneStack::Off,
+        bass: 0.55,
+        mid: 0.40,
+        treble: 0.60,
+        reverb: 0.45,
+        speed: 0.40,
+        intensity: 0.75,
+        cabinet: Cabinet::Combo,
+        iron: Iron::Steel,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Blackface Throb")
     },
     Preset {
         drive: 0.90,
@@ -510,7 +599,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 14] {
+    pub fn dials(&self) -> [(&'static str, f32); 23] {
         [
             ("in_trim", self.input_trim),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
@@ -518,11 +607,20 @@ impl Preset {
             ("amplifier", index_in(&Amplifier::ALL, self.amplifier)),
             ("iron", index_in(&Iron::ALL, self.iron)),
             ("drive", self.drive),
+            ("master", self.master),
+            ("eq60", self.graphic[0]),
+            ("eq240", self.graphic[1]),
+            ("eq750", self.graphic[2]),
+            ("eq2200", self.graphic[3]),
+            ("eq6600", self.graphic[4]),
             ("tone", index_in(&ToneStack::ALL, self.tone)),
             ("bass", self.bass),
             ("mid", self.mid),
             ("treble", self.treble),
             ("cabinet", index_in(&Cabinet::ALL, self.cabinet)),
+            ("reverb", self.reverb),
+            ("speed", self.speed),
+            ("intensity", self.intensity),
             ("mix", self.mix),
             ("out_trim", self.output_trim),
             (

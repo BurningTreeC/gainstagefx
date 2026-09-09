@@ -194,3 +194,103 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
 
     net.build(at)
 }
+
+// ---------------------------------------------------------------------------
+// The five band graphic equaliser
+// ---------------------------------------------------------------------------
+
+/// The five sliders, in the order the front panel has them.
+pub const BAND_60: usize = 0;
+pub const BAND_240: usize = 1;
+pub const BAND_750: usize = 2;
+pub const BAND_2200: usize = 3;
+pub const BAND_6600: usize = 4;
+
+/// The slider track. **Not on the drawing** -- neither sheet prints a value
+/// beside the five sliders -- so this is the figure the Mesa graphic is
+/// commonly built with, and it is the one number here that is an assumption
+/// rather than a reading. It sets how deep the bands go: the ratio between it
+/// and each band's series resistor is the band's range.
+const SLIDER: f64 = 100_000.0;
+
+/// What the driver puts back.
+///
+/// The network is five shunts across one node, so even with every slider
+/// centred it throws away **16.6 dB** at 1 kHz into the impedance this circuit
+/// is driven from. That is what the four transistors are there for: Q1 to Q4
+/// are a recovery amplifier making up the equaliser's insertion loss, and this
+/// is the one number of theirs that reaches the sound.
+///
+/// Measured at the sliders' centres, at 1 kHz, into `voice::SOURCE` and
+/// `voice::LOAD` -- the same place the chain builds it. Not flat across the
+/// band: the network tilts about two and a half decibels either side of this,
+/// because five resonant shunts in parallel do not add up to a flat load. That
+/// tilt is the network's own and is left in.
+pub const DRIVER_GAIN_DB: f64 = 16.64;
+
+/// The slider's law, chosen by measurement -- see `examples/graphic.rs`.
+const TAPER: Taper = Taper::ReverseLog { span: 200.0 };
+
+/// One band: its series resistor, inductor and capacitor.
+///
+/// Read off `docs/schematics/RP10 IIC+ Schematic.pdf`, which the FINAL sheet
+/// carries identically. The frequencies are the drawing's own labels for the
+/// sliders; they are **not** the series resonance of L and C, which lands at
+/// 88, 372, 723, 1576 and 4823 Hz. That is not an error in either place -- a
+/// band's branch is loaded by the slider it hangs off and by the four bands
+/// beside it, and where the assembled network peaks is not where an isolated
+/// LC would.
+const BANDS: [(f64, f64, f64); 5] = [
+    (470.0, 1.0, 3.3e-6),       // R51, L1, C51 -- 60 Hz
+    (470.0, 0.39, 0.47e-6),     // R52, L2, C52 -- 240 Hz
+    (470.0, 0.22, 0.22e-6),     // R53, L3, C53 -- 750 Hz
+    (1_000.0, 0.068, 0.15e-6),  // R54, L4, C54 -- 2200 Hz
+    (1_000.0, 0.033, 0.033e-6), // R55, L5, C55 -- 6600 Hz
+];
+
+/// The graphic equaliser, from `EQ INPUT` to `EQ OUTPUT`.
+///
+/// **Where it sits.** The drawing takes `EQ INPUT` from `LEAD OUTPUT`, which is
+/// exactly where `build` above stops, and returns `EQ OUTPUT` to the phase
+/// inverter. So this goes between the preamplifier and the power amplifier,
+/// which is the whole reason it matters: §9.8 -- a low band boosted here is
+/// boosted *after* four gain stages and lands on the power stage, and moving
+/// it to the end of the chain would be a different amplifier.
+///
+/// **The topology, traced.** Two rails. Each slider sits across them, and its
+/// wiper drives a series R-L-C back to the lower rail. The lower rail is
+/// **ground**, switched: it runs to the LDR5A, which is the equaliser's
+/// footswitch, with the 68 k beside it marked "EQ POP FIX. FACTORY MOD" --
+/// with the cell dark the rail floats and every branch is an open circuit,
+/// which is the equaliser out of circuit and flat.
+///
+/// So each band is a series-resonant branch shunting the signal to ground
+/// through its own slider. At the band's frequency the branch is about its
+/// series resistor -- 470 ohms against a 100 k track -- and away from it the
+/// branch is an open circuit and the track stands alone. Sliding toward the
+/// signal end brings that low impedance across the node and takes the band
+/// out; sliding the other way shorts the branch and leaves it. With the
+/// sliders at their centres as the reference, that is the boost and cut either
+/// side of flat that Mesa's own figure of +/- 12 dB describes.
+///
+/// Getting this the other way round is the mistake worth recording: read as a
+/// series network between two live rails, with the next stage's megohm across
+/// the output, the whole equaliser moved the response by **0.1 dB** at every
+/// slider and every frequency. A series impedance into a load a hundred times
+/// larger does nothing, and that is what says the lower rail is ground.
+///
+pub fn graphic(source: f64, load: f64) -> Result<Circuit, Fault> {
+    let mut net = Netlist::new("Mark IIC+ graphic EQ");
+    net.input("eq", source);
+    for (band, &(r, l, c)) in BANDS.iter().enumerate() {
+        let wiper = format!("w{band}");
+        let after_r = format!("m{band}");
+        let after_l = format!("n{band}");
+        net.pot("eq", &wiper, "gnd", SLIDER, TAPER, band)
+            .resistor(&wiper, &after_r, r)
+            .inductor(&after_r, &after_l, l)
+            .capacitor(&after_l, "gnd", c);
+    }
+    net.resistor("eq", "gnd", load);
+    net.build("eq")
+}

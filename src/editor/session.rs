@@ -848,7 +848,13 @@ pub fn dialogs(cx: &mut Context) {
                     .height(Pixels(24.0))
                     .left(Pixels(10.0));
             })
-            .width(Stretch(1.0))
+            // Auto, not `Stretch`. A row that is both as wide as its parent
+            // *and* pushed right by a stretch starts at the right edge and
+            // puts its children past it -- which is what happened: the Save
+            // and Delete buttons drew outside the dialog they belong to. Sized
+            // to its two buttons, the stretch on the left does what it reads
+            // like it does and moves the pair over to the right margin.
+            .width(Auto)
             .height(Pixels(24.0))
             .top(Stretch(1.0))
             .left(Stretch(1.0))

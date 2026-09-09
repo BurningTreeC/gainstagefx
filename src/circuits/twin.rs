@@ -68,9 +68,6 @@ pub const SUPPLY: f64 = 410.0;
 
 /// 7025 is a low-noise, controlled-heater 12AX7. Electrically an ECC83.
 const V7025: TriodeSpec = TriodeSpec::ECC83;
-/// The reverb driver, whose two halves the drawing wires in parallel.
-const V12AT7: TriodeSpec = TriodeSpec::ECC81;
-
 /// Where the reverb transformer's secondary drives the tank.
 pub const SEND: &str = "tank_in";
 /// Where the tank comes back into the recovery stage's grid.
@@ -79,6 +76,85 @@ pub const RETURN: &str = "tank_out";
 pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
+
+/// The reverb recovery stage, and the Reverb control.
+///
+/// Half a 7025 with a 220 k plate load -- higher than the channel stages' 100 k
+/// because what comes back off a tank is tiny -- then the .003 out, the 100 k,
+/// and the 100 k **linear** Reverb pot. Linear is unusual for a Fender and is
+/// why the control does so much in the first third of its travel.
+///
+/// ## Two departures from the drawing, and they are departures
+///
+/// On the amplifier the send is taken from **V1's plate**, ahead of the tone
+/// stack, and the return is mixed into **V2's grid** through a 3.3 M with
+/// 10 pF across it. So the tank hears the channel's full bandwidth and the
+/// wet signal is then amplified and coloured by V2, which is a good part of
+/// why a blackface reverb sits *under* the dry signal rather than on top of
+/// it.
+///
+/// Neither is possible here. That send and that return make a **loop through
+/// the preamplifier**, and a `Chain` runs its circuits one way: A's output
+/// into B's input, with no path back. Holding the loop would need the whole
+/// channel and the whole recovery stage in one matrix with the tank inside
+/// it, and the tank is not a circuit at all -- it is a mechanical delay line
+/// with a dispersion relation, which is the entire reason it lives in
+/// `dsp::spring`.
+///
+/// So: the send is taken from the channel's input rather than from V1's
+/// plate, with `SEND_GAIN` standing in for that stage, and the return is
+/// summed at the output rather than at V2's grid. The recovery stage itself,
+/// the pot and its law are the drawing's.
+pub fn reverb_return(source: f64, load: f64) -> Result<Circuit, Fault> {
+    let mut net = Netlist::new("Twin Reverb recovery");
+    net.input(RETURN, source)
+        .resistor(RETURN, "gnd", 220_000.0)
+        .resistor("rc_k", "gnd", 820.0)
+        .capacitor("rc_k", "gnd", 25e-6)
+        .supply("rc_p", 220_000.0, SUPPLY)
+        .triode("rc_p", RETURN, "rc_k", V7025)
+        .capacitor("rc_p", "rv_send", 0.003e-6)
+        .resistor("rv_send", "rv_top", 100_000.0)
+        .pot("rv_top", "out", "gnd", 100_000.0, Taper::Linear, REVERB)
+        .resistor("out", "gnd", load);
+    net.build("out")
+}
+
+/// What V1 does to the signal before the reverb driver sees it, standing in
+/// for the stage the send is really taken from. Measured small-signal gain of
+/// V1 into the driver's grid leak; an estimate of a stage, not a value off the
+/// drawing. See `reverb_return`.
+///
+/// The driver itself -- a 12AT7 with both halves in parallel into the reverb
+/// transformer -- is not modelled as a circuit either, for the same reason:
+/// nothing downstream of it comes back, so the only thing it contributes to
+/// what is heard is level.
+pub const SEND_GAIN: f64 = 30.0;
+
+/// What the whole send-and-return path has to be divided by before it is
+/// summed on to the channel.
+///
+/// This is the price of the departure `reverb_return` describes. On the
+/// drawing the recovery stage returns into V2's grid, *inside* the channel, so
+/// everything after it -- the rest of the preamplifier, the make-up that holds
+/// the channel at a constant level -- acts on the reverb and the dry signal
+/// alike. Here the return is summed at the output instead, after the make-up
+/// has already normalised the dry path to unity. So the wet arrives with the
+/// path's raw gain on it and the dry does not.
+///
+/// Measured, at Reverb wide open: `SEND_GAIN` 30 times the tank's 0.53 times
+/// the recovery stage's 24.3 is 383, which is **51.7 dB**. That is what the
+/// control was actually doing. At the shipped preset's 0.35 the tank came out
+/// 38.6 dB above the dry signal, and at the top of the knob the plugin put out
+/// +24 dBFS -- which is why turning the Reverb down sounded like turning the
+/// amplifier off. Reported as "the Reverb button works somehow like a volume
+/// button".
+///
+/// Dividing it out puts the wet at the dry's level with the pot wide open,
+/// which is what the pot is for: it is a 100 k linear track on the drawing and
+/// it blends, so at 3 or 4 on the dial the tank sits about nine decibels under
+/// the signal, where a Fender's does.
+pub const RETURN_TRIM: f64 = 1.0 / 383.4;
 
 /// The same channel brought out at a chosen node, for measuring one stage at a
 /// time. `SEND` and `RETURN` are the two the tank lives between.
@@ -171,70 +247,6 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .triode("v2_p", "v2_g", "v2_k", V7025)
         .capacitor("v2_p", "out", 0.1e-6)
         .resistor("out", "gnd", load);
-
-    // --- reverb driver ----------------------------------------------------
-    // A 12AT7 with both halves in parallel, which is a lower plate resistance
-    // and the current the transformer's primary needs. Two triodes in parallel
-    // are one device passing twice the current, so that is how it is stamped.
-    //
-    // The driver is fed from V1's plate, ahead of the tone stack: the tank
-    // gets the channel's full bandwidth and the stack shapes only the dry
-    // path. That is what gives a blackface reverb its brightness against a
-    // rolled-off dry signal.
-    net.capacitor("v1_p", "rv_g", 0.1e-6)
-        .resistor("rv_g", "gnd", 1_000_000.0)
-        .resistor("rv_k", "gnd", 2_800.0)
-        .capacitor("rv_k", "gnd", 25e-6)
-        .triode("rv_p", "rv_g", "rv_k", V12AT7)
-        // TR4, the reverb transformer.
-        //
-        // The plate's direct current comes **through the primary winding**
-        // from the supply -- that is what a transformer-coupled plate is. The
-        // first build put the supply on the plate and the primary across
-        // plate-to-ground beside it, which is an ideal ratio in parallel with
-        // the stage: a short at direct current. Measured, it put the driver's
-        // plate and cathode both at 0.0 V against the 440 V and 8.6 V the
-        // drawing prints beside that tube. `power.rs` has the pattern -- the
-        // winding is a resistance and a magnetising inductance in series from
-        // the supply to the plate, with the ideal ratio across it.
-        //
-        // The drawing gives no turns ratio and no winding figures. A Fender
-        // reverb driver transformer steps down hard into a tank of a few tens
-        // of ohms; 22:1, a 250 ohm primary and 1.5 H of magnetising inductance
-        // are **estimates of the part, not values read off the schematic**.
-        .supply("rv_ht", 1_000.0, 440.0)
-        .resistor("rv_ht", "rv_mag", 250.0)
-        .inductor("rv_mag", "rv_p", 1.5)
-        .transformer("rv_mag", "rv_p", SEND, "gnd", 1.0 / 22.0)
-        .resistor(SEND, "gnd", 8.0);
-
-    // --- reverb recovery and the Reverb control ---------------------------
-    // Half a 7025 with a 220 k plate load -- higher than the 100 k the channel
-    // stages use, because what comes back off a tank is tiny.
-    //
-    // **The mixing network is the part of this drawing that is hardest to
-    // read.** What is legible: a .003 out of the recovery plate, a 100 k, the
-    // 100 k linear REVERB pot, and a 3.3 M with 10 pF across it going to the
-    // channel's second grid, with 470 k and 220 k in the divider. The exact
-    // order of the 470 k and 220 k against the pot is an inference from the
-    // usual AB763 arrangement rather than something read off this render, and
-    // it is marked here rather than presented as certain. See `CLAUDE.md`
-    // §53.13.
-    net.resistor(RETURN, "gnd", 220_000.0)
-        .resistor("rc_k", "gnd", 820.0)
-        .capacitor("rc_k", "gnd", 25e-6)
-        .supply("rc_p", 220_000.0, SUPPLY)
-        .triode("rc_p", RETURN, "rc_k", V7025)
-        .capacitor("rc_p", "rv_send", 0.003e-6)
-        .resistor("rv_send", "rv_top", 100_000.0)
-        .pot("rv_top", "rv_w", "gnd", 100_000.0, Taper::Linear, REVERB)
-        .resistor("rv_w", "rv_mix", 470_000.0)
-        .resistor("rv_mix", "gnd", 220_000.0)
-        // Into the same grid the dry signal arrives at. The 10 pF across the
-        // 3.3 M is what lets the top of the reverb through a resistance that
-        // would otherwise be far too high for it.
-        .resistor("rv_mix", "v2_g", 3_300_000.0)
-        .capacitor("rv_mix", "v2_g", 10e-12);
 
     net.build(at)
 }

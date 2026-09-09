@@ -10,6 +10,7 @@
 //!
 //! See `docs/experiments/crackle-root-cause.md`.
 
+use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
 use gainstagefx::voice::{self, Gain};
 
@@ -91,4 +92,48 @@ fn the_line_search_is_not_carrying_the_solve() {
             gain.name()
         );
     }
+}
+
+/// The work budget's floor is enforced by the solver, not by its caller.
+///
+/// BUG-008 recorded what a permanent ceiling of eight did to the 5150's lead
+/// channel: 190, 107 and 428 per cent distortion at three input levels, which
+/// is not a sound but a solve that never converged. Layer 5a lowers the
+/// ceiling deliberately when a block is running out of time, so the number it
+/// can reach has to be bounded somewhere that no caller can get under.
+#[test]
+fn no_caller_can_starve_the_solve_past_the_floor() {
+    use gainstagefx::voice::{Amplifier, Diode};
+    let netlist =
+        voice::build_voice(Gain::Peavey, Diode::Silicon, Amplifier::Valve).expect("builds");
+    let mut sim = Simulation::new(netlist, 96_000.0);
+    sim.set_control(Gain::Peavey.drive_control(), 1.0);
+    sim.find_operating_point();
+
+    // Ask for one pass a sample, which is what a bug in the budget would do.
+    sim.set_pass_ceiling(1);
+    let tone = Tone::near(96_000.0, 16_384, 220.0, 2.0);
+    let pinched = measure::run(tone, 9_600, |x| sim.process(x));
+
+    sim.set_pass_ceiling(32);
+    let netlist =
+        voice::build_voice(Gain::Peavey, Diode::Silicon, Amplifier::Valve).expect("builds");
+    let mut full = Simulation::new(netlist, 96_000.0);
+    full.set_control(Gain::Peavey.drive_control(), 1.0);
+    full.find_operating_point();
+    let tone = Tone::near(96_000.0, 16_384, 220.0, 2.0);
+    let whole = measure::run(tone, 9_600, |x| full.process(x));
+
+    assert!(
+        (pinched.thd_percent() - whole.thd_percent()).abs() < 2.0,
+        "asking for one pass a sample should be clamped to the floor and sound \
+         all but identical: {:.1} % against {:.1} %",
+        pinched.thd_percent(),
+        whole.thd_percent()
+    );
+    assert!(
+        pinched.thd_percent() < 100.0,
+        "a floored solve must still converge: {:.1} %",
+        pinched.thd_percent()
+    );
 }

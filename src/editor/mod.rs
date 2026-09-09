@@ -271,14 +271,19 @@ fn gutter(cx: &mut Context) {
 // ---------------------------------------------------------------------------
 
 fn strip(cx: &mut Context) {
+    // The name, and the version under it. Stacked inside the same 32 pixel
+    // strip rather than given room of their own: a version is something you
+    // go and look for when reporting a fault, not something to read every
+    // session, so it gets the smaller half of a header that already exists.
+    label(cx, "GAINSTAGEFX", 62.0, 10.0, 10.5, 116.0, 0xe8eef4);
     label(
         cx,
-        "GAINSTAGEFX",
+        concat!("v", env!("CARGO_PKG_VERSION")),
         62.0,
-        HEADER_H / 2.0,
-        10.5,
+        22.0,
+        8.0,
         116.0,
-        0xe8eef4,
+        0x7d878f,
     );
 
     let row = HEADER_H / 2.0 - 10.0;
@@ -321,14 +326,31 @@ fn strip(cx: &mut Context) {
 
     let width = 112.0;
     let left = PANEL_W - 14.0 - width;
-    selector(
+    // A circuit-modelled voice runs at the host rate whatever this is set to
+    // -- `Chain::set_oversampling` pins it, because those circuits cannot yet
+    // afford a higher one (§59.5). The row said otherwise, which is a control
+    // claiming to do something it does not.
+    //
+    // Pinned to Off and dimmed rather than written to Off: the parameter is
+    // left alone, so choosing a pedal again brings the setting back instead of
+    // silently discarding it, and nothing here fights the host's automation.
+    Binding::new(
         cx,
-        left,
-        row,
-        width,
-        |p| &p.oversampling,
-        Oversampling::ALL.iter().map(|o| o.name()).collect(),
-        true,
+        Panel::params.map(|p| p.circuit.value().voice().is_modelled()),
+        move |cx, modelled| {
+            let labels: Vec<&'static str> = Oversampling::ALL.iter().map(|o| o.name()).collect();
+            let handle = if modelled.get(cx) {
+                Selector::pinned(cx, Panel::params, |p| &p.oversampling, labels, 0)
+            } else {
+                Selector::new(cx, Panel::params, |p| &p.oversampling, labels, true)
+            };
+            handle
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(left))
+                .top(Pixels(row))
+                .width(Pixels(width))
+                .height(Pixels(20.0));
+        },
     );
     label(
         cx,
@@ -418,6 +440,7 @@ fn circuit(cx: &mut Context) {
         true,
         0,
         names.len(),
+        None,
     )
     .position_type(PositionType::SelfDirected)
     .left(Pixels(body_x() + 76.0))
@@ -442,6 +465,7 @@ fn circuit(cx: &mut Context) {
         true,
         modelled,
         names.len(),
+        None,
     )
     .position_type(PositionType::SelfDirected)
     .left(Pixels(body_x() + 76.0))
@@ -594,6 +618,10 @@ pub fn describe(circuit: Circuit) -> String {
             "Neve 73P microphone preamplifier: two cascaded \
                           transistor stages with a step-up transformer."
         }
+        Circuit::Twin => {
+            "Fender Twin Reverb AB763: the clean one, with its own \
+                          tone stack, a spring tank and a tremolo."
+        }
     }
     .to_string()
 }
@@ -605,34 +633,174 @@ pub fn describe(circuit: Circuit) -> String {
 fn drive(cx: &mut Context) {
     let top = section_top(2);
 
-    knob(
+    // Named after the pot it turns on the device selected, not after the
+    // section. See `Gain::drive_name`.
+    Knob::new(cx, Panel::params, |p| &p.drive, 21.0, true)
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(body_x() + 30.0 - 21.0))
+        .top(Pixels(top + 24.0 - 21.0));
+    Label::new(
         cx,
-        body_x() + 30.0,
-        top + 24.0,
-        21.0,
-        "DRIVE",
-        |p| &p.drive,
-        |p| format!("{:.0} %", p.drive.value() * 100.0),
-    );
+        Panel::params.map(|p| String::from(p.circuit.value().voice().drive_name())),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 30.0 - 50.0))
+    .top(Pixels(top + 24.0 + 21.0 + 10.0 - LABEL_H / 2.0))
+    .width(Pixels(100.0))
+    .height(Pixels(LABEL_H))
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+    .font_size(9.5)
+    .color(Color::rgb(0x9a, 0xa6, 0xb0))
+    .hoverable(false);
+    Label::new(
+        cx,
+        Panel::params.map(|p| format!("{:.0} %", p.drive.value() * 100.0)),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 30.0 - 50.0))
+    .top(Pixels(top + 24.0 + 21.0 + 21.0 - LABEL_H / 2.0))
+    .width(Pixels(100.0))
+    .height(Pixels(LABEL_H))
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+    .font_size(9.5)
+    .color(Color::rgb(0xff, 0xb2, 0x6a))
+    .hoverable(false);
 
-    let x = body_x() + 90.0 + (body_w() - 100.0) / 2.0;
-    label(
+    // The circuit's own level control, beside the Drive it answers to: gain in
+    // front, level behind, which is how both amplifiers with a master are
+    // played and how a pedal's two knobs are laid out.
+    //
+    // Greyed where the drawing has no such control -- and the Twin Reverb is
+    // one of those. An AB763 has no master volume; its channel Volume is
+    // already the Drive knob. See `Gain::level_control`.
+    Binding::new(
         cx,
-        "All the way up is the sound the circuit is named for; down from",
-        x,
-        top + 26.0,
-        9.5,
-        body_w() - 100.0,
-        0x86929c,
+        Panel::params.map(|p| p.circuit.value().voice().level_control().is_some()),
+        move |cx, live| {
+            let live = live.get(cx);
+            Knob::new(cx, Panel::params, |p| &p.master, 21.0, live)
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(body_x() + 110.0 - 21.0))
+                .top(Pixels(top + 24.0 - 21.0));
+            label(
+                cx,
+                "MASTER",
+                body_x() + 110.0,
+                top + 24.0 + 21.0 + 10.0,
+                9.5,
+                100.0,
+                if live { 0x9aa6b0 } else { 0x5a636b },
+            );
+        },
     );
-    label(
+    Label::new(
         cx,
-        "there only cleans up. The level is held across the whole travel.",
-        x,
-        top + 42.0,
-        9.5,
-        body_w() - 100.0,
-        0x86929c,
+        Panel::params.map(|p| {
+            if p.circuit.value().voice().level_control().is_some() {
+                format!("{:.0} %", p.master.value() * 100.0)
+            } else {
+                String::from("--")
+            }
+        }),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 110.0 - 50.0))
+    .top(Pixels(top + 24.0 + 21.0 + 21.0 - LABEL_H / 2.0))
+    .width(Pixels(100.0))
+    .height(Pixels(LABEL_H))
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+    .font_size(9.5)
+    .color(Color::rgb(0xff, 0x8a, 0x3c))
+    .hoverable(false);
+
+    let x = body_x() + 170.0 + (body_w() - 180.0) / 2.0;
+    for (i, line) in [
+        "All the way up on Drive is the sound the circuit is named for;",
+        "down from there only cleans up, and the level is held across it.",
+        "Master is the device's own level knob, and half way is where the",
+        "voice was calibrated -- so it starts where the voicing put it.",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        label(
+            cx,
+            line,
+            x,
+            top + 10.0 + i as f32 * 16.0,
+            9.5,
+            body_w() - 180.0,
+            0x86929c,
+        );
+    }
+
+    // The Mark IIC+'s five band graphic equaliser.
+    //
+    // Faders, because that is what the amplifier has, and because the point of
+    // a graphic equaliser is that the shape of the curve is the shape of the
+    // row -- five knobs would say the same thing and show none of it. They sit
+    // in this section rather than in the tone one because on the amplifier
+    // they are late in the preamplifier and *before* the power stage, and the
+    // panel reads in signal order (§9.8).
+    const BANDS: [(ToKnob, &str); 5] = [
+        (|p| &p.eq60, "60"),
+        (|p| &p.eq240, "240"),
+        (|p| &p.eq750, "750"),
+        (|p| &p.eq2200, "2.2k"),
+        (|p| &p.eq6600, "6.6k"),
+    ];
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.circuit.value().voice().has_graphic()),
+        move |cx, live| {
+            let live = live.get(cx);
+            let base = top + 74.0;
+            label(
+                cx,
+                "graphic",
+                body_x() + 30.0,
+                base + 30.0,
+                9.5,
+                76.0,
+                if live { 0x7e8a96 } else { 0x5a636b },
+            );
+            for (i, (to_param, name)) in BANDS.into_iter().enumerate() {
+                let x = body_x() + 96.0 + i as f32 * 46.0;
+                Knob::fader(cx, Panel::params, to_param, 22.0, 58.0, live)
+                    .position_type(PositionType::SelfDirected)
+                    .left(Pixels(x - 11.0))
+                    .top(Pixels(base));
+                label(
+                    cx,
+                    name,
+                    x,
+                    base + 68.0,
+                    9.0,
+                    46.0,
+                    if live { 0x9aa6b0 } else { 0x5a636b },
+                );
+            }
+            let note = if live {
+                "Five sliders, late in the preamp and before the power stage."
+            } else {
+                "Only the Mark IIC+ has one."
+            };
+            label(
+                cx,
+                note,
+                body_x() + 340.0 + 120.0,
+                base + 30.0,
+                9.5,
+                260.0,
+                0x86929c,
+            );
+        },
     );
 }
 
@@ -652,6 +820,8 @@ pub struct ToneKnobs {
     pub live: [bool; 3],
     /// What the panel writes under each.
     pub names: [&'static str; 3],
+    /// Whether the Twin's reverb and tremolo knobs reach anything.
+    pub extras: bool,
 }
 
 // Written out rather than derived: vizia's derive asks every field to be
@@ -683,6 +853,7 @@ impl ToneKnobs {
                 in_circuit || own[2],
             ],
             names: ["BASS", "MID", if sole { "TONE" } else { "TREBLE" }],
+            extras: circuit.has_reverb_and_tremolo(),
         }
     }
 }
@@ -701,6 +872,18 @@ fn tone(cx: &mut Context) {
     );
 
     let knobs: [ToKnob; 3] = [|p| &p.bass, |p| &p.mid, |p| &p.treble];
+    // The Twin Reverb's own three, on a second row directly beneath the
+    // stack's and aligned to the same columns. They belong to section 4
+    // because they are what is done to the sound after it is made.
+    //
+    // They were beside rather than below, to keep the window the height it
+    // was. That was the wrong trade: the row is only wide enough for six if
+    // the paragraph beside it is not there, and it is -- so Speed and
+    // Intensity sat on top of the text explaining the stack. The section is
+    // now tall enough for the row, which makes the window sixty-four pixels
+    // taller for every circuit, and that is the price.
+    let extras: [ToKnob; 3] = [|p| &p.reverb, |p| &p.speed, |p| &p.intensity];
+    const EXTRA_NAMES: [&str; 3] = ["REVERB", "SPEED", "INTENSITY"];
     // A knob is live when it reaches something, and there are two ways it can:
     // the plugin's own stack when that is in circuit, or the selected
     // circuit's own tone controls where it has any.
@@ -733,38 +916,74 @@ fn tone(cx: &mut Context) {
                 if live { 0x9aa6b0 } else { 0x5a636b },
             );
         }
+        // Greyed unless the selected circuit has a tank and a tremolo, which
+        // only the Twin does. A knob that turns and reaches nothing is
+        // indistinguishable from a fault -- the same reason the three beside
+        // them are greyed, and the same reason BUG-023 happened.
+        let live = state.extras;
+        for (i, to_param) in extras.into_iter().enumerate() {
+            let x = body_x() + 46.0 + i as f32 * 84.0;
+            Knob::new(cx, Panel::params, to_param, 18.0, live)
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(x - 18.0))
+                .top(Pixels(top + 104.0));
+            label(
+                cx,
+                EXTRA_NAMES[i],
+                x,
+                top + 150.0,
+                9.5,
+                80.0,
+                if live { 0x9aa6b0 } else { 0x5a636b },
+            );
+        }
     });
 
     // Kept to lines that fit the space rather than sentences that overflow
     // it: text wider than its box is simply clipped, with no warning.
+    //
+    // Two paragraphs, one a row: the top three knobs are the tone stack, the
+    // bottom three are the Twin's reverb and tremolo, and the text sits beside
+    // the row it is about.
     let x = body_x() + 340.0;
-    label(
-        cx,
-        "A passive stack only ever cuts.",
-        x,
-        top + 44.0,
-        9.5,
-        240.0,
-        0x86929c,
-    );
-    label(
-        cx,
-        "The scooping voicing has a resonant",
-        x,
-        top + 60.0,
-        9.5,
-        240.0,
-        0x86929c,
-    );
-    label(
-        cx,
-        "leg, which dips the middle.",
-        x,
-        top + 76.0,
-        9.5,
-        240.0,
-        0x86929c,
-    );
+    for (i, line) in [
+        "A passive stack only ever cuts. The",
+        "scooping voicing has a resonant leg,",
+        "which dips the middle. A circuit with",
+        "tone controls of its own uses these.",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        label(
+            cx,
+            line,
+            x,
+            top + 40.0 + i as f32 * 16.0,
+            9.5,
+            240.0,
+            0x86929c,
+        );
+    }
+    for (i, line) in [
+        "Below: the Twin Reverb's spring tank",
+        "and its optical tremolo. Reverb is the",
+        "recovery stage's own mix control;",
+        "Speed and Intensity drive the bulb.",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        label(
+            cx,
+            line,
+            x,
+            top + 104.0 + i as f32 * 16.0,
+            9.5,
+            240.0,
+            0x86929c,
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -835,6 +1054,32 @@ fn output(cx: &mut Context) {
         |p| format!("{:+.1} dB", p.output_trim.value()),
     );
 
+    // The plugin in or out of circuit, bottom right where a footswitch would
+    // be. `make_bypass` tells the host this is the bypass, so it can sit on the
+    // DAW's own strip and be automated -- which is the point: dropping a
+    // Screamer in for a solo from a controller.
+    //
+    // ON is the parameter being *false*. A bypass parameter reads "is it
+    // bypassed", and a switch on a panel reads "is it on", so the row is
+    // ordered to make those the same gesture.
+    selector(
+        cx,
+        PANEL_W - 14.0 - 86.0,
+        top + 40.0,
+        86.0,
+        |p| &p.bypass,
+        vec!["ON", "OFF"],
+        true,
+    );
+    label(
+        cx,
+        "plugin",
+        PANEL_W - 14.0 - 43.0,
+        top + 22.0,
+        9.5,
+        86.0,
+        0x7e8a96,
+    );
     let x = body_x() + 340.0;
     label(
         cx,

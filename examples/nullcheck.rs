@@ -22,6 +22,10 @@ fn main() {
         Gain::Muff,
         Gain::Crunch,
         Gain::Distortion,
+        // The Twin was missing, which is how a change could cost it accuracy
+        // without anything noticing. It is also the voice with the open
+        // convergence bug, so it is the one most worth watching.
+        Gain::Twin,
     ] {
         for drive in [0.2f64, 0.6, 1.0] {
             let mut c = Chain::new(RATE);

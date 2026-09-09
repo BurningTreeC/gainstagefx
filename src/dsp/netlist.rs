@@ -571,7 +571,7 @@ impl Part {
     }
 
     /// Every node this part touches, ground included.
-    fn touches(&self) -> Vec<usize> {
+    pub fn touches(&self) -> Vec<usize> {
         match *self {
             Part::Resistor { a, b, .. }
             | Part::Capacitor { a, b, .. }
@@ -1000,11 +1000,32 @@ impl Netlist {
         // This is a permutation and nothing else: the same equations in a
         // different order. What it changes numerically is which pivots the
         // elimination picks, so results move in the last bits and no further.
-        let permutation = cuthill_mckee(&self.parts, self.order.len());
-        let mut order = vec![String::new(); self.order.len()];
+        let nodes = self.order.len();
+        let permutation = cuthill_mckee(&self.parts, nodes);
+        let branches = self.parts.iter().filter(|p| p.needs_branch()).count();
+
+        // Every unknown gets a name, branch rows included -- they are rows in
+        // the matrix like any other and a report that skipped them numbered
+        // its own output wrongly.
+        let mut order = vec![String::new(); nodes + branches];
         for (old, name) in self.order.into_iter().enumerate() {
             order[permutation[old]] = name;
         }
+        // Where each part's own current ended up. Worked out here rather than
+        // counted on demand, because the ordering has interleaved the branch
+        // rows with the nodes and the old "how many branch-carrying parts came
+        // before this one" no longer describes anything.
+        let mut branch_row = vec![usize::MAX; self.parts.len()];
+        let mut next = nodes;
+        for (index, part) in self.parts.iter().enumerate() {
+            if part.needs_branch() {
+                let row = permutation[next];
+                branch_row[index] = row;
+                order[row] = format!("i{}", next - nodes);
+                next += 1;
+            }
+        }
+
         let mut parts = self.parts;
         for part in &mut parts {
             part.renumber(&permutation);
@@ -1016,12 +1037,12 @@ impl Netlist {
             .map(|(node, volts)| (permutation[node], volts))
             .collect();
 
-        let branches = parts.iter().filter(|p| p.needs_branch()).count();
         Ok(Circuit {
             name: self.name,
-            nodes: order.len(),
+            nodes,
             branches,
             names: order,
+            branch_row,
             parts,
             output: out,
             controls: self.controls,
@@ -1064,7 +1085,11 @@ pub struct Circuit {
     pub nodes: usize,
     /// How many parts carry a current of their own as an unknown.
     pub branches: usize,
+    /// One per unknown: a node's name, or `i(part)` for a branch row.
     pub names: Vec<String>,
+    /// Where each part's own current unknown sits, or `usize::MAX` for a part
+    /// that has none. See `branch_of`.
+    pub branch_row: Vec<usize>,
     pub parts: Vec<Part>,
     pub output: usize,
     pub controls: usize,
@@ -1081,14 +1106,16 @@ impl Circuit {
         self.nodes + self.branches
     }
 
-    /// Where a branch-carrying part's own unknown sits, counting the parts in
-    /// the order they were added.
+    /// Where a branch-carrying part's own unknown sits.
+    ///
+    /// Looked up, not counted. Branch rows used to be appended after every
+    /// node in the order the parts were added, which made this a count of the
+    /// branch-carrying parts before it -- and made the matrix's band as wide
+    /// as the matrix on any circuit with a transformer in it. They are now
+    /// ordered along with the nodes, so where one landed is a fact to be
+    /// recorded rather than derived. See `cuthill_mckee`.
     pub fn branch_of(&self, part: usize) -> usize {
-        let before = self.parts[..part]
-            .iter()
-            .filter(|p| p.needs_branch())
-            .count();
-        self.nodes + before
+        self.branch_row[part]
     }
 
     /// Whether every part has a frequency response, and therefore whether the
@@ -1121,11 +1148,32 @@ impl Circuit {
 /// one would draw by hand: a chain of stages, each touching only its
 /// neighbours.
 fn cuthill_mckee(parts: &[Part], nodes: usize) -> Vec<usize> {
-    if nodes == 0 {
+    // Every unknown, not every node.
+    //
+    // A part that imposes a voltage -- an inductor, a transformer, a source --
+    // carries its own current as an extra row, and those rows used to be
+    // appended after *every* node with no ordering at all. That is fine for a
+    // circuit with none, and ruinous for one with several: a branch row
+    // couples to the nodes its part touches, so wherever those nodes ended up,
+    // the row reaches from there to the far end of the matrix. The elimination
+    // is bounded by that reach, so the band was as wide as the matrix.
+    //
+    // Measured, on the output transformer's stage -- two ideal transformers and
+    // three inductors, 27 unknowns: a band of 23 and 1966 elimination updates,
+    // against the Big Muff's band of 3 and 62 updates for the same 27
+    // unknowns. Thirty-two times the work for the same size, and all of it in
+    // the numbering.
+    //
+    // Put in the graph, the branches are ordered next to the nodes they
+    // constrain: band 23 -> 9, and 1966 updates -> 1174.
+    let branches = parts.iter().filter(|p| p.needs_branch()).count();
+    let total = nodes + branches;
+    if total == 0 {
         return Vec::new();
     }
     // Who touches whom. Ground is not a row in the matrix, so it joins nothing.
-    let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); nodes];
+    let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); total];
+    let mut branch = nodes;
     for part in parts {
         let pins: Vec<usize> = part
             .touches()
@@ -1140,6 +1188,13 @@ fn cuthill_mckee(parts: &[Part], nodes: usize) -> Vec<usize> {
                 }
             }
         }
+        if part.needs_branch() {
+            for &a in &pins {
+                neighbours[branch].push(a);
+                neighbours[a].push(branch);
+            }
+            branch += 1;
+        }
     }
     for list in &mut neighbours {
         list.sort_unstable();
@@ -1151,11 +1206,11 @@ fn cuthill_mckee(parts: &[Part], nodes: usize) -> Vec<usize> {
     // be several disconnected pieces -- a bias chain that only meets the signal
     // through a device, say -- so every piece gets a turn.
     let degree = |n: usize| neighbours[n].len();
-    let mut visited = vec![false; nodes];
-    let mut sequence = Vec::with_capacity(nodes);
+    let mut visited = vec![false; total];
+    let mut sequence = Vec::with_capacity(total);
     let mut queue: std::collections::VecDeque<usize> = std::collections::VecDeque::new();
-    while sequence.len() < nodes {
-        let start = (0..nodes)
+    while sequence.len() < total {
+        let start = (0..total)
             .filter(|&n| !visited[n])
             .min_by_key(|&n| (degree(n), n))
             .expect("a node that has not been visited");
@@ -1178,7 +1233,7 @@ fn cuthill_mckee(parts: &[Part], nodes: usize) -> Vec<usize> {
 
     // Reversed, which is what makes it *Reverse* Cuthill-McKee: the same
     // bandwidth, but less fill-in during the elimination.
-    let mut to = vec![0usize; nodes];
+    let mut to = vec![0usize; total];
     for (position, &node) in sequence.iter().rev().enumerate() {
         to[node] = position;
     }

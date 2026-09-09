@@ -13,10 +13,19 @@ use gainstagefx::editor::ToneKnobs;
 use gainstagefx::params::{Circuit, ToneStack};
 use gainstagefx::presets::PRESETS;
 
-/// The three circuits whose drawings carry tone controls, and what each one
-/// has: the Mark IIC+ a Fender stack, the two pedals a single knob.
-const OWN: [(Circuit, [bool; 3]); 3] = [
+/// The circuits whose drawings carry tone controls, and what each one has:
+/// the Mark IIC+ and the Twin a three-knob stack, the two pedals a single
+/// knob.
+///
+/// This table is the panel's claim and `Gain::own_tone` is the circuit's, and
+/// the first test below is what keeps them the same sentence. It caught the
+/// Twin: an AB763 has Bass, Middle and Treble on its front, they were wired
+/// through `own_tone` when the circuit went in, and this list was not told --
+/// so a test asserting the Twin had no tone control of its own was failing
+/// against a Twin that has three.
+const OWN: [(Circuit, [bool; 3]); 4] = [
     (Circuit::Boogie, [true, true, true]),
+    (Circuit::Twin, [true, true, true]),
     (Circuit::Screamer, [false, false, true]),
     (Circuit::Muff, [false, false, true]),
 ];

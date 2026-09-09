@@ -104,6 +104,11 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.007263,
         make_up_db: [-44.67, -44.67, -44.67, -44.68, -44.70, -44.73, -44.78, -44.87, -45.03, -45.30, -45.79, -46.69, -48.23, -50.45, -52.72, -54.19, -54.60],
     },
+    // Twin Reverb with a valve: 0.1220 V in, 26.5 % distortion, 22.5 % third.
+    Calibration {
+        drive_volts: 0.122000,
+        make_up_db: [20.90, 20.90, 9.07, -1.46, -8.90, -14.65, -19.35, -23.36, -26.89, -30.06, -32.90, -35.43, -37.66, -42.94, -47.75, -48.40, -48.97],
+    },
 ];
 
 /// Insertion loss of each output transformer, measured where the

@@ -286,6 +286,98 @@ impl PowerSpec {
         presence_pot: 5_000.0,
         presence_cap: 0.1e-6,
     };
+
+    /// The Fender Twin Reverb AB763's, off the manufacturer's schematic.
+    ///
+    /// Four 6L6GC, two a side, behind a 12AT7 long-tailed pair, into a
+    /// 125A29A. The amplifier this catalogue's clean reference is built on,
+    /// and the half of it that makes it one: eighty-five watts is not loudness
+    /// for its own sake, it is the reason the amplifier does not run out of
+    /// room where the British ones do.
+    ///
+    /// Three things separate it from the two amplifiers already here.
+    ///
+    /// **A 12AT7 inverter, not a 12AX7.** A third of the amplification and a
+    /// good deal less plate resistance, which is what lets the pair swing four
+    /// output grids without running out of drive itself. Mesa and Peavey both
+    /// use the higher-mu tube because their preamplifiers hand the power stage
+    /// far more to work with.
+    ///
+    /// **No master volume, and no presence.** The AB763 has neither. The
+    /// channel Volume is the only level control, so the master here rests wide
+    /// open; and the drawing takes the feedback from the secondary straight to
+    /// the tail through 820 ohms with nothing tapping it. The presence figures
+    /// below are how "there is no presence control" is written in a spec that
+    /// assumes one: a capacitor small enough to be an open circuit at any
+    /// frequency the amplifier passes.
+    ///
+    /// **A stiff supply.** Solid-state rectification and a choke, and the
+    /// whole design intent is that it does not sag. That is set here by the
+    /// supply resistance, which is lower than Mesa's, rather than by a larger
+    /// reservoir -- the AB763's filters are small by modern standards and the
+    /// stiffness comes from the transformer and the rectifier.
+    pub const TWIN: PowerSpec = PowerSpec {
+        name: "Twin Reverb power amp",
+        // There is no master volume on an AB763. Left wide open so it is not
+        // one, rather than pretending to a control the amplifier has not got.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.001e-6,
+        pi_stopper: 22_000.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 470.0,
+        pi_tail: 10_000.0,
+        pi_tail_lower: 100.0,
+        pi_cross: 0.1e-6,
+        // 82 k and 100 k, both five per cent parts on the drawing. Unequal on
+        // purpose: the undriven side has less gain and the larger load evens
+        // the two halves up before they reach the output grids.
+        pi_plate_driven: 82_000.0,
+        pi_plate_other: 100_000.0,
+        pi_supply: 410.0,
+        pi_tube: TriodeSpec::ECC81,
+
+        couple: 0.1e-6,
+        grid_leak: 220_000.0,
+        stopper: 1_500.0,
+        screen_resistor: 470.0,
+        tubes_per_side: 2.0, // four 6L6GC
+        tube: PentodeSpec::T6L6GC,
+        bias: -52.0,
+
+        plate_supply: 460.0,
+        screen_supply: 458.0,
+        // Stiffer than the Mesa, which is the whole point of the amplifier.
+        supply_resistance: 70.0,
+        reservoir: 200e-6,
+        screen_resistance: 470.0,
+        screen_reservoir: 100e-6,
+
+        // Roughly 1.9 k plate to plate into the 4 ohms two eight-ohm speakers
+        // make in parallel: `sqrt(1900 / 4)`.
+        ratio: 21.8,
+        primary_resistance: 30.0,
+        // Larger iron than the Mesa's, which puts the bottom corner lower --
+        // an amplifier known for its bottom end rather than for tightness.
+        primary_inductance: 60.0,
+        leakage: 22e-6,
+        // Eighty-five watts into four ohms is 18.4 V rms, 26 V peak. Fender
+        // sized this transformer generously, so it holds further down than the
+        // Mesa's before the core gives up: 55 Hz against 70.
+        saturation_volts: 26.0,
+        saturation_hz: 55.0,
+        core_sharpness: 6.0,
+        speaker: 4.0,
+
+        // 820 ohms from the secondary to the tail, read off the drawing. A
+        // great deal more feedback than the Mesa's 100 k, and it is why the
+        // amplifier is clean, flat and hard to make misbehave.
+        feedback: 820.0,
+        // No presence control. One femtofarad is an open circuit.
+        presence_pot: 5_000.0,
+        presence_cap: 1e-15,
+    };
 }
 
 /// The power amplifier as a netlist, taking volts at its input and giving
@@ -419,12 +511,17 @@ pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
         sharpness: spec.core_sharpness,
     };
     let each = spec.ratio / 2.0;
-    net.resistor("ct", "m", spec.primary_resistance)
+    // The centre tap *is* the supply node. It was joined to it through an
+    // invented one ohm, which is the thing §59.1 says not to do: an unknown
+    // in a matrix solved fifty thousand times a second, bought to make the
+    // drawing read more like the drawing. It also put a one siemens branch
+    // next to grid leaks of a few microsiemens, which is six orders of
+    // conditioning spent on nothing.
+    net.resistor("ht", "m", spec.primary_resistance)
         .inductor("m", "pl_a", half)
         .inductor("m", "pl_b", half)
-        .resistor("ct", "ht", 1.0)
-        .transformer("pl_a", "ct", "sec", "gnd", each)
-        .transformer("ct", "pl_b", "sec", "gnd", each)
+        .transformer("pl_a", "ht", "sec", "gnd", each)
+        .transformer("ht", "pl_b", "sec", "gnd", each)
         .core("sec", "gnd", secondary_core)
         .inductor("sec", "spk", spec.leakage)
         .resistor("spk", "gnd", spec.speaker);

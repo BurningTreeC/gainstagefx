@@ -339,9 +339,15 @@ fn every_preset_id_is_a_parameter_that_exists() {
     // And the other way: a control a preset never mentions is a control that
     // cannot be recalled, which is worth knowing about deliberately.
     let mentioned: Vec<&str> = PRESETS[0].dials().iter().map(|(id, _)| *id).collect();
+    // Deliberately not carried by a preset: whether the plugin is switched in
+    // at all. A preset says what the sound is, and loading one must not reach
+    // out and turn the plugin off -- or on, for that matter, which would be
+    // worse: a patch recalled during a mix would put the effect back into a
+    // chain someone had just taken it out of.
+    const NOT_A_SOUND: [&str; 1] = ["bypass"];
     let unmentioned: Vec<&String> = known
         .iter()
-        .filter(|k| !mentioned.contains(&k.as_str()))
+        .filter(|k| !mentioned.contains(&k.as_str()) && !NOT_A_SOUND.contains(&k.as_str()))
         .collect();
     let empty: Vec<&String> = Vec::new();
     assert_eq!(

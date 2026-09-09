@@ -62,7 +62,38 @@ const RELATIVE: f64 = 1e-6;
 /// `docs/experiments/solver-iteration-bound.md`.
 const MAX_ITERATIONS: usize = 32;
 
+/// The fewest passes the work budget may ever leave a sample.
+///
+/// Twelve was chosen so it would be "comfortably above where they normally
+/// finish" -- and that sentence is the bug. The work budget's entire job is to
+/// bind on a block that is running late, and a floor above where the solve
+/// normally finishes cannot bind on anything. Measured: with the budget armed
+/// the 5150 went from 5.4 % of callbacks missed to 6.0 %, and the Twin from
+/// 0.7 % to 4.1 %. It could not save a single pass, and it still paid for
+/// reading the clock.
+///
+/// BUG-008 is real and is why a floor exists at all: a permanent ceiling of
+/// eight gave the 5150's lead channel 190, 107 and 428 per cent distortion.
+/// But that was measured before the grid limiter and the line search took that
+/// same channel from 7.69 passes a sample to 3.71. The circuits now average
+/// 2.0 to 3.3 on real playing, so four is where a solve that has genuinely
+/// stopped converging gets cut off, not where an ordinary one does.
+///
+/// The floor and the budget's steps are two different numbers for two
+/// different jobs: this one stops a *permanent* starvation from a caller bug,
+/// and `Budget::ceiling` decides how hard to lean on the tail of one late
+/// block. Conflating them is what made the guarantee do nothing.
+///
+/// Twelve stands, because the budget is off -- see `plugin::Budget`. Lowering
+/// this to four so the budget could bite was tried and measured: it made the
+/// misses worse, because a capped solve that fails to converge spends its
+/// whole allowance and hands the next sample a worse place to start from.
+const PASS_FLOOR: usize = 12;
+
 /// How many times a Newton step may be halved before the solve gives up on it.
+///
+/// The default, and what every circuit uses unless it has been measured to
+/// want otherwise -- see `Simulation::set_backtracks`.
 ///
 /// The full step is tried first and almost always taken, so this is the depth
 /// of a path the solver rarely walks. Six halvings reach a sixty-fourth, which
@@ -81,6 +112,42 @@ const MAX_ITERATIONS: usize = 32;
 /// At eight the 5150 keeps none, the Mark IIC+ and the Big Muff pay about a
 /// point and a half, and the 73P pays two.
 const FULL_STEPS: usize = 8;
+
+/// How much a pass has to shrink the correction to count as converging.
+///
+/// Newton near the answer squares the error, so a healthy pass cuts `moved`
+/// by orders of magnitude and a factor of two is a generous floor. A pass that
+/// does not manage even that is not approaching the answer, it is oscillating
+/// around it, and oscillation is exactly the case the line search exists for.
+///
+/// This is the test `FULL_STEPS` was standing in for. A count is a poor proxy:
+/// tuned on the gain circuits, where a stalled solve is rare, it left the
+/// 5150's power amplifier taking eight plain passes that got nowhere and then
+/// converging on the ninth -- the first with the search on. A quarter of that
+/// stage's samples landed on exactly nine passes, which is not a convergence
+/// distribution, it is a wall.
+const CONVERGING: f64 = 0.5;
+
+/// How much bigger than the replayed pivot an entry below it may be before the
+/// order is considered out of date.
+///
+/// Partial pivoting takes the largest, but it does not have to: any nonzero
+/// pivot gives an exact LU, and the only thing at stake is how much the
+/// entries grow during elimination. Circuit simulators therefore use a
+/// threshold rather than the strict maximum -- KLU's default is a thousand --
+/// and the value here is measured.
+///
+/// Taking the strict maximum makes the order look out of date constantly: the
+/// 5150's power stage abandoned its plan on 34667 passes a second at a
+/// threshold of one against 21643 at sixteen, and paid for a search each time.
+/// Past sixteen there is nothing more to win -- what is left are real order
+/// changes, tubes crossing between cutoff and conduction, which the other
+/// guard catches -- so this is as loose as it has any reason to be.
+///
+/// The output is bit-identical at every threshold from one to a thousand. On
+/// these matrices the pivot choice never changes the answer to double
+/// precision; it only changes how often the search has to run.
+const GROWTH: f64 = 16.0;
 
 const MAX_BACKTRACKS: usize = 6;
 
@@ -154,6 +221,23 @@ pub struct Simulation {
     /// circuits, taking the structure from the netlist instead is worth 30 to
     /// 37 per cent of the whole solve, and it is bit for bit identical: the
     /// entries skipped are the ones that were zero.
+    /// The most Newton passes a sample may take, when a caller has asked for
+    /// less than `MAX_ITERATIONS`.
+    ///
+    /// This is the deliberate last resort of layer 5a, and it is **not** the
+    /// mistake BUG-008 records. That was `MAX_ITERATIONS` cut from 32 to 8
+    /// permanently, so every sample at high drive came out unconverged and the
+    /// 5150 measured 190 per cent distortion. This is a ceiling the host's own
+    /// clock lowers for the tail of a block that is running out of time, put
+    /// back at the top of the next one, floored so it can never reach the
+    /// figure that broke it, and counted so a session doing it is visible
+    /// rather than quietly worse.
+    ///
+    /// The trade it makes: a handful of less-converged samples against a block
+    /// the host does not get at all.
+    ceiling: usize,
+    /// Samples finished at the ceiling rather than by converging.
+    pinched: u64,
     watching: bool,
     violations: usize,
     reach_template: Vec<usize>,
@@ -164,6 +248,30 @@ pub struct Simulation {
     /// Per row, the column its L part starts in. The other end of the same
     /// idea, used by the forward substitution.
     first: Vec<usize>,
+    /// The pivot row chosen for each column, learned once and replayed.
+    ///
+    /// This is KLU's refactorisation, and the reason it works here is that
+    /// the entries which force a pivot come from the *linear* parts -- an
+    /// inductor's or a transformer's current row, whose diagonal is zero or
+    /// small -- and those do not change between Newton passes. What does
+    /// change is the nonlinear device conductances, and those land on the
+    /// conductance block, which a nodal matrix makes diagonally dominant by
+    /// construction: the diagonal is the sum of the conductances at that node
+    /// and the off-diagonals are the individual ones. So the order chosen the
+    /// first time is still the order the search would choose the thousandth.
+    ///
+    /// Measured: removing the search outright left the 5150's power stage and
+    /// the Mark IIC+'s both 19 % cheaper and their output bit-identical --
+    /// identical because on these circuits the search never once picked
+    /// anything but the diagonal.
+    plan: Vec<usize>,
+    /// Whether `plan` holds an order worth replaying. Cleared by `rebuild`,
+    /// and by the guard below.
+    planned: bool,
+    /// How often a replayed pivot order had to be abandoned and searched
+    /// again. Telemetry: a circuit that does this often is one the plan does
+    /// not suit, and it should be paying for the search every time instead.
+    replans: u64,
     rhs: Vec<f64>,
     voltage: Vec<f64>,
     capacitors: Vec<Capacitor>,
@@ -227,11 +335,17 @@ pub struct Simulation {
     /// Every device's linearisation, saved so a rejected trial can undo it.
     saved: Vec<Linearisation>,
     /// How often the full Newton step was refused and a shorter one taken.
-    backtracks: u64,
+    backtrack_count: u64,
     /// Solves where no step of any length improved the residual.
     fallbacks: u64,
     /// Newton corrections that came back non-finite.
     nonfinite: u64,
+    /// How far the last pass wanted to move, in convergence-test units. The
+    /// solve loop watches it shrink; see `CONVERGING`.
+    moved: f64,
+    /// How short a step this circuit's line search will try. See
+    /// `set_backtracks`.
+    backtracks: usize,
 }
 
 impl Simulation {
@@ -255,6 +369,8 @@ impl Simulation {
             base_dc: vec![0.0; n * n],
             matrix: vec![0.0; n * n],
             pivots: vec![0; n],
+            ceiling: MAX_ITERATIONS,
+            pinched: 0,
             watching: false,
             violations: 0,
             reach_template: vec![0; n],
@@ -262,6 +378,9 @@ impl Simulation {
             reach: vec![0; n],
             depth: vec![0; n],
             first: vec![0; n],
+            plan: vec![0; n],
+            planned: false,
+            replans: 0,
             rhs: vec![0.0; n],
             voltage: vec![0.0; n],
             capacitors: Vec::new(),
@@ -289,9 +408,11 @@ impl Simulation {
             point: vec![0.0; n],
             trial: vec![0.0; n],
             saved: Vec::new(),
-            backtracks: 0,
+            backtrack_count: 0,
             fallbacks: 0,
             nonfinite: 0,
+            moved: f64::INFINITY,
+            backtracks: MAX_BACKTRACKS,
         };
         sim.rebuild();
         // Apply initial voltages from the circuit to help the DC solver
@@ -319,7 +440,13 @@ impl Simulation {
     /// Separate from `statistics` so that adding to it does not change a
     /// tuple half the harnesses already destructure.
     pub fn health(&self) -> (u64, u64, u64) {
-        (self.backtracks, self.fallbacks, self.nonfinite)
+        (self.backtrack_count, self.fallbacks, self.nonfinite)
+    }
+
+    /// How often a replayed pivot order had to be thrown away and searched
+    /// again. A circuit that does this often is one the plan does not suit.
+    pub fn replans(&self) -> u64 {
+        self.replans
     }
 
     pub fn statistics(&self) -> (u64, u64, u64, u64) {
@@ -412,6 +539,16 @@ impl Simulation {
 
     pub fn controls(&self) -> usize {
         self.circuit.controls
+    }
+
+    /// Where the circuit rests a control that nobody turns, if it rests it at
+    /// all. See `Netlist::rest`.
+    pub fn resting_position(&self, which: usize) -> Option<f64> {
+        self.circuit
+            .resting
+            .iter()
+            .find(|&&(control, _)| control == which)
+            .map(|&(_, position)| position)
     }
 
     pub fn set_control(&mut self, which: usize, position: f64) {
@@ -615,8 +752,10 @@ impl Simulation {
                         s: source_pin,
                         spec,
                     } => {
-                        self.devices
-                            .push(Box::new(Jfet::new(d, g, source_pin, spec)));
+                        if !keep_devices {
+                            self.devices
+                                .push(Box::new(Jfet::new(d, g, source_pin, spec)));
+                        }
                     }
                     Part::Bipolar { c, b, e, spec } => {
                         if !keep_devices {
@@ -689,6 +828,9 @@ impl Simulation {
         self.source = source;
         self.bias = bias;
         self.map_structure();
+        // The matrix has a new shape, so any pivot order learned for the old
+        // one means nothing.
+        self.planned = false;
 
         // A linear circuit is factorised once and reused. A circuit with a
         // device in it has to be refactorised every Newton pass, because the
@@ -703,6 +845,8 @@ impl Simulation {
             &mut self.first,
             &self.reach_template,
             &self.depth_template,
+            &mut self.plan,
+            false,
             n,
         );
         self.dirty = false;
@@ -773,6 +917,46 @@ impl Simulation {
     /// Stamps seen outside the declared structure since `watch_structure`.
     pub fn violations(&self) -> usize {
         self.violations
+    }
+
+    /// How short a step this circuit's line search may try before giving up
+    /// and taking the full Newton step.
+    ///
+    /// Per circuit, because the right answer is per circuit and both halves of
+    /// that are measured. The Twin Reverb's power amplifier spirals at six:
+    /// a step shortened to a sixty-fourth barely moves the solve, so the next
+    /// pass stalls too and searches again, and the stage spends 3713 solves a
+    /// second running out of passes and 120,182 backtracks a second getting
+    /// there. Stopping at a sixteenth breaks the spiral -- in the plugin, 3.6 %
+    /// of callbacks missed becomes 0.1 %, the worst falls from 7509 us to 1447,
+    /// and against a high-accuracy reference **the Twin does not move at all**:
+    /// -205.4, -199.3 and -189.8 dB at three drives, identical either way.
+    ///
+    /// The 5150 is the reason this is not simply lowered for everyone. The same
+    /// change takes its answer from 209.6 dB below that reference to **45.7 dB
+    /// below**, which is audible. Its solve genuinely needs the short steps,
+    /// and cutting them off leaves it somewhere it had not finished with --
+    /// §58.4's fourth point, in a new place.
+    ///
+    /// So this is a numerical parameter tuned per matrix, the way a tolerance
+    /// or a preconditioner is, and not a property of any circuit. Anything
+    /// changed here has to be measured both ways: the deadline *and* the
+    /// distance from an accurate reference.
+    pub fn set_backtracks(&mut self, most: usize) {
+        self.backtracks = most.clamp(1, MAX_BACKTRACKS);
+    }
+
+    /// Cap the Newton passes a sample may take. See `ceiling`.
+    ///
+    /// Clamped to `PASS_FLOOR` at the bottom, so no caller -- and no bug in a
+    /// caller -- can starve the solve past the point BUG-008 measured.
+    pub fn set_pass_ceiling(&mut self, passes: usize) {
+        self.ceiling = passes.clamp(PASS_FLOOR, MAX_ITERATIONS);
+    }
+
+    /// How many samples finished at the ceiling rather than by converging.
+    pub fn pinched(&self) -> u64 {
+        self.pinched
     }
 
     /// The two structural bounds `map_structure` worked out.
@@ -918,7 +1102,7 @@ impl Simulation {
         let mut total = 0.0;
         for row in 0..n {
             let mut sum = -self.rhs[row];
-            for col in 0..n {
+            for col in 0..=self.reach_template[row] {
                 let a = self.work[row * n + col];
                 if a != 0.0 {
                     sum += a * x[col];
@@ -976,7 +1160,9 @@ impl Simulation {
         }
 
         self.guess.copy_from_slice(&self.rhs);
-        factorise(
+        // Learn the pivot order on the first pass after a rebuild and replay
+        // it afterwards. See `Simulation::plan`.
+        let sound = factorise(
             &mut self.work,
             &mut self.pivots,
             &mut self.reach,
@@ -984,8 +1170,14 @@ impl Simulation {
             &mut self.first,
             &self.reach_template,
             &self.depth_template,
+            &mut self.plan,
+            self.planned,
             n,
         );
+        if !sound {
+            self.replans += 1;
+        }
+        self.planned = sound;
         substitute(
             &self.work,
             &self.pivots,
@@ -1033,6 +1225,9 @@ impl Simulation {
             let scale = TOLERANCE + RELATIVE * self.voltage[k].abs();
             moved = moved.max(step / scale);
         }
+        // Kept so the caller can see whether this pass made progress, and turn
+        // the line search on the moment one does not. See `CONVERGING`.
+        self.moved = moved;
 
         // Converged? Then stop here, before the line search, and take the
         // full step -- which is by definition a tiny one.
@@ -1063,7 +1258,7 @@ impl Simulation {
 
         let mut lambda = 1.0;
         let mut taken = false;
-        for _ in 0..MAX_BACKTRACKS {
+        for _ in 0..self.backtracks {
             for k in 0..n {
                 self.trial[k] = self.voltage[k] + lambda * (self.guess[k] - self.voltage[k]);
             }
@@ -1089,7 +1284,7 @@ impl Simulation {
             for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
                 device.relinearise(*saved);
             }
-            self.backtracks += 1;
+            self.backtrack_count += 1;
             lambda *= 0.5;
             if lambda < MIN_LAMBDA {
                 break;
@@ -1192,13 +1387,26 @@ impl Simulation {
             }
             self.previous.copy_from_slice(&self.earlier);
             let mut settled = false;
-            for pass in 0..MAX_ITERATIONS {
+            let ceiling = self.ceiling.clamp(PASS_FLOOR, MAX_ITERATIONS);
+            // No history at the start of a sample: the first two passes are
+            // plain whatever the last sample did.
+            self.moved = f64::INFINITY;
+            let mut before = f64::INFINITY;
+            for pass in 0..ceiling {
                 self.newton_passes += 1;
-                // Plain Newton while it is converging. A solve that is merely
-                // far from the answer gets there in three or four passes; one
-                // still going after that is oscillating rather than
-                // approaching, and only then is the residual worth its price.
-                match self.iterate(input, false, pass >= FULL_STEPS) {
+                // Plain Newton while it is converging, and the line search the
+                // moment it is not.
+                //
+                // "Is not" is measured rather than counted: a pass that failed
+                // to shrink the correction by `CONVERGING` was not approaching
+                // the answer, and no number of further plain passes will
+                // change that -- they will oscillate at the same price and
+                // arrive at `FULL_STEPS` having learnt nothing. `FULL_STEPS`
+                // stays as the backstop for a solve that shrinks a little
+                // every pass and still gets nowhere.
+                let stalled = self.moved > before * CONVERGING;
+                before = self.moved;
+                match self.iterate(input, false, stalled || pass >= FULL_STEPS) {
                     Pass::Settled => {
                         settled = true;
                         break;
@@ -1211,6 +1419,9 @@ impl Simulation {
             }
             if !settled {
                 self.unsettled += 1;
+                if ceiling < MAX_ITERATIONS {
+                    self.pinched += 1;
+                }
             }
             if !settled && !self.voltage.iter().all(|v| v.is_finite()) {
                 // Driven somewhere it cannot follow. Hold the last answer
@@ -1355,6 +1566,39 @@ fn inject(rhs: &mut [f64], a: usize, b: usize, current: f64) {
 /// own admittance cancels, and an unpivoted elimination divides by whatever
 /// happens to be sitting there.
 #[allow(clippy::too_many_arguments)]
+/// The largest entry at or below the diagonal in `col`, recorded in `plan`.
+fn find_pivot(m: &[f64], plan: &mut [usize], col: usize, bottom: usize, n: usize) -> usize {
+    let mut best = col;
+    let mut magnitude = m[col * n + col].abs();
+    for row in (col + 1)..=bottom {
+        let candidate = m[row * n + col].abs();
+        if candidate > magnitude {
+            best = row;
+            magnitude = candidate;
+        }
+    }
+    plan[col] = best;
+    best
+}
+
+/// Exchange two rows, and the per-row bookkeeping that travels with them.
+fn swap_rows(
+    m: &mut [f64],
+    pivots: &mut [usize],
+    reach: &mut [usize],
+    first: &mut [usize],
+    col: usize,
+    best: usize,
+    n: usize,
+) {
+    for k in 0..n {
+        m.swap(col * n + k, best * n + k);
+    }
+    pivots.swap(col, best);
+    reach.swap(col, best);
+    first.swap(col, best);
+}
+
 fn factorise(
     m: &mut [f64],
     pivots: &mut [usize],
@@ -1363,8 +1607,10 @@ fn factorise(
     first: &mut [usize],
     reach_template: &[usize],
     depth_template: &[usize],
+    plan: &mut [usize],
+    planned: bool,
     n: usize,
-) {
+) -> bool {
     // How far right each row goes, and how far down each column does.
     //
     // A circuit matrix is nearly all zeros -- a part only ever stamps the nodes
@@ -1397,33 +1643,65 @@ fn factorise(
     for (k, f) in first.iter_mut().enumerate() {
         *f = k;
     }
+    // Whether the order being replayed is still the order a search would have
+    // chosen, and whether this call has had to give up on it partway.
+    //
+    // Giving up partway is exact, and that is the point. The elimination is
+    // sequential: at column `col` every column to its left is finished, and
+    // each of those was confirmed to have used the largest entry available.
+    // So the matrix here is precisely what a searching factorisation would
+    // have produced, and switching to a search from this column on completes a
+    // proper partial-pivoted LU. No copy of the matrix is needed and nothing
+    // has to be done twice -- which matters, because keeping a copy to retry
+    // from cost more than the search it was there to avoid: the 5150's power
+    // stage went from 64.9 % of realtime to 76.5 %.
+    let mut sound = true;
+    let mut searching = !planned;
     for col in 0..n {
-        let mut best = col;
-        let mut magnitude = m[col * n + col].abs();
         // Nothing below this column's last possible entry can be the pivot.
         let bottom = depth[col];
-        for row in (col + 1)..=bottom {
-            let candidate = m[row * n + col].abs();
-            if candidate > magnitude {
-                best = row;
-                magnitude = candidate;
-            }
-        }
+        let mut best = if searching {
+            find_pivot(m, plan, col, bottom, n)
+        } else {
+            // Replayed. Whether it was the right choice is checked twice
+            // below: for a pivot that has gone to nothing, before anything is
+            // eliminated with it, and for a pivot that is merely no longer the
+            // largest, out of loads the elimination performs anyway.
+            plan[col]
+        };
         if best != col {
-            for k in 0..n {
-                m.swap(col * n + k, best * n + k);
-            }
-            pivots.swap(col, best);
-            reach.swap(col, best);
-            first.swap(col, best);
+            swap_rows(m, pivots, reach, first, col, best, n);
         }
         // The swap may have carried the old pivot row's entries down to row
         // `best`, so every column that row reaches into can now hold a nonzero
         // that far down. `best <= depth[col]`, so bounding the widening by
         // this column's own depth below covers it.
 
-        let pivot = m[col * n + col];
+        let mut pivot = m[col * n + col];
+        if !searching && pivot.abs() < 1e-30 {
+            // The plan named a row that no longer holds anything here.
+            //
+            // This is the check that was missing, and leaving it out did not
+            // fail quietly by a decibel: the `continue` below steps over the
+            // whole elimination of this column, so the factorisation is of a
+            // different matrix from the one that was stamped, and the
+            // Distortion voice fell to 162 dB below the rest of the catalogue
+            // -- silence. `tests/presets.rs::the_presets_are_level_matched`
+            // is what caught it.
+            //
+            // The other guard cannot catch this, because it lives inside the
+            // elimination loop this skips.
+            searching = true;
+            sound = false;
+            best = find_pivot(m, plan, col, bottom, n);
+            if best != col {
+                swap_rows(m, pivots, reach, first, col, best, n);
+            }
+            pivot = m[col * n + col];
+        }
         if pivot.abs() < 1e-30 {
+            // Genuinely nothing to eliminate with: the matrix is singular in
+            // this column.
             continue;
         }
         // Nothing to the right of the pivot row's reach can be changed by it,
@@ -1436,6 +1714,7 @@ fn factorise(
         // line. Bounding it costs nothing and skips only entries that were
         // zero, so the arithmetic is unchanged.
         let stop = reach[col];
+        let ceiling = pivot.abs();
         for row in (col + 1)..=bottom {
             // Tested before the division, not after it.
             //
@@ -1450,6 +1729,19 @@ fn factorise(
             let entry = m[row * n + col];
             if entry == 0.0 {
                 continue;
+            }
+            // Partial pivoting's own test, applied to a load already made: was
+            // the pivot the largest in the column? If a replayed order says no,
+            // the factorisation stands -- it is still an exact LU of this
+            // matrix, only a less well conditioned one -- and the caller
+            // searches again next time.
+            if !searching && entry.abs() > ceiling * GROWTH {
+                // Not the largest in the column any more. Unlike the check
+                // above this is not a correctness problem -- the result is
+                // still an exact LU of this matrix, only a less well
+                // conditioned one -- so the pass stands and the next
+                // factorisation searches and learns the order again.
+                sound = false;
             }
             let factor = entry / pivot;
             m[row * n + col] = factor;
@@ -1473,6 +1765,7 @@ fn factorise(
             }
         }
     }
+    sound
 }
 
 /// Solves with the factorisation `factorise` left behind.

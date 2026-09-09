@@ -70,6 +70,9 @@ pub enum Circuit {
     #[id = "neve"]
     #[name = "Neve 73P"]
     Neve,
+    #[id = "twin"]
+    #[name = "Twin Reverb"]
+    Twin,
 }
 
 impl Circuit {
@@ -88,9 +91,10 @@ impl Circuit {
             Circuit::Boogie => "Mark IIC+",
             Circuit::Peavey => "5150",
             Circuit::Neve => "Neve 73P",
+            Circuit::Twin => "Twin Reverb",
         }
     }
-    pub const ALL: [Circuit; 12] = [
+    pub const ALL: [Circuit; 13] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -103,6 +107,7 @@ impl Circuit {
         Circuit::Boogie,
         Circuit::Peavey,
         Circuit::Neve,
+        Circuit::Twin,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -119,6 +124,7 @@ impl Circuit {
             Circuit::Boogie => voice::Gain::Boogie,
             Circuit::Peavey => voice::Gain::Peavey,
             Circuit::Neve => voice::Gain::Neve,
+            Circuit::Twin => voice::Gain::Twin,
         }
     }
 
@@ -163,6 +169,16 @@ impl Circuit {
     /// has, which the panel calls TONE rather than TREBLE.
     pub fn single_tone(self) -> bool {
         self.voice().single_tone()
+    }
+
+    /// Whether the Reverb, Speed and Intensity knobs reach anything here.
+    ///
+    /// Only the Twin has a tank and a tremolo. The panel greys them
+    /// everywhere else, for the same reason it greys the diode control on a
+    /// valve stage: a knob that turns and reaches nothing is
+    /// indistinguishable from a fault.
+    pub fn has_reverb_and_tremolo(self) -> bool {
+        self.voice().has_reverb_and_tremolo()
     }
 }
 
@@ -437,6 +453,51 @@ pub struct GainStageParams {
     #[id = "drive"]
     pub drive: FloatParam,
 
+    /// The circuit's own output level control, where its drawing has one: a
+    /// pedal's Level or Volume, the 73P's trim, an amplifier's master.
+    ///
+    /// **Half is where the voice was calibrated**, not half the pot's travel.
+    /// Each circuit rests its level control somewhere different -- 0.70 for the
+    /// pedals, 0.85 for the 73P, 0.66 for a 5150's post gain, 0.30 for a
+    /// Mark IIC+'s Lead Master -- and those are the positions the make-up table
+    /// was measured at. A knob that read the pot straight would move every
+    /// voice off its voicing the moment it was selected. See
+    /// `Chain::set_master`.
+    ///
+    /// Greyed for the circuits whose drawing has no such control, which
+    /// includes the Twin Reverb: an AB763 has no master volume and its channel
+    /// Volume is already the Drive knob.
+    #[id = "master"]
+    pub master: FloatParam,
+
+    // --- 3b The Mark IIC+'s graphic equaliser -----------------------------
+    // Five sliders, bottom band first, centred is flat. Only that amplifier
+    // has them; the panel greys them for everything else. They are here rather
+    // than in the tone section because on the amplifier they are late in the
+    // preamplifier and before the power stage, and the panel reads in signal
+    // order. See `markiic::graphic` and §9.8.
+    #[id = "eq60"]
+    pub eq60: FloatParam,
+    #[id = "eq240"]
+    pub eq240: FloatParam,
+    #[id = "eq750"]
+    pub eq750: FloatParam,
+    #[id = "eq2200"]
+    pub eq2200: FloatParam,
+    #[id = "eq6600"]
+    pub eq6600: FloatParam,
+
+    /// The plugin in or out of circuit.
+    ///
+    /// `make_bypass` tells the host this is *the* bypass, so a DAW can put it
+    /// on its own strip and automate it, and a controller can drop a Screamer
+    /// in for a solo. nih-plug's note is that a plugin reporting latency has to
+    /// implement the switch itself, which this one does: bypassed, the output
+    /// is the **delayed** dry signal, so the track does not jump forward by
+    /// the reported latency the moment it is switched out.
+    #[id = "bypass"]
+    pub bypass: BoolParam,
+
     // --- 4 Tone ----------------------------------------------------------
     #[id = "tone"]
     pub tone: EnumParam<ToneStack>,
@@ -446,6 +507,23 @@ pub struct GainStageParams {
     pub mid: FloatParam,
     #[id = "treble"]
     pub treble: FloatParam,
+
+    // --- 4b The Twin's own three -----------------------------------------
+    // A Twin Reverb carries a reverb and a tremolo that nothing else in the
+    // catalogue has. The panel greys them for every other circuit rather than
+    // leaving knobs that turn nothing. See `Gain::has_reverb_and_tremolo`.
+    /// How much of the tank comes back. 100 k **linear** on the drawing, which
+    /// is unusual for a Fender and is why it does so much early in its travel.
+    #[id = "reverb"]
+    pub reverb: FloatParam,
+    /// The tremolo oscillator's rate: about 1.8 Hz to 11 Hz.
+    #[id = "speed"]
+    pub speed: FloatParam,
+    /// How hard the oscillator drives the neon bulb. There is a real dead zone
+    /// at the bottom, because below its striking voltage the bulb never fires
+    /// and the tremolo is simply off -- which is what the amplifier does.
+    #[id = "intensity"]
+    pub intensity: FloatParam,
 
     // --- 5 Cabinet -------------------------------------------------------
     #[id = "cabinet"]
@@ -503,11 +581,29 @@ impl Default for GainStageParams {
             iron: EnumParam::new("Iron", Iron::Off),
 
             drive: position("Drive", 0.5),
+            master: position("Master", 0.5),
+
+            eq60: position("EQ 60 Hz", 0.5),
+            eq240: position("EQ 240 Hz", 0.5),
+            eq750: position("EQ 750 Hz", 0.5),
+            eq2200: position("EQ 2.2 kHz", 0.5),
+            eq6600: position("EQ 6.6 kHz", 0.5),
+
+            // False is in circuit, which is what a plugin should be when it is
+            // dropped on a track.
+            bypass: BoolParam::new("Bypass", false).make_bypass(),
 
             tone: EnumParam::new("Tone", ToneStack::Wide),
             bass: position("Bass", 0.5),
             mid: position("Mid", 0.5),
             treble: position("Treble", 0.5),
+
+            // Reverb off and the tremolo silent by default: a Twin with its
+            // reverb up is a choice, not a starting point, and Intensity below
+            // the bulb's striking voltage is the tremolo switched off.
+            reverb: position("Reverb", 0.0),
+            speed: position("Speed", 0.4),
+            intensity: position("Intensity", 0.0),
 
             cabinet: EnumParam::new("Cabinet", Cabinet::Off),
 

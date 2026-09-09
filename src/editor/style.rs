@@ -25,10 +25,15 @@ pub const HEADER_H: f32 = 32.0;
 pub const SECTIONS: [(&str, &str, f32); 6] = [
     ("1", "INPUT", 74.0),
     ("2", "CIRCUIT", 178.0),
-    ("3", "DRIVE", 76.0),
-    ("4", "TONE", 104.0),
+    ("3", "DRIVE", 160.0),
+    // Two rows: the stack's Bass/Middle/Treble, and beneath them the three
+    // the Twin Reverb adds. Below rather than beside, because beside put
+    // Speed and Intensity underneath the paragraph explaining the stack --
+    // two things in one place, which is the layout fault that is hardest to
+    // see in code and most obvious on screen.
+    ("4", "TONE", 168.0),
     ("5", "CABINET", 44.0),
-    ("6", "OUTPUT", 74.0),
+    ("6", "OUTPUT", 96.0),
 ];
 
 /// Width of the numbered gutter down the left.

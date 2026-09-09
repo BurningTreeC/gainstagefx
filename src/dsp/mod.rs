@@ -6,4 +6,6 @@ pub mod device;
 pub mod measure;
 pub mod netlist;
 pub mod oversample;
+pub mod spring;
 pub mod time;
+pub mod tremolo;

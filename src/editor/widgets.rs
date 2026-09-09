@@ -12,10 +12,22 @@ use super::style::*;
 const DRAG_RANGE: f32 = 260.0;
 const FINE: f32 = 0.15;
 
+/// How a control is drawn. The drag is the same either way -- vertical, with
+/// the same range and the same fine-adjust -- so a fader is a knob's face and
+/// not a second widget, which keeps the mouse-capture healing in one place.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Face {
+    /// The photographed knob with its pointer drawn on.
+    Round,
+    /// A vertical fader, which is what a Mark IIC+ has for its five bands.
+    Slider { height: f32 },
+}
+
 /// A knob: the photograph, still, with its pointer drawn on.
 pub struct Knob {
     param: ParamWidgetBase,
     radius: f32,
+    shape: Face,
     face: Sprite,
     dragging: bool,
     last_y: f32,
@@ -44,6 +56,7 @@ impl Knob {
         Self {
             param: ParamWidgetBase::new(cx, params, params_to_param),
             radius,
+            shape: Face::Round,
             face: Sprite::new(),
             dragging: false,
             last_y: 0.0,
@@ -58,6 +71,43 @@ impl Knob {
         )
         .width(Pixels(radius * 2.0))
         .height(Pixels(radius * 2.0))
+    }
+
+    /// The same control drawn as a vertical fader, which is what the Mark
+    /// IIC+'s five bands have. `width` is the cap's width; the track is drawn
+    /// down the middle of it.
+    pub fn fader<L, Params, P, FMap>(
+        cx: &mut Context,
+        params: L,
+        params_to_param: FMap,
+        width: f32,
+        height: f32,
+        live: bool,
+    ) -> Handle<'_, Self>
+    where
+        L: Lens<Target = Params> + Clone,
+        Params: 'static,
+        P: Param + 'static,
+        FMap: Fn(&Params) -> &P + Copy + 'static,
+    {
+        Self {
+            param: ParamWidgetBase::new(cx, params, params_to_param),
+            radius: width / 2.0,
+            shape: Face::Slider { height },
+            face: Sprite::new(),
+            dragging: false,
+            last_y: 0.0,
+            live,
+        }
+        .build(
+            cx,
+            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
+                let value = data.make_lens(|param| param.modulated_normalized_value());
+                Binding::new(cx, value, |cx, _| cx.needs_redraw());
+            }),
+        )
+        .width(Pixels(width))
+        .height(Pixels(height))
     }
 
     fn nudge(&self, cx: &mut EventContext, delta: f32) {
@@ -81,6 +131,93 @@ impl Knob {
     }
 }
 
+impl Knob {
+    /// A vertical fader: a slot cut into the panel with a cap riding in it.
+    ///
+    /// Drawn rather than photographed, because the knob sprite is a knob. The
+    /// slot is dark and inset, the cap is lit from the top left like everything
+    /// else on this panel, and the cap carries a line across it so its position
+    /// is readable at a glance -- which is the whole reason an amplifier uses
+    /// faders for a graphic equaliser rather than five more knobs: the shape of
+    /// the curve is the shape of the row.
+    fn draw_fader(&self, canvas: &mut Canvas, b: BoundingBox, scale: f32) {
+        let dim = if self.live { 1.0 } else { 0.30 };
+        let mx = b.x + b.w / 2.0;
+        let cap_h = 13.0 * scale;
+        let travel = b.h - cap_h;
+        let slot_w = 5.0 * scale;
+
+        // The slot.
+        let mut slot = vg::Path::new();
+        slot.rounded_rect(
+            mx - slot_w / 2.0,
+            b.y + cap_h / 2.0,
+            slot_w,
+            travel,
+            slot_w / 2.0,
+        );
+        canvas.fill_path(&slot, &vg::Paint::color(rgba(0x0d1012, 0.92 * dim)));
+        let mut lip = vg::Path::new();
+        lip.rounded_rect(
+            mx - slot_w / 2.0,
+            b.y + cap_h / 2.0,
+            slot_w,
+            travel.max(1.0),
+            slot_w / 2.0,
+        );
+        canvas.stroke_path(
+            &lip,
+            &vg::Paint::color(rgba(0xffffff, 0.07 * dim)).with_line_width(1.0 * scale),
+        );
+
+        // The cap, at the value. Up is more, as a fader reads.
+        let v = self.param.modulated_normalized_value().clamp(0.0, 1.0);
+        let cy = b.y + cap_h / 2.0 + travel * (1.0 - v as f32);
+        let cap_w = b.w.min(20.0 * scale);
+        let mut shadow = vg::Path::new();
+        shadow.rounded_rect(
+            mx - cap_w / 2.0 + 1.0 * scale,
+            cy - cap_h / 2.0 + 2.0 * scale,
+            cap_w,
+            cap_h,
+            2.5 * scale,
+        );
+        canvas.fill_path(&shadow, &vg::Paint::color(rgba(0x000000, 0.45 * dim)));
+
+        let mut cap = vg::Path::new();
+        cap.rounded_rect(
+            mx - cap_w / 2.0,
+            cy - cap_h / 2.0,
+            cap_w,
+            cap_h,
+            2.5 * scale,
+        );
+        canvas.fill_path(
+            &cap,
+            &vg::Paint::linear_gradient(
+                mx,
+                cy - cap_h / 2.0,
+                mx,
+                cy + cap_h / 2.0,
+                rgba(0x6e7a84, dim),
+                rgba(0x30383e, dim),
+            ),
+        );
+        canvas.stroke_path(
+            &cap,
+            &vg::Paint::color(rgba(0x000000, 0.55 * dim)).with_line_width(1.0 * scale),
+        );
+        // The index line across the cap.
+        let mut line = vg::Path::new();
+        line.move_to(mx - cap_w / 2.0 + 2.0 * scale, cy);
+        line.line_to(mx + cap_w / 2.0 - 2.0 * scale, cy);
+        canvas.stroke_path(
+            &line,
+            &vg::Paint::color(rgba(0x11161a, 0.85 * dim)).with_line_width(1.5 * scale),
+        );
+    }
+}
+
 impl View for Knob {
     fn element(&self) -> Option<&'static str> {
         Some("frontend-knob")
@@ -91,6 +228,11 @@ impl View for Knob {
         let scale = cx.scale_factor();
         let r = self.radius * scale;
         let (mx, my) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+
+        if let Face::Slider { .. } = self.shape {
+            self.draw_fader(canvas, b, scale);
+            return;
+        }
 
         // The shadow it casts on the panel.
         //
@@ -405,6 +547,14 @@ pub struct Selector {
     /// against the whole list, not the row.
     offset: usize,
     total: usize,
+    /// A segment to light regardless of what the parameter says, for a row
+    /// that is showing something the parameter cannot express. The oversampling
+    /// chooser uses it: a modelled circuit runs at the host rate whatever the
+    /// control is set to, so the row reads Off and is greyed rather than
+    /// claiming a factor that is not being used. The parameter is left alone,
+    /// so switching back to a circuit that can be oversampled restores the
+    /// choice instead of quietly discarding it.
+    forced: Option<usize>,
     /// Whether the row is live. A greyed row still draws, so the panel does
     /// not change shape when a control stops applying -- it just stops
     /// claiming to mean anything.
@@ -426,7 +576,35 @@ impl Selector {
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         let span = labels.len().max(1);
-        Self::window(cx, params, params_to_param, labels, enabled, 0, span)
+        Self::window(cx, params, params_to_param, labels, enabled, 0, span, None)
+    }
+
+    /// A row whose lit segment is `forced` rather than the parameter's, and
+    /// which cannot be clicked. See `Selector::forced`.
+    pub fn pinned<'a, L, Params, P, FMap>(
+        cx: &'a mut Context,
+        params: L,
+        params_to_param: FMap,
+        labels: Vec<&'static str>,
+        at: usize,
+    ) -> Handle<'a, Self>
+    where
+        L: Lens<Target = Params> + Clone,
+        Params: 'static,
+        P: Param + 'static,
+        FMap: Fn(&Params) -> &P + Copy + 'static,
+    {
+        let span = labels.len().max(1);
+        Self::window(
+            cx,
+            params,
+            params_to_param,
+            labels,
+            false,
+            0,
+            span,
+            Some(at),
+        )
     }
 
     /// A row showing `labels` starting at `offset` of a `total`-long list.
@@ -439,6 +617,7 @@ impl Selector {
         enabled: bool,
         offset: usize,
         total: usize,
+        forced: Option<usize>,
     ) -> Handle<'a, Self>
     where
         L: Lens<Target = Params> + Clone,
@@ -454,6 +633,7 @@ impl Selector {
             offset,
             total,
             enabled,
+            forced,
         }
         .build(
             cx,
@@ -474,11 +654,19 @@ impl Selector {
                             .child_bottom(Stretch(1.0))
                             .font_size(11.0)
                             .color(value.map(move |v| {
-                                let selected = (v * (span - 1) as f32).round() as usize;
-                                match (enabled, selected == start + index) {
-                                    (false, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
-                                    (true, true) => Color::rgb(0xff, 0xb2, 0x6a),
-                                    (true, false) => Color::rgb(0xa8, 0xb2, 0xba),
+                                let selected = match forced {
+                                    Some(at) => at,
+                                    None => (v * (span - 1) as f32).round() as usize,
+                                };
+                                match (enabled, forced, selected == start + index) {
+                                    // Pinned: the lit segment is what the
+                                    // plugin is really doing, dimmed because it
+                                    // is not something to click.
+                                    (_, Some(_), true) => Color::rgba(0xff, 0xb2, 0x6a, 0x99),
+                                    (_, Some(_), false) => Color::rgba(0xff, 0xff, 0xff, 0x26),
+                                    (false, _, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
+                                    (true, _, true) => Color::rgb(0xff, 0xb2, 0x6a),
+                                    (true, _, false) => Color::rgb(0xa8, 0xb2, 0xba),
                                 }
                             }))
                             .hoverable(false);

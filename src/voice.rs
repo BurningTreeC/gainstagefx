@@ -24,11 +24,14 @@
 
 use crate::circuits::{
     bigmuff, cabinet, clipper, evh5150, iron, markiic, neve, power, preamp, studio, tone, ts808,
+    twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::Oversampler;
+use crate::dsp::spring::Tank;
 use crate::dsp::time::Simulation;
+use crate::dsp::tremolo::Tremolo;
 
 /// The level a plugin should be set up around: hot enough to be well clear of
 /// the noise floor, quiet enough to leave headroom for a peak. A guitar
@@ -78,10 +81,13 @@ pub enum Gain {
     Peavey,
     /// Neve 73P microphone preamplifier, two cascaded transistor stages.
     Neve,
+    /// Fender Twin Reverb, AB763 -- the circuit the '65 reissue reissues.
+    /// Vibrato channel, with the spring tank and the tremolo.
+    Twin,
 }
 
 impl Gain {
-    pub const ALL: [Gain; 12] = [
+    pub const ALL: [Gain; 13] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -94,6 +100,7 @@ impl Gain {
         Gain::Boogie,
         Gain::Peavey,
         Gain::Neve,
+        Gain::Twin,
     ];
 
     pub fn name(self) -> &'static str {
@@ -106,6 +113,7 @@ impl Gain {
             Gain::Console => "Console",
             Gain::Studio => "Studio",
             Gain::Screamer => "TS808",
+            Gain::Twin => "Twin Reverb",
             Gain::Muff => "Big Muff",
             Gain::Boogie => "Mark IIC+",
             Gain::Peavey => "5150",
@@ -125,8 +133,78 @@ impl Gain {
             Gain::Peavey => evh5150::PRE,
             Gain::Neve => neve::GAIN,
             Gain::Screamer => ts808::DRIVE,
+            Gain::Twin => twin::VOLUME,
             Gain::Muff => bigmuff::SUSTAIN,
             _ => clipper::GAIN,
+        }
+    }
+
+    /// Whether this amplifier carries the five band graphic equaliser.
+    ///
+    /// Only the Mark IIC+. It is the part of that amplifier everyone
+    /// recognises -- the scooped middle is this network and not the Fender
+    /// stack ahead of it -- and it sits late in the preamplifier, so it is
+    /// modelled where the drawing puts it rather than as an equaliser bolted
+    /// on the end. See `markiic::graphic` and §9.8.
+    pub const fn has_graphic(self) -> bool {
+        matches!(self, Gain::Boogie)
+    }
+
+    /// What the drive knob is called on the device it is turning.
+    ///
+    /// The same principle as the pedals' single tone control being labelled
+    /// TONE rather than TREBLE: a knob is named after what it turns, and what
+    /// it turns here is a specific pot on a specific drawing. "Drive" is the
+    /// section's job, not every device's word for it.
+    ///
+    /// The Twin Reverb is the one that matters. Its drive control **is** its
+    /// Volume -- an AB763 has no master, so the one pot both sets the level and
+    /// decides how hard the amplifier works -- and calling it DRIVE made it
+    /// look as though the amplifier's volume knob was missing. It is not
+    /// missing; it is this one.
+    pub fn drive_name(self) -> &'static str {
+        match self {
+            Gain::Twin => "VOLUME",
+            Gain::Muff => "SUSTAIN",
+            Gain::Boogie => "LEAD DRIVE",
+            Gain::Peavey => "PRE GAIN",
+            Gain::Neve => "GAIN",
+            _ => "DRIVE",
+        }
+    }
+
+    /// The circuit's own output level control, where its drawing has one, and
+    /// which of the two simulations it lives in.
+    ///
+    /// Every device here except the abstract typologies has a knob on its face
+    /// that sets how loud it is, and until now every one of them was frozen at
+    /// a resting position -- BUG-023's fault, one level up: a control that
+    /// exists on the hardware and cannot be reached from the panel.
+    ///
+    /// Which control counts as "the output" is a judgement per device and it
+    /// is written here rather than inferred:
+    ///
+    /// - the pedals' Level and Volume, which is what they are called;
+    /// - the 73P's output trim;
+    /// - the two amplifiers with a master, at their **power stage** -- a
+    ///   Mark IIC+'s Lead Master and a 5150's post gain are after the
+    ///   preamplifier, which is the whole method of both amplifiers: gain in
+    ///   front, level at the back;
+    /// - the Mark IIC+'s Volume 1 is *not* this. It is an input volume and it
+    ///   sits ahead of the lead circuit; Lead Drive is already the Drive knob.
+    ///
+    /// **The Twin Reverb has none**, and that is not an omission. An AB763 has
+    /// no master volume and no presence: its channel Volume is the only level
+    /// control it owns, and that is already what the Drive knob turns. Giving
+    /// it one would hide why its phase inverter sees a hundred volts at Volume
+    /// 10 -- see BUG-025.
+    pub fn level_control(self) -> Option<Level> {
+        match self {
+            Gain::Screamer => Some(Level::Circuit(ts808::LEVEL)),
+            Gain::Muff => Some(Level::Circuit(bigmuff::VOLUME)),
+            Gain::Neve => Some(Level::Circuit(neve::TRIM)),
+            Gain::Peavey | Gain::Boogie => Some(Level::Power(power::MASTER)),
+            _ => None,
         }
     }
 
@@ -137,6 +215,7 @@ impl Gain {
     pub fn own_tone(self) -> Option<(usize, usize, usize)> {
         match self {
             Gain::Boogie => Some((markiic::BASS, markiic::MIDDLE, markiic::TREBLE)),
+            Gain::Twin => Some((twin::BASS, twin::MIDDLE, twin::TREBLE)),
             // The TS808 and the Muff have a single tone control, which the
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
@@ -181,6 +260,7 @@ impl Gain {
         match self {
             Gain::Boogie => Some(&power::PowerSpec::MARKIIC),
             Gain::Peavey => Some(&power::PowerSpec::EVH5150),
+            Gain::Twin => Some(&power::PowerSpec::TWIN),
             _ => None,
         }
     }
@@ -191,7 +271,7 @@ impl Gain {
     pub fn is_modelled(self) -> bool {
         matches!(
             self,
-            Gain::Screamer | Gain::Muff | Gain::Boogie | Gain::Peavey | Gain::Neve
+            Gain::Screamer | Gain::Muff | Gain::Boogie | Gain::Peavey | Gain::Neve | Gain::Twin
         )
     }
 
@@ -201,19 +281,28 @@ impl Gain {
     /// swapped. The guitar circuits are valve cascades by definition -- a
     /// "three cascaded stages" made of op-amps is a different thing with the
     /// same name -- and the pedals are built around their diodes.
-    pub fn has_amplifier(self) -> bool {
+    pub const fn has_amplifier(self) -> bool {
         matches!(self, Gain::Console | Gain::Studio)
     }
 
     /// Whether the diode choice reaches this circuit at all. A valve stage has
     /// no diodes in it, and offering the choice there would be a control that
     /// does nothing -- which is worse than not offering it.
-    pub fn has_diodes(self) -> bool {
+    pub const fn has_diodes(self) -> bool {
         matches!(self, Gain::Overdrive | Gain::Distortion)
     }
 
     /// How many circuits this one covers: one per part it can be built with.
-    fn variants(self) -> usize {
+    /// Whether this voice has a reverb tank and a tremolo of its own.
+    ///
+    /// Only the Twin does. The panel greys the three controls everywhere
+    /// else rather than leaving knobs that turn nothing -- which is the
+    /// defect BUG-023 was about, from the other side.
+    pub fn has_reverb_and_tremolo(self) -> bool {
+        matches!(self, Gain::Twin)
+    }
+
+    pub const fn variants(self) -> usize {
         if self.has_diodes() || self.has_amplifier() {
             3
         } else {
@@ -304,7 +393,20 @@ impl Diode {
 /// the circuit while playing allocates nothing. Laid out by walking `Gain::ALL`
 /// and giving each topology one slot per part it can be built with, so adding
 /// a circuit does not move the ones already there.
-pub const VOICES: usize = 20;
+/// Counted from `Gain::ALL` rather than written down, so that adding a
+/// circuit cannot leave this behind. It was a hand-kept `20`, and adding the
+/// Twin made it wrong: the calibration table is `[Calibration; VOICES]`, so a
+/// stale count is a table with a missing row and every voice after the new one
+/// reading its neighbour's make-up.
+pub const VOICES: usize = {
+    let mut total = 0;
+    let mut i = 0;
+    while i < Gain::ALL.len() {
+        total += Gain::ALL[i].variants();
+        i += 1;
+    }
+    total
+};
 
 /// Where a topology's first slot is.
 fn first_of(gain: Gain) -> usize {
@@ -406,6 +508,9 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // The modelled circuits take their own source and load, because those
         // are part of what the drawing specifies.
         Gain::Screamer => ts808::build(10_000.0, 470_000.0),
+        // Loaded by the phase inverter's grid leak, which is where the
+        // drawing hands over. See `twin.rs`.
+        Gain::Twin => twin::build(10_000.0, 1_000_000.0),
         Gain::Muff => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
         Gain::Boogie => markiic::build(10_000.0, 1_000_000.0),
         // Not a nominal load: the 5150's tone stack really does hang 33 k on
@@ -480,11 +585,43 @@ pub fn build_iron(material: Iron) -> Result<Netlist, Fault> {
 /// measured. Flux is the integral of voltage, so what the core does depends
 /// on how many volts it is handed -- and unlike the gain circuits, which are
 /// calibrated so a nominal signal drives them the way their name says, the
-/// iron stage sits after the make-up and sees a known level already. Set so
-/// that a nominal signal at 40 Hz lands about at steel's knee: nickel is
-/// already bending there, amorphous has not started, and pushing the drive
-/// into it takes all three further.
-pub const IRON_VOLTS: f64 = 24.0;
+/// iron stage sits after the make-up and sees a known level already.
+///
+/// Set so that a nominal signal at a guitar's **low E** lands about at
+/// steel's knee.
+///
+/// It was set at 40 Hz, and 40 Hz is below the lowest note the instrument
+/// has. Flux goes as `V / f`, so by low E (82 Hz) there was half that flux
+/// and by A (110 Hz) less again -- and the Iron control did nothing audible
+/// anywhere in the instrument's range. Measured on the iron alone at a
+/// nominal signal, the spread between the three cores was:
+///
+/// | | 40 Hz | 82 Hz | 110 Hz | 220 Hz |
+/// |---|---|---|---|---|
+/// | at 24 V | 0.8 pts | **0.2** | **0.1** | **0.0** |
+/// | at 96 V | 42.4 pts | **20.5** | **4.8** | 0.1 |
+///
+/// Reported from a DAW as "the iron models seem not to change anything", and
+/// they did not.
+///
+/// Four times, not more. At six the cores still differ by 22.9 points at
+/// 110 Hz, which is a transformer that never stops saturating; at four they
+/// separate on the bottom two strings and are out of the way above them. The
+/// reason not to chase an audible difference at 220 Hz is that no transformer
+/// has one -- getting flux to the knee there needs five times again, which
+/// would put 40 Hz past 75 per cent distortion. It would stop being iron and
+/// start being a waveshaper.
+///
+/// See `examples/ironvolts.rs` for the measurement behind the choice.
+pub const IRON_VOLTS: f64 = 96.0;
+
+/// Where on the Drive control the iron is matched to the stage driving it.
+///
+/// The transformer is handed `IRON_VOLTS` exactly here, more above and less
+/// below -- see `Chain::iron_drive`. Three quarters rather than the middle,
+/// because that is where a player who has reached for a transformer is likely
+/// to be, and because it leaves the top of the travel with somewhere to go.
+pub const IRON_REFERENCE_DRIVE: f64 = 0.75;
 
 /// The tone section, which can be out of circuit entirely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -698,6 +835,61 @@ impl Delay {
     }
 }
 
+/// The Mark IIC+ graphic equaliser's recovery amplifier, as a number. See
+/// `markiic::DRIVER_GAIN_DB`.
+const GRAPHIC_MAKE_UP: f64 = 6.7918; // 10^(16.64/20)
+
+/// The middle of the Master knob: the position each circuit was voiced at.
+pub const MASTER_MIDDLE: f64 = 0.5;
+
+/// How much the top of the Master knob adds once the pot has run out.
+///
+/// Six decibels, because the pot's own contribution above the voicing ranges
+/// from three to eight across the catalogue and this brings every voice's
+/// upward half into the same order as its downward one, which is about twenty.
+/// Larger would make the knob mostly digital gain; smaller would leave the
+/// 73P's upper half doing nothing. See `Chain::master_lift`.
+const MASTER_LIFT_DB: f64 = 6.0;
+
+/// Where a level control sits when the circuit declares one but rests it
+/// nowhere. Nothing in the catalogue does; this is so a circuit added later
+/// that forgets `Netlist::rest` is quiet rather than wrong.
+const DEFAULT_MASTER_REST: f64 = 0.7;
+
+/// Where a circuit's output level control lives. See `Gain::level_control`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    /// In the gain circuit: a pedal's Level or Volume, the 73P's trim.
+    Circuit(usize),
+    /// In the power amplifier: a master volume.
+    Power(usize),
+}
+
+/// What every solve a voice runs did, added up. See `Chain::solver_health`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SolverHealth {
+    pub solves: u64,
+    pub passes: u64,
+    /// Solves that ran out of passes still holding a partly converged answer.
+    /// These are at once the least accurate samples and the most expensive
+    /// ones, which is what a deadline miss is made of.
+    pub unsettled: u64,
+    pub backtracks: u64,
+    pub fallbacks: u64,
+    pub nonfinite: u64,
+    pub replans: u64,
+}
+
+impl SolverHealth {
+    pub fn passes_per_solve(&self) -> f64 {
+        if self.solves == 0 {
+            0.0
+        } else {
+            self.passes as f64 / self.solves as f64
+        }
+    }
+}
+
 /// Every panel setting that reaches the circuits, as plain values.
 ///
 /// This exists so the step from "what the panel says" to "what the chain is
@@ -715,9 +907,20 @@ pub struct Settings {
     pub tone: Tone,
     pub cabinet: Cabinet,
     pub drive: f64,
+    /// The circuit's own level control, where it has one. Half is where the
+    /// voice was calibrated; see `Chain::set_master`.
+    pub master: f64,
+    /// The Mark IIC+'s five graphic equaliser sliders, bottom band first.
+    /// Centred is flat; only that amplifier has them.
+    pub graphic: [f64; 5],
     pub bass: f64,
     pub mid: f64,
     pub treble: f64,
+    /// The three the Twin Reverb has and nothing else does. Ignored by every
+    /// other voice; the panel greys them out. See `Gain::extra_controls`.
+    pub reverb: f64,
+    pub speed: f64,
+    pub intensity: f64,
     pub oversampling: usize,
 }
 
@@ -731,8 +934,13 @@ impl Default for Settings {
             tone: Tone::Wide,
             cabinet: Cabinet::Off,
             drive: 0.5,
+            master: MASTER_MIDDLE,
+            graphic: [0.5; 5],
             bass: 0.5,
             mid: 0.5,
+            reverb: 0.0,
+            speed: 0.4,
+            intensity: 0.0,
             treble: 0.5,
             oversampling: 2,
         }
@@ -760,6 +968,9 @@ pub struct Chain {
     tones: Vec<(Simulation, f64)>,
     cabinets: Vec<(Simulation, f64)>,
     gain: usize,
+    /// Which voice that index names, so the two parts that are not circuits --
+    /// the tank and the tremolo -- can tell whether they are in the path.
+    voice: Gain,
     iron: Option<usize>,
     tone: Option<usize>,
     cabinet: Option<usize>,
@@ -773,10 +984,33 @@ pub struct Chain {
     /// Holds the dry signal back by the same amount, so that mixing the two
     /// is a mix rather than a comb filter.
     dry: Delay,
+    /// The reverb tank and the tremolo, which are not circuits and cannot be
+    /// in a netlist. See `dsp::spring` and `dsp::tremolo`. Built for every
+    /// chain rather than only for the Twin, because building one inside
+    /// `apply` would be an allocation on the audio thread.
+    tank: Tank,
+    /// The recovery stage and the Reverb control, which *are* a circuit and so
+    /// are solved like one. Only the tank between them is not.
+    tail: Simulation,
+    tremolo: Tremolo,
+    reverb: f64,
+    speed: f64,
+    intensity: f64,
+    /// The make-up at the Drive control's reference position, for the iron.
+    /// See `iron_drive`.
+    iron_reference: f64,
     /// The host's rate. Modelled circuits always run at this rate; see
     /// `set_oversampling`.
     rate: f64,
     drive: f64,
+    /// Where the panel's Master knob is. See `set_master`.
+    master: f64,
+    /// The Mark IIC+'s five band graphic equaliser, between its preamplifier
+    /// and its power stage. Linear, so it costs one substitution a sample.
+    /// Only that amplifier has one; see `Gain::has_graphic`.
+    graphic: Simulation,
+    /// What the top half of that knob adds beyond the pot. See `master_lift`.
+    master_lift: f64,
     /// Volts in per unit of digital signal, and digital signal out per volt.
     into: f64,
     out_of: f64,
@@ -841,6 +1075,7 @@ impl Chain {
                 .map(|c| section(c.build()))
                 .collect(),
             gain: 0,
+            voice: Gain::ALL[0],
             iron: None,
             tone: None,
             cabinet: None,
@@ -848,8 +1083,24 @@ impl Chain {
             requested_oversampling: 4,
             pad: Delay::new(1),
             dry: Delay::new(LATENCY as usize),
+            tank: Tank::accutronics(rate),
+            tail: Simulation::new(
+                twin::reverb_return(10_000.0, 1_000_000.0).expect("catalogue builds"),
+                rate,
+            ),
+            tremolo: Tremolo::new(rate),
+            reverb: 0.0,
+            speed: 0.5,
+            intensity: 0.0,
+            iron_reference: 1.0,
             rate,
             drive: 0.5,
+            master: MASTER_MIDDLE,
+            master_lift: 1.0,
+            graphic: Simulation::new(
+                markiic::graphic(SOURCE, LOAD).expect("the graphic EQ builds"),
+                rate,
+            ),
             into: 1.0,
             out_of: 1.0,
             out_of_target: 1.0,
@@ -869,8 +1120,12 @@ impl Chain {
     /// volts of it.
     pub fn set_voice(&mut self, gain: Gain, diode: Diode, amplifier: Amplifier) {
         let index = voice_index(gain, diode, amplifier);
+        self.voice = gain;
         if index != self.gain {
             self.gain = index;
+            self.tank.reset();
+            self.tremolo.reset();
+            self.tail.reset();
             self.gains[index].reset();
             // And its power stage, for the same reason and more so. A power
             // stage sits at four hundred volts with its output transformer
@@ -956,6 +1211,86 @@ impl Chain {
     /// the operating point again -- which at audio rate is a rebuild and a DC
     /// solve forty-eight thousand times a second. Measured, that is most of
     /// what the plugin costs while a knob is moving.
+    /// Where the panel's Master knob puts the circuit's own level control.
+    ///
+    /// Not the pot's rotation directly, and the reason is the make-up table.
+    /// Every voice's `make_up_db` was measured with its level control at the
+    /// position the circuit rests it at -- 0.70 for the pedals, 0.85 for the
+    /// 73P, 0.66 for a 5150's post gain, 0.30 for a Mark IIC+'s Lead Master.
+    /// Those differ because the voicings differ, and a knob that read the pot
+    /// straight would put every circuit somewhere it was not voiced the moment
+    /// it was selected, shifting its level and widening a catalogue spread
+    /// that is already thirteen decibels.
+    ///
+    /// So the middle of this knob is **where the circuit was calibrated**, and
+    /// either side of it is louder or quieter than the voicing. Two straight
+    /// segments through (0, 0), (0.5, rest) and (1, 1): at 0.5 every voice is
+    /// bit-identical to what it was before there was a knob at all, which
+    /// `tests/master.rs` holds, and the ends still reach the ends of the real
+    /// pot's travel.
+    fn master_position(rest: f64, knob: f64) -> f64 {
+        let knob = knob.clamp(0.0, 1.0);
+        if knob <= 0.5 {
+            rest * knob * 2.0
+        } else {
+            rest + (1.0 - rest) * (knob - 0.5) * 2.0
+        }
+    }
+
+    /// What the knob adds once the pot has nothing left to give.
+    ///
+    /// The pot alone makes a lopsided control. A device rests its level knob
+    /// near the top of its travel when that is where it was voiced -- the 73P
+    /// rests its output trim at **0.85** -- so putting the voicing at twelve
+    /// o'clock leaves fifteen per cent of the track spread across the whole
+    /// upper half of the knob. Measured over the full sweep: the 73P gave
+    /// **-21.1 dB down and +3.3 dB up**, and the Mark IIC+ +3.3 dB up for a
+    /// different reason -- its Lead Master rests at 0.30, but by the top the
+    /// power amplifier is saturating and the extra rotation buys level it
+    /// cannot deliver. Both read as a knob that does nothing when turned up.
+    ///
+    /// So above the middle the knob carries the pot to its stop *and* leans on
+    /// the plugin's own make-up, by up to `MASTER_LIFT_DB`. **This part is not
+    /// the circuit**: past the pot's stop there is no more level in the
+    /// hardware, and what the knob is turning is the same output gain the
+    /// make-up table already applies. It is an approximation in the sense of
+    /// §24.1 category 4, made for the control to be useful across its travel,
+    /// and it is why the lift is small and stated rather than large and
+    /// silent. Below the middle, and at it, this is exactly one.
+    fn master_lift(knob: f64) -> f64 {
+        let above = (knob.clamp(0.0, 1.0) - 0.5).max(0.0) * 2.0;
+        10f64.powf(above * MASTER_LIFT_DB / 20.0)
+    }
+
+    /// The five graphic equaliser sliders, bottom band first.
+    pub fn set_graphic(&mut self, bands: [f64; 5]) {
+        for (band, &position) in bands.iter().enumerate() {
+            self.graphic.set_control(band, position);
+        }
+    }
+
+    /// The circuit's own output level control, from the panel's Master knob.
+    pub fn set_master(&mut self, knob: f64) {
+        self.master = knob;
+        let voice = voice_at(self.gain).0;
+        let Some(level) = voice.level_control() else {
+            // No control on the drawing, so the knob reaches nothing at all --
+            // not even the lift. The panel greys it for the same reason.
+            self.master_lift = 1.0;
+            return;
+        };
+        self.master_lift = Self::master_lift(knob);
+        let (sim, which) = match level {
+            Level::Circuit(which) => (Some(&mut self.gains[self.gain]), which),
+            Level::Power(which) => (self.powers[self.gain].as_mut(), which),
+        };
+        let Some(sim) = sim else { return };
+        // The position the circuit itself rests this control at is the one the
+        // calibration was measured at, so it is the middle of the knob.
+        let rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
+        sim.set_control(which, Self::master_position(rest, knob));
+    }
+
     pub fn set_drive(&mut self, drive: f64) {
         self.drive = drive.clamp(0.0, 1.0);
         let which = voice_at(self.gain).0.drive_control();
@@ -964,7 +1299,41 @@ impl Chain {
         // A nominal digital signal has to arrive as the stated voltage.
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
         self.into = calibration.drive_volts / nominal;
-        self.out_of_target = 10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into;
+        // The Master knob's lift rides with the make-up, because that is what
+        // it is: the same output gain, turned by hand. See `master_lift`.
+        self.out_of_target =
+            10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into * self.master_lift;
+        // What the make-up would be with the Drive control at its reference
+        // position. See `iron_drive`.
+        self.iron_reference =
+            10f64.powf(calibration.make_up_db_at(IRON_REFERENCE_DRIVE) / 20.0) / self.into;
+    }
+
+    /// How much harder than usual the Drive control is pushing the iron.
+    ///
+    /// One, at the reference position; more above it, less below.
+    ///
+    /// The make-up holds the output level constant whatever the Drive knob is
+    /// doing -- that is its whole job -- so anything sitting behind it is
+    /// handed the same level at every setting and is never driven any harder.
+    /// The power stage was moved in front of the make-up for exactly that
+    /// reason and the comment there says so; the iron was left behind it and
+    /// the same argument was never applied. Reported from a DAW as the Iron
+    /// control not responding to Drive, and it did not.
+    ///
+    /// Handing the iron the raw pre-make-up signal instead would be the
+    /// obvious fix and is wrong: the make-up spans about sixty decibels across
+    /// the catalogue, so a transformer scaled for the TS808 would be inert on
+    /// a Clean voice and destroyed on the 5150. A transformer is *matched to
+    /// the stage that drives it* -- nobody bolts a 5150's output transformer
+    /// on to a Tube Screamer -- so the reference is per voice, and what varies
+    /// is how far the knob has moved from it.
+    pub fn iron_drive(&self) -> f64 {
+        if self.out_of > 0.0 {
+            self.iron_reference / self.out_of
+        } else {
+            1.0
+        }
     }
 
     pub fn set_tone(&mut self, which: usize, position: f64) {
@@ -1054,6 +1423,37 @@ impl Chain {
         }
     }
 
+    /// Every solve the selected voice runs, added up.
+    ///
+    /// `passes_per_sample` reports the gain circuit alone, which for a voice
+    /// with a power amplifier is a third of its solver work -- and the third
+    /// that is usually not the problem. The 5150's power stage was measured at
+    /// 2.78 passes a sample and 33 % of realtime while it was actually taking
+    /// 6.17 and 71 %, because it was being fed a clean tone instead of what
+    /// its own preamplifier sends it.
+    ///
+    /// Returns solves, passes, unsettled, backtracks, fallbacks, non-finite
+    /// corrections and abandoned pivot orders, over the gain circuit, the
+    /// power amplifier and the transformer together.
+    pub fn solver_health(&self) -> SolverHealth {
+        let mut h = SolverHealth::default();
+        let sims = std::iter::once(&self.gains[self.gain])
+            .chain(self.powers[self.gain].as_ref())
+            .chain(self.iron.map(|i| &self.irons[i]));
+        for sim in sims {
+            let (solves, passes, unsettled, _) = sim.statistics();
+            let (backtracks, fallbacks, nonfinite) = sim.health();
+            h.solves += solves;
+            h.passes += passes;
+            h.unsettled += unsettled;
+            h.backtracks += backtracks;
+            h.fallbacks += fallbacks;
+            h.nonfinite += nonfinite;
+            h.replans += sim.replans();
+        }
+        h
+    }
+
     /// Puts a whole panel's worth of settings onto the chain.
     ///
     /// Every one of them, in one place. Anything that reaches a circuit has to
@@ -1061,12 +1461,19 @@ impl Chain {
     /// rather than a line quietly missing from a loop somewhere.
     pub fn apply(&mut self, s: &Settings) {
         self.set_voice(s.gain, s.diode, s.amplifier);
+        // After `set_voice`, because which control this reaches depends on
+        // which circuit is selected, and before `set_drive`, because both
+        // touch the same simulation and the order they dirty it in should not
+        // matter but reading in signal order is how this function is checked.
+        self.set_master(s.master);
+        self.set_graphic(s.graphic);
         self.set_iron(s.iron);
         self.set_tone_section(s.tone);
         self.set_cabinet(s.cabinet);
         self.set_oversampling(s.oversampling);
         self.set_drive(s.drive);
         self.set_tone_knobs(s.bass, s.mid, s.treble);
+        self.set_reverb_and_tremolo(s);
     }
 
     /// One figure, always. See `LATENCY`.
@@ -1105,11 +1512,41 @@ impl Chain {
         // One pole toward the target: about a millisecond at any sample rate
         // the plugin is likely to see.
         self.out_of += (self.out_of_target - self.out_of) * 0.02;
+        let iron_reference = self.iron_reference;
         let gain = &mut self.gains[self.gain];
         let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
         let mut iron = self.iron.map(|i| &mut self.irons[i]);
         let out_of = self.out_of;
         let mut power = self.powers[self.gain].as_mut();
+        let graphic = self.voice.has_graphic();
+        let self_graphic = &mut self.graphic;
+        // The Twin's reverb and tremolo. Neither is a netlist part and both
+        // are in the signal path, so they go here rather than nowhere.
+        //
+        // The reverb is a send and a return: the tank between the driver's
+        // transformer and the recovery stage's grid, and the recovery stage
+        // solved as the circuit it is. `twin::reverb_return` says what this
+        // arrangement departs from on the drawing and why it has to.
+        let twin = self.voice.has_reverb_and_tremolo();
+        let wet = if twin && self.reverb > 0.0 {
+            let sent = self.tank.process(x * self.into * twin::SEND_GAIN);
+            // Divided by the path's own gain, because the dry has been through
+            // the make-up and this has not. See `twin::RETURN_TRIM`.
+            self.tail.process(sent) * twin::RETURN_TRIM
+        } else {
+            0.0
+        };
+        // The tremolo's cell shunts the signal where the channel hands over to
+        // the phase inverter: a valve plate's own resistance in front of it and
+        // the inverter's grid leak behind. `Tremolo::attenuation` is that
+        // divider rather than a depth.
+        let throb = if twin && self.intensity > 0.0 {
+            self.tremolo
+                .attenuation(self.speed, self.intensity, 38_000.0, 1_000_000.0)
+        } else {
+            1.0
+        };
+
         let mut y = self.over.process(x * self.into, &mut |v| {
             // The power amplifier goes here, in volts, *before* the make-up.
             //
@@ -1131,20 +1568,56 @@ impl Chain {
             // anyway (see `set_oversampling` and BUG-017), and would have to
             // move if that ever changed.
             let mut amplified = gain.process(v);
+            // The graphic equaliser, where the drawing puts it: `EQ INPUT` is
+            // taken from `LEAD OUTPUT`, which is where the preamplifier above
+            // stops, and `EQ OUTPUT` goes to the phase inverter. Late in the
+            // preamplifier and *before* the power stage, which is the whole
+            // point of it -- a low band lifted here lands on the power section
+            // after four gain stages, and the same equaliser at the end of the
+            // chain would be a different amplifier (§9.8).
+            if graphic {
+                // The network and the driver that makes up its loss. See
+                // `markiic::DRIVER_GAIN_DB`.
+                amplified = self_graphic.process(amplified) * GRAPHIC_MAKE_UP;
+            }
             if let Some(ref mut sim) = power {
                 amplified = sim.process(amplified);
             }
-            let amplified = amplified * out_of;
-            match iron {
+            // The iron goes here, in front of the make-up, for the same
+            // reason the power stage does and by the same argument.
+            //
+            // Handed volts rather than a number near one, because what a core
+            // does depends on the flux and flux is in volt seconds. Scaled by
+            // `iron_drive`, which is how far the Drive control has moved from
+            // the position this voice's transformer is matched at -- so
+            // turning up drives the iron harder, which is the one thing a
+            // transformer in this position is for. See `IRON_VOLTS`.
+            let amplified = match iron {
                 Some(ref mut sim) => {
-                    // Handed volts rather than a number near one, because what
-                    // a core does depends on the flux and flux is in volt
-                    // seconds. See `IRON_VOLTS`.
-                    sim.process(amplified * IRON_VOLTS) * iron_trim / IRON_VOLTS
+                    // Normalised by the make-up **at the reference drive**
+                    // rather than at the current one. At that position this is
+                    // exactly what the iron used to be handed; above it the
+                    // circuit is putting out more and the transformer gets it,
+                    // and below it less.
+                    //
+                    // The scale factor divides back out, so what survives is
+                    // the core's nonlinearity and nothing else -- handing the
+                    // raw pre-make-up volts instead put a valve stage's tens
+                    // of volts through a ninety-six times multiplier and
+                    // measured 132 per cent distortion at the bottom of the
+                    // Drive control.
+                    let scale = iron_reference * IRON_VOLTS;
+                    sim.process(amplified * scale) * iron_trim / scale
                 }
                 None => amplified,
-            }
+            };
+            amplified * out_of
         });
+        // The tremolo shunts the channel's output, and the reverb is summed
+        // on to it. Both before the tone section and the cabinet, which is
+        // where they sit on the amplifier: the tank and the optical cell are
+        // in the preamplifier, and what follows is the speaker.
+        y = y * throb + wet;
         // Every setting delays by the same reported amount.
         y = self.pad.process(y);
         if let Some(i) = self.tone {
@@ -1189,6 +1662,44 @@ impl Chain {
     /// Whether the active gain circuit still has its DC hunt in front of it,
     /// which is the only moment at which its solution is worth sharing. See
     /// `Simulation::needs_operating_point`.
+    /// Cap the Newton passes every circuit in this chain may take.
+    ///
+    /// Layer 5a's lever. See `Simulation::ceiling` for why it is floored and
+    /// why this is not the mistake BUG-008 records.
+    /// The Twin's own three, carried through `apply` like everything else
+    /// that reaches a circuit.
+    fn set_reverb_and_tremolo(&mut self, s: &Settings) {
+        self.reverb = s.reverb;
+        self.speed = s.speed;
+        self.intensity = s.intensity;
+        // The Reverb control is a pot in the recovery stage's own circuit, so
+        // it goes where every other control goes: into the simulation, once a
+        // block, through `apply`.
+        self.tail.set_control(twin::REVERB, s.reverb);
+    }
+
+    pub fn set_pass_ceiling(&mut self, passes: usize) {
+        for sim in self
+            .gains
+            .iter_mut()
+            .chain(self.powers.iter_mut().flatten())
+            .chain(self.irons.iter_mut())
+        {
+            sim.set_pass_ceiling(passes);
+        }
+    }
+
+    /// How many samples in this chain finished at the ceiling rather than by
+    /// converging, across every circuit it holds.
+    pub fn pinched(&self) -> u64 {
+        self.gains
+            .iter()
+            .chain(self.powers.iter().flatten())
+            .chain(self.irons.iter())
+            .map(|s| s.pinched())
+            .sum()
+    }
+
     pub fn needs_operating_point(&self) -> bool {
         self.gains[self.gain].needs_operating_point()
     }

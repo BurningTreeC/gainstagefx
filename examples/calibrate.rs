@@ -67,6 +67,13 @@ fn intent(gain: Gain) -> f64 {
         // The Screamer does not use this: its level is stated rather than
         // searched for. See `stated_level`.
         Gain::Screamer => 21.0,
+        // A Twin Reverb is the clean reference. Its whole identity is that it
+        // does not run out of room, so this is the lowest figure in the
+        // catalogue and deliberately so: what a Twin does to a guitar is
+        // audible and small. See `CLAUDE.md` §51.2, which asks that it stay
+        // substantially cleaner than the British amplifiers at a matched
+        // output level.
+        Gain::Twin => 2.0,
         Gain::Muff => 45.0,
         // Neither of these is used any more -- both amplifiers state their
         // input level instead, see `stated_level` -- and they are left here
@@ -132,6 +139,7 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // nothing at all: 0.0 % at a quarter turn, 0.1 % at half, 0.7 % at
         // three quarters.
         Gain::Screamer => Some(GUITAR_VOLTS),
+        Gain::Twin => Some(GUITAR_VOLTS),
         // A guitar into the front of an amplifier. The same guitar.
         //
         // The Mark IIC+ was at 2.13 V, which is not a guitar and is not
