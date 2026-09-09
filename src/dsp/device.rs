@@ -22,6 +22,47 @@ pub struct Stamper<'a> {
     pub matrix: &'a mut [f64],
     pub rhs: &'a mut [f64],
     pub n: usize,
+    /// Whether the devices should hold their steps back.
+    ///
+    /// The step limiters are damping: they stop a device being carried
+    /// somewhere absurd by one over-eager Newton correction. That is worth
+    /// having when nothing else is watching the step, and it is exactly wrong
+    /// once something is. A limiter moves the point a device linearises at,
+    /// so the stamped system no longer describes the point it was asked
+    /// about -- and a residual measured against it is the residual of
+    /// somewhere else. The Newton direction taken from it then need not
+    /// reduce the residual at all, which is what a line search assumes.
+    ///
+    /// So on the passes where the line search runs, the limiters stand down
+    /// and it does their job instead: it is the better damping of the two,
+    /// because it decides by asking the circuit rather than by a fixed number
+    /// of volts. Overflow is not their responsibility and never was -- the
+    /// exponentials guard themselves, at `CLAMP` and in `plate_with_slopes`
+    /// -- and a trial that comes back non-finite anyway is refused.
+    /// Note this is the *step* limiters only -- the ones holding a device to
+    /// so many volts a pass, which is damping and nothing else. The junction
+    /// limiting on the diode and the transistor is a different thing wearing a
+    /// similar name: logarithmic, guarding `exp(v/vt)` from overflowing, and
+    /// never optional. Standing it down alongside these sent every one of the
+    /// 73P's and the Big Muff's 48000 solves a second to a non-finite
+    /// correction.
+    pub limiting: bool,
+
+    /// Whether any device had to hold a *junction* back on this stamp.
+    ///
+    /// Set by the diode and the transistor, and by nothing else. It says
+    /// whether the residual of this system is the residual of the point it was
+    /// asked about: junction limiting moves the linearisation and cannot be
+    /// switched off, so where it engages the stamp describes somewhere other
+    /// than the point being judged, and a line search must not decide anything
+    /// on it. Where it does not engage -- most samples, on most circuits --
+    /// the stamp sits exactly at the point and the residual can be trusted.
+    ///
+    /// Asking per stamp rather than per circuit is what lets the search reach
+    /// the pedals at all. Refusing every circuit that merely *contains* a
+    /// junction shut it out of the Big Muff, the TS808, the 73P and every
+    /// diode topology -- which is most of the catalogue.
+    pub junction_held: bool,
 }
 
 impl Stamper<'_> {
@@ -89,9 +130,109 @@ impl Stamper<'_> {
     }
 }
 
+/// Which matrix positions a device can write to, in any of its states.
+///
+/// The solver needs the circuit's *structure* -- which entries can be nonzero
+/// -- and it needs it before it has any values to look at. It used to get it
+/// by scanning the assembled matrix for zeros on every factorisation, a
+/// hundred thousand times a second, for a pattern that never changes: the
+/// positions a part stamps are fixed by the nodes it is wired between, and
+/// nothing about the audio moves a wire.
+///
+/// So each device declares its footprint instead. The methods here mirror
+/// `Stamper`'s one for one and do the same ground-skipping arithmetic, which
+/// is what keeps the two in step; `tests/devices.rs` runs every voice hard
+/// with a stamper that rejects any write landing outside the declaration, so
+/// the correspondence is checked rather than assumed.
+///
+/// A device with more than one state must declare the **union** over all of
+/// them. `OpAmp` is the one that matters: linear it constrains its inputs
+/// together, against a rail it constrains its output, and those are different
+/// entries. A footprint that described only the state it happens to be in
+/// would be right until the first time it clipped.
+pub struct Mark<'a> {
+    pub pattern: &'a mut [bool],
+    pub n: usize,
+}
+
+impl Mark<'_> {
+    fn set(&mut self, row: usize, col: usize) {
+        let n = self.n;
+        self.pattern[row * n + col] = true;
+    }
+
+    pub fn conductance(&mut self, a: usize, b: usize) {
+        if a != GROUND {
+            self.set(a, a);
+        }
+        if b != GROUND {
+            self.set(b, b);
+        }
+        if a != GROUND && b != GROUND {
+            self.set(a, b);
+            self.set(b, a);
+        }
+    }
+
+    pub fn transconductance(&mut self, a: usize, b: usize, c: usize, d: usize) {
+        for row in [a, b] {
+            if row == GROUND {
+                continue;
+            }
+            if c != GROUND {
+                self.set(row, c);
+            }
+            if d != GROUND {
+                self.set(row, d);
+            }
+        }
+    }
+
+    pub fn branch_current(&mut self, node: usize, branch: usize) {
+        if node != GROUND {
+            self.set(node, branch);
+        }
+    }
+
+    pub fn branch_constraint(&mut self, branch: usize, node: usize) {
+        if node != GROUND {
+            self.set(branch, node);
+        }
+    }
+}
+
+/// Where a device is linearised, saved so a rejected trial step can undo it.
+///
+/// A backtracking line search evaluates the circuit's residual at trial points
+/// it may then throw away, and stamping is not free of consequence: every
+/// device records the terminal voltages it was linearised at, and that record
+/// is the reference its own step limiter measures the *next* step against. The
+/// op-amp goes further and keeps which rail it is against, deliberately, so
+/// that it stops chattering between states.
+///
+/// If a rejected trial were allowed to leave those behind, the limiter's idea
+/// of "where we were" would become the last place the line search happened to
+/// look rather than the last answer anything accepted, and the op-amp's
+/// hysteresis would be decided by arithmetic that was discarded. So the search
+/// saves them before it starts and puts them back after every rejection.
+///
+/// Four slots and a flag covers every device here. What each one keeps where
+/// is its own business; nothing but that device ever reads them back.
+///
+/// This is only the linearisation. The physical state of the timestep --
+/// capacitor charge, inductor current, transformer flux history -- is advanced
+/// outside the Newton loop entirely and a trial step never touches it.
+#[derive(Clone, Copy, Default)]
+pub struct Linearisation {
+    at: [f64; 4],
+    clamped: bool,
+}
+
 pub trait Device: Send {
     /// Linearise at the present guess and stamp it.
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]);
+    /// Every matrix position `stamp` can write to, in any state. See `Mark`.
+    fn footprint(&self, m: &mut Mark);
     /// How far the last stamp's terminal voltages moved, so the solver can
     /// tell whether it has stopped moving.
     fn moved(&self) -> f64;
@@ -110,6 +251,14 @@ pub trait Device: Send {
     fn settled(&self, tolerance: f64) -> bool {
         self.moved() < tolerance
     }
+    /// Where this device is currently linearised.
+    fn linearisation(&self) -> Linearisation {
+        Linearisation::default()
+    }
+
+    /// Puts it back, undoing a trial step the line search rejected.
+    fn relinearise(&mut self, _saved: Linearisation) {}
+
     /// Called once the sample is settled.
     fn advance(&mut self) {}
 
@@ -148,6 +297,47 @@ fn limit(new: f64, old: f64, scale: f64) -> (f64, bool) {
     } else {
         (new, false)
     }
+}
+
+/// A volt below where a triode grid starts conducting.
+///
+/// Below this the grid draws nothing worth solving for -- the stamp itself
+/// says so, putting a picosiemens across it until `vgk` reaches zero -- and
+/// Koren's plate curve is smooth. The volt of margin is there because the
+/// interesting behaviour starts before zero, not at it, and the limiter should
+/// already be careful by the time it arrives.
+const GRID_CONDUCTS: f64 = -1.0;
+
+/// The step limiter for a triode grid.
+///
+/// A grid is the one place on a triode where the solve can run away, and the
+/// limiter is what damps it. But `limit` was applied at a scale of 0.5
+/// everywhere, holding the grid to one volt a pass wherever it happened to be
+/// -- including the tens of volts below cutoff that it crosses on every
+/// transient, where the stamp has already made it an open circuit and there is
+/// nothing to run away from.
+///
+/// That mattered because of how convergence is judged. `Device::settled`
+/// reports `!clamped`: a solve is finished only on a pass where nothing was
+/// held back. So the pass count was, in part, the distance the grid had to
+/// travel measured in volts. The 5150, six triodes and the hardest grid drive
+/// of any voice here, spent 7.69 passes a sample and failed to converge at all
+/// on 3304 solves a second.
+///
+/// Four volts a pass below cutoff and the original one volt from there up:
+/// 7.69 passes to 4.88, 3304 unsettled solves to 1062, and 64.1 % of realtime
+/// to 41.0 % on one channel. It nulls against the previous build at -236 dB,
+/// which is round-off -- the limiter changes the path Newton walks, not the
+/// answer it arrives at. `docs/experiments/crackle-root-cause.md` has the
+/// working, including why removing the limit entirely does not work: an
+/// unbounded step below cutoff sends every solve to the iteration cap.
+fn limit_grid(new: f64, old: f64) -> (f64, bool) {
+    let scale = if new < GRID_CONDUCTS && old < GRID_CONDUCTS {
+        2.0
+    } else {
+        0.5
+    };
+    limit(new, old, scale)
 }
 
 /// Where the exponential is held, short of overflowing.
@@ -221,9 +411,27 @@ impl Diode {
 }
 
 impl Device for Diode {
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.a, self.k);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.voltage, self.delta, 0.0, 0.0],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.voltage = saved.at[0];
+        self.delta = saved.at[1];
+        self.clamped = saved.clamped;
+    }
+
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let scale = self.spec.emission * VT;
         let guess = self.limit_junction(across(v, self.a, self.k), scale);
+        s.junction_held |= self.clamped;
         self.delta = (guess - self.voltage).abs();
         self.voltage = guess;
 
@@ -362,9 +570,34 @@ impl Triode {
 }
 
 impl Device for Triode {
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.p, self.k);
+        m.transconductance(self.p, self.k, self.g, self.k);
+        m.conductance(self.g, self.k);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.vpk, self.vgk, self.delta, 0.0],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.vpk = saved.at[0];
+        self.vgk = saved.at[1];
+        self.delta = saved.at[2];
+        self.clamped = saved.clamped;
+    }
+
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let vpk = across(v, self.p, self.k).max(0.0);
-        let (vgk, clamped) = limit(across(v, self.g, self.k), self.vgk, 0.5);
+        let raw = across(v, self.g, self.k);
+        let (vgk, clamped) = if s.limiting {
+            limit_grid(raw, self.vgk)
+        } else {
+            (raw, false)
+        };
         self.clamped = clamped;
         self.delta = (vpk - self.vpk).abs().max((vgk - self.vgk).abs());
         self.vpk = vpk;
@@ -533,10 +766,39 @@ impl Pentode {
 }
 
 impl Device for Pentode {
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.p, self.k);
+        m.transconductance(self.p, self.k, self.g, self.k);
+        m.transconductance(self.p, self.k, self.s, self.k);
+        m.conductance(self.s, self.k);
+        m.transconductance(self.s, self.k, self.g, self.k);
+        m.conductance(self.g, self.k);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.vpk, self.vgk, self.vsk, self.delta],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.vpk = saved.at[0];
+        self.vgk = saved.at[1];
+        self.vsk = saved.at[2];
+        self.delta = saved.at[3];
+        self.clamped = saved.clamped;
+    }
+
     fn stamp(&mut self, st: &mut Stamper, v: &[f64]) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let vsk = across(v, self.s, self.k).max(0.0);
-        let (vgk, clamped) = limit(across(v, self.g, self.k), self.vgk, 4.0);
+        let raw = across(v, self.g, self.k);
+        let (vgk, clamped) = if st.limiting {
+            limit(raw, self.vgk, 4.0)
+        } else {
+            (raw, false)
+        };
         self.clamped = clamped;
         self.delta = (vpk - self.vpk)
             .abs()
@@ -633,6 +895,29 @@ impl OpAmp {
 }
 
 impl Device for OpAmp {
+    fn footprint(&self, m: &mut Mark) {
+        m.branch_current(self.out, self.branch);
+        m.branch_constraint(self.branch, self.plus);
+        m.branch_constraint(self.branch, self.minus);
+        m.branch_constraint(self.branch, self.out);
+        m.branch_constraint(self.branch, self.reference);
+    }
+
+    /// The rail state travels with the linearisation, because it *is* one:
+    /// `stamp` decides which state to be in partly from the state it was
+    /// already in, and that hysteresis is what stops it chattering.
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.clamped, self.delta, 0.0, 0.0],
+            clamped: false,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.clamped = saved.at[0];
+        self.delta = saved.at[1];
+    }
+
     fn switches(&self) -> bool {
         true
     }
@@ -771,12 +1056,39 @@ impl Jfet {
 }
 
 impl Device for Jfet {
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.d, self.s);
+        m.transconductance(self.d, self.s, self.g, self.s);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.vgs, self.vds, self.delta, 0.0],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.vgs = saved.at[0];
+        self.vds = saved.at[1];
+        self.delta = saved.at[2];
+        self.clamped = saved.clamped;
+    }
+
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         // A square law is gentle enough not to need the limiter a junction
         // does, but the gate can still be walked a long way in one iteration
         // by whatever is in front of it.
-        let (vgs, held_g) = limit(across(v, self.g, self.s), self.vgs, 0.5);
-        let (vds, held_d) = limit(across(v, self.d, self.s), self.vds, 2.0);
+        let (vgs, held_g) = if s.limiting {
+            limit(across(v, self.g, self.s), self.vgs, 0.5)
+        } else {
+            (across(v, self.g, self.s), false)
+        };
+        let (vds, held_d) = if s.limiting {
+            limit(across(v, self.d, self.s), self.vds, 2.0)
+        } else {
+            (across(v, self.d, self.s), false)
+        };
         self.clamped = held_g || held_d;
         self.delta = (vgs - self.vgs).abs().max((vds - self.vds).abs());
         self.vgs = vgs;
@@ -891,10 +1203,35 @@ impl Core {
 }
 
 impl Device for Core {
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.a, self.b);
+    }
+
+    /// `flux` and `volts` only. `last_flux` and `last_volts` are the timestep
+    /// speaking, not the linearisation, and `advance` owns those.
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.volts, self.flux, self.delta, 0.0],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.volts = saved.at[0];
+        self.flux = saved.at[1];
+        self.delta = saved.at[2];
+        self.clamped = saved.clamped;
+    }
+
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         // The winding voltage is what drives the flux, and a long way in one
         // iteration is how a steep curve makes the solve oscillate.
-        let (volts, clamped) = limit(across(v, self.a, self.b), self.volts, 4.0);
+        let raw = across(v, self.a, self.b);
+        let (volts, clamped) = if s.limiting {
+            limit(raw, self.volts, 4.0)
+        } else {
+            (raw, false)
+        };
         self.clamped = clamped;
         self.delta = (volts - self.volts).abs();
         self.volts = volts;
@@ -991,9 +1328,31 @@ impl Bipolar {
 }
 
 impl Device for Bipolar {
+    fn footprint(&self, m: &mut Mark) {
+        m.transconductance(self.c, self.e, self.b, self.e);
+        m.transconductance(self.c, self.e, self.b, self.c);
+        m.transconductance(self.b, self.e, self.b, self.e);
+        m.transconductance(self.b, self.e, self.b, self.c);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.vbe, self.vbc, self.delta, 0.0],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.vbe = saved.at[0];
+        self.vbc = saved.at[1];
+        self.delta = saved.at[2];
+        self.clamped = saved.clamped;
+    }
+
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         let (vbe, held_e) = self.limit_junction(across(v, self.b, self.e), self.vbe);
         let (vbc, held_c) = self.limit_junction(across(v, self.b, self.c), self.vbc);
+        s.junction_held |= held_e || held_c;
         self.clamped = held_e || held_c;
         self.delta = (vbe - self.vbe).abs().max((vbc - self.vbc).abs());
         self.vbe = vbe;

@@ -215,3 +215,51 @@ fn a_lower_mu_triode_gives_less_gain() {
         "the two bottles gave {high:.1} dB and {low:.1} dB"
     );
 }
+
+/// The solver takes the circuit's structure from what each device *says* it
+/// stamps, so a wrong declaration is not a crash. It is a matrix entry the
+/// elimination declines to touch, an answer that is quietly not the answer,
+/// and nothing else in the suite would notice.
+///
+/// So: run every voice hard enough to put every device through every state it
+/// has -- an op-amp against both rails and in between, valve grids conducting,
+/// diodes forward and reverse -- and check the declared bounds actually
+/// contain the assembled matrix.
+#[test]
+fn no_device_stamps_outside_its_declared_footprint() {
+    use gainstagefx::voice::{self, Amplifier, Diode as D, Gain};
+    const RATE: f64 = 48_000.0;
+    for gain in Gain::ALL {
+        for (label, built) in [
+            (
+                "gain",
+                Some(voice::build_voice(gain, D::Silicon, Amplifier::Valve).expect("builds")),
+            ),
+            (
+                "power",
+                voice::build_power(gain).map(|b| b.expect("builds")),
+            ),
+        ] {
+            let Some(netlist) = built else { continue };
+            let mut sim = Simulation::new(netlist, RATE);
+            for control in 0..sim.controls() {
+                sim.set_control(control, 0.85);
+            }
+            sim.find_operating_point();
+            sim.watch_structure();
+            // Hard enough to rail an op-amp both ways and draw grid current.
+            for k in 0..8_000 {
+                let t = k as f64 / RATE;
+                let x = 4.0 * (std::f64::consts::TAU * 110.0 * t).sin()
+                    + 2.0 * (std::f64::consts::TAU * 1757.0 * t).sin();
+                sim.process(x);
+            }
+            assert_eq!(
+                sim.violations(),
+                0,
+                "{} {label}: stamps landed outside the declared footprint",
+                gain.name()
+            );
+        }
+    }
+}

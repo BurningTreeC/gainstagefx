@@ -139,7 +139,10 @@ fn main() {
 
     // And the whole grid, worst case only, for the voices that cost the most.
     for gain in [Gain::Peavey, Gain::Boogie] {
-        println!("=== {} : worst callback as a percentage of its budget ===", gain.name());
+        println!(
+            "=== {} : worst callback as a percentage of its budget ===",
+            gain.name()
+        );
         print!("  {:<10}", "rate");
         for b in BLOCKS {
             print!("{:>8}", b);

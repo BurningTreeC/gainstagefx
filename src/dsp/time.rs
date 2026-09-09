@@ -12,10 +12,24 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
-use super::device::{Bipolar, Core, Device, Diode, Jfet, OpAmp, Pentode, Stamper, Triode};
+use super::device::{
+    Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper, Triode,
+};
 use super::netlist::{Circuit, Part, GROUND};
 
 /// Enable flush-to-zero and denormals-are-zero in the MXCSR register.
+/// What one Newton pass achieved.
+enum Pass {
+    /// The answer has stopped moving and every device agrees it is done.
+    Settled,
+    /// A step was taken and it improved matters. There is more to do.
+    Moved,
+    /// No step of any permitted length improved the residual. Stopping here
+    /// and keeping the last good answer is the deterministic fallback; going
+    /// round again would only compute the same refusal.
+    Stuck,
+}
+
 /// Called once at startup. Without this, denormal f64 values cause 10-100x
 /// slower arithmetic on x86/x64, producing crackling when signals get small.
 pub fn enable_ftz_daz() {
@@ -47,6 +61,31 @@ const RELATIVE: f64 = 1e-6;
 /// formulation, not in the iteration count -- see
 /// `docs/experiments/solver-iteration-bound.md`.
 const MAX_ITERATIONS: usize = 32;
+
+/// How many times a Newton step may be halved before the solve gives up on it.
+///
+/// The full step is tried first and almost always taken, so this is the depth
+/// of a path the solver rarely walks. Six halvings reach a sixty-fourth, which
+/// is far enough to step into a sliver a full step jumps over, and the cost of
+/// reaching it is bounded and known.
+/// How many plain Newton passes to take before the line search is worth its
+/// cost.
+///
+/// A solve that has not converged by here is not going to on its own. Eight is
+/// measured rather than chosen: the circuits here average between 3.6 and 3.9
+/// passes, so a threshold of four fires on ordinary samples and charges every
+/// circuit for a residual it did not need -- the 73P went from 36.1 % of
+/// realtime to 41.4 % for nothing, its two unsettled solves a second unchanged.
+/// Twelve is too late: the 5150's convergence failures come back.
+///
+/// At eight the 5150 keeps none, the Mark IIC+ and the Big Muff pay about a
+/// point and a half, and the 73P pays two.
+const FULL_STEPS: usize = 8;
+
+const MAX_BACKTRACKS: usize = 6;
+
+/// The shortest step the line search will try, as a fraction of Newton's own.
+const MIN_LAMBDA: f64 = 1.0 / 64.0;
 /// The operating point is hunted once and can afford to be patient.
 const DC_ITERATIONS: usize = 500;
 
@@ -99,7 +138,29 @@ pub struct Simulation {
     matrix: Vec<f64>,
     pivots: Vec<usize>,
     /// Per row, the column its last nonzero sits in. See `factorise`.
+    /// The circuit's *structure*, worked out once from the netlist and the
+    /// devices' declared footprints rather than rescanned from the values on
+    /// every factorisation.
+    ///
+    /// `reach_template[row]` is the last column that row can hold a nonzero
+    /// in; `depth_template[col]` is the last row that column can. The
+    /// factorisation used to derive the first by scanning each row from the
+    /// right for its last nonzero -- which walks the trailing zeros, so on a
+    /// banded matrix it read most of the row to find an entry near the
+    /// diagonal -- and it never had the second at all, so the pivot search
+    /// read the whole column below the diagonal every time. Between them
+    /// those two scans were about half of the factorisation, and the
+    /// factorisation is half of the plugin. Measured on the four preamplifier
+    /// circuits, taking the structure from the netlist instead is worth 30 to
+    /// 37 per cent of the whole solve, and it is bit for bit identical: the
+    /// entries skipped are the ones that were zero.
+    watching: bool,
+    violations: usize,
+    reach_template: Vec<usize>,
+    depth_template: Vec<usize>,
     reach: Vec<usize>,
+    /// The working column bounds, refreshed from `depth_template` each call.
+    depth: Vec<usize>,
     /// Per row, the column its L part starts in. The other end of the same
     /// idea, used by the forward substitution.
     first: Vec<usize>,
@@ -143,6 +204,9 @@ pub struct Simulation {
     /// The answer before that, so the next sample can be started from where
     /// the last two were heading rather than from where the last one was.
     earlier: Vec<f64>,
+    /// Whether the last stamp sits exactly at the point it was given, which
+    /// is what says whether its residual may be believed.
+    exact: bool,
     /// Whether the next solve may be started from an extrapolation. False if
     /// anything in the circuit switches rather than bends.
     predictable: bool,
@@ -154,6 +218,20 @@ pub struct Simulation {
     newton_passes: u64,
     unsettled: u64,
     rebuilds: u64,
+    /// Where the devices are linearised for the stamp about to be taken.
+    /// Either where the solve currently is, or a point the line search is
+    /// trying out.
+    point: Vec<f64>,
+    /// The point being tried.
+    trial: Vec<f64>,
+    /// Every device's linearisation, saved so a rejected trial can undo it.
+    saved: Vec<Linearisation>,
+    /// How often the full Newton step was refused and a shorter one taken.
+    backtracks: u64,
+    /// Solves where no step of any length improved the residual.
+    fallbacks: u64,
+    /// Newton corrections that came back non-finite.
+    nonfinite: u64,
 }
 
 impl Simulation {
@@ -177,7 +255,12 @@ impl Simulation {
             base_dc: vec![0.0; n * n],
             matrix: vec![0.0; n * n],
             pivots: vec![0; n],
+            watching: false,
+            violations: 0,
+            reach_template: vec![0; n],
+            depth_template: vec![0; n],
             reach: vec![0; n],
+            depth: vec![0; n],
             first: vec![0; n],
             rhs: vec![0.0; n],
             voltage: vec![0.0; n],
@@ -196,12 +279,19 @@ impl Simulation {
             scratch: vec![0.0; n],
             previous: vec![0.0; n],
             earlier: vec![0.0; n],
+            exact: true,
             predictable: false,
             dirty: true,
             solves: 0,
             newton_passes: 0,
             unsettled: 0,
             rebuilds: 0,
+            point: vec![0.0; n],
+            trial: vec![0.0; n],
+            saved: Vec::new(),
+            backtracks: 0,
+            fallbacks: 0,
+            nonfinite: 0,
         };
         sim.rebuild();
         // Apply initial voltages from the circuit to help the DC solver
@@ -221,6 +311,15 @@ impl Simulation {
     /// number to look at when a circuit turns out to be expensive.
     pub fn unknowns(&self) -> usize {
         self.n
+    }
+
+    /// What the line search had to do: steps refused, solves where nothing
+    /// of any length helped, and non-finite Newton corrections.
+    ///
+    /// Separate from `statistics` so that adding to it does not change a
+    /// tuple half the harnesses already destructure.
+    pub fn health(&self) -> (u64, u64, u64) {
+        (self.backtracks, self.fallbacks, self.nonfinite)
     }
 
     pub fn statistics(&self) -> (u64, u64, u64, u64) {
@@ -580,10 +679,16 @@ impl Simulation {
 
         self.device_rate = self.rate;
         self.predictable = !self.devices.iter().any(|d| d.switches());
+        // Sized here, off the audio thread, because the line search may not
+        // allocate on it. `rebuild` is the only thing that changes how many
+        // devices there are.
+        self.saved
+            .resize(self.devices.len(), Linearisation::default());
         self.base = base;
         self.base_dc = base_dc;
         self.source = source;
         self.bias = bias;
+        self.map_structure();
 
         // A linear circuit is factorised once and reused. A circuit with a
         // device in it has to be refactorised every Newton pass, because the
@@ -594,10 +699,90 @@ impl Simulation {
             &mut self.matrix,
             &mut self.pivots,
             &mut self.reach,
+            &mut self.depth,
             &mut self.first,
+            &self.reach_template,
+            &self.depth_template,
             n,
         );
         self.dirty = false;
+    }
+
+    /// Work out which matrix positions can ever be nonzero, and turn that into
+    /// the two bounds the factorisation needs.
+    ///
+    /// Everything the linear network stamps is already sitting in `base` and
+    /// `base_dc`, so their nonzeros are read straight off. What is not there
+    /// is the nonlinear devices, whose entries appear only once they are
+    /// stamped and, for an op-amp, differ between its linear state and its
+    /// railed one -- so each device declares its own footprint over all of its
+    /// states. See `Mark`.
+    ///
+    /// The result is deliberately an **upper bound**. A conductance that
+    /// happens to come out at exactly zero leaves a position marked that holds
+    /// nothing, and the elimination then runs one column further and subtracts
+    /// `factor * 0.0` from it. That changes no value, so the arithmetic stays
+    /// bit for bit what a value-driven scan produced; it only declines to
+    /// discover, a hundred thousand times a second, a shape that was decided
+    /// when the parts were wired together.
+    fn map_structure(&mut self) {
+        let n = self.n;
+        let mut pattern = vec![false; n * n];
+        for (slot, marked) in self.base.iter().zip(pattern.iter_mut()) {
+            *marked |= *slot != 0.0;
+        }
+        for (slot, marked) in self.base_dc.iter().zip(pattern.iter_mut()) {
+            *marked |= *slot != 0.0;
+        }
+        {
+            let mut mark = Mark {
+                pattern: &mut pattern,
+                n,
+            };
+            for device in &self.devices {
+                device.footprint(&mut mark);
+            }
+        }
+        // The diagonal is always in play: the factorisation pivots on it, and
+        // a row whose reach fell short of its own diagonal would bound the
+        // elimination to nothing.
+        for row in 0..n {
+            self.reach_template[row] = (row..n)
+                .rev()
+                .find(|&k| pattern[row * n + k])
+                .unwrap_or(row)
+                .max(row);
+            self.depth_template[row] = (row..n)
+                .rev()
+                .find(|&k| pattern[k * n + row])
+                .unwrap_or(row)
+                .max(row);
+        }
+    }
+
+    /// Check every stamp against the declared structure, and count what falls
+    /// outside it.
+    ///
+    /// Off by default and never on in the audio path: this is `O(n^2)` a pass
+    /// and exists so `tests/devices.rs` can hold the devices to their word.
+    pub fn watch_structure(&mut self) {
+        self.watching = true;
+        self.violations = 0;
+    }
+
+    /// Stamps seen outside the declared structure since `watch_structure`.
+    pub fn violations(&self) -> usize {
+        self.violations
+    }
+
+    /// The two structural bounds `map_structure` worked out.
+    ///
+    /// Exposed so `tests/devices.rs` can check that nothing ever stamps
+    /// outside it. A footprint that is wrong is not a crash: it is a matrix
+    /// entry the elimination declines to touch, an answer that is quietly not
+    /// the answer, and no test would notice without this.
+    pub fn structure(&self) -> (Vec<usize>, Vec<usize>) {
+        (self.reach_template.clone(), self.depth_template.clone())
     }
 
     /// Where the circuit sits with no signal on it.
@@ -623,10 +808,14 @@ impl Simulation {
         let mut settled = false;
         // At rest a capacitor carries no current and an inductor no voltage,
         // which is what the zeroed histories already say.
-        for _ in 0..DC_ITERATIONS {
-            if self.iterate(0.0, true) {
-                settled = true;
-                break;
+        for pass in 0..DC_ITERATIONS {
+            match self.iterate(0.0, true, pass >= FULL_STEPS) {
+                Pass::Settled => {
+                    settled = true;
+                    break;
+                }
+                Pass::Moved => {}
+                Pass::Stuck => break,
             }
         }
         // The reactances take up whatever the operating point implies, so they
@@ -664,8 +853,13 @@ impl Simulation {
         settled
     }
 
-    /// One Newton pass. Returns whether it has stopped moving.
-    fn iterate(&mut self, input: f64, dc: bool) -> bool {
+    /// Stamps the circuit as linearised at `self.point`, leaving the system in
+    /// `self.work` and `self.rhs`.
+    ///
+    /// Split out of `iterate` because the line search needs to build the same
+    /// system at more than one point in a single pass: once where the solve
+    /// is, and once at each step it tries.
+    fn build(&mut self, input: f64, dc: bool, limiting: bool) {
         let n = self.n;
         self.work
             .copy_from_slice(if dc { &self.base_dc } else { &self.base });
@@ -681,15 +875,104 @@ impl Simulation {
             }
         }
 
-        {
-            let mut stamper = Stamper {
-                matrix: &mut self.work,
-                rhs: &mut self.rhs,
-                n,
-            };
-            for device in &mut self.devices {
-                device.stamp(&mut stamper, &self.voltage);
+        let mut stamper = Stamper {
+            matrix: &mut self.work,
+            rhs: &mut self.rhs,
+            n,
+            limiting,
+            junction_held: false,
+        };
+        for device in &mut self.devices {
+            device.stamp(&mut stamper, &self.point);
+        }
+        // Whether this stamp actually sits at the point it was given. See
+        // `Stamper::junction_held`.
+        self.exact = !stamper.junction_held;
+        if self.watching {
+            for row in 0..n {
+                for col in 0..n {
+                    if self.work[row * n + col] != 0.0
+                        && (col > self.reach_template[row] || row > self.depth_template[col])
+                    {
+                        self.violations += 1;
+                    }
+                }
             }
+        }
+    }
+
+    /// How badly `x` fails to satisfy the circuit as currently stamped.
+    ///
+    /// The companion models are built so that solving `A x = b` yields the
+    /// next Newton iterate, which makes `A(x) x - b(x)` the residual of the
+    /// nonlinear system itself: it is zero exactly at the solution and
+    /// nowhere else. Summed and squared, that is the merit function -- one
+    /// number saying how wrong a candidate is, which is what lets the line
+    /// search compare two of them.
+    ///
+    /// Summing the squares rather than taking the largest matters: individual
+    /// rows cancel each other, and a step that halves one row while doubling
+    /// another is not progress.
+    fn merit(&self, x: &[f64]) -> f64 {
+        let n = self.n;
+        let mut total = 0.0;
+        for row in 0..n {
+            let mut sum = -self.rhs[row];
+            for col in 0..n {
+                let a = self.work[row * n + col];
+                if a != 0.0 {
+                    sum += a * x[col];
+                }
+            }
+            total += sum * sum;
+        }
+        total
+    }
+
+    /// One Newton pass, with a bounded backtracking line search.
+    ///
+    /// `search` turns the line search on. With it off this is a plain full
+    /// Newton step, which is what it should be while the solve is behaving:
+    /// judging a step means stamping the circuit where it lands, and a stamp
+    /// costs about what the factorisation does, so a pass that consults the
+    /// residual costs roughly twice one that does not. Measured over a whole
+    /// second the search buys about a quarter fewer passes, which does not
+    /// pay for doubling them.
+    ///
+    /// What it does buy is the tail, and the tail is what misses deadlines.
+    /// So the caller runs plain Newton first and turns this on only for a
+    /// solve that is still going after `FULL_STEPS` -- one that is no longer
+    /// converging but oscillating, where a shorter step is the only way out
+    /// and the extra stamp is worth paying for because the alternative is
+    /// thirty-two passes and a held sample.
+    fn iterate(&mut self, input: f64, dc: bool, search: bool) -> Pass {
+        let n = self.n;
+
+        // Linearise where the solve is now.
+        //
+        // Re-centred every pass rather than inherited from the step that got
+        // us here. A stamp taken during the last pass's trial had its devices
+        // limited toward *that* pass's starting point, so it describes
+        // somewhere slightly other than where the solve now is, and a
+        // residual measured against it is not the residual of anything.
+        // Carrying it forward to save the stamp cost the 73P forty-seven
+        // thousand failed solves a second.
+        self.point.copy_from_slice(&self.voltage);
+        self.build(input, dc, !search);
+        // A search needs a residual it can believe at both ends. If a junction
+        // had to be held here, this one cannot be believed and the pass takes
+        // the plain full step instead.
+        let search = search && self.exact;
+        let here = if search {
+            self.merit(&self.voltage)
+        } else {
+            0.0
+        };
+
+        // Save the linearisation before the search disturbs it. See
+        // `Linearisation`: a rejected trial must leave nothing behind.
+        for (device, saved) in self.devices.iter().zip(self.saved.iter_mut()) {
+            *saved = device.linearisation();
         }
 
         self.guess.copy_from_slice(&self.rhs);
@@ -697,7 +980,10 @@ impl Simulation {
             &mut self.work,
             &mut self.pivots,
             &mut self.reach,
+            &mut self.depth,
             &mut self.first,
+            &self.reach_template,
+            &self.depth_template,
             n,
         );
         substitute(
@@ -709,9 +995,14 @@ impl Simulation {
             n,
             &mut self.scratch,
         );
+        if !self.guess.iter().all(|v| v.is_finite()) {
+            // A correction that is not a number cannot be shortened into one.
+            self.nonfinite += 1;
+            return Pass::Stuck;
+        }
 
-        // How far the solution moved, measured against the scale it is moving
-        // *at*.
+        // How far the solution wants to move, measured against the scale it is
+        // moving *at*.
         //
         // This was an absolute figure: a millionth of a volt, everywhere. On a
         // grid sitting at a tenth of a volt that is a reasonable demand. On a
@@ -728,18 +1019,106 @@ impl Simulation {
         // part than SPICE and keeps the same absolute floor, because the
         // absolute floor is what a small-signal node needs and there is no
         // reason to relax it.
+        //
+        // Measured on the *full* Newton correction, never on a shortened one.
+        // The test asks whether the answer has stopped moving, and a step that
+        // the line search deliberately made small is small for that reason and
+        // not because the circuit has settled. Measuring the shortened step
+        // instead let a solve declare itself converged at whatever value it
+        // happened to be holding: damped to a sixty-fourth, the 73P reported
+        // itself done after a single pass. See `R-013` in the regression log.
         let mut moved: f64 = 0.0;
         for k in 0..n {
             let step = (self.guess[k] - self.voltage[k]).abs();
             let scale = TOLERANCE + RELATIVE * self.voltage[k].abs();
             moved = moved.max(step / scale);
         }
-        // `moved` is now in units of "tolerances", so the test below compares
-        // it against one rather than against TOLERANCE.
-        self.voltage.copy_from_slice(&self.guess);
-        // Every device has to agree it is done, and each says so in the way
-        // that suits it -- see `Device::settled`.
-        moved < 1.0 && self.devices.iter().all(|d| d.settled(TOLERANCE))
+
+        // Converged? Then stop here, before the line search, and take the
+        // full step -- which is by definition a tiny one.
+        //
+        // This test has to come first, and getting that wrong is subtle. A
+        // converged solve has a residual sitting at round-off, and a residual
+        // at round-off cannot get any smaller: every trial the line search
+        // offers is rejected for failing to improve on a number that is
+        // already as small as arithmetic allows, and the search reports
+        // failure at precisely the moment it has succeeded. Measured with the
+        // test in the wrong place, the transformer core -- five unknowns, one
+        // device, converging in two passes flat -- reported 7854 failed
+        // solves a second.
+        if moved < 1.0 && self.devices.iter().all(|d| d.settled(TOLERANCE)) {
+            self.voltage.copy_from_slice(&self.guess);
+            return Pass::Settled;
+        }
+
+        // Not there yet, so the step has to earn its place. The full one
+        // first, and almost always the one taken: Newton converges
+        // quadratically near the answer and a shortened step throws that
+        // away, so the common path must not pay for the search at all -- one
+        // trial, accepted, and done.
+        if !search {
+            self.voltage.copy_from_slice(&self.guess);
+            return Pass::Moved;
+        }
+
+        let mut lambda = 1.0;
+        let mut taken = false;
+        for _ in 0..MAX_BACKTRACKS {
+            for k in 0..n {
+                self.trial[k] = self.voltage[k] + lambda * (self.guess[k] - self.voltage[k]);
+            }
+            if self.trial.iter().all(|v| v.is_finite()) {
+                // Re-linearise where the step lands and ask whether the
+                // circuit is any closer to satisfying itself there.
+                self.point.copy_from_slice(&self.trial);
+                self.build(input, dc, false);
+                if !self.exact {
+                    // A junction was held where this step lands, so the
+                    // residual there is somewhere else's. Stop searching and
+                    // let the full step stand rather than decide on it.
+                    break;
+                }
+                let there = self.merit(&self.trial);
+                if there.is_finite() && there < here {
+                    taken = true;
+                    break;
+                }
+            }
+            // Refused. Put every device back where it was, so the next,
+            // shorter trial is measured from the same place this one was.
+            for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                device.relinearise(*saved);
+            }
+            self.backtracks += 1;
+            lambda *= 0.5;
+            if lambda < MIN_LAMBDA {
+                break;
+            }
+        }
+
+        if !taken {
+            // Nothing of any length improved the residual. That is not a
+            // reason to stop: abandoning the solve here leaves it at a point
+            // it had not finished with, and measured against an accurate
+            // reference solve that was *worse* than the plain bounded Newton
+            // this replaced -- the 5150 went from 48.8 dB below the reference
+            // to 31.7 dB below it, which is a solver getting less right, not
+            // more.
+            //
+            // So the deterministic fallback is the full Newton step, which is
+            // exactly what the solver did before there was a line search to
+            // consult. The search declines to improve on it and the pass
+            // proceeds without its guidance.
+            self.fallbacks += 1;
+            for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                device.relinearise(*saved);
+            }
+            self.voltage.copy_from_slice(&self.guess);
+            return Pass::Moved;
+        }
+
+        self.voltage.copy_from_slice(&self.trial);
+        Pass::Moved
     }
 
     /// One sample in, one out.
@@ -813,11 +1192,21 @@ impl Simulation {
             }
             self.previous.copy_from_slice(&self.earlier);
             let mut settled = false;
-            for _ in 0..MAX_ITERATIONS {
+            for pass in 0..MAX_ITERATIONS {
                 self.newton_passes += 1;
-                if self.iterate(input, false) {
-                    settled = true;
-                    break;
+                // Plain Newton while it is converging. A solve that is merely
+                // far from the answer gets there in three or four passes; one
+                // still going after that is oscillating rather than
+                // approaching, and only then is the residual worth its price.
+                match self.iterate(input, false, pass >= FULL_STEPS) {
+                    Pass::Settled => {
+                        settled = true;
+                        break;
+                    }
+                    Pass::Moved => {}
+                    // Nothing helped, and running the same pass again would
+                    // only find that out again at the same price.
+                    Pass::Stuck => break,
                 }
             }
             if !settled {
@@ -965,37 +1354,40 @@ fn inject(rhs: &mut [f64], a: usize, b: usize, current: f64) {
 /// Pivoting is not optional here. The diagonal carries zeros wherever a node's
 /// own admittance cancels, and an unpivoted elimination divides by whatever
 /// happens to be sitting there.
+#[allow(clippy::too_many_arguments)]
 fn factorise(
     m: &mut [f64],
     pivots: &mut [usize],
     reach: &mut [usize],
+    depth: &mut [usize],
     first: &mut [usize],
+    reach_template: &[usize],
+    depth_template: &[usize],
     n: usize,
 ) {
-    // How far right each row actually goes.
+    // How far right each row goes, and how far down each column does.
     //
     // A circuit matrix is nearly all zeros -- a part only ever stamps the nodes
     // it is connected to, so a row typically holds three or four entries out of
     // thirty -- and the elimination's inner loop was running the full width of
-    // the matrix regardless, multiplying by zero for most of it. The cost of a
-    // dense factorisation is the cube of the size, and at thirty unknowns and
-    // three Newton passes a sample that is most of what the plugin spends.
+    // the matrix regardless, multiplying by zero for most of it. So each row
+    // carries the column index of its last nonzero and the inner loop stops
+    // there; each column carries the row index of its last, and the pivot
+    // search stops there.
     //
-    // So each row carries the column index of its last nonzero, and the inner
-    // loop stops there. Scanning from the right finds it in a step or two,
-    // because the entries that are there sit near the diagonal. Nothing else
-    // changes: only exact zeros are skipped, so the arithmetic and the pivoting
-    // are bit for bit what they were.
-    for (row, r) in reach.iter_mut().enumerate() {
-        let mut last = row;
-        for k in (row..n).rev() {
-            if m[row * n + k] != 0.0 {
-                last = k;
-                break;
-            }
-        }
-        *r = last;
-    }
+    // Both come from the netlist, not from the values. They used to be
+    // rediscovered on every call by scanning: the row scan walked in from the
+    // right, which on a banded matrix means reading the whole tail of zeros to
+    // find an entry sitting near the diagonal, and there was no column bound at
+    // all, so the pivot search read every row below the diagonal. Measured on
+    // the Boogie preamplifier that was 325 strided column reads and about 230
+    // row reads a factorisation, against 59 actual eliminations -- the search
+    // for the shape cost four times the arithmetic done on it.
+    //
+    // The shape is fixed when the parts are wired together. `map_structure`
+    // works it out once. See `reach_template`.
+    reach.copy_from_slice(reach_template);
+    depth.copy_from_slice(depth_template);
 
     for (k, p) in pivots.iter_mut().enumerate() {
         *p = k;
@@ -1008,7 +1400,9 @@ fn factorise(
     for col in 0..n {
         let mut best = col;
         let mut magnitude = m[col * n + col].abs();
-        for row in (col + 1)..n {
+        // Nothing below this column's last possible entry can be the pivot.
+        let bottom = depth[col];
+        for row in (col + 1)..=bottom {
             let candidate = m[row * n + col].abs();
             if candidate > magnitude {
                 best = row;
@@ -1023,13 +1417,26 @@ fn factorise(
             reach.swap(col, best);
             first.swap(col, best);
         }
+        // The swap may have carried the old pivot row's entries down to row
+        // `best`, so every column that row reaches into can now hold a nonzero
+        // that far down. `best <= depth[col]`, so bounding the widening by
+        // this column's own depth below covers it.
+
         let pivot = m[col * n + col];
         if pivot.abs() < 1e-30 {
             continue;
         }
-        // Nothing to the right of the pivot row's reach can be changed by it.
+        // Nothing to the right of the pivot row's reach can be changed by it,
+        // and nothing below this column's own last entry has anything in this
+        // column to eliminate. The second half of that was missing: the loop
+        // ran to `n` and read `m[row * n + col]` for every row below the
+        // diagonal just to find a zero and skip it -- and that read is
+        // strided across rows, so on a twenty-eight unknown circuit it was
+        // about four hundred loads a factorisation, each on its own cache
+        // line. Bounding it costs nothing and skips only entries that were
+        // zero, so the arithmetic is unchanged.
         let stop = reach[col];
-        for row in (col + 1)..n {
+        for row in (col + 1)..=bottom {
             // Tested before the division, not after it.
             //
             // Most rows have nothing below the pivot at all, and eliminating
@@ -1056,6 +1463,13 @@ fn factorise(
             // The fill-in this just created reaches as far as the pivot row did.
             if stop > reach[row] {
                 reach[row] = stop;
+            }
+        }
+        // And it goes as far down as this column's own entries did, which is
+        // what keeps the pivot search's bound honest for the columns to come.
+        for k in (col + 1)..=stop {
+            if depth[k] < bottom {
+                depth[k] = bottom;
             }
         }
     }

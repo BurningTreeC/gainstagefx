@@ -184,6 +184,14 @@ impl Plugin for GainStageFx {
                 if let Some(op) = first[0].iron_operating_point() {
                     chain.share_iron_operating_point_from(op);
                 }
+                // The power stage as well. `Chain::find_operating_point` hunts
+                // all three -- gain, iron and power -- but only two of them
+                // were ever handed on, so every channel but the first was
+                // left to hunt its own power stage on its next sample, inside
+                // the callback, which is the one place it must not happen.
+                if let Some(op) = first[0].power_operating_point() {
+                    chain.share_power_operating_point_from(op);
+                }
             }
         }
 

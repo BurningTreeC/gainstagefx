@@ -485,6 +485,21 @@ impl TriodeSpec {
         kp: 84.0,
         kvb: 300.0,
     };
+    /// 12AT7. Between the other two in amplification and well below the ECC83
+    /// in plate resistance, which is why it is what drives things: a reverb
+    /// transformer's primary in a blackface Fender, and a long-tailed pair
+    /// where the pair has to swing two power tubes' grids.
+    ///
+    /// From the same published Koren set as the two above -- the ECC83 and
+    /// ECC82 figures here are Koren's exactly, so this one is taken from the
+    /// same family rather than mixed in from elsewhere.
+    pub const ECC81: TriodeSpec = TriodeSpec {
+        mu: 60.0,
+        ex: 1.35,
+        kg1: 460.0,
+        kp: 300.0,
+        kvb: 300.0,
+    };
 }
 
 impl Part {
@@ -1112,7 +1127,11 @@ fn cuthill_mckee(parts: &[Part], nodes: usize) -> Vec<usize> {
     // Who touches whom. Ground is not a row in the matrix, so it joins nothing.
     let mut neighbours: Vec<Vec<usize>> = vec![Vec::new(); nodes];
     for part in parts {
-        let pins: Vec<usize> = part.touches().into_iter().filter(|&p| p != GROUND).collect();
+        let pins: Vec<usize> = part
+            .touches()
+            .into_iter()
+            .filter(|&p| p != GROUND)
+            .collect();
         for (i, &a) in pins.iter().enumerate() {
             for &b in &pins[i + 1..] {
                 if a != b {
