@@ -30,7 +30,11 @@ fn main() {
     let mut sim = Simulation::new(c, RATE);
     println!(
         "operating point {}\n",
-        if sim.find_operating_point() { "settled" } else { "DID NOT SETTLE" }
+        if sim.find_operating_point() {
+            "settled"
+        } else {
+            "DID NOT SETTLE"
+        }
     );
     let v = sim.operating_point();
     for (i, name) in names.iter().enumerate() {
@@ -45,8 +49,10 @@ fn main() {
     println!("\nThe guide: 18 dB for the block, 4 dB of it the transformer.");
     let electronic = at("out", 1e-3, 1_000.0).gain_db();
     let whole = at("spk", 1e-3, 1_000.0).gain_db();
-    println!("  electronic {electronic:.2} dB, transformer {:.2} dB, block {whole:.2} dB",
-             whole - electronic);
+    println!(
+        "  electronic {electronic:.2} dB, transformer {:.2} dB, block {whole:.2} dB",
+        whole - electronic
+    );
 
     println!("\nAcross the band, at the speaker:");
     for hz in [20.0, 50.0, 200.0, 1_000.0, 5_000.0, 20_000.0] {
@@ -56,6 +62,10 @@ fn main() {
     println!("\nAgainst level, 1 kHz:");
     for volts in [0.001f64, 0.01, 0.05, 0.1, 0.3, 1.0] {
         let m = at("spk", volts, 1_000.0);
-        println!("  {volts:>8.3} V{:>9.2} dB{:>9.2} % THD", m.gain_db(), m.thd_percent());
+        println!(
+            "  {volts:>8.3} V{:>9.2} dB{:>9.2} % THD",
+            m.gain_db(),
+            m.thd_percent()
+        );
     }
 }
