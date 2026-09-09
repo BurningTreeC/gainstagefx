@@ -305,7 +305,10 @@ fn the_output_block_is_clean_and_flat() {
 fn the_output_block_starts_where_it_settles() {
     let circuit = neve::output(600.0, 10_000.0).expect("builds");
     let mut sim = Simulation::new(circuit, RATE);
-    assert!(sim.find_operating_point(), "the operating point did not settle");
+    assert!(
+        sim.find_operating_point(),
+        "the operating point did not settle"
+    );
     let mut worst = 0.0f64;
     for _ in 0..(RATE as usize / 4) {
         worst = worst.max(sim.process(0.0).abs());

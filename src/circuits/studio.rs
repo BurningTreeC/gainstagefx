@@ -26,7 +26,30 @@ use crate::dsp::netlist::{Circuit, Fault, Netlist, Taper};
 /// The gain control, which is a volume between the stages -- see `preamp`.
 pub const GAIN: usize = 0;
 /// The gain device's own bypass, left in circuit.
+///
+/// As with the preamplifier's, "left in circuit" has to be *said*: the plugin
+/// reaches Drive and the tone controls and nothing else, so an unclaimed
+/// control sits at the middle of its travel. See BUG-023 and `Netlist::rest`.
 pub const BYPASS: usize = 1;
+
+/// Where it sits unless a caller moves it.
+///
+/// **0.5, and that is a recorded position rather than a corrected one.** The
+/// defect BUG-023 fixed was that this control's position was never *stated* --
+/// it sat at whatever `Simulation::new` leaves an unclaimed control, and
+/// nobody had decided that was right. Stating it is the fix.
+///
+/// Fully in circuit was tried, because the line above says "left in circuit".
+/// It makes these channels materially less clean: through the test's 200 ohm
+/// source into a 10 k load the console went from a comfortably second-harmonic
+/// stage to 10.06 % second against 4.71 % third, which is a different voice.
+/// These are the two channels whose whole identity is that they are built *not*
+/// to run out of room, the calibration was measured here, and a doc comment is
+/// not evidence enough to move a voice against a measurement. The guitar
+/// preamplifier is the opposite case and did move -- see `preamp::BYPASS_REST`,
+/// where fully in circuit took the Crunch voice from 30 % distortion to 60 %
+/// and answered a reported complaint.
+pub const BYPASS_REST: f64 = 0.5;
 
 /// What does the amplifying.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +115,7 @@ pub const STUDIO: Values = Values {
 
 pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("preamplifier");
+    net.rest(BYPASS, BYPASS_REST);
     net.input("in", source);
     let mut node = String::from("in");
 

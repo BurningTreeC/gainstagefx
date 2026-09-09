@@ -102,7 +102,10 @@ fn every_power_tube_behaves_like_one() {
         for step in 0..=20 {
             let vg = -60.0 + 3.0 * step as f64;
             let (ip, ig2) = t.currents(450.0, vg, 400.0);
-            assert!(ip.is_finite() && ig2.is_finite(), "{name} is not finite at {vg} V");
+            assert!(
+                ip.is_finite() && ig2.is_finite(),
+                "{name} is not finite at {vg} V"
+            );
             assert!(ip >= last, "{name} conducts less at {vg} V than below it");
             last = ip;
         }

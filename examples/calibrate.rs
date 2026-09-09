@@ -155,6 +155,38 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // after the total stops. Noted as a remaining discrepancy rather than
         // tuned out.
         Gain::Peavey => Some(GUITAR_VOLTS),
+        // And the four typology voices, which are guitar circuits with a
+        // guitar in front of them like everything above.
+        //
+        // These were the last ones still having their input level inferred
+        // from a distortion figure, and it had starved every one of them.
+        // High Gain was handed 0.0021 V -- thirty-five decibels below a
+        // guitar -- because that is the level at which three cascaded valve
+        // stages happen to read forty per cent on a sine. Crunch got 0.085 V
+        // and spent three quarters of its control going from 0.8 % to 4.7 %.
+        // Overdrive got 0.025 V, fourteen decibels down, and was clean for
+        // the first quarter of its knob. Measured in
+        // `examples/starved.rs`; at a guitar's level Crunch's control is
+        // worth 29.5 points of distortion instead of 12.3 and reaches 30.6 %
+        // rather than 13 %.
+        //
+        // The reasoning is the same one written above for the Screamer and
+        // the two amplifiers, and it is `CLAUDE.md` section 24.6: a guitar's
+        // output is a fact about a guitar, not something to be inferred from
+        // how much a circuit distorts. Nothing in a guitar changes when it is
+        // plugged into a different pedal.
+        Gain::Crunch => Some(GUITAR_VOLTS),
+        Gain::Overdrive => Some(GUITAR_VOLTS),
+        Gain::Distortion => Some(GUITAR_VOLTS),
+        // Fully saturated across most of its control at a guitar's level, and
+        // its total harmonic distortion then falls as the knob comes up --
+        // 81.9 % shut, 49.1 % open -- because past saturation a sine's THD
+        // stops measuring how distorted the circuit is and starts measuring
+        // what has happened to the fundamental. Three cascaded valve stages
+        // run hot *are* saturated by a guitar; the same is recorded for the
+        // 5150 above. Noted as a remaining discrepancy in what the figure can
+        // see, not tuned out by starving the circuit.
+        Gain::HighGain => Some(GUITAR_VOLTS),
         _ => None,
     }
 }
@@ -174,9 +206,8 @@ impl Voice {
                 voice::build_voice(gain, diode, amplifier).expect("catalogue builds"),
                 RATE,
             ),
-            power: voice::build_power(gain).map(|built| {
-                Simulation::new(built.expect("catalogue builds"), RATE)
-            }),
+            power: voice::build_power(gain)
+                .map(|built| Simulation::new(built.expect("catalogue builds"), RATE)),
         }
     }
 

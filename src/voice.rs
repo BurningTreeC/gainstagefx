@@ -872,8 +872,33 @@ impl Chain {
         if index != self.gain {
             self.gain = index;
             self.gains[index].reset();
+            // And its power stage, for the same reason and more so. A power
+            // stage sits at four hundred volts with its output transformer
+            // carrying the plates' standing current, and `set_voice` used to
+            // leave all of it alone: switching back to an amplifier handed a
+            // freshly settled preamp to a power stage still holding whatever
+            // charge and flux it had when it was last switched away from.
+            if let Some(sim) = self.powers[index].as_mut() {
+                sim.reset();
+            }
             self.set_oversampling(self.requested_oversampling);
             self.set_drive(self.drive);
+            // The make-up belongs to the voice, so it changes with the voice
+            // rather than gliding there.
+            //
+            // `out_of` glides because the make-up moves with the *drive*
+            // knob, and a knob is a continuum. Two voices are not: the make-up
+            // converts that circuit's own output -- which for an amplifier is
+            // amplifier volts, tens of them after the power stage, and for a
+            // pedal is something near one -- into the digital domain. Gliding
+            // between them applies one voice's conversion to another voice's
+            // output for as long as the glide lasts.
+            //
+            // Measured on Big Muff -> 5150: a peak of 20.25 against a settled
+            // 0.125, a hundred and sixty times over, building for four
+            // milliseconds and over full scale for three of them. That is the
+            // reported spike. `examples/switching.rs` is the measurement.
+            self.out_of = self.out_of_target;
             // Crossfade from the old circuit's last output to the new
             // circuit's first output so the capacitor-reset discontinuity
             // is inaudible.

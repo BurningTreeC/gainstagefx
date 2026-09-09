@@ -215,7 +215,13 @@ pub fn tap(v: &Voicing, source: f64, load: f64, at: &str) -> Result<Circuit, Fau
         // a follower.
         .capacitor("q1c", "vol_top", v.coupling)
         .pot("vol_top", "out", "gnd", 100_000.0, Taper::Audio, VOLUME)
-        .resistor("out", "gnd", load);
+        .resistor("out", "gnd", load)
+        // The same trap the Screamer's Level was in: the plugin does not reach
+        // this knob, so without saying so it sits at the middle of an audio
+        // track, which is a tenth of it. A Muff has enormous output and is
+        // normally run well below maximum, but not at a tenth. See
+        // `Netlist::rest`.
+        .rest(VOLUME, 0.70);
 
     net.build(at)
 }

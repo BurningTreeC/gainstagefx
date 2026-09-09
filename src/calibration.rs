@@ -8,46 +8,45 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 1.123647,
         make_up_db: [-12.32, -12.32, -12.35, -12.42, -12.57, -12.81, -13.17, -13.68, -14.34, -15.19, -16.25, -17.53, -19.08, -20.94, -23.23, -26.27, -31.22],
     },
-    // Crunch with a valve: 0.0851 V in, 15.0 % distortion, 6.2 % third.
+    // Crunch with a valve: 0.1220 V in, 30.0 % distortion, 9.1 % third.
     Calibration {
-        drive_volts: 0.085131,
-        make_up_db: [-44.42, -44.42, -44.44, -44.52, -44.68, -44.93, -45.31, -45.84, -46.54, -47.44, -48.55, -49.91, -51.52, -53.43, -55.68, -58.36, -60.84],
+        drive_volts: 0.122000,
+        make_up_db: [-44.40, -44.40, -44.43, -44.51, -44.67, -44.92, -45.30, -45.82, -46.52, -47.41, -48.52, -49.86, -51.46, -53.33, -55.49, -57.51, -58.08],
     },
-    // High Gain with a valve: 0.0021 V in, 40.0 % distortion, 8.0 % third.
+    // High Gain with a valve: 0.1220 V in, 48.0 % distortion, 31.2 % third.
     Calibration {
-        drive_volts: 0.002121,
-        make_up_db: [-84.37, -84.37, -84.40, -84.48, -84.64, -84.90, -85.28, -85.82, -86.53, -87.41, -88.40, -89.57, -90.91, -92.34, -93.56, -94.10, -94.11],
+        drive_volts: 0.122000,
+        make_up_db: [-58.16, -58.16, -58.16, -58.16, -58.16, -58.18, -58.19, -58.22, -58.27, -58.36, -58.50, -58.74, -59.13, -59.65, -60.04, -60.11, -59.75],
     },
-    // Overdrive with silicon diodes: 0.0249 V in, 20.0 % distortion, 15.0 % third.
+    // Overdrive with silicon diodes: 0.1220 V in, 29.7 % distortion, 23.9 % third.
     Calibration {
-        drive_volts: 0.024897,
-        make_up_db: [-11.14, -11.14, -11.17, -11.25, -11.41, -11.67, -12.06, -12.62, -13.36, -14.33, -15.55, -17.03, -18.73, -20.56, -22.39, -23.99, -25.12],
+        drive_volts: 0.122000,
+        make_up_db: [-10.36, -10.36, -10.38, -10.44, -10.55, -10.73, -11.00, -11.36, -11.81, -12.34, -12.91, -13.46, -13.94, -14.32, -14.62, -14.83, -14.98],
     },
-    // Overdrive with germanium diodes: 0.1170 V in, 18.1 % distortion, 14.6 % third. This voice cannot reach
-    // its intended figure at any level, so this is its peak.
+    // Overdrive with germanium diodes: 0.1220 V in, 18.1 % distortion, 14.6 % third.
     Calibration {
-        drive_volts: 0.116961,
-        make_up_db: [-5.52, -5.52, -5.53, -5.54, -5.57, -5.61, -5.68, -5.76, -5.86, -5.97, -6.10, -6.22, -6.34, -6.45, -6.54, -6.61, -6.67],
+        drive_volts: 0.122000,
+        make_up_db: [-5.33, -5.33, -5.33, -5.34, -5.37, -5.41, -5.47, -5.55, -5.64, -5.75, -5.87, -5.99, -6.10, -6.20, -6.29, -6.36, -6.41],
     },
-    // Overdrive with led diodes: 0.0809 V in, 20.0 % distortion, 12.2 % third.
+    // Overdrive with led diodes: 0.1220 V in, 25.7 % distortion, 20.4 % third.
     Calibration {
-        drive_volts: 0.080908,
-        make_up_db: [-11.18, -11.18, -11.21, -11.29, -11.45, -11.71, -12.11, -12.68, -13.44, -14.43, -15.69, -17.25, -19.15, -21.43, -23.92, -26.16, -28.08],
+        drive_volts: 0.122000,
+        make_up_db: [-11.09, -11.09, -11.12, -11.20, -11.36, -11.63, -12.03, -12.59, -13.35, -14.34, -15.60, -17.16, -19.05, -21.01, -22.88, -24.56, -25.37],
     },
-    // Distortion with silicon diodes: 0.0650 V in, 38.0 % distortion, 30.7 % third.
+    // Distortion with silicon diodes: 0.1220 V in, 42.3 % distortion, 32.5 % third.
     Calibration {
-        drive_volts: 0.065013,
-        make_up_db: [-9.63, -9.63, -9.64, -9.75, -9.96, -10.30, -10.83, -11.57, -12.59, -13.91, -15.52, -17.37, -19.37, -21.12, -22.38, -23.28, -23.63],
+        drive_volts: 0.122000,
+        make_up_db: [-8.65, -8.65, -8.67, -8.76, -8.95, -9.26, -9.73, -10.37, -11.22, -12.30, -13.58, -14.93, -16.12, -17.07, -17.83, -18.13, -18.21],
     },
-    // Distortion with germanium diodes: 0.0643 V in, 38.0 % distortion, 30.5 % third.
+    // Distortion with germanium diodes: 0.1220 V in, 42.5 % distortion, 32.5 % third.
     Calibration {
-        drive_volts: 0.064308,
-        make_up_db: [-7.26, -7.26, -7.27, -7.35, -7.50, -7.75, -8.11, -8.62, -9.29, -10.11, -11.07, -12.11, -13.16, -14.20, -15.18, -16.11, -16.51],
+        drive_volts: 0.122000,
+        make_up_db: [-4.87, -4.87, -4.88, -4.94, -5.05, -5.23, -5.50, -5.87, -6.34, -6.92, -7.57, -8.30, -9.06, -9.83, -10.61, -10.92, -11.01],
     },
-    // Distortion with led diodes: 0.1090 V in, 38.0 % distortion, 31.0 % third.
+    // Distortion with led diodes: 0.1220 V in, 38.3 % distortion, 31.3 % third.
     Calibration {
-        drive_volts: 0.108979,
-        make_up_db: [-9.66, -9.66, -9.68, -9.78, -9.99, -10.34, -10.87, -11.64, -12.69, -14.10, -15.94, -18.29, -21.20, -24.04, -26.66, -27.63, -27.87],
+        drive_volts: 0.122000,
+        make_up_db: [-8.85, -8.85, -8.87, -8.97, -9.18, -9.53, -10.06, -10.83, -11.88, -13.29, -15.13, -17.48, -20.38, -23.21, -25.79, -26.60, -26.81],
     },
     // Console with a valve: 0.3308 V in, 3.0 % distortion, 0.3 % third.
     Calibration {
@@ -64,12 +63,12 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.034008,
         make_up_db: [-25.79, -25.79, -25.80, -25.88, -26.04, -26.30, -26.70, -27.29, -28.12, -29.27, -30.81, -32.85, -35.49, -38.81, -42.90, -47.81, -53.34],
     },
-    // Studio with a valve: 0.0199 V in, 0.1 % distortion, 0.0 % third.
+    // Studio with a valve: 0.0199 V in, 0.0 % distortion, 0.0 % third.
     Calibration {
         drive_volts: 0.019861,
         make_up_db: [-12.32, -12.32, -12.35, -12.42, -12.57, -12.81, -13.18, -13.68, -14.34, -15.19, -16.25, -17.54, -19.08, -20.95, -23.24, -26.30, -31.31],
     },
-    // Studio with a jfet: 0.0047 V in, 0.1 % distortion, 0.0 % third.
+    // Studio with a jfet: 0.0047 V in, 0.0 % distortion, 0.0 % third.
     Calibration {
         drive_volts: 0.004652,
         make_up_db: [-8.47, -8.47, -8.50, -8.58, -8.72, -8.97, -9.33, -9.83, -10.49, -11.35, -12.40, -13.69, -15.24, -17.10, -19.39, -22.45, -27.47],
@@ -79,16 +78,16 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.147426,
         make_up_db: [-6.06, -6.06, -6.06, -6.15, -6.34, -6.65, -7.14, -7.86, -8.88, -10.30, -12.22, -14.77, -18.07, -22.20, -27.24, -33.22, -40.17],
     },
-    // TS808 with an op-amp: 0.1220 V in, 21.1 % distortion, 19.1 % third.
+    // TS808 with an op-amp: 0.1220 V in, 21.0 % distortion, 19.0 % third.
     Calibration {
         drive_volts: 0.122000,
-        make_up_db: [12.15, 12.15, 12.14, 12.11, 12.04, 11.95, 11.81, 11.65, 11.46, 11.25, 11.05, 10.85, 10.67, 10.24, 9.84, 9.70, 9.63],
+        make_up_db: [-0.90, -0.90, -0.91, -0.95, -1.03, -1.15, -1.32, -1.53, -1.79, -2.06, -2.34, -2.60, -2.84, -3.04, -3.20, -3.32, -3.41],
     },
-    // Big Muff with transistors: 0.2828 V in, 30.0 % distortion, 18.5 % third. This voice cannot reach
+    // Big Muff with transistors: 0.2828 V in, 30.0 % distortion, 18.6 % third. This voice cannot reach
     // its intended figure at any level, so this is its peak.
     Calibration {
         drive_volts: 0.282843,
-        make_up_db: [16.68, 16.64, 16.29, 15.68, 15.08, 14.62, 14.30, 14.08, 13.92, 13.81, 13.72, 13.64, 13.58, 13.52, 13.47, 13.44, 13.34],
+        make_up_db: [3.74, 3.70, 3.35, 2.74, 2.14, 1.68, 1.36, 1.14, 0.98, 0.87, 0.78, 0.70, 0.64, 0.58, 0.53, 0.50, 0.40],
     },
     // Mark IIC+ with a valve: 0.1220 V in, 39.1 % distortion, 31.2 % third.
     Calibration {
@@ -100,10 +99,10 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.122000,
         make_up_db: [-20.41, -20.41, -32.32, -41.95, -43.04, -43.17, -43.22, -43.23, -43.23, -43.21, -43.18, -43.15, -43.13, -43.11, -43.17, -43.19, -43.22],
     },
-    // Neve 73P with transistors: 0.0075 V in, 3.0 % distortion, 1.8 % third.
+    // Neve 73P with transistors: 0.0073 V in, 3.0 % distortion, 1.8 % third.
     Calibration {
-        drive_volts: 0.007462,
-        make_up_db: [-29.03, -29.03, -29.03, -29.04, -29.06, -29.09, -29.14, -29.23, -29.38, -29.65, -30.14, -31.03, -32.56, -34.76, -37.02, -38.50, -38.90],
+        drive_volts: 0.007263,
+        make_up_db: [-44.67, -44.67, -44.67, -44.68, -44.70, -44.73, -44.78, -44.87, -45.03, -45.30, -45.79, -46.69, -48.23, -50.45, -52.72, -54.19, -54.60],
     },
 ];
 

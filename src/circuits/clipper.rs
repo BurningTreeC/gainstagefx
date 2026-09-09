@@ -22,6 +22,16 @@
 //! thirty decibels into the first quarter of the travel and two into the last.
 //! So the track carries the span -- `Taper::ReverseLog` at the ratio the
 //! feedback path actually covers -- and the knob then reads evenly.
+//!
+//! **Both arrangements end in a coupling capacitor**, because both of them
+//! make direct voltage and a pedal's output jack must not carry any. An
+//! unequal diode stack clips one half of the wave sooner than the other, so
+//! the mean of the output is not zero -- that is the mechanism the asymmetry
+//! is *for*, and it is not a fault. What was a fault was taking the output
+//! straight off the stage with nothing to block it: measured into a bare
+//! load, the overdrive put out 14.9 per cent of its peak as a standing
+//! offset and the distortion 23.7 per cent, and a peak meter reads all of
+//! that as level while an ear hears none of it.
 
 use crate::dsp::device::OpAmp;
 use crate::dsp::netlist::{Circuit, DiodeSpec, Fault, Netlist, Taper};
@@ -101,6 +111,25 @@ pub const DISTORTION: Values = Values {
     stack: (2, 1),
 };
 
+/// The output coupling capacitor, and the volume control it works into.
+///
+/// Every op-amp clipper in this family ends the same way: an isolation
+/// resistor off the stage, a series capacitor, and a hundred-kilohm volume
+/// track to the jack. The TS808's Level, the RAT's Volume, the DS-1's Level
+/// and the Big Muff's Volume are all 100 k, and 1 uF is the RAT's output
+/// coupling value; these voices are the archetype rather than any one of
+/// those pedals, so the family value is what they get.
+///
+/// The capacitor is there to block direct voltage, not to shape anything.
+/// Into 100 k in parallel with the 470 k the next stage presents -- 82.5 k --
+/// the corner is 1.9 Hz, which is 0.04 dB down at 20 Hz. A pedal that wanted
+/// a thinner bottom would use a smaller one on purpose (the DS-1's 47 nF puts
+/// its corner at 34 Hz); these do not, because the whole point of the
+/// distortion voice is that the entire band reaches the diodes together.
+const COUPLING: f64 = 1e-6;
+/// The volume track, which is also what discharges the coupling capacitor.
+const VOLUME: f64 = 100_000.0;
+
 /// A run of diodes nose to tail between two nodes.
 ///
 /// More of them in series means that side of the wave has to reach a higher
@@ -119,7 +148,31 @@ fn series(net: &mut Netlist, from: &str, to: &str, count: usize, spec: DiodeSpec
     }
 }
 
+/// Where the stage's own output is, before the coupling capacitor.
+///
+/// Named so a measurement can stand either side of the capacitor and see what
+/// it is for. `InTheLoop` clips at the op-amp, so this is past the isolation
+/// resistor; `ToGround` clips at the node the diodes sit on.
+pub fn clipping_node(placement: Placement) -> &'static str {
+    match placement {
+        Placement::InTheLoop => "coupled",
+        Placement::ToGround => "clip",
+    }
+}
+
+/// The same circuit brought out at a chosen node.
+///
+/// A clipper can have a plausible waveform at its jack and be wrong inside,
+/// and stage by stage is the only way to find where.
+pub fn tap(v: &Values, source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
+    assemble(v, source, load).build(at)
+}
+
 pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
+    assemble(v, source, load).build("out")
+}
+
+fn assemble(v: &Values, source: f64, load: f64) -> Netlist {
     let mut net = Netlist::new("clipper");
     net.input("in", source)
         // Non-inverting: the signal goes to the positive input and the loop
@@ -146,18 +199,27 @@ pub fn build(v: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
         Placement::InTheLoop => {
             series(&mut net, "amp", "minus", v.stack.0, v.diode, "fl");
             series(&mut net, "minus", "amp", v.stack.1, v.diode, "rl");
-            net.resistor("amp", "out", 1_000.0)
+            // Isolation resistor, then the coupling capacitor to the jack.
+            net.resistor("amp", "coupled", 1_000.0)
+                .capacitor("coupled", "out", COUPLING)
+                .resistor("out", "gnd", VOLUME)
                 .resistor("out", "gnd", load);
         }
         Placement::ToGround => {
             // The series resistor is what stops the pair being a short across
-            // the output, and with the diodes' own capacitance it is the only
-            // thing rounding the corners at all.
-            net.resistor("amp", "out", 10_000.0);
-            series(&mut net, "out", "gnd", v.stack.0, v.diode, "fg");
-            series(&mut net, "gnd", "out", v.stack.1, v.diode, "rg");
-            net.resistor("out", "gnd", load);
+            // the stage, and with the diodes' own capacitance it is the only
+            // thing rounding the corners at all. The diodes clip against
+            // ground *before* the coupling capacitor, which is why the node
+            // they sit on is not the output node: its direct level is set by
+            // the stage through the series resistor, and the capacitor keeps
+            // that off the jack.
+            net.resistor("amp", "clip", 10_000.0);
+            series(&mut net, "clip", "gnd", v.stack.0, v.diode, "fg");
+            series(&mut net, "gnd", "clip", v.stack.1, v.diode, "rg");
+            net.capacitor("clip", "out", COUPLING)
+                .resistor("out", "gnd", VOLUME)
+                .resistor("out", "gnd", load);
         }
     }
-    net.build("out")
+    net
 }

@@ -178,3 +178,37 @@ fn the_level_control_reaches_both_ends() {
     println!("level: {shut:.1} dB to {open:.1} dB");
     assert!(open - shut > 40.0, "only {:.1} dB of level", open - shut);
 }
+
+/// The Drive control has to be worth something all the way round.
+///
+/// RV1 is a rheostat setting a gain, so what matters is decibels per degree,
+/// not ohms per degree. It was wired to a volume taper -- two straight
+/// segments meeting at half rotation, a tenth of the track dialled in by then
+/// -- which put five of the stage's nineteen decibels in the first half of the
+/// knob and fourteen in the second, with a step where the segments met.
+#[test]
+fn the_drive_control_sweeps_evenly() {
+    let steps: Vec<f64> = (0..=10)
+        .map(|i| at("u1a", 1_000.0, 0.0002, i as f64 / 10.0, 0.5).gain_db())
+        .collect();
+    let total = steps[10] - steps[0];
+    let first_half = steps[5] - steps[0];
+    println!("{total:.1} dB in all, {first_half:.1} dB of it in the first half");
+    for w in steps.windows(2) {
+        print!("{:.1} ", w[1] - w[0]);
+    }
+    println!();
+    // Half the knob should be worth about half the range.
+    assert!(
+        (first_half / total - 0.5).abs() < 0.15,
+        "the first half of the knob is worth {first_half:.1} dB of {total:.1}"
+    );
+    // And no step: no tenth of a turn worth more than twice another.
+    let steps: Vec<f64> = steps.windows(2).map(|w| w[1] - w[0]).collect();
+    let big = steps.iter().cloned().fold(f64::MIN, f64::max);
+    let small = steps.iter().cloned().fold(f64::MAX, f64::min);
+    assert!(
+        big < small * 2.0,
+        "the knob moves {big:.2} dB in one tenth and {small:.2} in another"
+    );
+}

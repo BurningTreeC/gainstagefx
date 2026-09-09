@@ -57,10 +57,37 @@ pub fn floor_of(track: f64) -> f64 {
     track / (SPAN - 1.0)
 }
 
-/// The cathode bypasses, left fully in circuit unless something asks
-/// otherwise. This is a separate control so it can be exposed later without
-/// disturbing the gain knob.
+/// The cathode bypasses. This is a separate control so it can be exposed
+/// later without disturbing the gain knob.
+///
+/// The line above used to say "left fully in circuit unless something asks
+/// otherwise", and that was not what happened: the plugin reaches a circuit's
+/// Drive and its tone controls and nothing else, so this one sat wherever
+/// `Simulation::new` leaves an unclaimed control -- the middle of its travel.
+/// See BUG-023 and `Netlist::rest`.
 pub const BYPASS: usize = 1;
+
+/// Where the bypasses sit unless a caller moves them.
+///
+/// **0.5, recorded rather than corrected.** On this taper -- `Log { span:
+/// 0.004 }`, which falls fast and then finely -- the middle leaves about
+/// 1.5 k in the bypass leg against a 1.5 k cathode resistor, which is a stage
+/// half bypassed. That is a real operating point, not an accident, and it is
+/// where every voice in the catalogue was calibrated.
+///
+/// Fully in circuit was tried, on the strength of the old comment and of a
+/// report that the Crunch voice lacked saturation. It does raise it -- 30 %
+/// distortion at a guitar's level against 60 % -- and it also puts **Crunch
+/// above High Gain**, 60.2 % against 47.7 %, which is a catalogue whose names
+/// no longer describe it. `tests/voice.rs::the_voices_are_in_the_order_their_
+/// names_claim` is the test that says so, and a product invariant outranks a
+/// doc comment.
+///
+/// The Crunch voice's saturation is still worth answering. It wants a reason
+/// out of the circuit -- the interstage attenuation, the stage values, the
+/// level it is handed -- rather than a knob nobody had claimed. Recorded in
+/// BUG-023.
+pub const BYPASS_REST: f64 = 0.5;
 
 /// How many stages, and how each is set up.
 #[derive(Clone, Copy, Debug)]
@@ -96,7 +123,7 @@ pub const HIGH_GAIN: Preamp = Preamp {
 pub fn build(p: &Preamp, source: f64, load: f64) -> Result<Circuit, Fault> {
     let stages = p.stages.max(1);
     let mut net = Netlist::new("valve preamp");
-    net.input("in", source);
+    net.input("in", source).rest(BYPASS, BYPASS_REST);
     let mut node = String::from("in");
 
     // One stage has no "between", so the volume goes in front of it.

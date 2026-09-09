@@ -283,3 +283,41 @@ mod through_the_plugin {
         }
     }
 }
+
+/// Every control a circuit declares must be reachable from the panel or have
+/// a stated resting position.
+///
+/// `Chain` reaches exactly two things: the control `Gain::drive_control`
+/// names, and the ones `Gain::own_tone` names. Anything else a circuit
+/// declares sits wherever `Simulation::new` leaves it, which is the middle of
+/// its travel -- and the middle of an audio track is a tenth of it, about
+/// twenty decibels down. The TS808's Level, the Big Muff's Volume and the
+/// 73P's output trim were all sitting there, with the calibration table
+/// handing back clean digital gain to cover for them. See BUG-023.
+///
+/// This is the test that would have caught it, and the one that stops the next
+/// circuit doing the same: declare a control, and either wire it up or say
+/// where its player leaves it.
+#[test]
+fn every_control_is_either_reachable_or_given_a_resting_position() {
+    for gain in Gain::ALL {
+        let netlist = voice::build_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve)
+            .expect("builds");
+        let mut reachable = vec![gain.drive_control()];
+        if let Some((b, m, t)) = gain.own_tone() {
+            reachable.extend([b, m, t]);
+        }
+        let rested: Vec<usize> = netlist.resting.iter().map(|&(which, _)| which).collect();
+        for control in 0..netlist.controls {
+            assert!(
+                reachable.contains(&control) || rested.contains(&control),
+                "{}: control {control} of {} is not reachable from the panel and \
+                 has no resting position, so it sits at half its travel -- which \
+                 on an audio track is twenty decibels down. Wire it up, or say \
+                 where its player leaves it with `Netlist::rest`.",
+                gain.name(),
+                netlist.controls,
+            );
+        }
+    }
+}

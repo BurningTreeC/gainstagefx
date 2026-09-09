@@ -150,8 +150,10 @@ mod resize {
             }
             fn request_resize(&self) -> bool {
                 // What the host would read the moment it is asked.
-                self.saw
-                    .store(self.state.scaled_logical_size().0 as usize, Ordering::Relaxed);
+                self.saw.store(
+                    self.state.scaled_logical_size().0 as usize,
+                    Ordering::Relaxed,
+                );
                 true
             }
             unsafe fn raw_begin_set_parameter(&self, _: ParamPtr) {}

@@ -198,6 +198,13 @@ pub fn tap(source: f64, load: f64, at: &str, with_iron: bool) -> Result<Circuit,
         .resistor("pre2_out", "trim_top", 2_500.0) // VR3 at mid travel
         .pot("trim_top", "out", "gnd", 10_000.0, Taper::Audio, TRIM)
         .resistor("out", "gnd", load);
+    // VR2 is on the front panel and the plugin does not reach it, so without
+    // saying so it sits at the middle of an audio track -- a tenth of it,
+    // twenty decibels down. On a 73P the amount is set by the stepped GAIN
+    // switch and the output trim is run near the top; 0.85 is an estimate of
+    // where an engineer leaves it, not a figure off the drawing. See
+    // `Netlist::rest`.
+    net.rest(TRIM, 0.85);
 
     net.build(at)
 }

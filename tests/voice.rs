@@ -96,9 +96,7 @@ fn the_calibration_table_still_describes_the_circuits() {
         let behind = voice::build_power(gain).map(|b| b.expect("builds"));
         for (i, expected) in c.make_up_db.iter().enumerate() {
             let mut sim = Simulation::new(netlist.clone(), RATE);
-            let mut power = behind
-                .clone()
-                .map(|netlist| Simulation::new(netlist, RATE));
+            let mut power = behind.clone().map(|netlist| Simulation::new(netlist, RATE));
             // The knots are not evenly spaced -- see `voice::knot_position`.
             sim.set_control(gain.drive_control(), voice::knot_position(i));
             let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);

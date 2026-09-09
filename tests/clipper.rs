@@ -194,3 +194,53 @@ fn the_two_placements_are_not_the_same_circuit() {
     assert_eq!(clipper::DISTORTION.placement, Placement::ToGround);
     assert!(!loop_c.is_linear() && !ground.is_linear());
 }
+
+/// An unequal diode stack clips one half of the wave sooner than the other,
+/// so the mean of the stage's output is not zero. That is the mechanism the
+/// asymmetry is *for* and it belongs inside the pedal; what must not leave it
+/// is the offset, because a meter reads a standing offset as level and an ear
+/// hears none of it.
+///
+/// So this stands either side of the output coupling capacitor. Without it the
+/// two taps are the same node and the second assertion cannot pass.
+#[test]
+fn the_coupling_capacitor_keeps_the_offset_off_the_jack() {
+    for (name, v) in [
+        ("in the loop", clipper::OVERDRIVE),
+        ("to ground", clipper::DISTORTION),
+    ] {
+        let mean = |at: &str| {
+            let circuit = clipper::tap(&v, 10_000.0, 470_000.0, at).expect("builds");
+            let mut sim = Simulation::new(circuit, RATE);
+            sim.set_control(clipper::GAIN, 0.7);
+            // Long enough that the coupling capacitor has settled: into
+            // 100 k parallel with the 470 k load its time constant is 83 ms,
+            // and a second is a dozen of them.
+            let n = RATE as usize;
+            let mut out = Vec::with_capacity(n);
+            for k in 0..(n * 2) {
+                let t = k as f64 / RATE;
+                let y = sim.process(0.2 * (std::f64::consts::TAU * 220.0 * t).sin());
+                if k >= n {
+                    out.push(y);
+                }
+            }
+            let peak = out.iter().fold(0.0f64, |a, &b| a.max(b.abs()));
+            let dc = out.iter().sum::<f64>() / out.len() as f64;
+            100.0 * dc.abs() / peak
+        };
+        let inside = mean(clipper::clipping_node(v.placement));
+        let jack = mean("out");
+        assert!(
+            inside > 5.0,
+            "{name} ships an uneven stack, so the stage itself should be \
+             offset: it read {inside:.1} % of peak"
+        );
+        assert!(
+            jack < 0.5,
+            "{name} put {jack:.1} % of its peak out of the jack as a standing \
+             offset, against {inside:.1} % inside. The coupling capacitor is \
+             what stops that."
+        );
+    }
+}
