@@ -63,17 +63,32 @@ fn run(label: &str, sim: &mut Simulation, drive: &mut dyn FnMut(usize) -> f64) -
 
 fn main() {
     println!("One second, one channel, 48 kHz. Percentages are of realtime.\n");
-    for gain in [Gain::Peavey, Gain::Boogie, Gain::Neve, Gain::Muff] {
+    let power_backtracks = std::env::var("POWER_BACKTRACKS")
+        .ok()
+        .and_then(|value| value.parse().ok());
+    if let Some(value) = power_backtracks {
+        println!("Power-stage backtrack limit: {value}\n");
+    }
+    for gain in [
+        Gain::Peavey,
+        Gain::Boogie,
+        Gain::Twin,
+        Gain::Neve,
+        Gain::Muff,
+    ] {
         println!("  {}", gain.name());
         let netlist = voice::build_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve)
             .expect("builds");
         let mut sim = Simulation::new(netlist, RATE);
-        sim.set_control(0, 0.8);
+        sim.set_control(gain.drive_control(), 0.8);
         let preamp = run("gain", &mut sim, &mut |k| 12.0 * stimulus(k));
 
         match voice::build_power(gain) {
             Some(Ok(netlist)) => {
                 let mut sim = Simulation::new(netlist, RATE);
+                if let Some(value) = power_backtracks {
+                    sim.set_backtracks(value);
+                }
                 // What the preamplifier actually sends it. The warm-up runs
                 // off the front of the capture, so it repeats the first
                 // sample rather than reading out of bounds.

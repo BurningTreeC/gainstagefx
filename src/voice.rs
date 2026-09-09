@@ -1046,22 +1046,34 @@ impl Chain {
             }
             (sim, trim)
         };
+        let (gains, powers) = std::thread::scope(|scope| {
+            let gains = scope.spawn(|| {
+                (0..VOICES)
+                    .map(|i| {
+                        let (gain, diode, amplifier) = voice_at(i);
+                        Simulation::new(
+                            build_voice(gain, diode, amplifier).expect("catalogue builds"),
+                            rate,
+                        )
+                    })
+                    .collect()
+            });
+            let powers = scope.spawn(|| {
+                (0..VOICES)
+                    .map(|i| {
+                        build_power(voice_at(i).0)
+                            .map(|built| Simulation::new(built.expect("catalogue builds"), rate))
+                    })
+                    .collect()
+            });
+            (
+                gains.join().expect("gain catalogue builds"),
+                powers.join().expect("power catalogue builds"),
+            )
+        });
         let mut chain = Self {
-            gains: (0..VOICES)
-                .map(|i| {
-                    let (gain, diode, amplifier) = voice_at(i);
-                    Simulation::new(
-                        build_voice(gain, diode, amplifier).expect("catalogue builds"),
-                        rate,
-                    )
-                })
-                .collect(),
-            powers: (0..VOICES)
-                .map(|i| {
-                    build_power(voice_at(i).0)
-                        .map(|built| Simulation::new(built.expect("catalogue builds"), rate))
-                })
-                .collect(),
+            gains,
+            powers,
             irons: [Iron::Nickel, Iron::Steel, Iron::Amorphous]
                 .into_iter()
                 .map(|i| Simulation::new(build_iron(i).expect("catalogue builds"), rate))
@@ -1264,6 +1276,9 @@ impl Chain {
 
     /// The five graphic equaliser sliders, bottom band first.
     pub fn set_graphic(&mut self, bands: [f64; 5]) {
+        if !voice_at(self.gain).0.has_graphic() {
+            return;
+        }
         for (band, &position) in bands.iter().enumerate() {
             self.graphic.set_control(band, position);
         }
@@ -1369,12 +1384,21 @@ impl Chain {
     /// valve voices almost nothing, so nothing but the clipper would have
     /// shown it.
     pub fn set_oversampling(&mut self, factor: usize) {
+        let requested_changed = factor != self.requested_oversampling;
         self.requested_oversampling = factor;
         let factor = if voice_at(self.gain).0.is_modelled() {
             1
         } else {
             factor
         };
+        let pending_matches = self
+            .deferred_oversample
+            .map_or(true, |pending| pending == factor);
+        self.pad
+            .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+        if !requested_changed && factor == self.over.factor() && pending_matches {
+            return;
+        }
         // If a crossfade is active, defer the oversampler reset until it
         // completes. Resetting mid-crossfade zeroes the filter histories and
         // creates a second discontinuity that the crossfade cannot mask.
@@ -1397,11 +1421,20 @@ impl Chain {
     }
 
     pub fn set_rate(&mut self, rate: f64) {
+        if (self.rate - rate).abs() <= 1e-9 {
+            return;
+        }
         self.rate = rate;
+        let inner = self.rate * self.over.factor() as f64;
+        for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
+            sim.set_rate(inner);
+        }
+        for sim in self.powers.iter_mut().flatten() {
+            sim.set_rate(self.rate);
+        }
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.set_rate(rate);
         }
-        self.set_oversampling(self.requested_oversampling);
     }
 
     /// The factor actually used by the nonlinear gain path. Modelled circuits

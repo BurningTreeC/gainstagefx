@@ -721,7 +721,8 @@ impl Pentode {
         // curve is the long flat shelf that makes a power tube a current
         // source into its transformer.
         let knee = (vpk / c.kvb).atan();
-        let d_knee = 1.0 / (c.kvb * (1.0 + (vpk / c.kvb).powi(2)));
+        let vpk_ratio = vpk / c.kvb;
+        let d_knee = 1.0 / (c.kvb * (1.0 + vpk_ratio * vpk_ratio));
 
         let plate_base = powered / c.kg1;
         let screen_base = powered / c.kg2;

@@ -420,10 +420,14 @@ impl Plugin for GainStageFx {
         let bypassed = self.params.bypass.value();
         let total = samples as usize;
         let deadline = total as f64 / self.sample_rate as f64;
-        let started = std::time::Instant::now();
         let mut ceiling = 32usize;
-        chain.set_pass_ceiling(ceiling);
-        let before = chain.pinched();
+        let before = if Budget::WORKS {
+            chain.set_pass_ceiling(ceiling);
+            chain.pinched()
+        } else {
+            0
+        };
+        let started = Budget::WORKS.then(std::time::Instant::now);
         // Copied out because `chain` holds a mutable borrow of `self` for the
         // length of the block, and these are only read.
         let budget = Budget { ..self.budget };
@@ -434,11 +438,14 @@ impl Plugin for GainStageFx {
             // twenty-odd nanoseconds a reading, per sample it would be a tenth
             // of a per cent of a 64-sample budget spent measuring how much of
             // the budget is left.
-            if budget.armed && done > 0 && done % budget.stride == 0 {
-                let want = budget.ceiling(done, total, started.elapsed().as_secs_f64(), deadline);
-                if want != ceiling {
-                    ceiling = want;
-                    chain.set_pass_ceiling(ceiling);
+            if let Some(started) = started {
+                if budget.armed && done > 0 && done % budget.stride == 0 {
+                    let want =
+                        budget.ceiling(done, total, started.elapsed().as_secs_f64(), deadline);
+                    if want != ceiling {
+                        ceiling = want;
+                        chain.set_pass_ceiling(ceiling);
+                    }
                 }
             }
             // Float parameters are read per-sample through nih-plug's 20ms
@@ -484,7 +491,7 @@ impl Plugin for GainStageFx {
         // visible somewhere other than in the sound.
         let after = chain.pinched();
         self.peak = peak;
-        if ceiling < 32 {
+        if Budget::WORKS && ceiling < 32 {
             self.pinched_blocks = self.pinched_blocks.saturating_add(1);
         }
         self.pinched_samples = self.pinched_samples.saturating_add(after - before);

@@ -16,6 +16,7 @@ use super::device::{
     Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper, Triode,
 };
 use super::netlist::{Circuit, Part, GROUND};
+use super::partition::ReducedLinear;
 
 /// Enable flush-to-zero and denormals-are-zero in the MXCSR register.
 /// What one Newton pass achieved.
@@ -346,6 +347,9 @@ pub struct Simulation {
     /// How short a step this circuit's line search will try. See
     /// `set_backtracks`.
     backtracks: usize,
+    /// Exact output-boundary reduction for linear circuits. Nonlinear stages
+    /// remain on the normal factorised solve path.
+    linear_partition: Option<ReducedLinear>,
 }
 
 impl Simulation {
@@ -413,6 +417,7 @@ impl Simulation {
             nonfinite: 0,
             moved: f64::INFINITY,
             backtracks: MAX_BACKTRACKS,
+            linear_partition: None,
         };
         sim.rebuild();
         // Apply initial voltages from the circuit to help the DC solver
@@ -460,6 +465,29 @@ impl Simulation {
 
     pub fn is_linear(&self) -> bool {
         self.devices.is_empty()
+    }
+
+    /// Snapshot the assembled matrix and source vector of a linear circuit.
+    /// This is intended for exact partitioning experiments; nonlinear
+    /// simulations must remain on the normal Newton path.
+    pub fn linear_system(&self) -> Option<(Vec<f64>, Vec<f64>, usize)> {
+        self.is_linear()
+            .then(|| (self.base.clone(), self.source.clone(), self.circuit.output))
+    }
+
+    /// Snapshot one raw nonlinear Jacobian before factorisation. This is a
+    /// diagnostic surface for partitioning experiments and is not used by
+    /// the realtime solver.
+    pub fn jacobian_snapshot(&mut self, input: f64) -> Option<(Vec<f64>, Vec<f64>, usize)> {
+        if self.is_linear() {
+            return None;
+        }
+        if self.dirty {
+            self.rebuild();
+        }
+        self.point.copy_from_slice(&self.voltage);
+        self.build(input, false, true);
+        Some((self.work.clone(), self.rhs.clone(), self.circuit.output))
     }
 
     /// What a node is sitting at. Worth having: an operating point is the
@@ -828,6 +856,13 @@ impl Simulation {
         self.source = source;
         self.bias = bias;
         self.map_structure();
+        self.linear_partition = if self.devices.is_empty() {
+            let output = self.circuit.output;
+            let zero_rhs = vec![0.0; n];
+            ReducedLinear::new(&self.base, &zero_rhs, output)
+        } else {
+            None
+        };
         // The matrix has a new shape, so any pivot order learned for the old
         // one means nothing.
         self.planned = false;
@@ -1354,16 +1389,28 @@ impl Simulation {
             for l in &self.inductors {
                 inject(&mut self.rhs, l.a, l.b, l.history);
             }
-            substitute(
-                &self.matrix,
-                &self.pivots,
-                &self.reach,
-                &self.first,
-                &mut self.rhs,
-                n,
-                &mut self.scratch,
-            );
-            self.voltage.copy_from_slice(&self.rhs);
+            let partitioned = if let Some(partition) = &self.linear_partition {
+                partition.solve_into(
+                    &self.rhs,
+                    &mut self.voltage,
+                    &mut self.scratch,
+                    &mut self.guess,
+                )
+            } else {
+                false
+            };
+            if !partitioned {
+                substitute(
+                    &self.matrix,
+                    &self.pivots,
+                    &self.reach,
+                    &self.first,
+                    &mut self.rhs,
+                    n,
+                    &mut self.scratch,
+                );
+                self.voltage.copy_from_slice(&self.rhs);
+            }
         } else {
             // Start from where the last two samples were heading, not from
             // where the last one was. Audio is smooth over a sample, so a
@@ -1591,7 +1638,8 @@ fn swap_rows(
     best: usize,
     n: usize,
 ) {
-    for k in 0..n {
+    let width = reach[col].max(reach[best]).saturating_add(1).min(n);
+    for k in 0..width {
         m.swap(col * n + k, best * n + k);
     }
     pivots.swap(col, best);
