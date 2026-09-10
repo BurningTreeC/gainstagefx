@@ -13,7 +13,8 @@
 //! thing to an independent check either of them can have.
 
 use super::device::{
-    Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper, Triode,
+    AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper,
+    Triode,
 };
 use super::netlist::{Circuit, Part, GROUND};
 use super::partition::ReducedLinear;
@@ -61,7 +62,17 @@ const RELATIVE: f64 = 1e-6;
 /// solve leaving the callback. The cost is real and belongs in the
 /// formulation, not in the iteration count -- see
 /// `docs/experiments/solver-iteration-bound.md`.
-const MAX_ITERATIONS: usize = 32;
+///
+/// Sixty-four rather than thirty-two. The 32 figure was measured on steady
+/// sine waves and is enough for those; a pick attack is a genuine
+/// discontinuity at the input, and the grid limiter in `device.rs` walks a
+/// valve grid about a volt a pass above cutoff. A pick that takes the grid
+/// from -30 V to +20 V is fifty passes of walking before the solve can even
+/// start checking, and 32 runs out partway through. The extra passes only
+/// fire on samples that were already failing -- an ordinary sample settles
+/// in two to three and a half -- so the cost is bounded and the FIFOs in
+/// `plugin.rs` absorb the burst.
+const MAX_ITERATIONS: usize = 64;
 
 /// The fewest passes the work budget may ever leave a sample.
 ///
@@ -297,19 +308,52 @@ pub struct Simulation {
     source: Vec<f64>,
     /// What the rails inject, which does not depend on the signal.
     bias: Vec<f64>,
-    devices: Vec<Box<dyn Device>>,
+    /// Every device the solver linearises, stored inline rather than boxed.
+    /// See `AnyDevice` for why.
+    devices: Vec<AnyDevice>,
     /// Scratch for a Newton pass.
     work: Vec<f64>,
     guess: Vec<f64>,
-    /// Scratch for the substitution, and the last settled answer.
+    /// Scratch for the substitution: the permuted right-hand side that
+    /// `substitute` writes and reads while it solves.
     ///
-    /// Held rather than allocated where they are used. Both of these were
-    /// heap allocations on the audio thread, once per Newton pass and once per
-    /// sample -- about one and a half million a second in stereo at four times
-    /// oversampling. Allocating there is not merely slow: `malloc` can take a
-    /// lock, and a lock on the audio thread is a dropout.
+    /// Held rather than allocated where it is used. This was a heap
+    /// allocation on the audio thread, once per Newton pass -- about one
+    /// million a second in stereo at four times oversampling. Allocating
+    /// there is not merely slow: `malloc` can take a lock, and a lock on
+    /// the audio thread is a dropout.
     scratch: Vec<f64>,
-    previous: Vec<f64>,
+    /// The extrapolated Newton starting point for this sample. Kept for
+    /// diagnosis and for `jump`'s log. The failure branch below does *not*
+    /// use this for its bound any more -- see `recent_move` for why.
+    predicted: Vec<f64>,
+    /// The per-node movement from `V[n-2]` to `V[n-1]`, taken *before* the
+    /// predictor runs.
+    ///
+    /// This is the scale the failed-iterate bound is measured in, and it
+    /// has to be taken before the predictor because the predictor
+    /// overwrites `voltage` with the extrapolation and shifts `earlier`
+    /// up one -- after which `|voltage - earlier|` is
+    /// `|V_pred - V[n-1]|`, which happens to equal the movement by
+    /// accident of the extrapolation's arithmetic and stops equalling it
+    /// the moment the extrapolation is skipped.
+    ///
+    /// It is per node because the nodes in these circuits do not share a
+    /// scale -- a power tube's plate swings hundreds of volts and the
+    /// speaker node swings a few -- and the bound has to be meaningful
+    /// on both.
+    recent_move: Vec<f64>,
+    /// Whether the previous sample's solve failed to converge.
+    ///
+    /// When it did, extrapolating from its answer is worse than not
+    /// extrapolating at all. A failed sample's answer is a bounded guess,
+    /// not a converged value, and `2 V[n-1] - V[n-2]` built from it
+    /// extends a guess by doubling its distance from the sample before it.
+    /// On the sample after a failure the correct starting point is
+    /// `V[n-1]` directly -- the bounded guess the previous sample already
+    /// produced -- and letting Newton walk from there, rather than from a
+    /// number that has been exaggerated by the extrapolation.
+    last_was_unsettled: bool,
     /// The answer before that, so the next sample can be started from where
     /// the last two were heading rather than from where the last one was.
     earlier: Vec<f64>,
@@ -400,7 +444,9 @@ impl Simulation {
             work: vec![0.0; n * n],
             guess: vec![0.0; n],
             scratch: vec![0.0; n],
-            previous: vec![0.0; n],
+            predicted: vec![0.0; n],
+            recent_move: vec![0.0; n],
+            last_was_unsettled: false,
             earlier: vec![0.0; n],
             exact: true,
             predictable: false,
@@ -560,8 +606,9 @@ impl Simulation {
             l.current = INDUCTOR_DC * across(&self.voltage, l.a, l.b);
             l.history = -l.current;
         }
-        self.previous.copy_from_slice(&self.voltage);
+        self.predicted.copy_from_slice(&self.voltage);
         self.earlier.copy_from_slice(&self.voltage);
+        self.last_was_unsettled = false;
         self.dirty = false;
     }
 
@@ -753,12 +800,14 @@ impl Simulation {
                     }
                     Part::Diode { a, k, spec } => {
                         if !keep_devices {
-                            self.devices.push(Box::new(Diode::new(a, k, spec)));
+                            self.devices
+                                .push(AnyDevice::Diode(Diode::new(a, k, spec)));
                         }
                     }
                     Part::Triode { p, g, k, spec } => {
                         if !keep_devices {
-                            self.devices.push(Box::new(Triode::new(p, g, k, spec)));
+                            self.devices
+                                .push(AnyDevice::Triode(Triode::new(p, g, k, spec)));
                         }
                     }
                     Part::Pentode {
@@ -770,8 +819,9 @@ impl Simulation {
                         spec,
                     } => {
                         if !keep_devices {
-                            self.devices
-                                .push(Box::new(Pentode::new(p, g, k, s, count, spec)));
+                            self.devices.push(AnyDevice::Pentode(Pentode::new(
+                                p, g, k, s, count, spec,
+                            )));
                         }
                     }
                     Part::Jfet {
@@ -782,12 +832,13 @@ impl Simulation {
                     } => {
                         if !keep_devices {
                             self.devices
-                                .push(Box::new(Jfet::new(d, g, source_pin, spec)));
+                                .push(AnyDevice::Jfet(Jfet::new(d, g, source_pin, spec)));
                         }
                     }
                     Part::Bipolar { c, b, e, spec } => {
                         if !keep_devices {
-                            self.devices.push(Box::new(Bipolar::new(c, b, e, spec)));
+                            self.devices
+                                .push(AnyDevice::Bipolar(Bipolar::new(c, b, e, spec)));
                         }
                     }
                     Part::Core { a, b, spec } => {
@@ -795,8 +846,9 @@ impl Simulation {
                         // integrates the voltage across it, so its answer
                         // depends on how long a sample lasts.
                         if !keep_devices {
+                            let rate = self.rate;
                             self.devices
-                                .push(Box::new(Core::new(a, b, spec, self.rate)));
+                                .push(AnyDevice::Core(Core::new(a, b, spec, rate)));
                         }
                     }
                     Part::OpAmp {
@@ -808,7 +860,7 @@ impl Simulation {
                     } => {
                         let branch = self.circuit.branch_of(index);
                         if !keep_devices {
-                            self.devices.push(Box::new(OpAmp::new(
+                            self.devices.push(AnyDevice::OpAmp(OpAmp::new(
                                 out, plus, minus, reference, branch, rail,
                             )));
                         }
@@ -1068,6 +1120,24 @@ impl Simulation {
             l.current = INDUCTOR_DC * across(&self.voltage, l.a, l.b);
             l.history = -l.current;
         }
+        // The predictor state, reset to the operating point.
+        //
+        // Without this the first sample after a hunt runs the extrapolator
+        // `2 * voltage - earlier` with `earlier` holding whatever it held
+        // from before -- a previous circuit, a previous voice, a previous
+        // session's running state. On a valve voice that means a first
+        // Newton correction from four hundred volts at the plate to a value
+        // some previous state suggested, which is a worse start than no
+        // prediction at all. `apply_operating_point` already resets both
+        // vectors; this is the same reset, in the hunt that does not go
+        // through it.
+        //
+        // `last_was_unsettled` is cleared alongside, so the first sample
+        // after a reset starts from a clean predictor state and is not
+        // treated as following a failure.
+        self.predicted.copy_from_slice(&self.voltage);
+        self.earlier.copy_from_slice(&self.voltage);
+        self.last_was_unsettled = false;
         self.at_rest = true;
         settled
     }
@@ -1190,8 +1260,24 @@ impl Simulation {
 
         // Save the linearisation before the search disturbs it. See
         // `Linearisation`: a rejected trial must leave nothing behind.
-        for (device, saved) in self.devices.iter().zip(self.saved.iter_mut()) {
-            *saved = device.linearisation();
+        //
+        // Only when the search can actually run. `linearisation` is a call
+        // per device, and on the common path -- no stall, fewer than
+        // `FULL_STEPS` passes -- the search never fires, so the save is pure
+        // overhead. Gating it on `search` costs nothing on the passes that
+        // need it and returns the whole cost on the passes that do not,
+        // which is most of them: the catalogue's voices average two to three
+        // and a half passes on real playing, and the search is only turned on
+        // at eight or on the first pass that fails to shrink its correction.
+        //
+        // Safe because `relinearise` is only ever called from inside the
+        // search block, and that block is only reached when `search` is true
+        // here -- so `self.saved` is always populated on the passes that can
+        // read it.
+        if search {
+            for (device, saved) in self.devices.iter().zip(self.saved.iter_mut()) {
+                *saved = device.linearisation();
+            }
         }
 
         self.guess.copy_from_slice(&self.rhs);
@@ -1377,6 +1463,12 @@ impl Simulation {
         }
         self.at_rest = false;
         let n = self.n;
+
+        // Whether this sample's solve failed to converge. It gates the
+        // reactance advance at the end of this function; see the advance
+        // block for why that gate is necessary.
+        let mut failed = false;
+
         if self.devices.is_empty() {
             // Nothing bends, so the matrix from `rebuild` still stands and one
             // substitution is the whole solve.
@@ -1386,7 +1478,7 @@ impl Simulation {
             for c in &self.capacitors {
                 inject(&mut self.rhs, c.a, c.b, c.history);
             }
-            for l in &self.inductors {
+            for l in &mut self.inductors {
                 inject(&mut self.rhs, l.a, l.b, l.history);
             }
             let partitioned = if let Some(partition) = &self.linear_partition {
@@ -1412,6 +1504,20 @@ impl Simulation {
                 self.voltage.copy_from_slice(&self.rhs);
             }
         } else {
+            // Take the recent movement before the predictor runs.
+            //
+            // `|V[n-1] - V[n-2]|` is the per-node scale the failure
+            // branch's bound is measured in. Taken before the predictor
+            // because the predictor overwrites `voltage` with the
+            // extrapolation and shifts `earlier` up one -- after which
+            // `|voltage - earlier|` is `|V_pred - V[n-1]|`, which happens
+            // to equal the movement by accident of the extrapolation's
+            // arithmetic and stops equalling it the moment the
+            // extrapolation is skipped.
+            for k in 0..n {
+                self.recent_move[k] = (self.voltage[k] - self.earlier[k]).abs();
+            }
+
             // Start from where the last two samples were heading, not from
             // where the last one was. Audio is smooth over a sample, so a
             // straight line through the last two lands much closer to the
@@ -1423,7 +1529,15 @@ impl Simulation {
             // output at -90 V against a 3.5 V rail and left it there: two
             // passes is enough for a device that bends and not for one that
             // steps, and a settled wrong state still reports itself settled.
-            if self.predictable {
+            //
+            // And only when the previous sample converged. A failed solve's
+            // answer is a bounded guess, and extending a bounded guess by
+            // doubling its distance from the sample before it produces a
+            // number that is further from the truth than the guess was. On
+            // the sample after a failure the correct starting point is
+            // `V[n-1]` directly -- the bounded guess the previous sample
+            // already produced -- and letting Newton walk from there.
+            if self.predictable && !self.last_was_unsettled {
                 for k in 0..n {
                     let predicted = 2.0 * self.voltage[k] - self.earlier[k];
                     self.earlier[k] = self.voltage[k];
@@ -1432,7 +1546,10 @@ impl Simulation {
             } else {
                 self.earlier.copy_from_slice(&self.voltage);
             }
-            self.previous.copy_from_slice(&self.earlier);
+            // Save the starting point for the record; the failure branch
+            // below uses `recent_move` for its scale, not this.
+            self.predicted.copy_from_slice(&self.voltage);
+
             let mut settled = false;
             let ceiling = self.ceiling.clamp(PASS_FLOOR, MAX_ITERATIONS);
             // No history at the start of a sample: the first two passes are
@@ -1469,15 +1586,97 @@ impl Simulation {
                 if ceiling < MAX_ITERATIONS {
                     self.pinched += 1;
                 }
-            }
-            if !settled && !self.voltage.iter().all(|v| v.is_finite()) {
-                // Driven somewhere it cannot follow. Hold the last answer
-                // rather than let a runaway out into the audio.
-                self.voltage.copy_from_slice(&self.previous);
+                // Bound the failed iterate and use it, rather than throwing
+                // it away.
+                //
+                // The failed iterate is the Newton loop's last answer, and
+                // it is a linear response to the *current* input. It
+                // therefore follows the signal; on a pick attack that is
+                // exactly what is wanted, because the pick is a genuine
+                // jump and the failed iterate's scale reflects it.
+                //
+                // What the iterate cannot be trusted for is *magnitude*: a
+                // Newton solve that ran out of passes has no convergence
+                // guarantee, and its answer can be a large overshoot on any
+                // node. Keeping it unbounded is what produced the +2.3 dB
+                // spike on the Twin before the reversion was added.
+                //
+                // So: keep the iterate, and cap how far any node may move
+                // from the last settled value. The cap has to be
+                // *signal-scaled*, because the nodes in these circuits do
+                // not share a scale. A power tube's plate sits at four
+                // hundred and fifty volts and swings by hundreds; a
+                // speaker node sits at a few volts and swings by a few. One
+                // absolute cap cannot admit the pick on the plate and
+                // reject the click on the speaker at the same time.
+                //
+                // `recent_move[k]` is how much node `k` moved between the
+                // two samples before this one, taken above before the
+                // predictor overwrote anything. `STEP_MULTIPLE` times that
+                // admits a continuation of the signal with room to overshoot
+                // it somewhat, and rejects a Newton overshoot that is many
+                // times the signal's own scale. `STEP_CEILING` is a
+                // last-resort absolute cap so a numerical accident cannot
+                // escape by way of a large recent move.
+                //
+                // STEP_MULTIPLE was 4 until a pick attack was reported as
+                // "distorted and stuttering". A pick is a genuine jump --
+                // the grid has to travel from cutoff to hard clipping in a
+                // few samples -- and 4 times the previous sample's movement
+                // is not enough of a jump. 16 admits the transient while
+                // still bounding the answer: a real Newton overshoot is
+                // many orders larger than sixteen times the signal, and the
+                // absolute cap catches those.
+                //
+                // A non-predictable circuit -- one with an op-amp in it --
+                // does not extrapolate, so `recent_move` is stale on it and
+                // it takes `STEP_CEILING` alone. The 5150 and the Twin do
+                // not have op-amps in the signal path, so this branch does
+                // not fire on them; it is here for the pedal voices.
+                const STEP_MULTIPLE: f64 = 16.0;
+                const STEP_CEILING: f64 = 1000.0;
+                for k in 0..n {
+                    let base = self.earlier[k];
+                    let iter = self.voltage[k] - base;
+                    let bound = if self.predictable && !self.last_was_unsettled {
+                        (self.recent_move[k] * STEP_MULTIPLE).min(STEP_CEILING)
+                    } else {
+                        STEP_CEILING
+                    };
+                    if iter.abs() > bound {
+                        self.voltage[k] = base + iter.signum() * bound;
+                    }
+                }
+                failed = true;
+                self.last_was_unsettled = true;
+            } else {
+                self.last_was_unsettled = false;
             }
         }
 
-        // Advance what each reactance remembers.
+        // Advance what each reactance remembers -- but only when this sample
+        // actually converged.
+        //
+        // The advance is what changes the state: a capacitor's stored charge,
+        // an inductor's current, the transformer core's flux. It has to
+        // integrate the sample's *answer*, and a failed sample's answer is
+        // not the answer -- it is a bounded guess. Advancing from a bounded
+        // guess lets the state move by up to `STEP_MULTIPLE` times the
+        // signal's own per-sample movement, and doing that for a run of
+        // consecutive failed samples walks the state far enough from any
+        // plausible operating point that the circuit stops returning to it.
+        // On the Twin Reverb, whose power stage is the largest solver in the
+        // catalogue and the one whose transformer core integrates the most,
+        // that is what produced a loud pulsating that continued after the
+        // input stopped: the core had walked into a limit cycle of its own.
+        //
+        // So on a failed sample the state is left exactly where the last
+        // converged sample left it, and only the *output* -- which reads
+        // `voltage`, not the state -- follows the bounded failed iterate.
+        // That is what lets the sound follow the pick even while the solver
+        // is struggling: the sample goes out, the state does not commit, and
+        // the next sample's solve starts from the same operating point the
+        // last one trusted.
         //
         // The convention throughout is that a branch's current leaving node
         // `a` is `G * v - history`, so `history` is exactly what gets injected
@@ -1486,32 +1685,34 @@ impl Simulation {
         // capacitor whose recurrence carries the wrong term reads 24 dB down
         // on a network that should be flat, and an inductor's diverges to NaN
         // within a few samples.
-        for c in &mut self.capacitors {
-            let v = across(&self.voltage, c.a, c.b);
-            // Trapezoidal: i = 2C/T (v - v_prev) - i_prev, which rearranges to
-            // i = G v - (G v_prev + i_prev).
-            let current = c.conductance * v - c.history;
-            c.history = c.conductance * v + current;
-            c.voltage = v;
-        }
-        for l in &mut self.inductors {
-            let v = across(&self.voltage, l.a, l.b);
-            // i = i_prev + T/2L (v + v_prev) = G v + (i_prev + G v_prev), so
-            // the injected term is the negative of that bracket.
-            let current = l.conductance * v - l.history;
-            l.history = -(current + l.conductance * v);
-            l.current = current;
-        }
-        // And what each device remembers. Most of them remember nothing -- a
-        // diode's current depends on its voltage now and on nothing else -- so
-        // this went uncalled for a long time without any of them noticing. A
-        // saturating core is the first device here with a state, and it
-        // integrates the voltage across it: left unadvanced its flux never
-        // accumulated past a single sample, so it drew a hundred-thousandth of
-        // the current it should have and iron in the signal path did nothing
-        // whatsoever.
-        for device in &mut self.devices {
-            device.advance();
+        if !failed {
+            for c in &mut self.capacitors {
+                let v = across(&self.voltage, c.a, c.b);
+                // Trapezoidal: i = 2C/T (v - v_prev) - i_prev, which rearranges to
+                // i = G v - (G v_prev + i_prev).
+                let current = c.conductance * v - c.history;
+                c.history = c.conductance * v + current;
+                c.voltage = v;
+            }
+            for l in &mut self.inductors {
+                let v = across(&self.voltage, l.a, l.b);
+                // i = i_prev + T/2L (v + v_prev) = G v + (i_prev + G v_prev), so
+                // the injected term is the negative of that bracket.
+                let current = l.conductance * v - l.history;
+                l.history = -(current + l.conductance * v);
+                l.current = current;
+            }
+            // And what each device remembers. Most of them remember nothing --
+            // a diode's current depends on its voltage now and on nothing
+            // else -- so this went uncalled for a long time without any of
+            // them noticing. A saturating core is the first device here with a
+            // state, and it integrates the voltage across it: left unadvanced
+            // its flux never accumulated past a single sample, so it drew a
+            // hundred-thousandth of the current it should have and iron in the
+            // signal path did nothing whatsoever.
+            for device in &mut self.devices {
+                device.advance();
+            }
         }
 
         self.voltage[self.circuit.output]

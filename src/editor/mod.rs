@@ -1054,10 +1054,16 @@ fn output(cx: &mut Context) {
         |p| format!("{:+.1} dB", p.output_trim.value()),
     );
 
-    // The plugin in or out of circuit, bottom right where a footswitch would
-    // be. `make_bypass` tells the host this is the bypass, so it can sit on the
-    // DAW's own strip and be automated -- which is the point: dropping a
-    // Screamer in for a solo from a controller.
+    // The plugin's processing in or out of circuit, bottom right where a
+    // footswitch would be. `make_bypass` tells the host this is the bypass,
+    // so it can sit on the DAW's own strip and be automated -- which is the
+    // point: dropping a Screamer in for a solo from a controller.
+    //
+    // OFF is a wire. The host's samples pass through 1:1, unchanged and
+    // undelayed, which means the reported latency stops describing the
+    // output while the plugin is switched out and the track sits a little
+    // ahead of the rest of the mix until it is switched back on. See
+    // `GainStageParams::bypass` for why that trade is made.
     //
     // ON is the parameter being *false*. A bypass parameter reads "is it
     // bypassed", and a switch on a panel reads "is it on", so the row is

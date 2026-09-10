@@ -129,7 +129,7 @@ pub fn reverb_return(source: f64, load: f64) -> Result<Circuit, Fault> {
 /// transformer -- is not modelled as a circuit either, for the same reason:
 /// nothing downstream of it comes back, so the only thing it contributes to
 /// what is heard is level.
-pub const SEND_GAIN: f64 = 30.0;
+pub const SEND_GAIN: f64 = 6.0;
 
 /// What the whole send-and-return path has to be divided by before it is
 /// summed on to the channel.
@@ -154,7 +154,7 @@ pub const SEND_GAIN: f64 = 30.0;
 /// which is what the pot is for: it is a 100 k linear track on the drawing and
 /// it blends, so at 3 or 4 on the dial the tank sits about nine decibels under
 /// the signal, where a Fender's does.
-pub const RETURN_TRIM: f64 = 1.0 / 383.4;
+pub const RETURN_TRIM: f64 = 6.0 / 383.4;
 
 /// The same channel brought out at a chosen node, for measuring one stage at a
 /// time. `SEND` and `RETURN` are the two the tank lives between.

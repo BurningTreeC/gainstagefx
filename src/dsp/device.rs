@@ -335,7 +335,7 @@ fn limit_grid(new: f64, old: f64) -> (f64, bool) {
     let scale = if new < GRID_CONDUCTS && old < GRID_CONDUCTS {
         2.0
     } else {
-        0.5
+        0.75
     };
     limit(new, old, scale)
 }
@@ -1400,5 +1400,144 @@ impl Device for Bipolar {
 
     fn settled(&self, _tolerance: f64) -> bool {
         !self.clamped
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Devices, stored inline
+// ---------------------------------------------------------------------------
+
+/// A device, as one type rather than one box.
+///
+/// `Simulation::devices` used to be `Vec<Box<dyn Device>>`. Every Newton pass
+/// dispatched through a vtable eight times per device and every write a device
+/// made to its own fields went through an `&mut dyn Device` the compiler could
+/// not see into. `Triode::stamp` computes an `exp`, a `ln_1p`, a `powf` and a
+/// `sqrt`, and the intermediate results were being spilled to memory between
+/// the operations that produced them because the compiler could not prove
+/// nobody else held a reference to `self`.
+///
+/// An enum removes both: the match is monomorphic at each arm, so the concrete
+/// `stamp` inlines into the pass loop, and the device's fields live in a
+/// caller-frame local rather than behind a pointer. The vector is contiguous,
+/// which also improves cache behaviour on the foot and linearisation walks
+/// that visit every device in turn.
+///
+/// The trait stays, and `AnyDevice` implements it by forwarding, so nothing
+/// that calls `device.stamp(...)` or `device.settled(...)` needs to know which
+/// type it is holding.
+pub enum AnyDevice {
+    Diode(Diode),
+    Triode(Triode),
+    Pentode(Pentode),
+    Jfet(Jfet),
+    Bipolar(Bipolar),
+    OpAmp(OpAmp),
+    Core(Core),
+}
+
+impl Device for AnyDevice {
+    #[inline]
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        match self {
+            AnyDevice::Diode(d) => d.stamp(s, v),
+            AnyDevice::Triode(t) => t.stamp(s, v),
+            AnyDevice::Pentode(p) => p.stamp(s, v),
+            AnyDevice::Jfet(j) => j.stamp(s, v),
+            AnyDevice::Bipolar(b) => b.stamp(s, v),
+            AnyDevice::OpAmp(o) => o.stamp(s, v),
+            AnyDevice::Core(c) => c.stamp(s, v),
+        }
+    }
+
+    #[inline]
+    fn footprint(&self, m: &mut Mark) {
+        match self {
+            AnyDevice::Diode(d) => d.footprint(m),
+            AnyDevice::Triode(t) => t.footprint(m),
+            AnyDevice::Pentode(p) => p.footprint(m),
+            AnyDevice::Jfet(j) => j.footprint(m),
+            AnyDevice::Bipolar(b) => b.footprint(m),
+            AnyDevice::OpAmp(o) => o.footprint(m),
+            AnyDevice::Core(c) => c.footprint(m),
+        }
+    }
+
+    #[inline]
+    fn moved(&self) -> f64 {
+        match self {
+            AnyDevice::Diode(d) => d.moved(),
+            AnyDevice::Triode(t) => t.moved(),
+            AnyDevice::Pentode(p) => p.moved(),
+            AnyDevice::Jfet(j) => j.moved(),
+            AnyDevice::Bipolar(b) => b.moved(),
+            AnyDevice::OpAmp(o) => o.moved(),
+            AnyDevice::Core(c) => c.moved(),
+        }
+    }
+
+    #[inline]
+    fn settled(&self, tolerance: f64) -> bool {
+        match self {
+            AnyDevice::Diode(d) => d.settled(tolerance),
+            AnyDevice::Triode(t) => t.settled(tolerance),
+            AnyDevice::Pentode(p) => p.settled(tolerance),
+            AnyDevice::Jfet(j) => j.settled(tolerance),
+            AnyDevice::Bipolar(b) => b.settled(tolerance),
+            AnyDevice::OpAmp(o) => o.settled(tolerance),
+            AnyDevice::Core(c) => c.settled(tolerance),
+        }
+    }
+
+    #[inline]
+    fn linearisation(&self) -> Linearisation {
+        match self {
+            AnyDevice::Diode(d) => d.linearisation(),
+            AnyDevice::Triode(t) => t.linearisation(),
+            AnyDevice::Pentode(p) => p.linearisation(),
+            AnyDevice::Jfet(j) => j.linearisation(),
+            AnyDevice::Bipolar(b) => b.linearisation(),
+            AnyDevice::OpAmp(o) => o.linearisation(),
+            AnyDevice::Core(c) => c.linearisation(),
+        }
+    }
+
+    #[inline]
+    fn relinearise(&mut self, saved: Linearisation) {
+        match self {
+            AnyDevice::Diode(d) => d.relinearise(saved),
+            AnyDevice::Triode(t) => t.relinearise(saved),
+            AnyDevice::Pentode(p) => p.relinearise(saved),
+            AnyDevice::Jfet(j) => j.relinearise(saved),
+            AnyDevice::Bipolar(b) => b.relinearise(saved),
+            AnyDevice::OpAmp(o) => o.relinearise(saved),
+            AnyDevice::Core(c) => c.relinearise(saved),
+        }
+    }
+
+    #[inline]
+    fn advance(&mut self) {
+        match self {
+            AnyDevice::Diode(d) => d.advance(),
+            AnyDevice::Triode(t) => t.advance(),
+            AnyDevice::Pentode(p) => p.advance(),
+            AnyDevice::Jfet(j) => j.advance(),
+            AnyDevice::Bipolar(b) => b.advance(),
+            AnyDevice::OpAmp(o) => o.advance(),
+            AnyDevice::Core(c) => c.advance(),
+        }
+    }
+
+    #[inline]
+    fn switches(&self) -> bool {
+        match self {
+            AnyDevice::Diode(d) => d.switches(),
+            AnyDevice::Triode(t) => t.switches(),
+            AnyDevice::Pentode(p) => p.switches(),
+            AnyDevice::Jfet(j) => j.switches(),
+            AnyDevice::Bipolar(b) => b.switches(),
+            AnyDevice::OpAmp(o) => o.switches(),
+            AnyDevice::Core(c) => c.switches(),
+        }
     }
 }

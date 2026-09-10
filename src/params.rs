@@ -487,14 +487,21 @@ pub struct GainStageParams {
     #[id = "eq6600"]
     pub eq6600: FloatParam,
 
-    /// The plugin in or out of circuit.
+    /// The plugin's processing in or out of circuit.
     ///
     /// `make_bypass` tells the host this is *the* bypass, so a DAW can put it
     /// on its own strip and automate it, and a controller can drop a Screamer
-    /// in for a solo. nih-plug's note is that a plugin reporting latency has to
-    /// implement the switch itself, which this one does: bypassed, the output
-    /// is the **delayed** dry signal, so the track does not jump forward by
-    /// the reported latency the moment it is switched out.
+    /// in for a solo.
+    ///
+    /// Switched out, the plugin is a **wire**: the host's samples are handed
+    /// back exactly as they arrived, without summing, trims, delay or mix.
+    /// That is a deliberate departure from what a latent plugin is usually
+    /// asked to do -- nih-plug's note is to keep the delay in the bypassed
+    /// path so the track does not jump when the plugin is switched out -- and
+    /// it means the reported latency stops describing the output while the
+    /// plugin is off. The point of the button is that "off" makes the signal
+    /// pass through unchanged rather than moving it, and the shift that costs
+    /// is written into `Plugin::process` alongside the branch that does it.
     #[id = "bypass"]
     pub bypass: BoolParam,
 

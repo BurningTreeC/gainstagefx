@@ -251,11 +251,11 @@ impl Gain {
 
     /// The *valve* power amplifier behind this circuit, where it has one.
     ///
-    /// Only the two guitar amplifiers do. A pedal has no power stage, and the
-    /// topologies are shapes rather than particular units, so there is nothing
-    /// to put behind them: inventing one would be inventing a sound. The 73P
-    /// has an output block of its own and it is not one of these -- see
-    /// `build_power`.
+    /// Only the three valve guitar amplifiers do. A pedal has no power stage,
+    /// and the topologies are shapes rather than particular units, so there
+    /// is nothing to put behind them: inventing one would be inventing a
+    /// sound. The 73P has an output block of its own and it is not one of
+    /// these -- see `build_power`.
     pub fn power_stage(self) -> Option<&'static power::PowerSpec> {
         match self {
             Gain::Boogie => Some(&power::PowerSpec::MARKIIC),
@@ -292,7 +292,6 @@ impl Gain {
         matches!(self, Gain::Overdrive | Gain::Distortion)
     }
 
-    /// How many circuits this one covers: one per part it can be built with.
     /// Whether this voice has a reverb tank and a tremolo of its own.
     ///
     /// Only the Twin does. The panel greys the three controls everywhere
@@ -458,12 +457,12 @@ pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
 
 /// The block behind a voice's gain circuit, where it has one.
 ///
-/// Three voices do, and they are not the same kind of thing. The two guitar
-/// amplifiers get a push-pull valve power stage from `power.rs`, built from a
-/// `PowerSpec`. The 73P gets its own OUTPUT block -- two BC109C into a TIP3055
-/// and the VTB1148 -- because a microphone preamplifier's line driver is not a
-/// power amplifier and sharing the machinery would mean sharing a topology it
-/// does not have.
+/// Four voices do, and they are not the same kind of thing. The three valve
+/// guitar amplifiers get a push-pull power stage from `power.rs`, built from
+/// a `PowerSpec`. The 73P gets its own OUTPUT block -- two BC109C into a
+/// TIP3055 and the VTB1148 -- because a microphone preamplifier's line driver
+/// is not a power amplifier and sharing the machinery would mean sharing a
+/// topology it does not have.
 ///
 /// Separate netlists rather than one joined onto the end of the other, and the
 /// reason is cost. Solving one circuit of thirty-five nodes is not the same
@@ -685,16 +684,19 @@ impl Cabinet {
     }
 }
 
-/// What a nominal digital signal has to become, and what comes back.
+/// How many points the make-up curve is measured at.
 ///
 /// The make-up is a curve across the drive control rather than one number,
 /// because the drive control moves the gain of these circuits by about eighty
-/// decibels end to end. Nine points, not five: five leaves twenty decibels
-/// between neighbours, and a straight line drawn across twenty decibels of a
-/// curve is not close enough to call the level held. `tests/voice.rs` checks
-/// the interpolation, not just the points.
-/// How many points the make-up curve is measured at.
-pub const POINTS: usize = 17;
+/// decibels end to end. Where those points sit across the control is what
+/// `KNOT_SHAPE` decides; the *number* of them decides how much of the curve a
+/// straight line between two of them has to describe. It was nine, and then
+/// seventeen, and the increase at each step was because a curve that goes as
+/// `log(position)` near the bottom and flattens near the top cannot be
+/// described by a straight line between evenly spaced samples -- see
+/// `KNOT_SHAPE` for the shape. `tests/voice.rs` checks the interpolation
+/// between the points, not just the points themselves.
+pub const POINTS: usize = 33;
 
 /// How the make-up's sample points are spread across the drive control.
 ///
@@ -702,19 +704,20 @@ pub const POINTS: usize = 17;
 /// logarithmic and the stage after it saturates, so a circuit's gain climbs
 /// most of its range inside the first eighth of the travel and then flattens:
 /// the Mark IIC+ moves 47 dB between a shut Lead Drive and an eighth of a turn,
-/// and 9 dB over the remaining seven eighths. Nine points evenly spaced sample
-/// that first cliff exactly twice, and a straight line between those two
-/// samples was **24 dB** away from the curve at a knob position of 0.03 --
-/// which is heard as the level lurching as the knob comes off its stop, and
-/// was reported as "at 0% Gain the meter goes way UP".
+/// and 9 dB over the remaining seven eighths. Evenly spaced points sample that
+/// first cliff too sparsely for a straight line to describe it -- with nine
+/// of them, the line between the two samples nearest the bottom was **24 dB**
+/// away from the curve at a knob position of 0.03, which is heard as the level
+/// lurching as the knob comes off its stop, and was reported as "at 0% Gain
+/// the meter goes way UP".
 ///
 /// More even points do not fix it. The curve goes as `log(position)` near the
 /// bottom, so a straight line across the first segment is wrong by an amount
 /// that does not shrink usefully however narrow the segment gets.
 ///
 /// So the points are spread by a cube law: knot `i` sits at
-/// `(i / (POINTS - 1))^3`. That puts eight of the seventeen inside the first
-/// eighth of the travel, where the gain is, and leaves the flat top end
+/// `(i / (POINTS - 1))^3`. That puts seventeen of the thirty-three inside the
+/// first eighth of the travel, where the gain is, and leaves the flat top end
 /// sampled coarsely, where coarse is all it needs.
 const KNOT_SHAPE: f64 = 3.0;
 
@@ -727,8 +730,8 @@ pub fn knot_position(i: usize) -> f64 {
 pub struct Calibration {
     /// Volts at the circuit's input for a signal at `NOMINAL_DBFS`.
     pub drive_volts: f64,
-    /// Output make-up in dB at nine evenly spaced drive positions, the first
-    /// at 0 and the last at 1.
+    /// Output make-up in dB at the drive positions `knot_position(i)` gives,
+    /// the first at 0 and the last at 1.
     pub make_up_db: [f64; POINTS],
 }
 
@@ -775,12 +778,21 @@ fn peak_gain(circuit: &Netlist, controls: &[f64]) -> f64 {
 /// set to.
 ///
 /// The filters are shorter at the lower settings -- nothing at all with
-/// oversampling off, 160 samples at two times, 176 at four, 180 at eight -- so
+/// oversampling off, 56 samples at two times, 64 at four, 66 at eight -- so
 /// the honest figure would change as the control moves. The CLAP specification
 /// asks that it does not, and a host that has to renegotiate its delay
 /// compensation mid-stream will click. So one figure is reported and the
 /// shorter settings are padded up to it.
-pub const LATENCY: u32 = 180;
+///
+/// 66 samples is 1.38 ms at 48 kHz and 1.50 ms at 44.1 kHz, both inside the
+/// plugin's latency budget and inside the 9 ms ceiling everywhere. The
+/// filters that get there are shorter and less steep than the ones this used
+/// to carry -- 56 taps with a 90 dB stopband against 160 with 136 -- and the
+/// reason the trade is worth making is that the plugin is a guitar amplifier.
+/// What the extra attenuation bought was the octave above fifteen kilohertz,
+/// which a speaker cone never reaches, and what it cost was two and a half
+/// milliseconds of a three-point-seven-five millisecond budget.
+pub const LATENCY: u32 = 66;
 
 /// Number of samples to crossfade when switching circuits or presets.
 /// At 48 kHz this is about 5.3 ms -- long enough to mask the capacitor
@@ -957,8 +969,9 @@ impl Default for Settings {
 pub struct Chain {
     gains: Vec<Simulation>,
     /// The power amplifier behind each voice that has one, indexed alongside
-    /// `gains`. Two of them are `Some`; the rest are pedals and topologies,
-    /// which have nothing behind them.
+    /// `gains`. Four of them are `Some` -- the three valve guitar amplifiers
+    /// and the 73P's own output block -- and the rest are pedals and
+    /// topologies, which have nothing behind them.
     powers: Vec<Option<Simulation>>,
     /// The three output transformers. Nonlinear, so unlike the tone stack and
     /// the cabinet these cannot be normalised by asking the AC solver: their
@@ -1130,6 +1143,16 @@ impl Chain {
     /// switched to: it has been sitting with whatever charge was on its
     /// capacitors when it was last used, and a valve plate holds two hundred
     /// volts of it.
+    ///
+    /// The graphic equaliser is reset unconditionally, whether or not the
+    /// voice being switched to has one. It is only *in* the path for the
+    /// Boogie, but it is a single simulation shared across all voices -- so
+    /// switching Boogie -> Crunch -> Boogie without a transport stop would
+    /// otherwise carry the Boogie's LC state across the round trip, and the
+    /// second Boogie would start with audio the first Boogie left in the
+    /// filter from seconds ago. Resetting it on every voice change costs one
+    /// rebuild and one DC hunt on a five-band LC network, and removes a way
+    /// for state to leak between voices that share nothing else.
     pub fn set_voice(&mut self, gain: Gain, diode: Diode, amplifier: Amplifier) {
         let index = voice_index(gain, diode, amplifier);
         self.voice = gain;
@@ -1148,6 +1171,8 @@ impl Chain {
             if let Some(sim) = self.powers[index].as_mut() {
                 sim.reset();
             }
+            // The graphic equaliser, unconditionally. See the doc comment.
+            self.graphic.reset();
             self.set_oversampling(self.requested_oversampling);
             self.set_drive(self.drive);
             // The make-up belongs to the voice, so it changes with the voice
@@ -1692,13 +1717,6 @@ impl Chain {
         self.iron.map(|i| self.irons[i].operating_point())
     }
 
-    /// Whether the active gain circuit still has its DC hunt in front of it,
-    /// which is the only moment at which its solution is worth sharing. See
-    /// `Simulation::needs_operating_point`.
-    /// Cap the Newton passes every circuit in this chain may take.
-    ///
-    /// Layer 5a's lever. See `Simulation::ceiling` for why it is floored and
-    /// why this is not the mistake BUG-008 records.
     /// The Twin's own three, carried through `apply` like everything else
     /// that reaches a circuit.
     fn set_reverb_and_tremolo(&mut self, s: &Settings) {
@@ -1711,6 +1729,10 @@ impl Chain {
         self.tail.set_control(twin::REVERB, s.reverb);
     }
 
+    /// Cap the Newton passes every circuit in this chain may take.
+    ///
+    /// Layer 5a's lever. See `Simulation::ceiling` for why it is floored and
+    /// why this is not the mistake BUG-008 records.
     pub fn set_pass_ceiling(&mut self, passes: usize) {
         for sim in self
             .gains
@@ -1786,6 +1808,17 @@ impl Chain {
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.reset();
         }
+        // The four things `reset` used to miss. `graphic` is in the Boogie's
+        // path and its LC state is large enough to be heard on its own;
+        // `tail` is the reverb recovery stage, `tank` the spring and
+        // `tremolo` the oscillator -- all three retain signal between calls
+        // unless told otherwise. `set_voice` already resets the last three
+        // and the graphic as well, but a reset is a bigger operation than a
+        // voice switch and everything stateful belongs in it.
+        self.graphic.reset();
+        self.tail.reset();
+        self.tank.reset();
+        self.tremolo.reset();
         self.over.reset();
         self.pad.reset();
         self.dry.reset();

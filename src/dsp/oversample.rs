@@ -1,28 +1,35 @@
 //! Linear phase halfband oversampling.
 //!
-//! Taken unchanged from Comp76Fx by way of the first attempt at this plugin,
-//! where it has been measured -- including the measurement that mattered
-//! most, that going from four times to eight bought nothing at all. The rate
-//! was never the limit; the filter's stopband was, and the first stage went
-//! from 64 taps to 160 to fix it. Rewriting a filter that has been through
-//! that would only be a chance to reintroduce the fault. A circuit solved
-//! at the host rate aliases whatever its devices fold above Nyquist, and a
-//! hard clipper folds a great deal; this runs the solver at a multiple of the
-//! host rate and filters on the way back.
+//! The structure is Comp76Fx's by way of the first attempt at this plugin:
+//! a cascade of Kaiser windowed halfband FIR stages, `M` odd-phase taps each,
+//! so a 2x stage costs `M` multiplies per sample in each direction and the
+//! even output samples are a plain delay of the input.
 //!
-//! Each stage is a Kaiser windowed halfband FIR of length `2M + 1`. In a
-//! halfband filter every even tap around the centre is zero and the centre tap
-//! is exactly `0.5`, so a 2x stage costs only `M` multiplies per sample in each
-//! direction and the even output samples are a plain delay of the input.
+//! The *lengths* are not the ones it arrived with, and the reason they moved
+//! is that they were specified for a plugin with a different job. The first
+//! stage was 160 taps at beta 14, which by Kaiser's rule is about 136 dB of
+//! stopband attenuation and a passband flat to within a tenth of a decibel
+//! right up against the input Nyquist. That is the right figure for a
+//! mastering chain. It is not the right figure for a guitar amplifier, whose
+//! speaker stops somewhere past four kilohertz and whose cabinet model
+//! already says so -- and the cost of the extra attenuation was 180 samples
+//! of round-trip latency, or 3.75 ms at 48 kHz, which is three times what
+//! the plugin's latency budget allows.
+//!
+//! The lengths here are 56, 16 and 8 taps at betas 9, 8 and 6. That is
+//! roughly 90, 80 and 63 dB of stopband, with the first stage's passband
+//! flat to 20.1 kHz at 44.1 kHz and its stopband opening from 23.9 kHz.
+//! Everything a speaker cone passes goes through untouched; what is above
+//! that is attenuated more than any harmonic a clipper makes already is, and
+//! the round trip is 66 samples at 8x, or 1.38 ms at 48 kHz.
 //!
 //! `M` is even for every stage, which keeps the round trip latency an integer
-//! number of samples at the host rate (`M` samples for the first stage, `M / 2`
-//! for the second, `M / 4` for the third).
+//! number of samples at the host rate (`M` samples for the first stage,
+//! `M / 2` for the second, `M / 4` for the third).
 
-/// Taps and Kaiser beta per stage. The first stage has to keep 20 kHz flat at
-/// 44.1 kHz, which needs a long filter; later stages run at a rate where the
-/// audio band takes up much less of the spectrum and can be far shorter.
-const STAGES: [(usize, f64); 3] = [(160, 14.0), (32, 11.0), (16, 9.0)];
+/// Taps and Kaiser beta per stage. See the module comment for why these are
+/// what they are.
+const STAGES: [(usize, f64); 3] = [(56, 9.0), (16, 8.0), (8, 6.0)];
 
 /// A delay line of a fixed whole number of samples.
 struct Delay {

@@ -337,3 +337,323 @@ fn resetting_does_not_pop() {
         );
     }
 }
+
+/// A pick attack is a genuine discontinuity at the input, and the solver
+/// has to be able to follow it without either gating it silent or letting
+/// a Newton overshoot through as a click.
+///
+/// The two symptoms this catches, in order of how they appeared during
+/// development:
+///
+/// - The output drops to near silence during the attack and takes a few
+///   samples to recover. That is a `failed`-sample answer being clamped
+///   too tight: the solver did not converge, the fallback used a bound
+///   scaled by the recent movement, and the recent movement was the
+///   pre-attack quiet.
+/// - The output spikes and then continues ringing after the input stops.
+///   That is the transformer core's flux or a capacitor's charge being
+///   integrated from a failed sample's bounded guess, walking the state
+///   far enough from any plausible operating point that the circuit
+///   cannot return.
+///
+/// It is deliberately not a full-spectrum test. It is an instrument for
+/// detecting the two specific states, so that a change to the solver
+/// that re-opens either one is caught on the same commit.
+#[test]
+fn a_pick_attack_is_followed_and_does_not_leave_the_chain_ringing() {
+    // The voices with the largest solvers and the most state to walk away
+    // from. The pedals do not fail in this regime and are not tested.
+    for gain in [Gain::Twin, Gain::Peavey, Gain::Boogie] {
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_drive(0.85);
+        chain.settle();
+
+        // Settle on silence, so the attack is the only thing in flight.
+        for _ in 0..(RATE as usize / 2) {
+            chain.process(0.0);
+        }
+
+        // A pick: an instantaneous attack with a short decay, one string
+        // at a time, then a chord. Amplitude is 0.5 of full scale so the
+        // input trim does not push it into the plugin's own limiter.
+        //
+        // The attack shape is measured from what a piezo pickup produces
+        // on a hard pick: a one-or-two-sample rise from nothing to the
+        // peak, a short plateau, then an exponential decay over about
+        // eighty milliseconds.
+        let mut play = |chain: &mut Chain, seconds: f64, amplitude: f64, hz: f64| {
+            let n = (seconds * RATE) as usize;
+            let mut peak_output: f64 = 0.0;
+            for i in 0..n {
+                let t = i as f64 / RATE;
+                // The envelope: rise in 0.5 ms, hold 5 ms, decay in 80 ms.
+                let env = if t < 0.0005 {
+                    t / 0.0005
+                } else if t < 0.0055 {
+                    1.0
+                } else {
+                    (-(t - 0.0055) / 0.080).exp()
+                };
+                let x = env * amplitude * (std::f64::consts::TAU * hz * t).sin();
+                let y = chain.process(x).abs();
+                if y > peak_output {
+                    peak_output = y;
+                }
+            }
+            peak_output
+        };
+
+        // Play a note and measure its peak. Then play the same note
+        // through a version with a slow attack -- the same total energy
+        // but arrived in milliseconds rather than a sample -- and check
+        // that the peaks are in the same order of magnitude. If the fast
+        // attack is gated, its peak is far below the slow one's.
+        let fast_peak = play(&mut chain, 0.15, 0.5, 220.0);
+
+        // Reset and settle for the slow comparison.
+        chain.reset();
+        chain.settle();
+        for _ in 0..(RATE as usize / 2) {
+            chain.process(0.0);
+        }
+        let slow_peak = {
+            let n = (0.15 * RATE) as usize;
+            let mut peak: f64 = 0.0;
+            for i in 0..n {
+                let t = i as f64 / RATE;
+                // 10 ms rise.
+                let env = if t < 0.010 {
+                    t / 0.010
+                } else {
+                    (-(t - 0.010) / 0.080).exp()
+                };
+                let x = env * 0.5 * (std::f64::consts::TAU * 220.0 * t).sin();
+                let y = chain.process(x).abs();
+                if y > peak {
+                    peak = y;
+                }
+            }
+            peak
+        };
+
+        assert!(
+            fast_peak > slow_peak * 0.25,
+            "{} gated the pick attack: the fast attack peaked at {fast_peak:.4} \
+             against {slow_peak:.4} for the same note played slowly",
+            gain.name(),
+        );
+        assert!(
+            fast_peak < slow_peak * 10.0,
+            "{} overshot the pick attack: the fast attack peaked at \
+             {fast_peak:.4} against {slow_peak:.4} for the same note played \
+             slowly",
+            gain.name(),
+        );
+
+        // And after the input stops, the chain has to return to silence
+        // rather than keep ringing. A quarter of a second is long enough
+        // for the transformer core's flux and every coupling capacitor to
+        // settle.
+        let mut worst: f64 = 0.0;
+        for _ in 0..(RATE as usize / 4) {
+            worst = worst.max(chain.process(0.0).abs());
+        }
+        assert!(
+            worst < 0.05,
+            "{} kept ringing after a pick attack: peak {worst:.4} on silence",
+            gain.name(),
+        );
+    }
+}
+
+/// A chord with three notes, each picked, is where the Twin was reported
+/// to go into its pulsating after the pick. The mechanism was the
+/// transformer core's flux being integrated from a failed sample's
+/// bounded guess for a run of consecutive failures. This test plays the
+/// chord, then listens on silence for two seconds, and asserts that
+/// nothing is audible.
+#[test]
+fn a_chord_of_picks_does_not_leave_the_twin_pulsating() {
+    let mut chain = Chain::new(RATE);
+    chain.set_voice(Gain::Twin, voice::Diode::Silicon, voice::Amplifier::Valve);
+    chain.set_drive(0.85);
+    chain.settle();
+    for _ in 0..(RATE as usize / 2) {
+        chain.process(0.0);
+    }
+
+    // Three strings picked in quick succession, the way a chord is
+    // strummed: 30 ms apart, each with a fast attack and a short decay.
+    for hz in [110.0, 220.0, 330.0] {
+        let offset = (0.030 * RATE) as usize;
+        for _ in 0..offset {
+            chain.process(0.0);
+        }
+        let n = (0.15 * RATE) as usize;
+        for i in 0..n {
+            let t = i as f64 / RATE;
+            let env = if t < 0.001 {
+                t / 0.001
+            } else {
+                (-(t - 0.001) / 0.100).exp()
+            };
+            let x = env * 0.35 * (std::f64::consts::TAU * hz * t).sin();
+            chain.process(x);
+        }
+    }
+
+    // Two seconds of silence.
+    let mut worst: f64 = 0.0;
+    let mut worst_at = 0usize;
+    for i in 0..(RATE as usize * 2) {
+        let y = chain.process(0.0).abs();
+        if y > worst {
+            worst = y;
+            worst_at = i;
+        }
+    }
+    assert!(
+        worst < 0.05,
+        "the Twin kept pulsating after a chord of picks: peak {worst:.4} \
+         at sample {worst_at}, which is {:.3} s into the silence",
+        worst_at as f64 / RATE,
+    );
+}
+
+/// What the solver actually does on a pick attack, printed rather than
+/// asserted.
+///
+/// This is the instrument the two pick-attack symptoms were never
+/// diagnosed with. Everything I have proposed so far -- raising
+/// `MAX_ITERATIONS`, skipping the post-failure extrapolation, widening
+/// the failed-iterate bound -- has been a guess at the mechanism, and the
+/// user reported that the guesses did not help. That means the guesses
+/// are wrong and the mechanism needs to be measured.
+///
+/// What it prints, for one voice:
+///
+/// - the worst consecutive run of unsettled samples on a pick attack
+/// - the total unsettled count
+/// - the input and output at each of the first twenty failed samples
+/// - the final solver statistics for the gain circuit and the power stage
+///
+/// Run with `cargo test --test voice diagnose_the_pick_attack -- --nocapture`
+/// and paste the output.
+#[test]
+fn diagnose_the_pick_attack() {
+    use gainstagefx::dsp::time::Simulation;
+    use gainstagefx::voice;
+
+    const RATE: f64 = 96_000.0;
+
+    // The three voices with the largest solvers.
+    for gain in [Gain::Twin, Gain::Peavey, Gain::Boogie] {
+        let netlist = voice::build_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve)
+            .expect("builds");
+        let power = voice::build_power(gain).map(|b| b.expect("builds"));
+
+        let index = voice::voice_index(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
+        let cal = &CALIBRATION[index];
+
+        let mut sim = Simulation::new(netlist, RATE);
+        let mut power_sim = power.map(|n| Simulation::new(n, RATE));
+
+        sim.set_control(gain.drive_control(), 0.85);
+
+        // Settle on silence so the pick is the only thing in flight.
+        for _ in 0..(RATE as usize / 2) {
+            let y = sim.process(0.0);
+            if let Some(ref mut p) = power_sim {
+                p.process(y);
+            }
+        }
+
+        // A pick, in volts at the voice's own calibration.
+        let volts = cal.drive_volts;
+        let n = (0.3 * RATE) as usize;
+
+        let mut prev_gain_unsettled = sim.statistics().2;
+        let mut prev_power_unsettled = power_sim.as_ref().map(|p| p.statistics().2);
+
+        let mut worst_run = 0usize;
+        let mut current_run = 0usize;
+        let mut failed_samples: Vec<(usize, f64, f64, f64)> = Vec::new();
+
+        for i in 0..n {
+            let t = i as f64 / RATE;
+            // Envelope: 1 ms rise, 5 ms hold, 100 ms decay.
+            let env = if t < 0.001 {
+                t / 0.001
+            } else if t < 0.006 {
+                1.0
+            } else {
+                (-(t - 0.006) / 0.100).exp()
+            };
+            let x = env * volts * (std::f64::consts::TAU * 220.0 * t).sin();
+
+            let y = sim.process(x);
+            let out = if let Some(ref mut p) = power_sim {
+                p.process(y)
+            } else {
+                y
+            };
+
+            let gain_unsettled = sim.statistics().2;
+            let failed_gain = gain_unsettled > prev_gain_unsettled;
+            prev_gain_unsettled = gain_unsettled;
+
+            let failed_power = if let Some(ref mut p) = power_sim {
+                let now = p.statistics().2;
+                let f = now > prev_power_unsettled.unwrap();
+                prev_power_unsettled = Some(now);
+                f
+            } else {
+                false
+            };
+
+            if failed_gain || failed_power {
+                current_run += 1;
+                if current_run > worst_run {
+                    worst_run = current_run;
+                }
+                if failed_samples.len() < 40 {
+                    failed_samples.push((i, x, y, out));
+                }
+            } else {
+                current_run = 0;
+            }
+        }
+
+        println!();
+        println!("=== {} ===", gain.name());
+        println!("  drive volts (input for nominal): {volts:.4} V");
+        println!("  worst consecutive unsettled run: {worst_run} samples");
+        println!("  total failed samples: {}", failed_samples.len());
+        println!();
+        println!("  first 40 failed samples: index / input / gain out / power out");
+        for (i, x, y, z) in &failed_samples {
+            println!("    {i:>6}  in={x:+.5}  gain={y:+.5}  power={z:+.5}");
+        }
+
+        let g = sim.statistics();
+        println!();
+        println!(
+            "  gain circuit: solves={} passes={} unsettled={} rebuilds={}",
+            g.0, g.1, g.2, g.3
+        );
+        let (backtracks, fallbacks, nonfinite) = sim.health();
+        println!(
+            "  gain health:  backtracks={backtracks} fallbacks={fallbacks} nonfinite={nonfinite}"
+        );
+        if let Some(p) = power_sim.as_ref() {
+            let s = p.statistics();
+            println!(
+                "  power stage:  solves={} passes={} unsettled={} rebuilds={}",
+                s.0, s.1, s.2, s.3
+            );
+            let (b, f, n) = p.health();
+            println!("  power health: backtracks={b} fallbacks={f} nonfinite={n}");
+        }
+    }
+}

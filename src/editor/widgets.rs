@@ -680,10 +680,20 @@ impl Selector {
         )
     }
 
-    /// Which segment is lit. A normalised value maps onto the step list the
-    /// same way the parameter itself does, so this cannot drift from what the
-    /// host thinks is selected.
+    /// Which segment is lit.
+    ///
+    /// A normalised value maps onto the step list the same way the parameter
+    /// itself does, so this cannot drift from what the host thinks is selected.
+    ///
+    /// A **pinned** row overrides that and lights the segment it was pinned
+    /// to, which is the whole point of the pin -- see `Selector::forced`. The
+    /// check has to live here as well as in the label colouring above, because
+    /// this is what `draw` uses to decide which cell's backing is lit, and the
+    /// two halves of the row have to agree about what is showing.
     fn selected(&self) -> usize {
+        if let Some(at) = self.forced {
+            return at.wrapping_sub(self.offset);
+        }
         let total = self.total.max(1);
         let v = self.param.unmodulated_normalized_value();
         let absolute = ((v * (total - 1) as f32).round() as usize).min(total - 1);
@@ -710,7 +720,17 @@ impl View for Selector {
     }
 
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
-        if !self.enabled {
+        // A pinned row is showing something the parameter does not hold --
+        // see `Selector::forced` -- so a click on it must not write the
+        // parameter: it would either set a value the user did not ask for,
+        // or set one that the pin immediately overrides and hides. The
+        // `pinned` constructor already passes `enabled = false`, so this is
+        // a second lock on the same door, and it exists because the two mean
+        // different things. `enabled` says "this row has stopped applying";
+        // `forced` says "this row is displaying a value that is not what the
+        // parameter says". A row can be either without being the other, and
+        // refusing the click is right for both.
+        if !self.enabled || self.forced.is_some() {
             return;
         }
         let b = cx.bounds();
