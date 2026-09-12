@@ -61,6 +61,13 @@ const RISE_SECONDS: f64 = 0.090;
 /// round-off from changing its amplitude over a long session.
 const NORMALIZE_EVERY: u32 = 4096;
 
+/// Fixed AB763 optical-shunt impedances. Keeping their combinations cached
+/// avoids rebuilding two constants on every audio sample.
+const AB763_SOURCE_OHMS: f64 = 38_000.0;
+const AB763_LOAD_OHMS: f64 = 1_000_000.0;
+const AB763_SOURCE_PLUS_LOAD: f64 = AB763_SOURCE_OHMS + AB763_LOAD_OHMS;
+const AB763_SOURCE_TIMES_LOAD: f64 = AB763_SOURCE_OHMS * AB763_LOAD_OHMS;
+
 pub struct Tremolo {
     rate: f64,
     /// Last speed control value whose oscillator increment is cached.
@@ -204,11 +211,15 @@ impl Tremolo {
         DARK_OHMS * (self.lit * LOG_CELL_RATIO).exp()
     }
 
-    /// What the shunt does to the signal at the point it sits.
-    pub fn attenuation(&mut self, speed: f64, intensity: f64, source: f64, load: f64) -> f64 {
+    /// What the AB763 optical shunt does to the signal at its fixed circuit
+    /// impedances. Algebraically identical to
+    /// `(cell||load)/(source + cell||load)`, but with the static impedance
+    /// products cached and only one audio-rate division.
+    #[inline]
+    pub fn attenuation(&mut self, speed: f64, intensity: f64) -> f64 {
         let cell = self.resistance(speed, intensity);
-        let shunt = cell * load / (cell + load);
-        shunt / (source + shunt)
+        let numerator = cell * AB763_LOAD_OHMS;
+        numerator / (cell * AB763_SOURCE_PLUS_LOAD + AB763_SOURCE_TIMES_LOAD)
     }
 
     pub fn reset(&mut self) {
@@ -228,6 +239,21 @@ mod tests {
     /// original direct phase + `sin` + logarithmic `powf` implementation. The
     /// arithmetic is deliberately rearranged to remove libm work from the
     /// audio-rate path, so require numerical agreement rather than bit identity.
+    #[test]
+    fn cached_ab763_divider_matches_parallel_resistance_formula() {
+        let mut optimized = Tremolo::new(48_000.0);
+        let mut reference_cell = Tremolo::new(48_000.0);
+        for k in 0..50_000 {
+            let speed = 0.37;
+            let intensity = 0.82;
+            let actual = optimized.attenuation(speed, intensity);
+            let cell = reference_cell.resistance(speed, intensity);
+            let shunt = cell * AB763_LOAD_OHMS / (cell + AB763_LOAD_OHMS);
+            let expected = shunt / (AB763_SOURCE_OHMS + shunt);
+            assert!((actual - expected).abs() < 2e-15 * (1.0 + expected.abs()), "sample {k}");
+        }
+    }
+
     #[test]
     fn cached_oscillator_matches_direct_reference() {
         let rate = 48_000.0;

@@ -10,6 +10,8 @@ fn stamp(core: &mut Core, volts: f64, limiting: bool) -> (f64, f64) {
             matrix: &mut matrix,
             rhs: &mut rhs,
             n: 1,
+            map: None,
+            mapping_failed: false,
             limiting,
             junction_held: false,
         },

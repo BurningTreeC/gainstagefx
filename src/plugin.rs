@@ -19,7 +19,6 @@ use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 /// that gate, and the saved CPU during silence is not worth a crackle/dropout
 /// on the first transient. FTZ/DAZ already handles denormal arithmetic, so the
 /// chain now receives the trimmed source exactly as the host supplied it.
-
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
     meters: Arc<Meters>,

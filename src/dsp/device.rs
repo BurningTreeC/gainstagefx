@@ -18,6 +18,14 @@ pub struct Stamper<'a> {
     pub matrix: &'a mut [f64],
     pub rhs: &'a mut [f64],
     pub n: usize,
+    /// Optional global-unknown to compact-boundary map. Full-MNA stamps leave
+    /// this as `None`; Schur-reduced stamps use it so the exact same device
+    /// code writes directly into the reduced boundary Jacobian/RHS.
+    pub map: Option<&'a [usize]>,
+    /// Set when a supposedly-boundary-only nonlinear device attempts to write
+    /// an internal unknown. The caller then abandons the reduced pass and uses
+    /// the full-MNA fallback rather than silently dropping a coefficient.
+    pub mapping_failed: bool,
     /// Whether the devices should hold their steps back.
     ///
     /// The step limiters are damping: they stop a device being carried
@@ -62,15 +70,35 @@ pub struct Stamper<'a> {
 }
 
 impl Stamper<'_> {
+    #[inline]
+    fn local(&mut self, node: usize) -> Option<usize> {
+        if node == GROUND {
+            return None;
+        }
+        if let Some(map) = self.map {
+            let local = map.get(node).copied().unwrap_or(usize::MAX);
+            if local == usize::MAX {
+                self.mapping_failed = true;
+                None
+            } else {
+                Some(local)
+            }
+        } else {
+            Some(node)
+        }
+    }
+
     pub fn conductance(&mut self, a: usize, b: usize, g: f64) {
+        let a = self.local(a);
+        let b = self.local(b);
         let n = self.n;
-        if a != GROUND {
+        if let Some(a) = a {
             self.matrix[a * n + a] += g;
         }
-        if b != GROUND {
+        if let Some(b) = b {
             self.matrix[b * n + b] += g;
         }
-        if a != GROUND && b != GROUND {
+        if let (Some(a), Some(b)) = (a, b) {
             self.matrix[a * n + b] -= g;
             self.matrix[b * n + a] -= g;
         }
@@ -80,15 +108,17 @@ impl Stamper<'_> {
     /// voltage between `c` and `d`. Asymmetric, which is why the matrix cannot
     /// be factored as if it were symmetric.
     pub fn transconductance(&mut self, a: usize, b: usize, c: usize, d: usize, gm: f64) {
+        let a = self.local(a);
+        let b = self.local(b);
+        let c = self.local(c);
+        let d = self.local(d);
         let n = self.n;
         for (row, sign) in [(a, 1.0), (b, -1.0)] {
-            if row == GROUND {
-                continue;
-            }
-            if c != GROUND {
+            let Some(row) = row else { continue };
+            if let Some(c) = c {
                 self.matrix[row * n + c] += sign * gm;
             }
-            if d != GROUND {
+            if let Some(d) = d {
                 self.matrix[row * n + d] -= sign * gm;
             }
         }
@@ -97,7 +127,9 @@ impl Stamper<'_> {
     /// Ties a node to a branch's current: the part sources `sign` amps of it
     /// into that node.
     pub fn branch_current(&mut self, node: usize, branch: usize, sign: f64) {
-        if node != GROUND {
+        let node = self.local(node);
+        let branch = self.local(branch);
+        if let (Some(node), Some(branch)) = (node, branch) {
             self.matrix[node * self.n + branch] += sign;
         }
     }
@@ -105,22 +137,28 @@ impl Stamper<'_> {
     /// One term of a branch's own row, which is the condition the part is
     /// imposing on the voltages.
     pub fn branch_constraint(&mut self, branch: usize, node: usize, sign: f64) {
-        if node != GROUND {
+        let branch = self.local(branch);
+        let node = self.local(node);
+        if let (Some(branch), Some(node)) = (branch, node) {
             self.matrix[branch * self.n + node] += sign;
         }
     }
 
     /// What that condition equals.
     pub fn branch_value(&mut self, branch: usize, volts: f64) {
-        self.rhs[branch] += volts;
+        if let Some(branch) = self.local(branch) {
+            self.rhs[branch] += volts;
+        }
     }
 
     /// A current flowing out of `a` and into `b`.
     pub fn current(&mut self, a: usize, b: usize, amps: f64) {
-        if a != GROUND {
+        let a = self.local(a);
+        let b = self.local(b);
+        if let Some(a) = a {
             self.rhs[a] -= amps;
         }
-        if b != GROUND {
+        if let Some(b) = b {
             self.rhs[b] += amps;
         }
     }
@@ -339,10 +377,28 @@ fn limit_grid(new: f64, old: f64) -> (f64, bool) {
 /// Where the exponential is held, short of overflowing.
 const CLAMP: f64 = 60.0;
 
+#[inline]
+fn powi_small(mut base: f64, mut exponent: u8) -> f64 {
+    let mut result = 1.0;
+    while exponent != 0 {
+        if exponent & 1 != 0 {
+            result *= base;
+        }
+        exponent >>= 1;
+        if exponent != 0 {
+            base *= base;
+        }
+    }
+    result
+}
+
 pub struct Diode {
     a: usize,
     k: usize,
     spec: DiodeSpec,
+    scale: f64,
+    inv_scale: f64,
+    critical: f64,
     voltage: f64,
     delta: f64,
     /// Whether the limiter held the last step back.
@@ -351,10 +407,15 @@ pub struct Diode {
 
 impl Diode {
     pub fn new(a: usize, k: usize, spec: DiodeSpec) -> Self {
+        let scale = spec.emission * VT;
+        let critical = scale * (scale / (std::f64::consts::SQRT_2 * spec.saturation)).ln();
         Self {
             a,
             k,
             spec,
+            scale,
+            inv_scale: 1.0 / scale,
+            critical,
             voltage: 0.0,
             delta: 0.0,
             clamped: false,
@@ -375,21 +436,21 @@ impl Diode {
     /// voltage -- where the exponential starts to run away -- the step is
     /// taken in the logarithm, so a long way is covered in one iteration
     /// without overshooting into an overflow.
-    fn limit_junction(&mut self, wanted: f64, scale: f64) -> f64 {
+    fn limit_junction(&mut self, wanted: f64) -> f64 {
         let old = self.voltage;
-        // Where the curve's own slope makes a Newton step overshoot.
-        let critical = scale * (scale / (std::f64::consts::SQRT_2 * self.spec.saturation)).ln();
+        let scale = self.scale;
+        let critical = self.critical;
         if wanted > critical && (wanted - old).abs() > 2.0 * scale {
             self.clamped = true;
             if old > 0.0 {
-                let arg = 1.0 + (wanted - old) / scale;
+                let arg = 1.0 + (wanted - old) * self.inv_scale;
                 if arg > 0.0 {
                     old + scale * arg.ln()
                 } else {
                     critical
                 }
             } else {
-                scale * (wanted / scale).ln()
+                scale * (wanted * self.inv_scale).ln()
             }
         } else {
             self.clamped = false;
@@ -400,8 +461,7 @@ impl Diode {
     /// The Shockley current, exposed so tests can check the slope the stamp
     /// uses against the curve it claims to be the slope of.
     pub fn current(&self, v: f64) -> f64 {
-        let scale = self.spec.emission * VT;
-        let x = (v / scale).min(CLAMP);
+        let x = (v * self.inv_scale).min(CLAMP);
         self.spec.saturation * (x.exp() - 1.0)
     }
 }
@@ -425,8 +485,8 @@ impl Device for Diode {
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
-        let scale = self.spec.emission * VT;
-        let guess = self.limit_junction(across(v, self.a, self.k), scale);
+        let scale = self.scale;
+        let guess = self.limit_junction(across(v, self.a, self.k));
         s.junction_held |= self.clamped;
         self.delta = (guess - self.voltage).abs();
         self.voltage = guess;
@@ -434,14 +494,14 @@ impl Device for Diode {
         // One exponential, not three. The slope of `Is (e^x - 1)` is
         // `Is e^x / scale`, which is the same exponential the current already
         // needed -- where a central difference asked for two more.
-        let x = guess / scale;
+        let x = guess * self.inv_scale;
         let (i, g) = if x >= CLAMP {
             (self.spec.saturation * (CLAMP.exp() - 1.0), 1e-12)
         } else {
             let e = x.exp();
             (
                 self.spec.saturation * (e - 1.0),
-                (self.spec.saturation * e / scale).max(1e-12),
+                (self.spec.saturation * e * self.inv_scale).max(1e-12),
             )
         };
         s.conductance(self.a, self.k, g);
@@ -470,6 +530,9 @@ pub struct Triode {
     g: usize,
     k: usize,
     spec: TriodeSpec,
+    inv_mu: f64,
+    inv_kp: f64,
+    inv_kg1: f64,
     vpk: f64,
     vgk: f64,
     delta: f64,
@@ -484,6 +547,9 @@ impl Triode {
             g,
             k,
             spec,
+            inv_mu: 1.0 / spec.mu,
+            inv_kp: 1.0 / spec.kp,
+            inv_kg1: 1.0 / spec.kg1,
             vpk: 0.0,
             vgk: -1.0,
             delta: 0.0,
@@ -497,18 +563,18 @@ impl Triode {
         if vpk <= 0.0 {
             return 0.0;
         }
-        let inner = s.kp * (1.0 / s.mu + vgk / (s.kvb + vpk * vpk).sqrt());
+        let inner = s.kp * (self.inv_mu + vgk / (s.kvb + vpk * vpk).sqrt());
         // ln(1 + e^x) without overflowing for large x.
         let soft = if inner > 30.0 {
             inner
         } else {
             inner.exp().ln_1p()
         };
-        let e1 = vpk / s.kp * soft;
+        let e1 = vpk * self.inv_kp * soft;
         if e1 <= 0.0 {
             0.0
         } else {
-            2.0 * e1.powf(s.ex) / s.kg1
+            2.0 * e1.powf(s.ex) * self.inv_kg1
         }
     }
 
@@ -544,22 +610,22 @@ impl Triode {
             return (0.0, 0.0, 0.0);
         }
         let root = (s.kvb + vpk * vpk).sqrt();
-        let inner = s.kp * (1.0 / s.mu + vgk / root);
+        let inner = s.kp * (self.inv_mu + vgk / root);
         let (soft, sigma) = if inner > 30.0 {
             (inner, 1.0)
         } else {
             let e = inner.exp();
             (e.ln_1p(), e / (1.0 + e))
         };
-        let e1 = vpk / s.kp * soft;
+        let e1 = vpk * self.inv_kp * soft;
         if e1 <= 0.0 {
             return (0.0, 0.0, 0.0);
         }
         let powered = e1.powf(s.ex);
-        let ip = 2.0 * powered / s.kg1;
+        let ip = 2.0 * powered * self.inv_kg1;
 
-        let d_ip = 2.0 * s.ex * powered / (s.kg1 * e1);
-        let d_e1_vpk = soft / s.kp - vpk * vpk * vgk * sigma / (root * root * root);
+        let d_ip = 2.0 * s.ex * powered * self.inv_kg1 / e1;
+        let d_e1_vpk = soft * self.inv_kp - vpk * vpk * vgk * sigma / (root * root * root);
         let d_e1_vgk = vpk * sigma / root;
         (ip, d_ip * d_e1_vpk, d_ip * d_e1_vgk)
     }
@@ -651,6 +717,11 @@ pub struct Pentode {
     /// How many tubes in parallel this part stands for.
     count: f64,
     spec: PentodeSpec,
+    inv_mu: f64,
+    inv_kp: f64,
+    inv_kvb: f64,
+    inv_kg1: f64,
+    inv_kg2: f64,
     vpk: f64,
     vgk: f64,
     vsk: f64,
@@ -667,6 +738,11 @@ impl Pentode {
             s,
             count,
             spec,
+            inv_mu: 1.0 / spec.mu,
+            inv_kp: 1.0 / spec.kp,
+            inv_kvb: 1.0 / spec.kvb,
+            inv_kg1: 1.0 / spec.kg1,
+            inv_kg2: 1.0 / spec.kg2,
             vpk: 0.0,
             vgk: -30.0,
             vsk: 0.0,
@@ -699,14 +775,14 @@ impl Pentode {
         if vsk <= 0.0 || vpk <= 0.0 {
             return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
-        let inner = c.kp * (1.0 / c.mu + vgk / vsk);
+        let inner = c.kp * (self.inv_mu + vgk / vsk);
         let (soft, sigma) = if inner > 30.0 {
             (inner, 1.0)
         } else {
             let e = inner.exp();
             (e.ln_1p(), e / (1.0 + e))
         };
-        let e1 = vsk / c.kp * soft;
+        let e1 = vsk * self.inv_kp * soft;
         if e1 <= 0.0 {
             return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
@@ -716,18 +792,18 @@ impl Pentode {
         // the screen has launched and the current falls away; above it the
         // curve is the long flat shelf that makes a power tube a current
         // source into its transformer.
-        let knee = (vpk / c.kvb).atan();
-        let vpk_ratio = vpk / c.kvb;
-        let d_knee = 1.0 / (c.kvb * (1.0 + vpk_ratio * vpk_ratio));
+        let knee = (vpk * self.inv_kvb).atan();
+        let vpk_ratio = vpk * self.inv_kvb;
+        let d_knee = self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio);
 
-        let plate_base = powered / c.kg1;
-        let screen_base = powered / c.kg2;
+        let plate_base = powered * self.inv_kg1;
+        let screen_base = powered * self.inv_kg2;
         let ip = self.count * plate_base * knee;
         let ig2 = self.count * screen_base;
 
         // dE1 with respect to each terminal, and d(E1^ex)/dE1 = ex * E1^ex / E1.
         let d_e1_vgk = sigma;
-        let d_e1_vsk = soft / c.kp - vgk * sigma / vsk;
+        let d_e1_vsk = soft * self.inv_kp - vgk * sigma / vsk;
         let d_plate = c.ex * plate_base / e1;
         let d_screen = c.ex * screen_base / e1;
 
@@ -1133,6 +1209,9 @@ pub struct Core {
     a: usize,
     b: usize,
     spec: CoreSpec,
+    inv_henry: f64,
+    inv_knee: f64,
+    sharpness_integer: u8,
     /// Flux linkage, in weber-turns. The state that makes this frequency
     /// dependent.
     flux: f64,
@@ -1150,10 +1229,19 @@ pub struct Core {
 
 impl Core {
     pub fn new(a: usize, b: usize, spec: CoreSpec, rate: f64) -> Self {
+        let rounded = spec.sharpness.round();
+        let sharpness_integer = if (spec.sharpness - rounded).abs() < 1e-12 && (1.0..=15.0).contains(&rounded) {
+            rounded as u8
+        } else {
+            0
+        };
         Self {
             a,
             b,
             spec,
+            inv_henry: 1.0 / spec.henry,
+            inv_knee: 1.0 / spec.knee,
+            sharpness_integer,
             flux: 0.0,
             last_flux: 0.0,
             last_volts: 0.0,
@@ -1182,15 +1270,35 @@ impl Core {
     ///
     /// `|x|^(s-1)` is `|x|^s / |x|`, so the slope costs no second power.
     pub fn magnetising_with_slope(&self, flux: f64) -> (f64, f64) {
-        let (l, knee, sharp) = (self.spec.henry, self.spec.knee, self.spec.sharpness);
-        let over = flux / knee;
+        let knee = self.spec.knee;
+        let sharp = self.spec.sharpness;
+        let over = flux * self.inv_knee;
         let magnitude = over.abs();
         if magnitude < 1e-30 {
-            return (flux / l, 1.0 / l);
+            return (flux * self.inv_henry, self.inv_henry);
         }
-        let powered = magnitude.powf(sharp);
-        let current = flux / l + powered * over.signum() * knee / l;
-        let slope = 1.0 / l + sharp * (powered / magnitude) / l;
+        let powered = match self.sharpness_integer {
+            3 => {
+                let square = magnitude * magnitude;
+                square * magnitude
+            }
+            6 => {
+                let cube = magnitude * magnitude * magnitude;
+                cube * cube
+            }
+            7 => {
+                let cube = magnitude * magnitude * magnitude;
+                cube * cube * magnitude
+            }
+            9 => {
+                let cube = magnitude * magnitude * magnitude;
+                cube * cube * cube
+            }
+            exponent if exponent != 0 => powi_small(magnitude, exponent),
+            _ => magnitude.powf(sharp),
+        };
+        let current = flux * self.inv_henry + powered * over.signum() * knee * self.inv_henry;
+        let slope = self.inv_henry + sharp * (powered / magnitude) * self.inv_henry;
         (current, slope)
     }
 
@@ -1284,6 +1392,10 @@ pub struct Bipolar {
     b: usize,
     e: usize,
     spec: BipolarSpec,
+    critical: f64,
+    inv_early: f64,
+    inv_forward_beta: f64,
+    inv_reverse_beta: f64,
     vbe: f64,
     vbc: f64,
     delta: f64,
@@ -1297,6 +1409,10 @@ impl Bipolar {
             b,
             e,
             spec,
+            critical: VT * (VT / (std::f64::consts::SQRT_2 * spec.saturation)).ln(),
+            inv_early: 1.0 / spec.early,
+            inv_forward_beta: 1.0 / spec.forward_beta,
+            inv_reverse_beta: 1.0 / spec.reverse_beta,
             vbe: 0.0,
             vbc: 0.0,
             delta: 0.0,
@@ -1308,7 +1424,7 @@ impl Bipolar {
     /// hopeless when the answer is a long way off, and an exponential
     /// overflows if it is let run.
     fn limit_junction(&self, wanted: f64, old: f64) -> (f64, bool) {
-        let critical = VT * (VT / (std::f64::consts::SQRT_2 * self.spec.saturation)).ln();
+        let critical = self.critical;
         if wanted > critical && (wanted - old).abs() > 2.0 * VT {
             if old > 0.0 {
                 let arg = 1.0 + (wanted - old) / VT;
@@ -1374,15 +1490,15 @@ impl Device for Bipolar {
         // The Early effect: the collector current rises slightly with the
         // voltage across it, which is the stage's finite output resistance.
         let vce = vbe - vbc;
-        let early = 1.0 + (vce / self.spec.early).max(-0.9);
+        let early = 1.0 + (vce * self.inv_early).max(-0.9);
 
-        let ic = (forward - reverse) * early - reverse / self.spec.reverse_beta;
-        let ib = forward / self.spec.forward_beta + reverse / self.spec.reverse_beta;
+        let ic = (forward - reverse) * early - reverse * self.inv_reverse_beta;
+        let ib = forward * self.inv_forward_beta + reverse * self.inv_reverse_beta;
 
         let dic_dvbe = gf * early;
-        let dic_dvbc = -gr * (early + 1.0 / self.spec.reverse_beta);
-        let dib_dvbe = gf / self.spec.forward_beta;
-        let dib_dvbc = gr / self.spec.reverse_beta;
+        let dic_dvbc = -gr * (early + self.inv_reverse_beta);
+        let dib_dvbe = gf * self.inv_forward_beta;
+        let dib_dvbc = gr * self.inv_reverse_beta;
 
         // Collector current, controlled by both junctions.
         s.transconductance(self.c, self.e, self.b, self.e, dic_dvbe);
@@ -1565,6 +1681,53 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.switches(),
             AnyDevice::OpAmp(o) => o.switches(),
             AnyDevice::Core(c) => c.switches(),
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod optimization_tests {
+    use super::{powi_small, Stamper};
+
+    #[test]
+    fn mapped_stamper_writes_compact_boundary() {
+        let map = [0usize, usize::MAX, 1usize];
+        let mut matrix = [0.0; 4];
+        let mut rhs = [0.0; 2];
+        let mut stamper = Stamper {
+            matrix: &mut matrix,
+            rhs: &mut rhs,
+            n: 2,
+            map: Some(&map),
+            mapping_failed: false,
+            limiting: false,
+            junction_held: false,
+        };
+        stamper.conductance(0, 2, 3.0);
+        stamper.current(0, 2, 0.5);
+        assert_eq!(stamper.matrix, &[3.0, -3.0, -3.0, 3.0]);
+        assert_eq!(stamper.rhs, &[-0.5, 0.5]);
+        assert!(!stamper.mapping_failed);
+
+        // An internal terminal is a construction bug, not something to drop
+        // silently. The reduced caller will abandon this pass and use full MNA.
+        stamper.current(1, 2, 0.25);
+        assert!(stamper.mapping_failed);
+    }
+
+    #[test]
+    fn cached_integer_core_power_matches_powf() {
+        for exponent in [3u8, 6, 7, 9] {
+            for step in 0..=2000 {
+                let x = step as f64 / 200.0;
+                let actual = powi_small(x, exponent);
+                let expected = x.powf(exponent as f64);
+                assert!(
+                    (actual - expected).abs() < 2e-13 * (1.0 + expected.abs()),
+                    "x={x}, exponent={exponent}, actual={actual}, expected={expected}"
+                );
+            }
         }
     }
 }

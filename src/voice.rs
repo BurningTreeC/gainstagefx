@@ -1845,7 +1845,7 @@ impl Chain {
         // divider rather than a depth.
         let throb = if twin && self.intensity > 0.0 {
             self.tremolo
-                .attenuation(self.speed, self.intensity, 38_000.0, 1_000_000.0)
+                .attenuation(self.speed, self.intensity)
         } else {
             1.0
         };

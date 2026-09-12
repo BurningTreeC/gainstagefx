@@ -26,6 +26,13 @@ pub struct ReducedLinear {
     /// topology be refactored numerically without allocating new selection,
     /// inverse, or multiplication vectors on every rebuild.
     refresh_work: Vec<f64>,
+    /// Cached `inv(A_ii) * A_ib` for the one output boundary.
+    internal_boundary_response: Vec<f64>,
+    /// Packed response columns for only fixed-RHS nodes that can vary at audio
+    /// rate. This turns per-sample linear solves into scalar combinations.
+    rhs_active_nodes: Vec<usize>,
+    rhs_active_inverse: Vec<f64>,
+    rhs_active_boundary: Vec<f64>,
     valid: bool,
 }
 
@@ -36,11 +43,27 @@ impl ReducedLinear {
     pub(crate) fn copy_runtime_state_from(&mut self, source: &Self) {
         self.condensed.copy_runtime_state_from(&source.condensed);
         self.admittance = source.admittance;
+        self.internal_boundary_response
+            .copy_from_slice(&source.internal_boundary_response);
+        self.rhs_active_inverse
+            .copy_from_slice(&source.rhs_active_inverse);
+        self.rhs_active_boundary
+            .copy_from_slice(&source.rhs_active_boundary);
         self.valid = source.valid;
-        // refresh_work is scratch, fully overwritten by the next refresh.
+        // refresh_work is scratch, fully overwritten.
     }
 
     pub fn new(matrix: &[f64], rhs: &[f64], output: usize) -> Option<Self> {
+        let active: Vec<usize> = (0..rhs.len()).collect();
+        Self::new_with_rhs_active(matrix, rhs, output, &active)
+    }
+
+    pub fn new_with_rhs_active(
+        matrix: &[f64],
+        rhs: &[f64],
+        output: usize,
+        rhs_active: &[usize],
+    ) -> Option<Self> {
         let n = rhs.len();
         if output >= n {
             return None;
@@ -52,12 +75,31 @@ impl ReducedLinear {
             return None;
         }
         let m = condensed.internal.len();
-        Some(Self {
+        let mut active_mask = vec![false; n];
+        for &node in rhs_active {
+            if node < n {
+                active_mask[node] = true;
+            }
+        }
+        let rhs_active_nodes: Vec<usize> = condensed
+            .internal
+            .iter()
+            .copied()
+            .filter(|&node| active_mask[node])
+            .collect();
+        let a = rhs_active_nodes.len();
+        let mut result = Self {
             condensed,
             admittance,
             refresh_work: vec![0.0; 2 * m * m],
+            internal_boundary_response: vec![0.0; m],
+            rhs_active_nodes,
+            rhs_active_inverse: vec![0.0; m * a],
+            rhs_active_boundary: vec![0.0; a],
             valid: true,
-        })
+        };
+        result.update_linear_response_bases();
+        Some(result)
     }
 
     /// Recompute the numeric reduction for the same one-output topology using
@@ -81,10 +123,14 @@ impl ReducedLinear {
         }
 
         let m = self.condensed.internal.len();
+        let a = self.rhs_active_nodes.len();
         if self.condensed.inverse_internal.len() != m * m
             || self.condensed.boundary_internal.len() != m
             || self.condensed.internal_to_boundary.len() != m
             || self.refresh_work.len() != 2 * m * m
+            || self.internal_boundary_response.len() != m
+            || self.rhs_active_inverse.len() != m * a
+            || self.rhs_active_boundary.len() != a
         {
             self.valid = false;
             return false;
@@ -176,6 +222,7 @@ impl ReducedLinear {
 
         self.condensed.full_rhs.copy_from_slice(rhs);
         self.admittance = admittance;
+        self.update_linear_response_bases();
         self.valid = admittance.abs() >= 1e-30;
         self.valid
     }
@@ -185,13 +232,71 @@ impl ReducedLinear {
         rhs: &[f64],
         full: &mut [f64],
         reduced: &mut [f64],
-        scratch: &mut [f64],
+        _scratch: &mut [f64],
     ) -> bool {
-        if !self.valid || !self.condensed.reduce_rhs_into(rhs, reduced) || reduced.is_empty() {
+        if !self.valid || rhs.len() != self.condensed.boundary.len() + self.condensed.internal.len()
+            || reduced.is_empty() || full.len() < rhs.len()
+        {
             return false;
         }
-        let boundary = [reduced[0] / self.admittance];
-        self.condensed.recover_into(&boundary, rhs, full, scratch)
+        let m = self.condensed.internal.len();
+        let a = self.rhs_active_nodes.len();
+        if self.rhs_active_inverse.len() != m * a
+            || self.rhs_active_boundary.len() != a
+        {
+            return false;
+        }
+
+        let mut boundary_rhs = rhs[self.condensed.boundary[0]];
+        // `self` is immutable here, so accumulate the internal base directly
+        // into `full` at internal nodes rather than a mutable cache field.
+        for &node in &self.condensed.internal {
+            full[node] = 0.0;
+        }
+        for active in 0..a {
+            let scalar = rhs[self.rhs_active_nodes[active]];
+            if scalar == 0.0 {
+                continue;
+            }
+            boundary_rhs -= self.rhs_active_boundary[active] * scalar;
+            for row in 0..m {
+                let node = self.condensed.internal[row];
+                full[node] += self.rhs_active_inverse[row * a + active] * scalar;
+            }
+        }
+        let boundary = boundary_rhs / self.admittance;
+        reduced[0] = boundary;
+        full[self.condensed.boundary[0]] = boundary;
+        for (row, &node) in self.condensed.internal.iter().enumerate() {
+            full[node] -= self.internal_boundary_response[row] * boundary;
+        }
+        true
+    }
+
+    fn update_linear_response_bases(&mut self) {
+        let m = self.condensed.internal.len();
+        let a = self.rhs_active_nodes.len();
+        if m == 0 {
+            return;
+        }
+        for row in 0..m {
+            let mut value = 0.0;
+            for k in 0..m {
+                value += self.condensed.inverse_internal[row * m + k]
+                    * self.condensed.internal_to_boundary[k];
+            }
+            self.internal_boundary_response[row] = value;
+        }
+        for (active, &global) in self.rhs_active_nodes.iter().enumerate() {
+            let Some(local) = self.condensed.internal.iter().position(|&node| node == global) else {
+                continue;
+            };
+            self.rhs_active_boundary[active] = self.condensed.boundary_internal[local];
+            for row in 0..m {
+                self.rhs_active_inverse[row * a + active] =
+                    self.condensed.inverse_internal[row * m + local];
+            }
+        }
     }
 }
 
@@ -222,6 +327,12 @@ pub struct ReducedNonlinear {
     condensed: Condensed,
     /// The static Schur term `A_bi * inv(A_ii) * A_ib`.
     coupling: Vec<f64>,
+    /// Linear A_bb block cached at rebuild time. Normal Newton passes stamp
+    /// nonlinear devices directly into this compact boundary matrix instead of
+    /// rebuilding/stamping a full n x n MNA matrix and copying A_bb back out.
+    boundary_base: Vec<f64>,
+    /// Global unknown -> compact boundary index. `usize::MAX` means internal.
+    node_to_boundary: Vec<usize>,
     /// Full-MNA slots for the boundary-boundary block, in the same row-major
     /// order as `coupling` and `reduced_matrix`. The boundary topology never
     /// changes, so a Newton pass should not recompute `row_node * n + col_node`
@@ -236,9 +347,28 @@ pub struct ReducedNonlinear {
     /// RHS cannot be touched by nonlinear devices, so recomputing this dot
     /// product on every Newton pass is identical repeated work.
     rhs_internal_correction: Vec<f64>,
+    /// Per-sample base internal solution `inv(A_ii) * b_i`. The internal RHS
+    /// is fixed for an entire Newton solve, so paying this O(i^2) multiply on
+    /// every pass is identical repeated work. `prepare_rhs` computes it once.
+    internal_rhs_base: Vec<f64>,
+    /// Rebuild-time internal response `inv(A_ii) * A_ib`, row-major i x b.
+    /// Recovery is therefore only `x_i = base_i - response_i * x_b` on each
+    /// Newton pass: O(i*b) instead of another O(i^2) inverse mat-vec.
+    internal_boundary_response: Vec<f64>,
+    /// Fixed-RHS contributors that land in the internal block, represented as
+    /// precomputed response columns. `prepare_rhs` therefore combines only the
+    /// source/reactive histories that can actually be nonzero instead of doing
+    /// an i x i inverse mat-vec every audio sample.
+    active_rhs_nodes: Vec<usize>,
+    active_internal_local: Vec<usize>,
+    internal_rhs_responses: Vec<f64>,
+    boundary_rhs_responses: Vec<f64>,
     rhs_prepared: bool,
-    /// Persistent scratch for recovering internal unknowns.
-    recover_scratch: Vec<f64>,
+    /// Pivot swap sequence learned on the first reduced solve after rebuild and
+    /// replayed thereafter. The reduced topology is fixed and its dominant
+    /// passive pivots do not move with audio.
+    pivot_plan: Vec<usize>,
+    pivot_planned: bool,
     /// Persistent Gauss-Jordan workspace used only when a rebuild refreshes the
     /// passive/internal block numerically.
     refresh_work: Vec<f64>,
@@ -252,6 +382,15 @@ impl ReducedNonlinear {
     pub(crate) fn copy_runtime_state_from(&mut self, source: &Self) {
         self.condensed.copy_runtime_state_from(&source.condensed);
         self.coupling.copy_from_slice(&source.coupling);
+        self.boundary_base.copy_from_slice(&source.boundary_base);
+        self.internal_boundary_response
+            .copy_from_slice(&source.internal_boundary_response);
+        self.internal_rhs_responses
+            .copy_from_slice(&source.internal_rhs_responses);
+        self.boundary_rhs_responses
+            .copy_from_slice(&source.boundary_rhs_responses);
+        self.pivot_plan.copy_from_slice(&source.pivot_plan);
+        self.pivot_planned = source.pivot_planned;
         // This cache belongs to the current sample's RHS and is deliberately
         // rebuilt by `prepare_rhs` before the destination solves audio.
         self.rhs_prepared = false;
@@ -262,6 +401,16 @@ impl ReducedNonlinear {
     /// callers should do it while the simulation itself is being constructed,
     /// never from a Newton pass.
     pub fn new(matrix: &[f64], rhs: &[f64], boundary: &[usize]) -> Option<Self> {
+        let active_rhs: Vec<usize> = (0..rhs.len()).collect();
+        Self::new_with_active_rhs(matrix, rhs, boundary, &active_rhs)
+    }
+
+    pub fn new_with_active_rhs(
+        matrix: &[f64],
+        rhs: &[f64],
+        boundary: &[usize],
+        active_rhs: &[usize],
+    ) -> Option<Self> {
         let n = rhs.len();
         if matrix.len() != n * n || boundary.is_empty() || boundary.len() >= n {
             return None;
@@ -282,6 +431,26 @@ impl ReducedNonlinear {
         let (_, _, condensed) = condense(matrix, rhs, &internal, boundary)?;
         let b = boundary.len();
         let i = internal.len();
+        let mut node_to_boundary = vec![usize::MAX; n];
+        for (local, &global) in boundary.iter().enumerate() {
+            node_to_boundary[global] = local;
+        }
+        let mut internal_local_of_global = vec![usize::MAX; n];
+        for (local, &global) in internal.iter().enumerate() {
+            internal_local_of_global[global] = local;
+        }
+        let mut active_rhs_nodes = Vec::new();
+        let mut active_internal_local = Vec::new();
+        for &global in active_rhs {
+            if global < n {
+                let local = internal_local_of_global[global];
+                if local != usize::MAX && !active_rhs_nodes.contains(&global) {
+                    active_rhs_nodes.push(global);
+                    active_internal_local.push(local);
+                }
+            }
+        }
+        let active = active_rhs_nodes.len();
         let mut boundary_matrix_slots = Vec::with_capacity(b * b);
         for &row_node in boundary {
             for &column_node in boundary {
@@ -291,16 +460,28 @@ impl ReducedNonlinear {
         let mut result = Self {
             condensed,
             coupling: vec![0.0; b * b],
+            boundary_base: vec![0.0; b * b],
+            node_to_boundary,
             boundary_matrix_slots,
             reduced_matrix: vec![0.0; b * b],
             reduced_rhs: vec![0.0; b],
             rhs_internal_correction: vec![0.0; b],
+            internal_rhs_base: vec![0.0; i],
+            internal_boundary_response: vec![0.0; i * b],
+            active_rhs_nodes,
+            active_internal_local,
+            internal_rhs_responses: vec![0.0; active * i],
+            boundary_rhs_responses: vec![0.0; active * b],
             rhs_prepared: false,
-            recover_scratch: vec![0.0; i],
+            pivot_plan: (0..b).collect(),
+            pivot_planned: false,
             refresh_work: vec![0.0; 2 * i * i],
             valid: true,
         };
+        result.update_internal_boundary_response();
         result.update_coupling();
+        result.update_boundary_base(matrix);
+        result.update_rhs_responses();
         Some(result)
     }
 
@@ -326,11 +507,17 @@ impl ReducedNonlinear {
             || self.condensed.internal_to_boundary.len() != i * b
             || self.condensed.full_rhs.len() != n
             || self.coupling.len() != b * b
+            || self.boundary_base.len() != b * b
+            || self.node_to_boundary.len() != n
             || self.boundary_matrix_slots.len() != b * b
             || self.reduced_matrix.len() != b * b
             || self.reduced_rhs.len() != b
             || self.rhs_internal_correction.len() != b
-            || self.recover_scratch.len() != i
+            || self.internal_rhs_base.len() != i
+            || self.internal_boundary_response.len() != i * b
+            || self.internal_rhs_responses.len() != self.active_rhs_nodes.len() * i
+            || self.boundary_rhs_responses.len() != self.active_rhs_nodes.len() * b
+            || self.pivot_plan.len() != b
             || self.refresh_work.len() != 2 * i * i
         {
             self.valid = false;
@@ -413,34 +600,151 @@ impl ReducedNonlinear {
         }
 
         self.condensed.full_rhs.copy_from_slice(rhs);
+        self.update_internal_boundary_response();
         self.update_coupling();
+        self.update_boundary_base(matrix);
+        self.update_rhs_responses();
         self.rhs_prepared = false;
+        self.pivot_planned = false;
         self.valid = true;
         true
     }
 
-    /// Cache the part of the Schur RHS contributed by passive/internal nodes.
-    /// Nonlinear device equivalent-current sources are all on the boundary, so
-    /// these dot products are constant for every Newton pass in one sample.
+    /// Cache the passive/internal contribution to the Schur RHS once per sample.
+    /// Only structurally-active fixed RHS positions are visited; each has a
+    /// rebuild-time response column for both internal recovery and boundary RHS.
     pub fn prepare_rhs(&mut self, rhs: &[f64]) -> bool {
-        if !self.valid || rhs.len() != self.condensed.boundary.len() + self.condensed.internal.len() {
+        if !self.valid || rhs.len() != self.node_to_boundary.len() {
             self.rhs_prepared = false;
             return false;
         }
-        let width = self.condensed.internal.len();
-        for (row, correction) in self.rhs_internal_correction.iter_mut().enumerate() {
-            let mut value = 0.0;
-            for (&coefficient, &internal) in self.condensed.boundary_internal
-                [row * width..(row + 1) * width]
-                .iter()
-                .zip(&self.condensed.internal)
-            {
-                value += coefficient * rhs[internal];
+        self.internal_rhs_base.fill(0.0);
+        self.rhs_internal_correction.fill(0.0);
+        let i = self.condensed.internal.len();
+        let b = self.condensed.boundary.len();
+        for (column, &global) in self.active_rhs_nodes.iter().enumerate() {
+            let scalar = rhs[global];
+            if scalar == 0.0 {
+                continue;
             }
-            *correction = value;
+            let internal = &self.internal_rhs_responses[column * i..(column + 1) * i];
+            for (target, &response) in self.internal_rhs_base.iter_mut().zip(internal) {
+                *target += response * scalar;
+            }
+            let boundary = &self.boundary_rhs_responses[column * b..(column + 1) * b];
+            for (target, &response) in self.rhs_internal_correction.iter_mut().zip(boundary) {
+                *target += response * scalar;
+            }
         }
         self.rhs_prepared = true;
         true
+    }
+
+    /// Reset compact boundary storage to the immutable linear A_bb and this
+    /// sample's fixed boundary RHS. Nonlinear devices may stamp directly into
+    /// the returned buffers using `node_to_boundary`.
+    pub fn begin_stamp<'a>(
+        &'a mut self,
+        fixed_rhs: &[f64],
+    ) -> Option<(&'a mut [f64], &'a mut [f64], &'a [usize])> {
+        if !self.valid || !self.rhs_prepared || fixed_rhs.len() != self.node_to_boundary.len() {
+            return None;
+        }
+        self.reduced_matrix.copy_from_slice(&self.boundary_base);
+        for (value, &global) in self.reduced_rhs.iter_mut().zip(&self.condensed.boundary) {
+            *value = fixed_rhs[global];
+        }
+        let Self {
+            reduced_matrix,
+            reduced_rhs,
+            node_to_boundary,
+            ..
+        } = self;
+        Some((reduced_matrix, reduced_rhs, node_to_boundary))
+    }
+
+    /// Complete the Schur system after direct nonlinear device stamping.
+    pub fn finish_stamp(&mut self) {
+        for (value, &coupling) in self.reduced_matrix.iter_mut().zip(&self.coupling) {
+            *value -= coupling;
+        }
+        for (value, &correction) in self
+            .reduced_rhs
+            .iter_mut()
+            .zip(&self.rhs_internal_correction)
+        {
+            *value -= correction;
+        }
+    }
+
+    /// Exact reduced residual at a full-vector candidate. Internal linear rows
+    /// are identically zero on the segment between recovered Newton iterates, so
+    /// this is the same merit used by the full MNA line search without touching
+    /// the passive/internal matrix.
+    #[inline]
+    pub fn merit_stamped(&self, full: &[f64]) -> f64 {
+        let b = self.condensed.boundary.len();
+        let mut total = 0.0;
+        for row in 0..b {
+            let mut residual = -self.reduced_rhs[row];
+            for (column, &global) in self.condensed.boundary.iter().enumerate() {
+                residual += self.reduced_matrix[row * b + column] * full[global];
+            }
+            total += residual * residual;
+        }
+        total
+    }
+
+    /// Solve a directly-stamped Schur boundary and recover every full unknown,
+    /// fusing recovery with Newton delta/convergence measurement so the full
+    /// vector is not walked a second time immediately afterwards.
+    pub fn solve_stamped_with_delta(
+        &mut self,
+        full: &mut [f64],
+        current: &[f64],
+        delta: &mut [f64],
+        tolerance: f64,
+        relative: f64,
+    ) -> Option<f64> {
+        if !self.valid || !self.rhs_prepared || full.len() < self.node_to_boundary.len() {
+            return None;
+        }
+        let b = self.condensed.boundary.len();
+        if !solve_dense_planned(
+            &mut self.reduced_matrix,
+            &mut self.reduced_rhs,
+            b,
+            &mut self.pivot_plan,
+            &mut self.pivot_planned,
+        ) {
+            return None;
+        }
+        let mut moved = 0.0f64;
+        for (index, &node) in self.condensed.boundary.iter().enumerate() {
+            let value = self.reduced_rhs[index];
+            if !value.is_finite() {
+                return None;
+            }
+            full[node] = value;
+            let d = value - current[node];
+            delta[node] = d;
+            moved = moved.max(d.abs() / (tolerance + relative * current[node].abs()));
+        }
+        for (row, &node) in self.condensed.internal.iter().enumerate() {
+            let response = &self.internal_boundary_response[row * b..(row + 1) * b];
+            let mut value = self.internal_rhs_base[row];
+            for (&coefficient, &boundary_voltage) in response.iter().zip(&self.reduced_rhs) {
+                value -= coefficient * boundary_voltage;
+            }
+            if !value.is_finite() {
+                return None;
+            }
+            full[node] = value;
+            let d = value - current[node];
+            delta[node] = d;
+            moved = moved.max(d.abs() / (tolerance + relative * current[node].abs()));
+        }
+        Some(moved)
     }
 
     /// Solve the current nonlinear Jacobian into the full unknown vector.
@@ -479,11 +783,72 @@ impl ReducedNonlinear {
         {
             *value = rhs[boundary] - correction;
         }
-        if !solve_dense_in_place(&mut self.reduced_matrix, &mut self.reduced_rhs, b) {
+        if !solve_dense_planned(
+            &mut self.reduced_matrix,
+            &mut self.reduced_rhs,
+            b,
+            &mut self.pivot_plan,
+            &mut self.pivot_planned,
+        ) {
             return false;
         }
-        self.condensed
-            .recover_into(&self.reduced_rhs, rhs, full, &mut self.recover_scratch)
+        // Fill the complete unknown vector because the existing convergence
+        // test and device evaluation deliberately still see every node on every
+        // pass. Only the algebra used to recover passive internals changed:
+        // the O(i^2) inverse/RHS multiply was hoisted to `prepare_rhs`, leaving
+        // this O(i*b) boundary response in the Newton hot loop.
+        for (index, &node) in self.condensed.boundary.iter().enumerate() {
+            full[node] = self.reduced_rhs[index];
+        }
+        for (row, &node) in self.condensed.internal.iter().enumerate() {
+            let response = &self.internal_boundary_response[row * b..(row + 1) * b];
+            let mut value = self.internal_rhs_base[row];
+            for (&coefficient, &boundary_voltage) in response.iter().zip(&self.reduced_rhs) {
+                value -= coefficient * boundary_voltage;
+            }
+            full[node] = value;
+        }
+        true
+    }
+
+    fn update_boundary_base(&mut self, matrix: &[f64]) {
+        for (value, &slot) in self.boundary_base.iter_mut().zip(&self.boundary_matrix_slots) {
+            *value = matrix[slot];
+        }
+    }
+
+    fn update_rhs_responses(&mut self) {
+        let i = self.condensed.internal.len();
+        let b = self.condensed.boundary.len();
+        for (column, &local) in self.active_internal_local.iter().enumerate() {
+            for row in 0..i {
+                self.internal_rhs_responses[column * i + row] =
+                    self.condensed.inverse_internal[row * i + local];
+            }
+            for row in 0..b {
+                self.boundary_rhs_responses[column * b + row] =
+                    self.condensed.boundary_internal[row * i + local];
+            }
+        }
+    }
+
+    /// Cache `inv(A_ii) * A_ib` after construction/rebuild. This matrix is
+    /// independent of Newton's changing boundary stamps and of the per-sample
+    /// reactive/source RHS, so there is no reason to form it in the audio hot
+    /// loop.
+    fn update_internal_boundary_response(&mut self) {
+        let b = self.condensed.boundary.len();
+        let i = self.condensed.internal.len();
+        for row in 0..i {
+            for column in 0..b {
+                let mut value = 0.0;
+                for k in 0..i {
+                    value += self.condensed.inverse_internal[row * i + k]
+                        * self.condensed.internal_to_boundary[k * b + column];
+                }
+                self.internal_boundary_response[row * b + column] = value;
+            }
+        }
     }
 
     fn update_coupling(&mut self) {
@@ -502,32 +867,55 @@ impl ReducedNonlinear {
     }
 }
 
-/// Dense partial-pivoting solve for the reduced boundary system. The matrix
-/// and RHS are persistent `ReducedNonlinear` storage, so this performs no heap
-/// work. A failure simply makes the caller use the original full MNA path.
+/// Dense partial-pivoting solve for a reduced boundary system with a learned
+/// swap sequence. The first solve searches exactly as before and records each
+/// pivot row; subsequent solves replay those swaps and only validate the chosen
+/// diagonal. A failed replay returns false so the caller can take full MNA.
 #[inline]
-fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
-    if matrix.len() != n * n || rhs.len() < n {
+fn solve_dense_planned(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    n: usize,
+    plan: &mut [usize],
+    planned: &mut bool,
+) -> bool {
+    if matrix.len() != n * n || rhs.len() < n || plan.len() < n {
         return false;
     }
+    let replay = *planned;
+    let mut searching = !replay;
+    let mut sound = true;
     for column in 0..n {
-        let mut pivot = column;
-        let mut largest = matrix[column * n + column].abs();
-        for row in (column + 1)..n {
-            let candidate = matrix[row * n + column].abs();
-            if candidate > largest {
-                largest = candidate;
-                pivot = row;
+        let mut pivot = if searching {
+            let mut best = column;
+            let mut largest = matrix[column * n + column].abs();
+            for row in (column + 1)..n {
+                let candidate = matrix[row * n + column].abs();
+                if candidate > largest {
+                    largest = candidate;
+                    best = row;
+                }
             }
-        }
-        if largest < 1e-30 || !largest.is_finite() {
-            return false;
+            plan[column] = best;
+            best
+        } else {
+            plan[column]
+        };
+        if pivot < column || pivot >= n {
+            searching = true;
+            sound = false;
+            pivot = column;
+            let mut largest = matrix[column * n + column].abs();
+            for row in (column + 1)..n {
+                let candidate = matrix[row * n + column].abs();
+                if candidate > largest {
+                    largest = candidate;
+                    pivot = row;
+                }
+            }
+            plan[column] = pivot;
         }
         if pivot != column {
-            // Columns left of the current pivot are dead lower-triangular
-            // workspace: back substitution never reads them. Swap only the
-            // live upper part of the rows instead of moving `column` already-
-            // consumed coefficients on every pivot.
             let a = column * n;
             let b = pivot * n;
             for offset in column..n {
@@ -536,13 +924,38 @@ fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
             rhs.swap(column, pivot);
         }
 
-        let diagonal = matrix[column * n + column];
+        let mut diagonal = matrix[column * n + column];
+        if !searching && (diagonal.abs() < 1e-30 || !diagonal.is_finite()) {
+            // Replayed row no longer contains a usable pivot. Search from this
+            // column onward; completed columns remain a valid LU prefix.
+            searching = true;
+            sound = false;
+            let mut best = column;
+            let mut largest = diagonal.abs();
+            for row in (column + 1)..n {
+                let candidate = matrix[row * n + column].abs();
+                if candidate > largest {
+                    largest = candidate;
+                    best = row;
+                }
+            }
+            if best != column {
+                let a = column * n;
+                let b = best * n;
+                for offset in column..n {
+                    matrix.swap(a + offset, b + offset);
+                }
+                rhs.swap(column, best);
+            }
+            plan[column] = best;
+            diagonal = matrix[column * n + column];
+        }
         if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+            *planned = false;
             return false;
         }
-        // Disjoint row slices expose the independent column updates to LLVM
-        // without alias checks or a bounds check for every matrix element.
-        // Pivot choice and each element's arithmetic order remain unchanged.
+
+        let ceiling = diagonal.abs();
         let (above, below) = matrix.split_at_mut((column + 1) * n);
         let pivot_row = &above[column * n..];
         let (rhs_above, rhs_below) = rhs[..n].split_at_mut(column + 1);
@@ -552,16 +965,17 @@ fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
             if entry == 0.0 {
                 continue;
             }
+            if !searching && entry.abs() > ceiling * 16.0 {
+                // Still an exact LU; just relearn the pivot sequence next pass.
+                sound = false;
+            }
             let factor = entry / diagonal;
-            // The multiplier itself is never read again: this routine solves
-            // immediately and back substitution only reads the upper triangle.
             for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..]) {
                 *target -= factor * source;
             }
             *value -= factor * pivot_rhs;
         }
     }
-
     for row in (0..n).rev() {
         let mut value = rhs[row];
         for (&coefficient, &known) in matrix[row * n + row + 1..(row + 1) * n]
@@ -572,13 +986,16 @@ fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
         }
         let diagonal = matrix[row * n + row];
         if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+            *planned = false;
             return false;
         }
         rhs[row] = value / diagonal;
         if !rhs[row].is_finite() {
+            *planned = false;
             return false;
         }
     }
+    *planned = if replay { sound } else { true };
     true
 }
 
@@ -950,10 +1367,65 @@ mod tests {
         let rhs = [3.0, -1.0, 2.5, 0.75, -0.4];
 
         let mut actual = [0.0; 5];
+        assert!(reduced.prepare_rhs(&rhs));
         assert!(reduced.solve_into(&jacobian, &rhs, &mut actual));
         let expected = solve(&jacobian, &rhs);
         for (actual, expected) in actual.iter().zip(expected) {
             assert!((actual - expected).abs() < 1e-11);
+        }
+    }
+
+
+    #[test]
+    fn split_internal_recovery_matches_full_system_with_boundary_rhs_changes() {
+        let base = [
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5,
+            0.4, 2.0, 0.5, 1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
+        ];
+        let zero = [0.0; 5];
+        let mut reduced = ReducedNonlinear::new(&base, &zero, &[0, 3]).unwrap();
+
+        let mut jacobian = base;
+        jacobian[0] += 3.1;
+        jacobian[3] -= 0.45;
+        jacobian[15] += 0.35;
+        jacobian[18] += 1.7;
+
+        // The internal RHS is the per-sample passive/source history and is
+        // prepared once. Nonlinear equivalent-current sources then change only
+        // boundary entries while Newton and its line search run.
+        let fixed_rhs = [2.0, -1.25, 0.8, 1.0, -0.3];
+        let mut stamped_rhs = fixed_rhs;
+        stamped_rhs[0] += 0.7;
+        stamped_rhs[3] -= 0.4;
+
+        assert!(reduced.prepare_rhs(&fixed_rhs));
+        let mut actual = [0.0; 5];
+        assert!(reduced.solve_into(&jacobian, &stamped_rhs, &mut actual));
+        let expected = solve(&jacobian, &stamped_rhs);
+        for (actual, expected) in actual.iter().zip(expected) {
+            assert!((actual - expected).abs() < 1e-11);
+        }
+    }
+
+    #[test]
+    fn split_internal_recovery_matches_legacy_recovery() {
+        let base = [
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5,
+            0.4, 2.0, 0.5, 1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
+        ];
+        let rhs = [3.0, -1.0, 2.5, 0.75, -0.4];
+        let mut reduced = ReducedNonlinear::new(&base, &[0.0; 5], &[0, 3]).unwrap();
+        assert!(reduced.prepare_rhs(&rhs));
+
+        let mut actual = [0.0; 5];
+        assert!(reduced.solve_into(&base, &rhs, &mut actual));
+        let legacy = reduced
+            .condensed
+            .recover_with_rhs(&reduced.reduced_rhs, &rhs)
+            .unwrap();
+        for (actual, legacy) in actual.iter().zip(legacy) {
+            assert!((actual - legacy).abs() < 1e-12);
         }
     }
 
@@ -979,10 +1451,108 @@ mod tests {
         let rhs = [4.0, 1.0, -2.0, 3.0, 0.5];
 
         let mut actual = [0.0; 5];
+        assert!(reduced.prepare_rhs(&rhs));
         assert!(reduced.solve_into(&jacobian, &rhs, &mut actual));
         let expected = solve(&jacobian, &rhs);
         for (actual, expected) in actual.iter().zip(expected) {
             assert!((actual - expected).abs() < 1e-11);
         }
     }
+    #[test]
+    fn active_rhs_linear_response_matches_full_system() {
+        let matrix = [
+            9.0, 1.0, 0.4, 0.2,
+            1.0, 7.0, 0.5, 0.3,
+            0.4, 0.5, 6.0, 0.8,
+            0.2, 0.3, 0.8, 5.0,
+        ];
+        // Only nodes 1 and 2 can receive audio-rate source/history current;
+        // node 3 is structurally inactive and stays zero.
+        let block = ReducedLinear::new_with_rhs_active(&matrix, &[0.0; 4], 0, &[1, 2]).unwrap();
+        for (one, two) in [(1.2, -0.4), (-3.0, 2.25), (0.0, 0.75)] {
+            let rhs = [0.6, one, two, 0.0];
+            let mut full = [0.0; 4];
+            let mut reduced = [0.0; 1];
+            let mut scratch = [0.0; 3];
+            assert!(block.solve_into(&rhs, &mut full, &mut reduced, &mut scratch));
+            let expected = solve(&matrix, &rhs);
+            for (actual, expected) in full.iter().zip(expected) {
+                assert!((actual - expected).abs() < 1e-12);
+            }
+        }
+    }
+
+    #[test]
+    fn direct_reduced_stamp_and_pivot_replay_match_full_system() {
+        let base = [
+            10.0, 1.0, 0.5, 2.0, 0.0,
+            1.0, 8.0, 1.0, 0.5, 0.2,
+            0.5, 1.0, 7.0, 1.5, 0.4,
+            2.0, 0.5, 1.5, 9.0, 1.0,
+            0.0, 0.2, 0.4, 1.0, 6.0,
+        ];
+        let zero = [0.0; 5];
+        let fixed_rhs = [1.0, -1.25, 0.8, 0.5, -0.3];
+        // Internal fixed RHS positions 1, 2 and 4 are the only changing basis
+        // contributors. Boundary 0 and 3 remain direct RHS entries.
+        let mut reduced = ReducedNonlinear::new_with_active_rhs(
+            &base,
+            &zero,
+            &[0, 3],
+            &[1, 2, 4],
+        )
+        .unwrap();
+
+        for pass in 0..2 {
+            assert!(reduced.prepare_rhs(&fixed_rhs));
+            let mut full_matrix = base;
+            let mut full_rhs = fixed_rhs;
+            let (d00, d03, d30, d33, r0, r3) = if pass == 0 {
+                (2.3, -0.7, 0.25, 1.1, 0.7, -0.4)
+            } else {
+                // A materially different boundary Jacobian exercises the
+                // learned reduced pivot sequence on its second solve.
+                (0.6, 1.2, -0.45, 3.4, -0.2, 0.9)
+            };
+            full_matrix[0] += d00;
+            full_matrix[3] += d03;
+            full_matrix[15] += d30;
+            full_matrix[18] += d33;
+            full_rhs[0] += r0;
+            full_rhs[3] += r3;
+
+            {
+                let (matrix, rhs, _) = reduced.begin_stamp(&fixed_rhs).unwrap();
+                matrix[0] += d00;
+                matrix[1] += d03;
+                matrix[2] += d30;
+                matrix[3] += d33;
+                rhs[0] += r0;
+                rhs[1] += r3;
+            }
+            reduced.finish_stamp();
+            let current = [0.1, -0.2, 0.3, -0.4, 0.5];
+            let mut actual = [0.0; 5];
+            let mut delta = [0.0; 5];
+            let moved = reduced.solve_stamped_with_delta(
+                &mut actual,
+                &current,
+                &mut delta,
+                1e-6,
+                1e-6,
+            );
+            assert!(moved.is_some());
+
+            let expected = solve(&full_matrix, &full_rhs);
+            for ((actual, expected), (delta, current)) in actual
+                .iter()
+                .zip(&expected)
+                .zip(delta.iter().zip(&current))
+            {
+                assert!((*actual - *expected).abs() < 1e-11);
+                assert!((*delta - (*expected - *current)).abs() < 1e-11);
+            }
+        }
+    }
+
 }

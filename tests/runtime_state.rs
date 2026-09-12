@@ -29,6 +29,8 @@ fn core_copy_includes_committed_flux_and_previous_voltage() {
                 matrix: &mut matrix,
                 rhs: &mut rhs,
                 n: 2,
+                map: None,
+                mapping_failed: false,
                 limiting: true,
                 junction_held: false,
             },

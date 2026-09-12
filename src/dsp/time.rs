@@ -318,6 +318,10 @@ pub struct Simulation {
     /// Input and reactive contributions, constant throughout one Newton solve.
     /// Prepared before the solve; scratch rather than committed circuit state.
     fixed_rhs: Vec<f64>,
+    /// Whether `rhs` currently contains this sample's complete fixed RHS.
+    /// Successful reduced solves never need that full vector, so materialize
+    /// it lazily only when a full-MNA fallback/debug solve is actually entered.
+    rhs_fixed_loaded: bool,
     /// Previous line-search residual within this sample. Reset before each
     /// transient solve; scratch, not physical state to copy on stereo wake-up.
     search_merit: f64,
@@ -464,14 +468,17 @@ pub struct Simulation {
     /// a linear topology, its storage is refreshed in place rather than
     /// reconstructed.
     linear_partition: Option<ReducedLinear>,
-    /// Fixed set of unknowns that contains every terminal touched by a
-    /// nonlinear device, every MNA branch-current row, and the output node.
-    ///
-    /// Any unknown not in this set is therefore part of a purely linear block.
-    /// Device stamps can change only the boundary-boundary block and boundary
-    /// RHS, which is the structural proof that lets `ReducedNonlinear` eliminate
-    /// the remaining unknowns exactly before every Newton factorisation.
+    /// Fixed Schur boundary containing every terminal a nonlinear device can
+    /// stamp. Linear branch-current/output unknowns are promoted only when the
+    /// passive internal block requires them for an invertible partition.
+    /// Device stamps therefore change only boundary coefficients/RHS, which is
+    /// the structural proof that lets `ReducedNonlinear` eliminate everything
+    /// else exactly before every Newton factorisation.
     nonlinear_boundary: Vec<usize>,
+    /// Unknowns whose fixed RHS can change at audio rate: input/supply nodes
+    /// and capacitor/inductor history injection nodes. Schur response columns
+    /// for only these contributors are cached at rebuild time.
+    rhs_active_nodes: Vec<usize>,
     /// Construction of a nonlinear reduction is attempted only once. If the
     /// passive internal block is singular or the reduction would not be worth
     /// its recovery cost, the simulation permanently retains the original full
@@ -556,11 +563,13 @@ impl Simulation {
             }
         }
         // Topology masks and partition selection are immutable after `new`.
-        // Work/RHS/fixed_rhs/guess/point/saved/carry buffers and search_merit
-        // are overwritten before use; they contain no committed sample state.
+        // Work/RHS/fixed_rhs/guess/point/saved/carry buffers, RHS materialization
+        // state and search_merit are overwritten before use; they contain no
+        // committed sample state.
         // Force the destination through one dense refresh before it uses the
         // sparse Newton restamp path: `work` itself is deliberately not copied.
         self.work_base_mode = None;
+        self.rhs_fixed_loaded = false;
     }
 
     pub fn new(circuit: Circuit, rate: f64) -> Self {
@@ -589,15 +598,13 @@ impl Simulation {
             }
         }
 
-        // Build the Schur boundary from topology, before any numeric stamp is
-        // taken. Every nonlinear part terminal has to be on the boundary because
-        // its Jacobian or equivalent-current source can move on every Newton
-        // pass. Every branch-current unknown is included too: ideal transformers
-        // are linear, but keeping their zero-diagonal MNA constraint rows out of
-        // A_ii makes the passive internal block a plain nodal conductance block
-        // and avoids an avoidable singular partition. The output is cheap to keep
-        // on the boundary and makes diagnostics/direct reads straightforward.
+        // Build the smallest exact Schur boundary from topology. Every terminal
+        // a nonlinear device can stamp must be present. An op-amp's branch
+        // variable is part of that nonlinear stamp too. Linear transformer
+        // branch variables and the output are deliberately left internal first;
+        // rebuild will promote them only if the internal block proves singular.
         let mut nonlinear_boundary_mask = vec![false; n];
+        let mut rhs_active_mask = vec![false; n];
         for (index, part) in circuit.parts.iter().enumerate() {
             if !part.is_linear() {
                 for node in part.touches() {
@@ -605,21 +612,39 @@ impl Simulation {
                         nonlinear_boundary_mask[node] = true;
                     }
                 }
-            }
-            if part.needs_branch() {
-                let branch = circuit.branch_of(index);
-                if branch < n {
-                    nonlinear_boundary_mask[branch] = true;
+                if matches!(part, Part::OpAmp { .. }) {
+                    let branch = circuit.branch_of(index);
+                    if branch < n {
+                        nonlinear_boundary_mask[branch] = true;
+                    }
                 }
             }
-        }
-        if circuit.output < n {
-            nonlinear_boundary_mask[circuit.output] = true;
+            match *part {
+                Part::Input { node, .. } | Part::Supply { node, .. } => {
+                    if node != GROUND && node < n {
+                        rhs_active_mask[node] = true;
+                    }
+                }
+                Part::Capacitor { a, b, .. } | Part::Inductor { a, b, .. } => {
+                    if a != GROUND && a < n {
+                        rhs_active_mask[a] = true;
+                    }
+                    if b != GROUND && b < n {
+                        rhs_active_mask[b] = true;
+                    }
+                }
+                _ => {}
+            }
         }
         let nonlinear_boundary: Vec<usize> = nonlinear_boundary_mask
             .iter()
             .enumerate()
-            .filter_map(|(index, &selected)| if selected { Some(index) } else { None })
+            .filter_map(|(index, &selected)| selected.then_some(index))
+            .collect();
+        let rhs_active_nodes: Vec<usize> = rhs_active_mask
+            .iter()
+            .enumerate()
+            .filter_map(|(index, &selected)| selected.then_some(index))
             .collect();
 
         // The middle, except where the circuit says otherwise: a front-panel
@@ -659,6 +684,7 @@ impl Simulation {
             replans: 0,
             rhs: vec![0.0; n],
             fixed_rhs: vec![0.0; n],
+            rhs_fixed_loaded: false,
             search_merit: 0.0,
             voltage: vec![0.0; n],
             capacitors: Vec::with_capacity(capacitor_count),
@@ -704,6 +730,7 @@ impl Simulation {
             partition_initialized: false,
             linear_partition: None,
             nonlinear_boundary,
+            rhs_active_nodes,
             nonlinear_partition_initialized: false,
             nonlinear_partition: None,
             nonlinear_partition_dc: None,
@@ -1188,8 +1215,12 @@ impl Simulation {
                 // impossible, remember that result and use the full LU path on
                 // all later rebuilds rather than retrying an allocating
                 // constructor from the audio thread.
-                self.linear_partition =
-                    ReducedLinear::new(&self.base, &self.partition_zero_rhs, output);
+                self.linear_partition = ReducedLinear::new_with_rhs_active(
+                    &self.base,
+                    &self.partition_zero_rhs,
+                    output,
+                    &self.rhs_active_nodes,
+                );
                 self.partition_initialized = true;
             }
         } else {
@@ -1201,17 +1232,86 @@ impl Simulation {
             // rebuilds. Their Schur contribution is paid here once; a Newton
             // pass then factorises only the much smaller boundary matrix.
             if !self.nonlinear_partition_initialized {
-                if nonlinear_reduction_worthwhile(n, self.nonlinear_boundary.len()) {
-                    self.nonlinear_partition = ReducedNonlinear::new(
+                // Try the true nonlinear boundary first, then promote the
+                // *smallest possible* subset of otherwise-linear MNA unknowns
+                // needed to make A_ii invertible. Transformer branch currents
+                // and the output used to be included unconditionally. That is
+                // exact but expensive: dense reduced LU scales cubically with
+                // boundary size. Construction happens once outside realtime, so
+                // exhaustively trying the small optional set is cheap and gives
+                // the smallest exact boundary the topology admits.
+                let mut optional = Vec::new();
+                for (index, part) in self.circuit.parts.iter().enumerate() {
+                    if matches!(part, Part::Transformer { .. }) {
+                        let branch = self.circuit.branch_of(index);
+                        if branch < n
+                            && !self.nonlinear_boundary.contains(&branch)
+                            && !optional.contains(&branch)
+                        {
+                            optional.push(branch);
+                        }
+                    }
+                }
+                if self.circuit.output < n
+                    && !self.nonlinear_boundary.contains(&self.circuit.output)
+                    && !optional.contains(&self.circuit.output)
+                {
+                    optional.push(self.circuit.output);
+                }
+                optional.sort_unstable();
+
+                let mut candidates = Vec::new();
+                if optional.len() <= 10 {
+                    let combinations = 1usize << optional.len();
+                    for promoted in 0..=optional.len() {
+                        for mask in 0..combinations {
+                            if mask.count_ones() as usize != promoted {
+                                continue;
+                            }
+                            let mut candidate = self.nonlinear_boundary.clone();
+                            for (bit, &node) in optional.iter().enumerate() {
+                                if mask & (1usize << bit) != 0 {
+                                    candidate.push(node);
+                                }
+                            }
+                            candidate.sort_unstable();
+                            candidates.push(candidate);
+                        }
+                    }
+                } else {
+                    // Defensive fallback for an unexpectedly large MNA
+                    // topology: still try the minimal and conservative full
+                    // optional boundaries without exponential construction work.
+                    candidates.push(self.nonlinear_boundary.clone());
+                    let mut conservative = self.nonlinear_boundary.clone();
+                    conservative.extend(optional.iter().copied());
+                    conservative.sort_unstable();
+                    conservative.dedup();
+                    candidates.push(conservative);
+                }
+
+                for candidate in candidates {
+                    if !nonlinear_reduction_worthwhile(n, candidate.len()) {
+                        continue;
+                    }
+                    let transient = ReducedNonlinear::new_with_active_rhs(
                         &self.base,
                         &self.partition_zero_rhs,
-                        &self.nonlinear_boundary,
+                        &candidate,
+                        &self.rhs_active_nodes,
                     );
-                    self.nonlinear_partition_dc = ReducedNonlinear::new(
+                    let dc_partition = ReducedNonlinear::new_with_active_rhs(
                         &self.base_dc,
                         &self.partition_zero_rhs,
-                        &self.nonlinear_boundary,
+                        &candidate,
+                        &self.rhs_active_nodes,
                     );
+                    if transient.is_some() {
+                        self.nonlinear_boundary = candidate;
+                        self.nonlinear_partition = transient;
+                        self.nonlinear_partition_dc = dc_partition;
+                        break;
+                    }
                 }
                 self.nonlinear_partition_initialized = true;
             } else {
@@ -1504,8 +1604,10 @@ impl Simulation {
     /// Cache the input, supply and reactive-history contributions once per
     /// solve. Newton trials change device stamps, never these contributions.
     fn prepare_rhs(&mut self, input: f64, dc: bool) {
-        let n = self.n;
-        for k in 0..n {
+        // Only these positions can ever contain source/bias/reactive history.
+        // Inactive entries remain permanently zero from construction, so a
+        // reduced solve does not need an O(n) full-vector rebuild each sample.
+        for &k in &self.rhs_active_nodes {
             self.fixed_rhs[k] = self.source[k] * input + self.bias[k];
         }
         if !dc {
@@ -1516,10 +1618,7 @@ impl Simulation {
                 inject(&mut self.fixed_rhs, l.a, l.b, l.history);
             }
         }
-        // This is the only full RHS copy in one nonlinear solve. Every Newton
-        // pass and line-search trial below resets only boundary entries, because
-        // nonlinear devices cannot write anywhere else.
-        self.rhs.copy_from_slice(&self.fixed_rhs);
+        self.rhs_fixed_loaded = false;
 
         // The Schur reduction's internal RHS is also immutable throughout the
         // Newton solve. Cache its contribution once per sample instead of
@@ -1531,6 +1630,14 @@ impl Simulation {
         };
         if let Some(partition) = partition {
             let _ = partition.prepare_rhs(&self.fixed_rhs);
+        }
+    }
+
+    #[inline]
+    fn ensure_fixed_rhs_loaded(&mut self) {
+        if !self.rhs_fixed_loaded {
+            self.rhs.copy_from_slice(&self.fixed_rhs);
+            self.rhs_fixed_loaded = true;
         }
     }
 
@@ -1553,6 +1660,14 @@ impl Simulation {
     /// one dense refresh before sparse restamps resume.
     #[inline]
     fn build_current(&mut self, dc: bool, limiting: bool, sparse_ok: bool) {
+        // Full MNA is the fallback/diagnostic path. Only now pay to materialize
+        // the complete fixed RHS; subsequent Newton passes reset just the
+        // nonlinear boundary entries as before.
+        let rhs_was_loaded = self.rhs_fixed_loaded;
+        self.ensure_fixed_rhs_loaded();
+        if rhs_was_loaded {
+            self.reset_device_rhs();
+        }
         let base = if dc { &self.base_dc } else { &self.base };
         if sparse_ok && self.work_base_mode == Some(dc) {
             for &slot in &self.device_matrix_slots {
@@ -1562,13 +1677,14 @@ impl Simulation {
             self.work.copy_from_slice(base);
             self.work_base_mode = Some(dc);
         }
-        self.reset_device_rhs();
 
         let voltage = &self.voltage;
         let mut stamper = Stamper {
             matrix: &mut self.work,
             rhs: &mut self.rhs,
             n: self.n,
+            map: None,
+            mapping_failed: false,
             limiting,
             junction_held: false,
         };
@@ -1590,6 +1706,92 @@ impl Simulation {
         }
     }
 
+    /// Stamp nonlinear devices directly into the Schur boundary system. This
+    /// bypasses the full n×n matrix entirely on the production reduced path.
+    /// Returns false only if the partition is unavailable/unprepared or a
+    /// device unexpectedly references an internal unknown.
+    #[inline]
+    fn build_current_reduced(&mut self, dc: bool, limiting: bool) -> bool {
+        let voltage = &self.voltage;
+        let partition = if dc {
+            self.nonlinear_partition_dc.as_mut()
+        } else {
+            self.nonlinear_partition.as_mut()
+        };
+        let Some(partition) = partition else {
+            return false;
+        };
+        let n = partition.boundary_len();
+        let (exact, mapping_ok) = {
+            let Some((matrix, rhs, map)) = partition.begin_stamp(&self.fixed_rhs) else {
+                return false;
+            };
+            let mut stamper = Stamper {
+                matrix,
+                rhs,
+                n,
+                map: Some(map),
+                mapping_failed: false,
+                limiting,
+                junction_held: false,
+            };
+            for device in &mut self.devices {
+                device.stamp(&mut stamper, voltage);
+            }
+            (!stamper.junction_held, !stamper.mapping_failed)
+        };
+        if mapping_ok {
+            partition.finish_stamp();
+        }
+        self.exact = exact;
+        mapping_ok
+    }
+
+    /// Reduced line-search trial stamp and merit. `point` is a full voltage
+    /// vector, but only its boundary entries participate in the Schur residual.
+    #[inline]
+    fn reduced_trial_merit(&mut self, dc: bool) -> Option<f64> {
+        let point = &self.point;
+        let partition = if dc {
+            self.nonlinear_partition_dc.as_mut()
+        } else {
+            self.nonlinear_partition.as_mut()
+        }?;
+        let n = partition.boundary_len();
+        let (exact, mapping_ok) = {
+            let (matrix, rhs, map) = partition.begin_stamp(&self.fixed_rhs)?;
+            let mut stamper = Stamper {
+                matrix,
+                rhs,
+                n,
+                map: Some(map),
+                mapping_failed: false,
+                limiting: false,
+                junction_held: false,
+            };
+            for device in &mut self.devices {
+                device.stamp(&mut stamper, point);
+            }
+            (!stamper.junction_held, !stamper.mapping_failed)
+        };
+        self.exact = exact;
+        if !mapping_ok {
+            return None;
+        }
+        partition.finish_stamp();
+        Some(partition.merit_stamped(point))
+    }
+
+    #[inline]
+    fn current_reduced_merit(&self, dc: bool) -> Option<f64> {
+        let partition = if dc {
+            self.nonlinear_partition_dc.as_ref()
+        } else {
+            self.nonlinear_partition.as_ref()
+        }?;
+        Some(partition.merit_stamped(&self.voltage))
+    }
+
     /// Full point stamp used only by structure-watch diagnostics. This keeps
     /// their exhaustive verification semantics without putting dense rebuilds
     /// back on the production line-search path.
@@ -1597,6 +1799,7 @@ impl Simulation {
         let base = if dc { &self.base_dc } else { &self.base };
         self.work.copy_from_slice(base);
         self.work_base_mode = Some(dc);
+        self.ensure_fixed_rhs_loaded();
         self.reset_device_rhs();
 
         let point = &self.point;
@@ -1604,6 +1807,8 @@ impl Simulation {
             matrix: &mut self.work,
             rhs: &mut self.rhs,
             n: self.n,
+            map: None,
+            mapping_failed: false,
             limiting: false,
             junction_held: false,
         };
@@ -1637,6 +1842,7 @@ impl Simulation {
         for &slot in &self.merit_slots {
             self.work[slot] = base[slot];
         }
+        self.ensure_fixed_rhs_loaded();
         self.reset_device_rhs();
 
         let point = &self.point;
@@ -1644,6 +1850,8 @@ impl Simulation {
             matrix: &mut self.work,
             rhs: &mut self.rhs,
             n: self.n,
+            map: None,
+            mapping_failed: false,
             limiting: false,
             junction_held: false,
         };
@@ -1662,6 +1870,7 @@ impl Simulation {
         for &slot in &self.device_matrix_slots {
             self.work[slot] = base[slot];
         }
+        self.ensure_fixed_rhs_loaded();
         self.reset_device_rhs();
 
         let point = &self.point;
@@ -1669,6 +1878,8 @@ impl Simulation {
             matrix: &mut self.work,
             rhs: &mut self.rhs,
             n: self.n,
+            map: None,
+            mapping_failed: false,
             limiting: false,
             junction_held: false,
         };
@@ -1764,17 +1975,23 @@ impl Simulation {
         } else {
             self.nonlinear_partition.is_some()
         };
-        // Ordinary reduced Newton passes never mutate `work`, so avoid both the
-        // voltage->point copy and the dense base-matrix rebuild. Full-MNA paths
-        // still rebuild densely because LU overwrites the matrix in place.
-        self.build_current(dc, !search, reduced_candidate && !self.watching);
-        // A search needs a residual it can believe at both ends. If a junction
-        // had to be held here, this one cannot be believed and the pass takes
-        // the plain full step instead.
+        // The production Schur path stamps nonlinear devices directly into
+        // the small reduced boundary system. Full MNA is retained for
+        // structure-watch diagnostics and as a numerical fallback only.
+        let mut reduced_direct = reduced_candidate
+            && !self.watching
+            && self.build_current_reduced(dc, !search);
+        if !reduced_direct {
+            self.build_current(dc, !search, false);
+        }
         let search = search && self.exact;
-        let reduced_merit = search && reduced_candidate && !self.watching;
         let here = if search {
-            self.merit(&self.voltage, reduced_merit)
+            if reduced_direct {
+                self.current_reduced_merit(dc)
+                    .unwrap_or_else(|| self.merit(&self.voltage, false))
+            } else {
+                self.merit(&self.voltage, false)
+            }
         } else {
             0.0
         };
@@ -1811,27 +2028,43 @@ impl Simulation {
             }
         }
 
-        // Solve the Newton linearisation. For a reducible nonlinear circuit,
-        // every changing device stamp lives in the Schur boundary and the
-        // passive internal unknowns are eliminated algebraically. This is the
-        // same MNA system and yields the full voltage vector after recovery; it
-        // merely avoids refactorising the passive nodes on every Newton pass.
-        let reduced = if dc {
-            if let Some(partition) = self.nonlinear_partition_dc.as_mut() {
-                partition.solve_into(&self.work, &self.rhs, &mut self.guess)
+        // Solve the Newton linearisation. The direct reduced path fuses full
+        // recovery with delta/convergence measurement, so recovered nodes are
+        // touched only once.
+        let mut reduced_moved = if reduced_direct {
+            if dc {
+                self.nonlinear_partition_dc.as_mut().and_then(|partition| {
+                    partition.solve_stamped_with_delta(
+                        &mut self.guess,
+                        &self.voltage,
+                        &mut self.scratch,
+                        TOLERANCE,
+                        RELATIVE,
+                    )
+                })
             } else {
-                false
+                self.nonlinear_partition.as_mut().and_then(|partition| {
+                    partition.solve_stamped_with_delta(
+                        &mut self.guess,
+                        &self.voltage,
+                        &mut self.scratch,
+                        TOLERANCE,
+                        RELATIVE,
+                    )
+                })
             }
-        } else if let Some(partition) = self.nonlinear_partition.as_mut() {
-            partition.solve_into(&self.work, &self.rhs, &mut self.guess)
         } else {
-            false
+            None
         };
 
-        if !reduced {
+        if reduced_direct && reduced_moved.is_none() {
+            // Rare numerical fallback to the original exact full MNA solve.
+            reduced_direct = false;
+            self.build_current(dc, !search, false);
+        }
+
+        if !reduced_direct {
             self.guess.copy_from_slice(&self.rhs);
-            // Learn the pivot order on the first pass after a rebuild and replay
-            // it afterwards. See `Simulation::plan`.
             let sound = factorise(
                 &mut self.work,
                 &mut self.pivots,
@@ -1848,8 +2081,6 @@ impl Simulation {
                 self.replans += 1;
             }
             self.planned = sound;
-            // Full LU stores factors in `work`; sparse device-only restoration is
-            // unsafe until one later pass refreshes the dense base matrix.
             self.work_base_mode = None;
             substitute(
                 &self.work,
@@ -1860,6 +2091,7 @@ impl Simulation {
                 n,
                 &mut self.scratch,
             );
+            reduced_moved = None;
         }
         // How far the solution wants to move, measured against the scale it is
         // moving *at*.
@@ -1887,22 +2119,26 @@ impl Simulation {
         // instead let a solve declare itself converged at whatever value it
         // happened to be holding: damped to a sixty-fourth, the 73P reported
         // itself done after a single pass. See `R-013` in the regression log.
-        let mut moved: f64 = 0.0;
-        for ((&guess, &voltage), delta) in self
-            .guess
-            .iter()
-            .zip(&self.voltage)
-            .zip(self.scratch.iter_mut())
-        {
-            if !guess.is_finite() {
-                // A correction that is not a number cannot be shortened into one.
-                self.nonfinite += 1;
-                return Pass::Stuck;
+        let moved = if let Some(moved) = reduced_moved {
+            moved
+        } else {
+            let mut moved: f64 = 0.0;
+            for ((&guess, &voltage), delta) in self
+                .guess
+                .iter()
+                .zip(&self.voltage)
+                .zip(self.scratch.iter_mut())
+            {
+                if !guess.is_finite() {
+                    self.nonfinite += 1;
+                    return Pass::Stuck;
+                }
+                *delta = guess - voltage;
+                let scale = TOLERANCE + RELATIVE * voltage.abs();
+                moved = moved.max(delta.abs() / scale);
             }
-            *delta = guess - voltage;
-            let scale = TOLERANCE + RELATIVE * voltage.abs();
-            moved = moved.max(delta.abs() / scale);
-        }
+            moved
+        };
         // Kept so the caller can see whether this pass made progress, and turn
         // the line search on the moment one does not. See `CONVERGING`.
         self.moved = moved;
@@ -1964,13 +2200,28 @@ impl Simulation {
             if finite {
                 // Re-linearise where the step lands and ask whether the
                 // circuit is any closer to satisfying itself there.
-                if self.watching {
-                    self.build_point_full(dc);
-                } else if first_trial && !reduced {
-                    self.restamp_first_trial(dc);
+                let reduced_there = if reduced_direct && !self.watching {
+                    match self.reduced_trial_merit(dc) {
+                        Some(merit) => Some(merit),
+                        None => {
+                            // Defensive topology fallback. A correctly built
+                            // boundary contains every nonlinear terminal, but
+                            // if that invariant is ever violated do not judge
+                            // a trial against stale full-MNA storage.
+                            self.build_point_full(dc);
+                            None
+                        }
+                    }
                 } else {
-                    self.restamp_trial(dc);
-                }
+                    if self.watching {
+                        self.build_point_full(dc);
+                    } else if first_trial {
+                        self.restamp_first_trial(dc);
+                    } else {
+                        self.restamp_trial(dc);
+                    }
+                    None
+                };
                 first_trial = false;
                 if !self.exact {
                     // A junction was held where this step lands, so the
@@ -1978,7 +2229,7 @@ impl Simulation {
                     // let the full step stand rather than decide on it.
                     break;
                 }
-                let there = self.merit(&self.point, reduced_merit);
+                let there = reduced_there.unwrap_or_else(|| self.merit(&self.point, false));
                 if there.is_finite() && there < best_merit {
                     best_merit = there;
                     best_lambda = lambda;
@@ -2570,22 +2821,26 @@ fn swap_rows(
 /// not a two-diode pedal. This is only a performance gate; either path solves
 /// the same equations.
 fn nonlinear_reduction_worthwhile(n: usize, boundary: usize) -> bool {
-    if n < 16 || boundary == 0 || boundary >= n {
+    if n < 6 || boundary == 0 || boundary >= n {
         return false;
     }
     let internal = n - boundary;
-    if internal < 4 {
+    if internal < 2 {
         return false;
     }
 
     let n = n as f64;
     let b = boundary as f64;
     let i = internal as f64;
-    // Reduced boundary LU + full internal recovery + RHS reduction/coupling.
-    // Keep a conservative margin because the original LU exploits sparsity.
+    // The reduced path now stamps directly in boundary space, replays a pivot
+    // plan, combines only active RHS response columns, and recovers internals
+    // with O(i*b) work. The old i^2-per-pass estimate is obsolete. Keep a
+    // conservative allowance for full-vector recovery and device evaluation,
+    // but let small nonlinear return stages participate when their boundary is
+    // genuinely much smaller than full MNA.
     let full = n * n * n;
-    let reduced = b * b * b + i * i + 2.0 * b * i + b * b;
-    reduced < 0.70 * full
+    let reduced = b * b * b + 2.0 * i * b + b * b;
+    reduced < 0.85 * full
 }
 
 #[allow(clippy::too_many_arguments)]

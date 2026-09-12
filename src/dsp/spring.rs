@@ -73,9 +73,10 @@ impl Line {
 /// A first-order allpass: unity magnitude, frequency-dependent delay.
 ///
 /// `y[n] = a x[n] + x[n-1] - a y[n-1]`
+const ALLPASS_A: f64 = -0.62;
+
 #[derive(Clone, Copy, Default)]
 struct Allpass {
-    a: f64,
     x1: f64,
     y1: f64,
 }
@@ -83,7 +84,9 @@ struct Allpass {
 impl Allpass {
     #[inline]
     fn process(&mut self, x: f64) -> f64 {
-        let y = self.a * x + self.x1 - self.a * self.y1;
+        // Same first-order allpass law, factored so the coefficient is applied
+        // once instead of twice: a*x + x1 - a*y1 == x1 + a*(x-y1).
+        let y = self.x1 + ALLPASS_A * (x - self.y1);
         self.x1 = x;
         self.y1 = y;
         y
@@ -115,13 +118,7 @@ impl Spring {
         // The allpass coefficient sets where the chain's group delay turns
         // over, and with it the pitch the chirp sweeps through. Negative,
         // which is what makes the high frequencies lead.
-        let chain = vec![
-            Allpass {
-                a: -0.62,
-                ..Default::default()
-            };
-            sections
-        ];
+        let chain = vec![Allpass::default(); sections];
         let corner = |hz: f64| (-std::f64::consts::TAU * hz / rate).exp();
         Self {
             line: Line::new(samples),
@@ -183,7 +180,6 @@ impl Tank {
             dst.line.buf.copy_from_slice(&src.line.buf);
             dst.line.pos = src.line.pos;
             for (dst, src) in dst.chain.iter_mut().zip(&src.chain) {
-                debug_assert_eq!(dst.a, src.a);
                 dst.x1 = src.x1;
                 dst.y1 = src.y1;
             }
@@ -220,5 +216,25 @@ impl Tank {
 
     pub fn reset(&mut self) {
         self.springs.iter_mut().for_each(Spring::reset);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optimized_allpass_matches_original_formula() {
+        let mut optimized = Allpass::default();
+        let mut old_x1 = 0.0;
+        let mut old_y1 = 0.0;
+        for k in 0..100_000 {
+            let x = (k as f64 * 0.031).sin() * 0.7 + (k as f64 * 0.113).cos() * 0.2;
+            let reference = ALLPASS_A * x + old_x1 - ALLPASS_A * old_y1;
+            old_x1 = x;
+            old_y1 = reference;
+            let got = optimized.process(x);
+            assert!((got - reference).abs() < 2e-12 * (1.0 + reference.abs()));
+        }
     }
 }
