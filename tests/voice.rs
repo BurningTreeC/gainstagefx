@@ -90,6 +90,93 @@ fn modelled_circuits_stay_at_host_rate() {
     assert_eq!(generic.effective_oversampling(), 4);
 }
 
+/// The Twin power stage deliberately stops its realtime line search at 1/16.
+/// Keep that performance policy tied to an explicit accuracy measurement: the
+/// normal four-backtrack solve must null far below audibility against the full
+/// six-backtrack / 64-pass reference on hard, preamp-driven attacks.
+#[test]
+#[ignore = "high-accuracy Twin solver reference; run in release mode"]
+fn twin_power_four_backtracks_matches_full_reference() {
+    const RATE: f64 = 48_000.0;
+    const SAMPLES: usize = 4_096;
+    const MAX_NULL_DB: f64 = -140.0;
+
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for the Twin solver reference");
+
+    let mut exercised_backtracks = 0u64;
+    for drive in [0.2, 0.6, 1.0] {
+        let mut channel = Simulation::new(
+            voice::build_voice(Gain::Twin, voice::Diode::Silicon, voice::Amplifier::Valve)
+                .expect("Twin channel builds"),
+            RATE,
+        );
+        channel.set_control(Gain::Twin.drive_control(), drive);
+        channel.find_operating_point();
+
+        let power = voice::build_power(Gain::Twin)
+            .expect("Twin has a power stage")
+            .expect("Twin power stage builds");
+        let mut realtime = Simulation::new(power.clone(), RATE);
+        realtime.set_backtracks(4);
+        realtime.set_pass_ceiling(64);
+        realtime.find_operating_point();
+
+        let mut reference = Simulation::new(power, RATE);
+        reference.set_backtracks(6);
+        reference.set_pass_ceiling(64);
+        reference.find_operating_point();
+
+        let mut error_energy = 0.0;
+        let mut reference_energy = 0.0;
+        for i in 0..SAMPLES {
+            let t = i as f64 / RATE;
+            let attack = (t / 0.0005).min(1.0);
+            let decay = (-(t / 0.080)).exp();
+            let input = 0.969
+                * 0.5
+                * attack
+                * decay
+                * ((std::f64::consts::TAU * 110.0 * t).sin()
+                    + 0.5 * (std::f64::consts::TAU * 330.0 * t).sin());
+            let power_input = channel.process(input);
+            let got = realtime.process(power_input);
+            let want = reference.process(power_input);
+            let error = got - want;
+            error_energy += error * error;
+            reference_energy += want * want;
+        }
+
+        let null_db = 10.0
+            * (error_energy.max(1e-300) / reference_energy.max(1e-300)).log10();
+        let realtime_health = realtime.health();
+        let reference_health = reference.health();
+        exercised_backtracks += reference_health.0;
+        eprintln!(
+            "Twin power reference: drive={drive:.1}, null={null_db:.1} dB, realtime_backtracks={}, reference_backtracks={}",
+            realtime_health.0, reference_health.0
+        );
+        assert!(
+            null_db < MAX_NULL_DB,
+            "Twin drive {drive:.1}: four-backtrack power solve is {null_db:.1} dB from the full reference"
+        );
+        assert_eq!(
+            realtime_health.2,
+            0,
+            "realtime Twin produced non-finite corrections"
+        );
+        assert_eq!(
+            reference_health.2,
+            0,
+            "reference Twin produced non-finite corrections"
+        );
+    }
+    assert!(
+        exercised_backtracks > 0,
+        "Twin accuracy reference did not exercise the Newton line search"
+    );
+}
+
 /// The table in `src/calibration.rs` is measured, and a circuit that has
 /// changed underneath it makes it a set of stale numbers that still compile.
 /// This is the test that notices.

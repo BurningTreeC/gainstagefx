@@ -269,6 +269,18 @@ pub struct Simulation {
     /// and `structure_mapped` lets later rebuilds reuse the cached bounds
     /// outright.
     structure_pattern: Vec<bool>,
+    /// Matrix entries a nonlinear device may change. Built once from device
+    /// footprints and used by line-search trials to restore only the dynamic
+    /// part of the MNA matrix instead of copying the full n x n base again.
+    device_matrix_slots: Vec<usize>,
+    /// CSR-style row offsets/columns for the structurally nonzero MNA entries.
+    /// The line-search merit only needs these coefficients, so it does not
+    /// rescan the dense row envelope for zeros on every trial. `merit_slots`
+    /// stores the already-multiplied row/column index beside each column, so
+    /// the hot residual walk does not redo `row * n + col` for every entry.
+    merit_row_offsets: Vec<usize>,
+    merit_columns: Vec<usize>,
+    merit_slots: Vec<usize>,
     structure_mapped: bool,
     /// The pivot row chosen for each column, learned once and replayed.
     ///
@@ -329,6 +341,12 @@ pub struct Simulation {
     devices: Vec<AnyDevice>,
     /// Scratch for a Newton pass.
     work: Vec<f64>,
+    /// Whether every matrix slot outside the nonlinear device footprint still
+    /// matches the selected base matrix. `Some(dc)` means sparse Newton
+    /// restamps may safely restore only the device footprint; `None` means a
+    /// full LU factorisation has overwritten `work` and the next pass must
+    /// refresh the dense base once.
+    work_base_mode: Option<bool>,
     guess: Vec<f64>,
     /// Scratch for the substitution: the permuted right-hand side that
     /// `substitute` writes and reads while it solves.
@@ -388,11 +406,10 @@ pub struct Simulation {
     unsettled: u64,
     rebuilds: u64,
     /// Where the devices are linearised for the stamp about to be taken.
-    /// Either where the solve currently is, or a point the line search is
-    /// trying out.
+    /// Either where the solve currently is, or the line-search trial itself.
+    /// Keeping the trial here avoids a second full-vector copy on every
+    /// backtracking attempt.
     point: Vec<f64>,
-    /// The point being tried.
-    trial: Vec<f64>,
     /// Every device's linearisation, saved so a rejected trial can undo it.
     saved: Vec<Linearisation>,
     /// How often the full Newton step was refused and a shorter one taken.
@@ -510,8 +527,11 @@ impl Simulation {
             }
         }
         // Topology masks and partition selection are immutable after `new`.
-        // Work/RHS/fixed_rhs/guess/trial/saved/carry buffers and search_merit
+        // Work/RHS/fixed_rhs/guess/point/saved/carry buffers and search_merit
         // are overwritten before use; they contain no committed sample state.
+        // Force the destination through one dense refresh before it uses the
+        // sparse Newton restamp path: `work` itself is deliberately not copied.
+        self.work_base_mode = None;
     }
 
     pub fn new(circuit: Circuit, rate: f64) -> Self {
@@ -600,6 +620,10 @@ impl Simulation {
             depth: vec![0; n],
             first: vec![0; n],
             structure_pattern: vec![false; n * n],
+            device_matrix_slots: Vec::new(),
+            merit_row_offsets: Vec::new(),
+            merit_columns: Vec::new(),
+            merit_slots: Vec::new(),
             structure_mapped: false,
             plan: vec![0; n],
             planned: false,
@@ -619,6 +643,7 @@ impl Simulation {
             bias: vec![0.0; n],
             devices: Vec::with_capacity(device_count),
             work: vec![0.0; n * n],
+            work_base_mode: None,
             guess: vec![0.0; n],
             scratch: vec![0.0; n],
             predicted: vec![0.0; n],
@@ -633,7 +658,6 @@ impl Simulation {
             unsettled: 0,
             rebuilds: 0,
             point: vec![0.0; n],
-            trial: vec![0.0; n],
             saved: Vec::with_capacity(device_count),
             backtrack_count: 0,
             fallbacks: 0,
@@ -723,9 +747,8 @@ impl Simulation {
         if self.dirty {
             self.rebuild();
         }
-        self.point.copy_from_slice(&self.voltage);
         self.prepare_rhs(input, false);
-        self.build(false, true);
+        self.build_current(false, true, false);
         Some((self.work.clone(), self.rhs.clone(), self.circuit.output))
     }
 
@@ -1154,6 +1177,7 @@ impl Simulation {
         // Conservatively relearn the pivot plan; factorisation will cache the
         // new order after this rebuild.
         self.planned = false;
+        self.work_base_mode = None;
 
         // A linear circuit is factorised once and reused. A circuit with a
         // device in it has to be refactorised every Newton pass, because the
@@ -1198,13 +1222,11 @@ impl Simulation {
         }
 
         let n = self.n;
+        // Start with the nonlinear device footprint so it can be retained as
+        // a compact list for line-search restamps without allocating another
+        // n x n topology mask. The full structural map is then completed with
+        // the two immutable linear base matrices.
         self.structure_pattern.fill(false);
-        for (slot, marked) in self.base.iter().zip(self.structure_pattern.iter_mut()) {
-            *marked |= *slot != 0.0;
-        }
-        for (slot, marked) in self.base_dc.iter().zip(self.structure_pattern.iter_mut()) {
-            *marked |= *slot != 0.0;
-        }
         {
             let mut mark = Mark {
                 pattern: &mut self.structure_pattern,
@@ -1213,6 +1235,18 @@ impl Simulation {
             for device in &self.devices {
                 device.footprint(&mut mark);
             }
+        }
+        self.device_matrix_slots.clear();
+        for (index, &marked) in self.structure_pattern.iter().enumerate() {
+            if marked {
+                self.device_matrix_slots.push(index);
+            }
+        }
+        for (slot, marked) in self.base.iter().zip(self.structure_pattern.iter_mut()) {
+            *marked |= *slot != 0.0;
+        }
+        for (slot, marked) in self.base_dc.iter().zip(self.structure_pattern.iter_mut()) {
+            *marked |= *slot != 0.0;
         }
         // The diagonal is always in play: the factorisation pivots on it, and
         // a row whose reach fell short of its own diagonal would bound the
@@ -1231,6 +1265,28 @@ impl Simulation {
                 .find(|&k| pattern[k * n + row])
                 .unwrap_or(row)
                 .max(row);
+        }
+
+        // The merit function is evaluated many times specifically on the
+        // difficult samples that already threaten the realtime deadline.
+        // Build a compact row map once so those evaluations touch only matrix
+        // entries that can structurally be nonzero. Column order stays
+        // ascending, preserving the arithmetic order of the old dense scan.
+        self.merit_row_offsets.clear();
+        self.merit_columns.clear();
+        self.merit_slots.clear();
+        self.merit_row_offsets.reserve(n + 1);
+        self.merit_row_offsets.push(0);
+        for (row, &row_reach) in reach_template.iter().enumerate().take(n) {
+            let row_start = row * n;
+            for col in 0..=row_reach {
+                let slot = row_start + col;
+                if pattern[slot] {
+                    self.merit_columns.push(col);
+                    self.merit_slots.push(slot);
+                }
+            }
+            self.merit_row_offsets.push(self.merit_columns.len());
         }
         self.structure_mapped = true;
     }
@@ -1402,30 +1458,67 @@ impl Simulation {
                 inject(&mut self.fixed_rhs, l.a, l.b, l.history);
             }
         }
-    }
-
-    /// Stamp at `self.point`, starting from the constant matrix and RHS. A
-    /// solve must call `prepare_rhs` before its first stamp.
-    fn build(&mut self, dc: bool, limiting: bool) {
-        let n = self.n;
-        self.work
-            .copy_from_slice(if dc { &self.base_dc } else { &self.base });
+        // This is the only full RHS copy in one nonlinear solve. Every Newton
+        // pass and line-search trial below resets only boundary entries, because
+        // nonlinear devices cannot write anywhere else.
         self.rhs.copy_from_slice(&self.fixed_rhs);
 
+        // The Schur reduction's internal RHS is also immutable throughout the
+        // Newton solve. Cache its contribution once per sample instead of
+        // recomputing the same boundary-by-internal dot products every pass.
+        let partition = if dc {
+            self.nonlinear_partition_dc.as_mut()
+        } else {
+            self.nonlinear_partition.as_mut()
+        };
+        if let Some(partition) = partition {
+            let _ = partition.prepare_rhs(&self.fixed_rhs);
+        }
+    }
+
+    /// Reset the RHS entries a nonlinear device may write. `prepare_rhs()`
+    /// already copied the complete fixed RHS once for this sample/operating-
+    /// point solve, so the internal/passive entries never need to be recopied
+    /// on every Newton pass.
+    #[inline]
+    fn reset_device_rhs(&mut self) {
+        for &row in &self.nonlinear_boundary {
+            self.rhs[row] = self.fixed_rhs[row];
+        }
+    }
+
+    /// Stamp the current accepted voltage. When the exact nonlinear Schur
+    /// reduction is available, `work` is never factorised by a successful
+    /// reduced solve. In that common path the immutable linear matrix therefore
+    /// stays resident and only the nonlinear device footprint needs restoring.
+    /// A full-MNA factorisation marks the cache dirty so the next pass performs
+    /// one dense refresh before sparse restamps resume.
+    fn build_current(&mut self, dc: bool, limiting: bool, sparse_ok: bool) {
+        let base = if dc { &self.base_dc } else { &self.base };
+        if sparse_ok && self.work_base_mode == Some(dc) {
+            for &slot in &self.device_matrix_slots {
+                self.work[slot] = base[slot];
+            }
+        } else {
+            self.work.copy_from_slice(base);
+            self.work_base_mode = Some(dc);
+        }
+        self.reset_device_rhs();
+
+        let voltage = &self.voltage;
         let mut stamper = Stamper {
             matrix: &mut self.work,
             rhs: &mut self.rhs,
-            n,
+            n: self.n,
             limiting,
             junction_held: false,
         };
         for device in &mut self.devices {
-            device.stamp(&mut stamper, &self.point);
+            device.stamp(&mut stamper, voltage);
         }
-        // Whether this stamp actually sits at the point it was given. See
-        // `Stamper::junction_held`.
         self.exact = !stamper.junction_held;
         if self.watching {
+            let n = self.n;
             for row in 0..n {
                 for col in 0..n {
                     if self.work[row * n + col] != 0.0
@@ -1436,6 +1529,93 @@ impl Simulation {
                 }
             }
         }
+    }
+
+    /// Full point stamp used only by structure-watch diagnostics. This keeps
+    /// their exhaustive verification semantics without putting dense rebuilds
+    /// back on the production line-search path.
+    fn build_point_full(&mut self, dc: bool) {
+        let base = if dc { &self.base_dc } else { &self.base };
+        self.work.copy_from_slice(base);
+        self.work_base_mode = Some(dc);
+        self.reset_device_rhs();
+
+        let point = &self.point;
+        let mut stamper = Stamper {
+            matrix: &mut self.work,
+            rhs: &mut self.rhs,
+            n: self.n,
+            limiting: false,
+            junction_held: false,
+        };
+        for device in &mut self.devices {
+            device.stamp(&mut stamper, point);
+        }
+        self.exact = !stamper.junction_held;
+
+        let n = self.n;
+        for row in 0..n {
+            for col in 0..n {
+                if self.work[row * n + col] != 0.0
+                    && (col > self.reach_template[row] || row > self.depth_template[col])
+                {
+                    self.violations += 1;
+                }
+            }
+        }
+    }
+
+    /// Restore exactly the coefficients the line-search merit can read after
+    /// a full-MNA Newton solve has overwritten `work` with LU factors.
+    ///
+    /// The first trial cannot use the ordinary sparse device restamp because
+    /// factorisation has filled structurally-zero scratch slots. Restore every
+    /// structural coefficient once; later trials again touch only the nonlinear
+    /// footprint. The matrix is still not safe for a reduced solve afterwards,
+    /// so `work_base_mode` deliberately remains `None`.
+    fn restamp_first_trial(&mut self, dc: bool) {
+        let base = if dc { &self.base_dc } else { &self.base };
+        for &slot in &self.merit_slots {
+            self.work[slot] = base[slot];
+        }
+        self.reset_device_rhs();
+
+        let point = &self.point;
+        let mut stamper = Stamper {
+            matrix: &mut self.work,
+            rhs: &mut self.rhs,
+            n: self.n,
+            limiting: false,
+            junction_held: false,
+        };
+        for device in &mut self.devices {
+            device.stamp(&mut stamper, point);
+        }
+        self.exact = !stamper.junction_held;
+    }
+
+    /// Rebuild only the coefficients and RHS entries a nonlinear device can
+    /// change for a line-search trial. Physical state is untouched; device
+    /// linearisation state is explicitly restored after rejected trials.
+    fn restamp_trial(&mut self, dc: bool) {
+        let base = if dc { &self.base_dc } else { &self.base };
+        for &slot in &self.device_matrix_slots {
+            self.work[slot] = base[slot];
+        }
+        self.reset_device_rhs();
+
+        let point = &self.point;
+        let mut stamper = Stamper {
+            matrix: &mut self.work,
+            rhs: &mut self.rhs,
+            n: self.n,
+            limiting: false,
+            junction_held: false,
+        };
+        for device in &mut self.devices {
+            device.stamp(&mut stamper, point);
+        }
+        self.exact = !stamper.junction_held;
     }
 
     /// How badly `x` fails to satisfy the circuit as currently stamped.
@@ -1451,18 +1631,18 @@ impl Simulation {
     /// rows cancel each other, and a step that halves one row while doubling
     /// another is not progress.
     fn merit(&self, x: &[f64]) -> f64 {
-        let n = self.n;
         let mut total = 0.0;
-        for row in 0..n {
+        for row in 0..self.n {
             let mut sum = -self.rhs[row];
-            for (col, &value) in x
+            let start = self.merit_row_offsets[row];
+            let end = self.merit_row_offsets[row + 1];
+            for (&col, &slot) in self.merit_columns[start..end]
                 .iter()
-                .enumerate()
-                .take(self.reach_template[row] + 1)
+                .zip(&self.merit_slots[start..end])
             {
-                let a = self.work[row * n + col];
+                let a = self.work[slot];
                 if a != 0.0 {
-                    sum += a * value;
+                    sum += a * x[col];
                 }
             }
             total += sum * sum;
@@ -1498,8 +1678,15 @@ impl Simulation {
         // residual measured against it is not the residual of anything.
         // Carrying it forward to save the stamp cost the 73P forty-seven
         // thousand failed solves a second.
-        self.point.copy_from_slice(&self.voltage);
-        self.build(dc, !search);
+        let reduced_candidate = if dc {
+            self.nonlinear_partition_dc.is_some()
+        } else {
+            self.nonlinear_partition.is_some()
+        };
+        // Ordinary reduced Newton passes never mutate `work`, so avoid both the
+        // voltage->point copy and the dense base-matrix rebuild. Full-MNA paths
+        // still rebuild densely because LU overwrites the matrix in place.
+        self.build_current(dc, !search, reduced_candidate && !self.watching);
         // A search needs a residual it can believe at both ends. If a junction
         // had to be held here, this one cannot be believed and the pass takes
         // the plain full step instead.
@@ -1579,6 +1766,9 @@ impl Simulation {
                 self.replans += 1;
             }
             self.planned = sound;
+            // Full LU stores factors in `work`; sparse device-only restoration is
+            // unsafe until one later pass refreshes the dense base matrix.
+            self.work_base_mode = None;
             substitute(
                 &self.work,
                 &self.pivots,
@@ -1589,12 +1779,6 @@ impl Simulation {
                 &mut self.scratch,
             );
         }
-        if !self.guess.iter().all(|v| v.is_finite()) {
-            // A correction that is not a number cannot be shortened into one.
-            self.nonfinite += 1;
-            return Pass::Stuck;
-        }
-
         // How far the solution wants to move, measured against the scale it is
         // moving *at*.
         //
@@ -1622,10 +1806,20 @@ impl Simulation {
         // happened to be holding: damped to a sixty-fourth, the 73P reported
         // itself done after a single pass. See `R-013` in the regression log.
         let mut moved: f64 = 0.0;
-        for k in 0..n {
-            let step = (self.guess[k] - self.voltage[k]).abs();
-            let scale = TOLERANCE + RELATIVE * self.voltage[k].abs();
-            moved = moved.max(step / scale);
+        for ((&guess, &voltage), delta) in self
+            .guess
+            .iter()
+            .zip(&self.voltage)
+            .zip(self.scratch.iter_mut())
+        {
+            if !guess.is_finite() {
+                // A correction that is not a number cannot be shortened into one.
+                self.nonfinite += 1;
+                return Pass::Stuck;
+            }
+            *delta = guess - voltage;
+            let scale = TOLERANCE + RELATIVE * voltage.abs();
+            moved = moved.max(delta.abs() / scale);
         }
         // Kept so the caller can see whether this pass made progress, and turn
         // the line search on the moment one does not. See `CONVERGING`.
@@ -1662,22 +1856,47 @@ impl Simulation {
         let mut taken = false;
         let mut best_lambda = 1.0;
         let mut best_merit = f64::INFINITY;
+        // `point` is both the device linearisation point and the candidate
+        // voltage vector. Keeping one buffer removes the old trial->point copy
+        // from every backtracking attempt.
+        //
+        // The first exact trial after a full-MNA solve sees LU factors in
+        // `work`; restore only the structural coefficients that the merit can
+        // observe. A reduced solve never factorises `work`, so it can take the
+        // cheaper device-footprint restamp from the first trial. Every rejected
+        // trial after that also leaves an unfactorised trial stamp behind.
+        // Structure-watch mode deliberately retains the exhaustive full build.
+        let mut first_trial = true;
         for _ in 0..self.backtracks {
-            for k in 0..n {
-                self.trial[k] = self.voltage[k] + lambda * (self.guess[k] - self.voltage[k]);
+            let mut finite = true;
+            for ((point, &voltage), &delta) in self
+                .point
+                .iter_mut()
+                .zip(&self.voltage)
+                .zip(&self.scratch)
+            {
+                let value = voltage + lambda * delta;
+                *point = value;
+                finite &= value.is_finite();
             }
-            if self.trial.iter().all(|v| v.is_finite()) {
+            if finite {
                 // Re-linearise where the step lands and ask whether the
                 // circuit is any closer to satisfying itself there.
-                self.point.copy_from_slice(&self.trial);
-                self.build(dc, false);
+                if self.watching {
+                    self.build_point_full(dc);
+                } else if first_trial && !reduced {
+                    self.restamp_first_trial(dc);
+                } else {
+                    self.restamp_trial(dc);
+                }
+                first_trial = false;
                 if !self.exact {
                     // A junction was held where this step lands, so the
                     // residual there is somewhere else's. Stop searching and
                     // let the full step stand rather than decide on it.
                     break;
                 }
-                let there = self.merit(&self.trial);
+                let there = self.merit(&self.point);
                 if there.is_finite() && there < best_merit {
                     best_merit = there;
                     best_lambda = lambda;
@@ -1720,14 +1939,14 @@ impl Simulation {
             if dc || best_lambda == 1.0 {
                 self.voltage.copy_from_slice(&self.guess);
             } else {
-                for k in 0..n {
-                    self.voltage[k] += best_lambda * (self.guess[k] - self.voltage[k]);
+                for (voltage, &delta) in self.voltage.iter_mut().zip(&self.scratch) {
+                    *voltage += best_lambda * delta;
                 }
             }
             return Pass::Moved;
         }
 
-        self.voltage.copy_from_slice(&self.trial);
+        self.voltage.copy_from_slice(&self.point);
         Pass::Moved
     }
 
@@ -1809,10 +2028,6 @@ impl Simulation {
             // to equal the movement by accident of the extrapolation's
             // arithmetic and stops equalling it the moment the
             // extrapolation is skipped.
-            for k in 0..n {
-                self.recent_move[k] = (self.voltage[k] - self.earlier[k]).abs();
-            }
-
             // Start from where the last two samples were heading, not from
             // where the last one was. Audio is smooth over a sample, so a
             // straight line through the last two lands much closer to the
@@ -1832,14 +2047,35 @@ impl Simulation {
             // the sample after a failure the correct starting point is
             // `V[n-1]` directly -- the bounded guess the previous sample
             // already produced -- and letting Newton walk from there.
+            // `recent_move`, predictor bookkeeping and the predictor itself
+            // used to be three separate full-vector operations here. These
+            // vectors are touched for every nonlinear sample, so fuse them
+            // into one walk without changing any arithmetic or state order.
+            // On the predictable path each element still observes the old
+            // voltage/earlier pair before either is updated.
             if self.predictable && !self.last_was_unsettled {
-                for k in 0..n {
-                    let predicted = 2.0 * self.voltage[k] - self.earlier[k];
-                    self.earlier[k] = self.voltage[k];
-                    self.voltage[k] = predicted;
+                for ((voltage, earlier), recent) in self
+                    .voltage
+                    .iter_mut()
+                    .zip(self.earlier.iter_mut())
+                    .zip(self.recent_move.iter_mut())
+                {
+                    let last = *voltage;
+                    let previous = *earlier;
+                    *recent = (last - previous).abs();
+                    *earlier = last;
+                    *voltage = 2.0 * last - previous;
                 }
             } else {
-                self.earlier.copy_from_slice(&self.voltage);
+                for ((&voltage, earlier), recent) in self
+                    .voltage
+                    .iter()
+                    .zip(self.earlier.iter_mut())
+                    .zip(self.recent_move.iter_mut())
+                {
+                    *recent = (voltage - *earlier).abs();
+                    *earlier = voltage;
+                }
             }
             // Save the starting point for the record; the failure branch
             // below uses `recent_move` for its scale, not this.
@@ -2052,7 +2288,6 @@ impl Simulation {
         self.earlier.fill(0.0);
         self.recent_move.fill(0.0);
         self.point.fill(0.0);
-        self.trial.fill(0.0);
         self.guess.fill(0.0);
         self.last_was_unsettled = false;
         self.exact = true;

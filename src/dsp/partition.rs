@@ -222,11 +222,21 @@ pub struct ReducedNonlinear {
     condensed: Condensed,
     /// The static Schur term `A_bi * inv(A_ii) * A_ib`.
     coupling: Vec<f64>,
+    /// Full-MNA slots for the boundary-boundary block, in the same row-major
+    /// order as `coupling` and `reduced_matrix`. The boundary topology never
+    /// changes, so a Newton pass should not recompute `row_node * n + col_node`
+    /// for every coefficient it copies into the reduced system.
+    boundary_matrix_slots: Vec<usize>,
     /// Newton-pass boundary matrix. Rebuilt from the current `A_bb` minus the
     /// cached static coupling, then factorised in place.
     reduced_matrix: Vec<f64>,
     /// Reduced RHS and, after factorisation, the boundary solution.
     reduced_rhs: Vec<f64>,
+    /// Per-sample Schur RHS correction `A_bi * inv(A_ii) * b_i`. The internal
+    /// RHS cannot be touched by nonlinear devices, so recomputing this dot
+    /// product on every Newton pass is identical repeated work.
+    rhs_internal_correction: Vec<f64>,
+    rhs_prepared: bool,
     /// Persistent scratch for recovering internal unknowns.
     recover_scratch: Vec<f64>,
     /// Persistent Gauss-Jordan workspace used only when a rebuild refreshes the
@@ -242,6 +252,9 @@ impl ReducedNonlinear {
     pub(crate) fn copy_runtime_state_from(&mut self, source: &Self) {
         self.condensed.copy_runtime_state_from(&source.condensed);
         self.coupling.copy_from_slice(&source.coupling);
+        // This cache belongs to the current sample's RHS and is deliberately
+        // rebuilt by `prepare_rhs` before the destination solves audio.
+        self.rhs_prepared = false;
         self.valid = source.valid;
     }
 
@@ -269,11 +282,20 @@ impl ReducedNonlinear {
         let (_, _, condensed) = condense(matrix, rhs, &internal, boundary)?;
         let b = boundary.len();
         let i = internal.len();
+        let mut boundary_matrix_slots = Vec::with_capacity(b * b);
+        for &row_node in boundary {
+            for &column_node in boundary {
+                boundary_matrix_slots.push(row_node * n + column_node);
+            }
+        }
         let mut result = Self {
             condensed,
             coupling: vec![0.0; b * b],
+            boundary_matrix_slots,
             reduced_matrix: vec![0.0; b * b],
             reduced_rhs: vec![0.0; b],
+            rhs_internal_correction: vec![0.0; b],
+            rhs_prepared: false,
             recover_scratch: vec![0.0; i],
             refresh_work: vec![0.0; 2 * i * i],
             valid: true,
@@ -304,8 +326,10 @@ impl ReducedNonlinear {
             || self.condensed.internal_to_boundary.len() != i * b
             || self.condensed.full_rhs.len() != n
             || self.coupling.len() != b * b
+            || self.boundary_matrix_slots.len() != b * b
             || self.reduced_matrix.len() != b * b
             || self.reduced_rhs.len() != b
+            || self.rhs_internal_correction.len() != b
             || self.recover_scratch.len() != i
             || self.refresh_work.len() != 2 * i * i
         {
@@ -390,7 +414,32 @@ impl ReducedNonlinear {
 
         self.condensed.full_rhs.copy_from_slice(rhs);
         self.update_coupling();
+        self.rhs_prepared = false;
         self.valid = true;
+        true
+    }
+
+    /// Cache the part of the Schur RHS contributed by passive/internal nodes.
+    /// Nonlinear device equivalent-current sources are all on the boundary, so
+    /// these dot products are constant for every Newton pass in one sample.
+    pub fn prepare_rhs(&mut self, rhs: &[f64]) -> bool {
+        if !self.valid || rhs.len() != self.condensed.boundary.len() + self.condensed.internal.len() {
+            self.rhs_prepared = false;
+            return false;
+        }
+        let width = self.condensed.internal.len();
+        for (row, correction) in self.rhs_internal_correction.iter_mut().enumerate() {
+            let mut value = 0.0;
+            for (&coefficient, &internal) in self.condensed.boundary_internal
+                [row * width..(row + 1) * width]
+                .iter()
+                .zip(&self.condensed.internal)
+            {
+                value += coefficient * rhs[internal];
+            }
+            *correction = value;
+        }
+        self.rhs_prepared = true;
         true
     }
 
@@ -401,7 +450,7 @@ impl ReducedNonlinear {
     /// boundary from every nonlinear part terminal plus every MNA branch row,
     /// so the remaining blocks are purely linear and fixed between rebuilds.
     pub fn solve_into(&mut self, matrix: &[f64], rhs: &[f64], full: &mut [f64]) -> bool {
-        if !self.valid {
+        if !self.valid || !self.rhs_prepared {
             return false;
         }
         let n = rhs.len();
@@ -412,18 +461,23 @@ impl ReducedNonlinear {
 
         // Only A_bb changes with the Newton linearisation. The expensive Schur
         // contribution from the internal network is cached at rebuild time.
-        for (row, &row_node) in self.condensed.boundary.iter().enumerate() {
-            let full_row = &matrix[row_node * n..(row_node + 1) * n];
-            for ((value, &coupling), &column_node) in self.reduced_matrix[row * b..(row + 1) * b]
-                .iter_mut()
-                .zip(&self.coupling[row * b..(row + 1) * b])
-                .zip(&self.condensed.boundary)
-            {
-                *value = full_row[column_node] - coupling;
-            }
+        // Its full-MNA slots are topology-only, so walk the precomputed slot
+        // list instead of rebuilding row/column addresses every Newton pass.
+        for ((value, &coupling), &slot) in self
+            .reduced_matrix
+            .iter_mut()
+            .zip(&self.coupling)
+            .zip(&self.boundary_matrix_slots)
+        {
+            *value = matrix[slot] - coupling;
         }
-        if !self.condensed.reduce_rhs_into(rhs, &mut self.reduced_rhs) {
-            return false;
+        for ((value, &boundary), &correction) in self
+            .reduced_rhs
+            .iter_mut()
+            .zip(&self.condensed.boundary)
+            .zip(&self.rhs_internal_correction)
+        {
+            *value = rhs[boundary] - correction;
         }
         if !solve_dense_in_place(&mut self.reduced_matrix, &mut self.reduced_rhs, b) {
             return false;

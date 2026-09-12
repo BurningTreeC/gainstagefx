@@ -31,8 +31,12 @@ pub(super) fn configured_layout(circuit: Circuit, mono: bool) -> GainStageFx {
     p
 }
 
-fn probe_configuration(circuit: Circuit) -> GainStageFx {
-    let mut plugin = configured(circuit);
+pub(super) fn probe_configuration(circuit: Circuit) -> GainStageFx {
+    probe_configuration_layout(circuit, false)
+}
+
+pub(super) fn probe_configuration_layout(circuit: Circuit, mono: bool) -> GainStageFx {
+    let mut plugin = configured_layout(circuit, mono);
     if let Ok(name) = std::env::var("GAINSTAGEFX_ATTACK_PRESET") {
         apply_preset(&mut plugin, circuit, &name);
     }
@@ -101,7 +105,11 @@ fn attack_level_sweep() {
                 }
                 let health = plugin.channels[0].solver_health();
                 assert_eq!(health.nonfinite, 0);
-                assert_eq!(plugin.channels[1].solver_health().solves, 0);
+                assert_eq!(
+                    plugin.channels[1].solver_health().solves,
+                    0,
+                    "exact L=R attack sweep should stay on the dual-mono fast path"
+                );
                 failed += health.unsettled;
                 let mean = times.iter().sum::<f64>() / times.len() as f64;
                 let misses = times
@@ -155,7 +163,11 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
     let health = plugin.channels[0].solver_health();
     assert_eq!(health.unsettled, 0, "failed solves");
     assert_eq!(health.nonfinite, 0, "nonfinite corrections");
-    assert_eq!(plugin.channels[1].solver_health().solves, 0);
+    assert_eq!(
+        plugin.channels[1].solver_health().solves,
+        0,
+        "exact L=R pick attack should stay on the dual-mono fast path"
+    );
 }
 
 #[test]
@@ -268,7 +280,11 @@ fn attack_recording_probe() {
                 health.fallbacks,
                 health.nonfinite
             );
-            assert_eq!(plugin.channels[1].solver_health().solves, 0);
+            assert_eq!(
+                plugin.channels[1].solver_health().solves,
+                0,
+                "exact L=R recording probe should stay on the dual-mono fast path"
+            );
             let power = plugin.channels[0].test_power().unwrap();
             println!(
                 "power: statistics={:?}, health={:?}",

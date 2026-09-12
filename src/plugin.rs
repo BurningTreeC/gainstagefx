@@ -40,17 +40,22 @@ pub struct GainStageFx {
     meters: Arc<Meters>,
     /// One persistent nonlinear signal chain per host audio channel.
     ///
-    /// Every `Chain` owns its own capacitors, inductors, transformer state,
-    /// oversampler history, spring/tremolo state, dry-delay line, and Newton
-    /// predictor history. Once inputs differ, that state must remain
-    /// independent even during later silence or equal inputs. Until then the
-    /// right chain can sleep and receive the left history once on wake-up.
-    /// The catalogue is therefore built once per active channel in
-    /// `initialize`, where allocation is allowed, and never allocated from the
-    /// realtime callback.
+    /// Host channel count is only the transport container. A 2-channel host
+    /// buffer can still carry one duplicated mono signal (common for mono
+    /// sources on stereo DAW tracks). While both input channels are numerically
+    /// identical, only the left `Chain` is advanced and its output is mirrored
+    /// to the right. The instant the input channels differ, the right chain is
+    /// synchronized from the left history before that block is processed and
+    /// the instance becomes permanently stereo until reset/reinitialization.
+    ///
+    /// This keeps genuine stereo state independent while avoiding a second
+    /// nonlinear solve for a duplicated mono signal. The chains themselves are
+    /// still allocated only in `initialize`, never in the realtime callback.
     channels: Vec<Chain>,
-    /// Latched by the first bit-different stereo input block. Only a complete
-    /// reset/reinitialization permits duplicated-mono sharing again.
+    /// Latched by the first stereo block whose input channels differ. Once real
+    /// stereo has existed, equal/silent later blocks must not collapse dynamic
+    /// history (capacitors, transformer flux, spring state, predictor state)
+    /// back to mono.
     stereo_seen: bool,
     sample_rate: f64,
     oversampling: Oversampling,
@@ -62,9 +67,12 @@ pub struct GainStageFx {
     output_ramp: BlockRamp,
     mix_ramp: BlockRamp,
 }
-
-/// Inspect host input before any in-place output writes. Signed zero and even
-/// a one-bit stereo difference deliberately count as different input.
+/// Return true when a stereo host buffer carries one duplicated mono signal.
+///
+/// This is deliberately an exact numeric comparison, not a correlation or
+/// epsilon heuristic: if the samples actually differ then they contain stereo
+/// information and both nonlinear chains must run. `+0.0` and `-0.0` compare
+/// equal because they are the same audio value.
 fn block_is_duplicated_mono(buffer: &Buffer) -> bool {
     let channels = buffer.as_slice_immutable();
     channels.len() == 2
@@ -72,7 +80,7 @@ fn block_is_duplicated_mono(buffer: &Buffer) -> bool {
         && channels[0]
             .iter()
             .zip(channels[1].iter())
-            .all(|(left, right)| left.to_bits() == right.to_bits())
+            .all(|(left, right)| left == right)
 }
 
 /// A per-block linear ramp on a gain or a mix fraction.
@@ -445,10 +453,12 @@ impl Plugin for GainStageFx {
         self.budget.armed = Budget::WORKS && !matches!(buffer.process_mode, ProcessMode::Offline);
         self.oversampling = self.params.oversampling.value();
 
-        // Build every nonlinear chain here, never in `process`. Stereo needs
-        // independent state: left and right may have different transients,
-        // capacitor charge, transformer flux, spring state and solver history.
-        // The layouts declared above have equal input/output channel counts.
+        // Build one persistent nonlinear chain per negotiated host channel here,
+        // never in `process`. A 1->1 layout is trivially mono. A 2->2 host bus
+        // may carry either exact dual-mono or true stereo; `process` determines
+        // that from the samples. The second chain is allocated up front so it
+        // can wake immediately when stereo appears without allocating on the
+        // audio thread.
         let channel_count = layout
             .main_output_channels
             .map(NonZeroU32::get)
@@ -505,9 +515,13 @@ impl Plugin for GainStageFx {
         // handling in a catastrophically slow state for the circuit solver.
         crate::dsp::time::enable_ftz_daz();
 
-        // Wake before applying this block's controls: both chains still have
-        // the preceding block's configuration. A new voice/control on this
-        // block then takes the normal path on both synchronized histories.
+        // REAPER and other DAWs may present a mono source through a stereo bus.
+        // Decide from the signal itself, not from host channel count. While a
+        // 2-channel input is exact dual-mono, one chain is mathematically
+        // sufficient because both channels have the same controls and history.
+        // On the first differing block, clone the left runtime state into the
+        // dormant right chain *before* processing this block, then latch stereo
+        // so later equal/silent blocks cannot collapse already-divergent state.
         let duplicated_mono =
             if !self.stereo_seen && self.channels.len() == 2 && buffer.channels() == 2 {
                 if block_is_duplicated_mono(buffer) {
@@ -569,6 +583,12 @@ impl Plugin for GainStageFx {
             return ProcessStatus::Normal;
         }
 
+        debug_assert_eq!(
+            buffer.channels(),
+            self.channels.len(),
+            "host buffer channel count must match the negotiated I/O layout"
+        );
+
         // Keep the split borrow in its own scope. The sample loop below needs
         // mutable indexed access to `self.channels`, and ending this borrow
         // here makes that separation explicit to both the compiler and reader.
@@ -579,18 +599,17 @@ impl Plugin for GainStageFx {
                 .expect("channel list was checked above");
 
             first.apply(&settings);
-            // Keep selections and control values current on the dormant
-            // chain. `apply` does not process samples or hunt its DC point.
+            // Apply the same model selections and controls to every negotiated
+            // channel before processing this block.
             for chain in rest.iter_mut() {
                 chain.apply(&settings);
             }
 
-            // Identical stereo channels have the same zero-input DC solution
-            // after the same parameter change. Hunt it once, then copy the
-            // voltage vectors into the other channels. This avoids doing the
-            // expensive DC Newton solve twice while keeping all *dynamic*
-            // state independent. No allocation occurs here: every accessor
-            // returns a borrowed slice.
+            // Channels using the same circuit/settings have the same zero-input
+            // DC solution after a parameter change. Hunt it once, then copy only
+            // that static operating point to active additional channels. During
+            // exact dual-mono the dormant right chain needs no separate DC hunt;
+            // its complete runtime state is synchronized if/when stereo wakes.
             if first.needs_operating_point() {
                 let _ = first.find_operating_point();
                 let gain_op = first.operating_point();
@@ -630,11 +649,11 @@ impl Plugin for GainStageFx {
         let silence_linear = 10f64.powf(SILENCE_DBFS / 20.0);
         let mut peak = self.peak;
 
-        // Process host frames directly. There is no plugin-side FIFO: each
-        // input channel enters its own `Chain` and returns to the same output
-        // channel. The only delay is `Chain::LATENCY`, already reported to the
-        // host and also applied to `delayed_dry`, so parallel mix remains
-        // phase/time aligned.
+        // Process host frames directly. There is no plugin-side FIFO. True
+        // stereo channels enter independent chains; exact dual-mono enters one
+        // chain and mirrors that mathematically identical result. The only delay
+        // is `Chain::LATENCY`, already reported to the host and also applied to
+        // `delayed_dry`, so parallel mix remains phase/time aligned.
         for mut frame in buffer.iter_samples() {
             // Advance shared automation once per *frame*. Doing this inside
             // the channel loop would make a stereo stream traverse every ramp
@@ -644,13 +663,14 @@ impl Plugin for GainStageFx {
             let mix = self.mix_ramp.next() as f64;
             let mut frame_peak = 0.0f64;
             let mut duplicated_output = 0.0f32;
-
             for (index, sample) in frame.iter_mut().enumerate() {
                 if duplicated_mono && index == 1 {
                     if !bypassed {
                         *sample = duplicated_output;
                     }
-                    // Chain 1, including its dry delay, remains dormant.
+                    // The right chain remains dormant while the input is exact
+                    // dual-mono. Its complete runtime state is copied from the
+                    // left chain immediately if stereo appears later.
                     continue;
                 }
                 let Some(chain) = self.channels.get_mut(index) else {
@@ -674,7 +694,9 @@ impl Plugin for GainStageFx {
 
                 if !bypassed {
                     *sample = processed as f32;
-                    duplicated_output = *sample;
+                    if duplicated_mono && index == 0 {
+                        duplicated_output = *sample;
+                    }
                 }
 
                 frame_peak = frame_peak.max(input.abs());
@@ -726,7 +748,7 @@ nih_export_vst3!(GainStageFx);
 
 #[cfg(test)]
 #[path = "../tests/support/plugin_mono.rs"]
-mod duplicated_mono_tests;
+mod channel_layout_tests;
 
 #[cfg(test)]
 mod budget {

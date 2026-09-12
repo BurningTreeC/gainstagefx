@@ -912,6 +912,37 @@ impl SolverHealth {
             self.passes as f64 / self.solves as f64
         }
     }
+
+    pub fn saturating_delta(self, before: Self) -> Self {
+        Self {
+            solves: self.solves.saturating_sub(before.solves),
+            passes: self.passes.saturating_sub(before.passes),
+            unsettled: self.unsettled.saturating_sub(before.unsettled),
+            backtracks: self.backtracks.saturating_sub(before.backtracks),
+            fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
+            nonfinite: self.nonfinite.saturating_sub(before.nonfinite),
+            replans: self.replans.saturating_sub(before.replans),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SolverBreakdown {
+    pub gain: SolverHealth,
+    pub power: SolverHealth,
+    pub iron: SolverHealth,
+    pub reverb_return: SolverHealth,
+}
+
+impl SolverBreakdown {
+    pub fn saturating_delta(self, before: Self) -> Self {
+        Self {
+            gain: self.gain.saturating_delta(before.gain),
+            power: self.power.saturating_delta(before.power),
+            iron: self.iron.saturating_delta(before.iron),
+            reverb_return: self.reverb_return.saturating_delta(before.reverb_return),
+        }
+    }
 }
 
 /// Every panel setting that reaches the circuits, as plain values.
@@ -1152,8 +1183,22 @@ impl Chain {
             let powers = scope.spawn(|| {
                 (0..VOICES)
                     .map(|i| {
-                        build_power(voice_at(i).0)
-                            .map(|built| Simulation::new(built.expect("catalogue builds"), rate))
+                        let gain = voice_at(i).0;
+                        build_power(gain).map(|built| {
+                            let mut sim = Simulation::new(built.expect("catalogue builds"), rate);
+                            // The Twin power stage is the one measured circuit where six
+                            // line-search halvings become a numerical spiral: the 1/32 and
+                            // 1/64 trials barely move the solve, then the following Newton
+                            // pass searches again.  Four backtracks still reaches 1/16 and
+                            // was reference-checked at the same -190..-205 dB error floor,
+                            // while materially reducing realtime misses.  Do not apply this
+                            // to the 5150: its solver genuinely needs the shorter steps and
+                            // the same cap was measured at about -45.7 dB from reference.
+                            if gain == Gain::Twin {
+                                sim.set_backtracks(4);
+                            }
+                            sim
+                        })
                     })
                     .collect()
             });
@@ -1599,6 +1644,43 @@ impl Chain {
     /// Returns solves, passes, unsettled, backtracks, fallbacks, non-finite
     /// corrections and abandoned pivot orders, over the gain circuit, the
     /// power amplifier and the transformer together.
+    pub fn solver_breakdown(&self) -> SolverBreakdown {
+        fn health(sim: &Simulation) -> SolverHealth {
+            let (solves, passes, unsettled, _) = sim.statistics();
+            let (backtracks, fallbacks, nonfinite) = sim.health();
+            SolverHealth {
+                solves,
+                passes,
+                unsettled,
+                backtracks,
+                fallbacks,
+                nonfinite,
+                replans: sim.replans(),
+            }
+        }
+
+        let gain = health(&self.gains[self.gain]);
+        let power = self.powers[self.gain]
+            .as_ref()
+            .map(health)
+            .unwrap_or_default();
+        let iron = self.iron
+            .map(|index| health(&self.irons[index]))
+            .unwrap_or_default();
+        let reverb_return = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
+            health(&self.tail)
+        } else {
+            SolverHealth::default()
+        };
+
+        SolverBreakdown {
+            gain,
+            power,
+            iron,
+            reverb_return,
+        }
+    }
+
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
         let reverb = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
