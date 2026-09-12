@@ -1493,6 +1493,7 @@ impl Simulation {
     /// stays resident and only the nonlinear device footprint needs restoring.
     /// A full-MNA factorisation marks the cache dirty so the next pass performs
     /// one dense refresh before sparse restamps resume.
+    #[inline]
     fn build_current(&mut self, dc: bool, limiting: bool, sparse_ok: bool) {
         let base = if dc { &self.base_dc } else { &self.base };
         if sparse_ok && self.work_base_mode == Some(dc) {
@@ -1597,6 +1598,7 @@ impl Simulation {
     /// Rebuild only the coefficients and RHS entries a nonlinear device can
     /// change for a line-search trial. Physical state is untouched; device
     /// linearisation state is explicitly restored after rejected trials.
+    #[inline]
     fn restamp_trial(&mut self, dc: bool) {
         let base = if dc { &self.base_dc } else { &self.base };
         for &slot in &self.device_matrix_slots {
@@ -1630,22 +1632,43 @@ impl Simulation {
     /// Summing the squares rather than taking the largest matters: individual
     /// rows cancel each other, and a step that halves one row while doubling
     /// another is not progress.
-    fn merit(&self, x: &[f64]) -> f64 {
+    #[inline]
+    fn merit(&self, x: &[f64], reduced_boundary_only: bool) -> f64 {
         let mut total = 0.0;
-        for row in 0..self.n {
-            let mut sum = -self.rhs[row];
-            let start = self.merit_row_offsets[row];
-            let end = self.merit_row_offsets[row + 1];
-            for (&col, &slot) in self.merit_columns[start..end]
-                .iter()
-                .zip(&self.merit_slots[start..end])
-            {
-                let a = self.work[slot];
-                if a != 0.0 {
-                    sum += a * x[col];
+        // Once line search is active, the current point and the Newton target
+        // have both already been obtained from the *same sample's* linear
+        // internal equations. Those equations are affine and unchanged by the
+        // nonlinear devices, so every point on the search segment satisfies
+        // them exactly. Their residual is therefore identically zero. In the
+        // exact Schur-reduced path the merit can evaluate only the boundary
+        // rows without changing the value being compared. This removes the
+        // passive-network residual walk from every backtracking trial.
+        if reduced_boundary_only {
+            for &row in &self.nonlinear_boundary {
+                let mut sum = -self.rhs[row];
+                let start = self.merit_row_offsets[row];
+                let end = self.merit_row_offsets[row + 1];
+                for (&col, &slot) in self.merit_columns[start..end]
+                    .iter()
+                    .zip(&self.merit_slots[start..end])
+                {
+                    sum += self.work[slot] * x[col];
                 }
+                total += sum * sum;
             }
-            total += sum * sum;
+        } else {
+            for row in 0..self.n {
+                let mut sum = -self.rhs[row];
+                let start = self.merit_row_offsets[row];
+                let end = self.merit_row_offsets[row + 1];
+                for (&col, &slot) in self.merit_columns[start..end]
+                    .iter()
+                    .zip(&self.merit_slots[start..end])
+                {
+                    sum += self.work[slot] * x[col];
+                }
+                total += sum * sum;
+            }
         }
         total
     }
@@ -1691,8 +1714,9 @@ impl Simulation {
         // had to be held here, this one cannot be believed and the pass takes
         // the plain full step instead.
         let search = search && self.exact;
+        let reduced_merit = search && reduced_candidate && !self.watching;
         let here = if search {
-            self.merit(&self.voltage)
+            self.merit(&self.voltage, reduced_merit)
         } else {
             0.0
         };
@@ -1896,7 +1920,7 @@ impl Simulation {
                     // let the full step stand rather than decide on it.
                     break;
                 }
-                let there = self.merit(&self.point);
+                let there = self.merit(&self.point, reduced_merit);
                 if there.is_finite() && there < best_merit {
                     best_merit = there;
                     best_lambda = lambda;

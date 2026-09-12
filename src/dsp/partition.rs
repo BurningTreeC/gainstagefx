@@ -505,6 +505,7 @@ impl ReducedNonlinear {
 /// Dense partial-pivoting solve for the reduced boundary system. The matrix
 /// and RHS are persistent `ReducedNonlinear` storage, so this performs no heap
 /// work. A failure simply makes the caller use the original full MNA path.
+#[inline]
 fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
     if matrix.len() != n * n || rhs.len() < n {
         return false;
@@ -523,8 +524,15 @@ fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
             return false;
         }
         if pivot != column {
-            let (above, below) = matrix.split_at_mut(pivot * n);
-            above[column * n..(column + 1) * n].swap_with_slice(&mut below[..n]);
+            // Columns left of the current pivot are dead lower-triangular
+            // workspace: back substitution never reads them. Swap only the
+            // live upper part of the rows instead of moving `column` already-
+            // consumed coefficients on every pivot.
+            let a = column * n;
+            let b = pivot * n;
+            for offset in column..n {
+                matrix.swap(a + offset, b + offset);
+            }
             rhs.swap(column, pivot);
         }
 
@@ -545,7 +553,8 @@ fn solve_dense_in_place(matrix: &mut [f64], rhs: &mut [f64], n: usize) -> bool {
                 continue;
             }
             let factor = entry / diagonal;
-            row[column] = factor;
+            // The multiplier itself is never read again: this routine solves
+            // immediately and back substitution only reads the upper triangle.
             for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..]) {
                 *target -= factor * source;
             }

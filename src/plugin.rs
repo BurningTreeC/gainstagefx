@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::meters::Meters;
 use crate::params::{Amplifier, Diode, GainStageParams, Oversampling};
+use crate::stereo_worker::{StereoJob, StereoWorker};
 use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 
 /// Below this level the trimmed input is quantised to zero.
@@ -66,6 +67,21 @@ pub struct GainStageFx {
     input_ramp: BlockRamp,
     output_ramp: BlockRamp,
     mix_ramp: BlockRamp,
+    /// Persistent helper for the right chain once genuine stereo is present.
+    /// It sleeps while the plugin is mono/dual-mono and never owns audio
+    /// state; each job borrows the already-initialized right `Chain` for one
+    /// callback.
+    stereo_worker: Option<StereoWorker>,
+    /// Preallocated per-frame automation shared by both channels during a
+    /// parallel stereo callback. These avoid mutating a smoother from two
+    /// threads and preserve the exact one-step-per-frame ramp sequence.
+    stereo_input_trim: Vec<f32>,
+    stereo_output_trim: Vec<f32>,
+    stereo_mix: Vec<f32>,
+    /// The right input magnitude before its sample is overwritten by the
+    /// worker. This keeps the input meter's frame-by-frame decay identical to
+    /// the sequential path.
+    stereo_right_peak: Vec<f64>,
 }
 /// Return true when a stereo host buffer carries one duplicated mono signal.
 ///
@@ -270,6 +286,11 @@ impl Default for GainStageFx {
             input_ramp,
             output_ramp,
             mix_ramp,
+            stereo_worker: None,
+            stereo_input_trim: Vec::new(),
+            stereo_output_trim: Vec::new(),
+            stereo_mix: Vec::new(),
+            stereo_right_peak: Vec::new(),
         }
     }
 }
@@ -463,12 +484,22 @@ impl Plugin for GainStageFx {
             .main_output_channels
             .map(NonZeroU32::get)
             .unwrap_or(0) as usize;
+        // Stop an old worker before rebuilding the chains it may point into.
+        self.stereo_worker = None;
         self.channels.clear();
         self.channels.reserve(channel_count);
         for _ in 0..channel_count {
             let mut chain = Chain::new(self.sample_rate);
             chain.set_oversampling(self.oversampling.factor());
             self.channels.push(chain);
+        }
+        let max_block = buffer.max_buffer_size.max(1) as usize;
+        self.stereo_input_trim.resize(max_block, 0.0);
+        self.stereo_output_trim.resize(max_block, 0.0);
+        self.stereo_mix.resize(max_block, 0.0);
+        self.stereo_right_peak.resize(max_block, 0.0);
+        if channel_count == 2 {
+            self.stereo_worker = Some(StereoWorker::new());
         }
 
         // Ramps are re-seeded from whatever the host loaded into the
@@ -649,64 +680,148 @@ impl Plugin for GainStageFx {
         let silence_linear = 10f64.powf(SILENCE_DBFS / 20.0);
         let mut peak = self.peak;
 
-        // Process host frames directly. There is no plugin-side FIFO. True
-        // stereo channels enter independent chains; exact dual-mono enters one
-        // chain and mirrors that mathematically identical result. The only delay
-        // is `Chain::LATENCY`, already reported to the host and also applied to
-        // `delayed_dry`, so parallel mix remains phase/time aligned.
-        for mut frame in buffer.iter_samples() {
-            // Advance shared automation once per *frame*. Doing this inside
-            // the channel loop would make a stereo stream traverse every ramp
-            // twice as fast as mono.
-            let input_trim = self.input_ramp.next() as f64;
-            let output_trim = self.output_ramp.next() as f64;
-            let mix = self.mix_ramp.next() as f64;
-            let mut frame_peak = 0.0f64;
-            let mut duplicated_output = 0.0f32;
-            for (index, sample) in frame.iter_mut().enumerate() {
-                if duplicated_mono && index == 1 {
-                    if !bypassed {
-                        *sample = duplicated_output;
-                    }
-                    // The right chain remains dormant while the input is exact
-                    // dual-mono. Its complete runtime state is copied from the
-                    // left chain immediately if stereo appears later.
-                    continue;
-                }
-                let Some(chain) = self.channels.get_mut(index) else {
-                    continue;
-                };
+        // Process host frames directly. There is no plugin-side FIFO. Exact
+        // dual-mono remains one chain. Once the signal has actually diverged,
+        // the independent right chain can run on the persistent worker while
+        // the host audio thread runs the left chain.
+        let sample_count = buffer.samples();
+        let can_parallel_stereo = !duplicated_mono
+            && self.stereo_seen
+            && self.channels.len() == 2
+            && buffer.channels() == 2
+            && self.stereo_worker.is_some()
+            && sample_count <= self.stereo_input_trim.len();
 
-                // Keep the original host sample intact until the very end so
-                // bypass can remain a literal wire while the hidden circuit
-                // continues running and stays warm.
+        if can_parallel_stereo {
+            // Materialise the three shared ramps once. This is exactly the same
+            // next()/next()/next() order as the frame loop below, but it gives
+            // two independent threads immutable per-frame coefficients.
+            for i in 0..sample_count {
+                self.stereo_input_trim[i] = self.input_ramp.next();
+                self.stereo_output_trim[i] = self.output_ramp.next();
+                self.stereo_mix[i] = self.mix_ramp.next();
+            }
+
+            let worker = self
+                .stereo_worker
+                .as_ref()
+                .expect("parallel stereo requires its persistent worker");
+            let slices = buffer.as_slice();
+            let (left_slices, right_slices) = slices.split_at_mut(1);
+            let left_samples = &mut left_slices[0][..sample_count];
+            let right_samples = &mut right_slices[0][..sample_count];
+
+            // Preserve the meter's exact per-frame hotter-side input before the
+            // worker overwrites the right output in place.
+            for (i, &sample) in right_samples.iter().take(sample_count).enumerate() {
+                let trimmed = sample as f64 * self.stereo_input_trim[i] as f64;
+                self.stereo_right_peak[i] = if trimmed.abs() < silence_linear {
+                    0.0
+                } else {
+                    trimmed.abs()
+                };
+            }
+
+            let (left_chains, right_chains) = self.channels.split_at_mut(1);
+            let left_chain = &mut left_chains[0];
+            let right_chain = &mut right_chains[0];
+            let job = StereoJob {
+                chain: right_chain as *mut Chain,
+                samples: right_samples.as_mut_ptr(),
+                input_trim: self.stereo_input_trim.as_ptr(),
+                output_trim: self.stereo_output_trim.as_ptr(),
+                mix: self.stereo_mix.as_ptr(),
+                len: sample_count,
+                bypassed,
+                silence_linear,
+            };
+            // SAFETY: all pointers in the job refer to disjoint right-channel
+            // storage that remains alive until finish_or_steal() below.
+            unsafe { worker.submit(job) };
+
+            for (i, sample) in left_samples.iter_mut().take(sample_count).enumerate() {
                 let raw = *sample as f64;
-                let trimmed = raw * input_trim;
+                let trimmed = raw * self.stereo_input_trim[i] as f64;
                 let input = if trimmed.abs() < silence_linear {
                     0.0
                 } else {
                     trimmed
                 };
-
-                let dry = chain.delayed_dry(input);
-                let wet = chain.process(input);
-                let processed = (dry * (1.0 - mix) + wet * mix) * output_trim;
-
+                let dry = left_chain.delayed_dry(input);
+                let wet = left_chain.process(input);
                 if !bypassed {
-                    *sample = processed as f32;
-                    if duplicated_mono && index == 0 {
-                        duplicated_output = *sample;
-                    }
+                    *sample = ((dry * (1.0 - self.stereo_mix[i] as f64)
+                        + wet * self.stereo_mix[i] as f64)
+                        * self.stereo_output_trim[i] as f64)
+                        as f32;
                 }
 
-                frame_peak = frame_peak.max(input.abs());
+                let frame_peak = input.abs().max(self.stereo_right_peak[i]);
+                peak = if frame_peak > peak {
+                    frame_peak
+                } else {
+                    peak * decay
+                };
             }
+            // If the worker was not scheduled promptly the audio thread steals
+            // an unstarted right job. If it did start, this waits only for that
+            // independent chain to finish before the host regains the buffer.
+            worker.finish_or_steal();
+        } else {
+            for mut frame in buffer.iter_samples() {
+                // Advance shared automation once per *frame*. Doing this inside
+                // the channel loop would make a stereo stream traverse every
+                // ramp twice as fast as mono.
+                let input_trim = self.input_ramp.next() as f64;
+                let output_trim = self.output_ramp.next() as f64;
+                let mix = self.mix_ramp.next() as f64;
+                let mut frame_peak = 0.0f64;
+                let mut duplicated_output = 0.0f32;
+                for (index, sample) in frame.iter_mut().enumerate() {
+                    if duplicated_mono && index == 1 {
+                        if !bypassed {
+                            *sample = duplicated_output;
+                        }
+                        // The right chain remains dormant while the input is exact
+                        // dual-mono. Its complete runtime state is copied from the
+                        // left chain immediately if stereo appears later.
+                        continue;
+                    }
+                    let Some(chain) = self.channels.get_mut(index) else {
+                        continue;
+                    };
 
-            peak = if frame_peak > peak {
-                frame_peak
-            } else {
-                peak * decay
-            };
+                    // Keep the original host sample intact until the very end so
+                    // bypass can remain a literal wire while the hidden circuit
+                    // continues running and stays warm.
+                    let raw = *sample as f64;
+                    let trimmed = raw * input_trim;
+                    let input = if trimmed.abs() < silence_linear {
+                        0.0
+                    } else {
+                        trimmed
+                    };
+
+                    let dry = chain.delayed_dry(input);
+                    let wet = chain.process(input);
+                    let processed = (dry * (1.0 - mix) + wet * mix) * output_trim;
+
+                    if !bypassed {
+                        *sample = processed as f32;
+                        if duplicated_mono && index == 0 {
+                            duplicated_output = *sample;
+                        }
+                    }
+
+                    frame_peak = frame_peak.max(input.abs());
+                }
+
+                peak = if frame_peak > peak {
+                    frame_peak
+                } else {
+                    peak * decay
+                };
+            }
         }
 
         self.input_ramp.settle(input_trim_target);
