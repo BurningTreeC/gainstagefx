@@ -473,7 +473,7 @@ fn realtime_recording() {
         std::env::var("GAINSTAGEFX_ATTACK_PRESET").unwrap_or_else(|_| "<standard-test-config>".into())
     );
     println!(
-        "voice,mode,blocks,mean_us,p99_us,max_us,compute_misses,cpu_mean_us,cpu_p99_us,cpu_max_us,cpu_compute_misses,preempt_mean_us,preempt_p99_us,preempt_max_us,deadline_misses,late_starts,max_start_late_us,max_finish_late_us,max_meter_db,right_solves,first_compute_miss,first_cpu_compute_miss,first_deadline_miss,gain_passes_per_solve,gain_unsettled,gain_backtracks,power_passes_per_solve,power_unsettled,power_backtracks,iron_passes_per_solve,reverb_passes_per_solve"
+        "voice,mode,blocks,mean_us,p99_us,max_us,compute_misses,cpu_mean_us,cpu_p99_us,cpu_max_us,cpu_compute_misses,preempt_mean_us,preempt_p99_us,preempt_max_us,deadline_misses,late_starts,max_start_late_us,max_finish_late_us,max_meter_db,right_solves,first_compute_miss,first_cpu_compute_miss,first_deadline_miss,gain_passes_per_solve,gain_unsettled,gain_backtracks,power_passes_per_solve,power_unsettled,power_backtracks,iron_passes_per_solve,reverb_passes_per_solve,gain_predictor_suppressions,gain_continuation_attempts,gain_continuation_midpoint_successes,gain_continuation_successes,power_predictor_suppressions,power_continuation_attempts,power_continuation_midpoint_successes,power_continuation_successes"
     );
 
     let mut failures = Vec::<String>::new();
@@ -535,6 +535,23 @@ fn realtime_recording() {
         );
         print_realtime_pass(circuit, "live_paced_stereo_left_only", &stereo_left_only);
 
+        let mut stereo_both_driven_output = vec![0.0f32; frames];
+        let stereo_both_driven = run_realtime_pass(
+            circuit,
+            warmup,
+            input,
+            input_trim_db,
+            rate,
+            true,
+            ProbeLayout::StereoBothDriven,
+            &mut stereo_both_driven_output,
+        );
+        print_realtime_pass(
+            circuit,
+            "live_paced_stereo_both_driven",
+            &stereo_both_driven,
+        );
+
         if playback_output != live_mono_output {
             failures.push(format!(
                 "{}: pacing changed mono-layout audio output",
@@ -584,6 +601,7 @@ fn realtime_recording() {
         for (mode, result) in [
             ("live_paced_auto_dual_mono", &stereo_duplicated),
             ("live_paced_stereo_left_only", &stereo_left_only),
+            ("live_paced_stereo_both_driven", &stereo_both_driven),
         ] {
             if result.max_meter_db < TARGET_METER_DB - 0.25 {
                 failures.push(format!(
@@ -595,6 +613,12 @@ fn realtime_recording() {
         if stereo_left_only.right_solves == 0 {
             failures.push(format!(
                 "{}: live_paced_stereo_left_only did not process the right stereo chain",
+                circuit.name()
+            ));
+        }
+        if stereo_both_driven.right_solves == 0 {
+            failures.push(format!(
+                "{}: live_paced_stereo_both_driven did not process the right stereo chain",
                 circuit.name()
             ));
         }
@@ -613,6 +637,7 @@ enum ProbeLayout {
     Mono,
     AutoDualMono,
     StereoLeftOnly,
+    StereoBothDriven,
 }
 
 impl ProbeLayout {
@@ -699,6 +724,14 @@ fn run_realtime_pass(
                     Some(&mut right[..chunk.len()]),
                 );
             }
+            ProbeLayout::StereoBothDriven => {
+                let mut right = left.map(|sample| -sample);
+                process(
+                    &mut plugin,
+                    &mut left[..chunk.len()],
+                    Some(&mut right[..chunk.len()]),
+                );
+            }
         }
     }
 
@@ -754,6 +787,14 @@ fn run_realtime_pass(
             }
             ProbeLayout::StereoLeftOnly => {
                 let mut right = [0.0; BLOCK];
+                process_profiled(
+                    &mut plugin,
+                    &mut left[..chunk.len()],
+                    Some(&mut right[..chunk.len()]),
+                )
+            }
+            ProbeLayout::StereoBothDriven => {
+                let mut right = left.map(|sample| -sample);
                 process_profiled(
                     &mut plugin,
                     &mut left[..chunk.len()],
@@ -849,7 +890,7 @@ fn run_realtime_pass(
 
 fn print_realtime_pass(circuit: Circuit, mode: &str, result: &RealtimePass) {
     println!(
-        "{},{mode},{},{:.2},{:.2},{:.2},{},{:.2},{:.2},{:.2},{},{:.2},{:.2},{:.2},{},{},{:.2},{:.2},{:.2},{},{:?},{:?},{:?},{:.3},{},{},{:.3},{},{},{:.3},{:.3}",
+        "{},{mode},{},{:.2},{:.2},{:.2},{},{:.2},{:.2},{:.2},{},{:.2},{:.2},{:.2},{},{},{:.2},{:.2},{:.2},{},{:?},{:?},{:?},{:.3},{},{},{:.3},{},{},{:.3},{:.3},{},{},{},{},{},{},{},{}",
         circuit.name(),
         result.blocks,
         result.mean_us,
@@ -880,6 +921,14 @@ fn print_realtime_pass(circuit: Circuit, mode: &str, result: &RealtimePass) {
         result.solver.power.backtracks,
         result.solver.iron.passes_per_solve(),
         result.solver.reverb_return.passes_per_solve(),
+        result.solver.gain.attack_predictor_suppressions,
+        result.solver.gain.continuation_attempts,
+        result.solver.gain.continuation_midpoint_successes,
+        result.solver.gain.continuation_successes,
+        result.solver.power.attack_predictor_suppressions,
+        result.solver.power.continuation_attempts,
+        result.solver.power.continuation_midpoint_successes,
+        result.solver.power.continuation_successes,
     );
 }
 

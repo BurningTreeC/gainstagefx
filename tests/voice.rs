@@ -752,6 +752,10 @@ fn diagnose_the_pick_attack() {
         println!(
             "  gain health:  backtracks={backtracks} fallbacks={fallbacks} nonfinite={nonfinite}"
         );
+        let (suppressed, attempts, midpoint_successes, successes) = sim.continuation_health();
+        println!(
+            "  gain attack:  predictor_suppressions={suppressed} continuations={attempts} midpoint_successes={midpoint_successes} final_successes={successes}"
+        );
         if let Some(p) = power_sim.as_ref() {
             let s = p.statistics();
             println!(
@@ -760,6 +764,10 @@ fn diagnose_the_pick_attack() {
             );
             let (b, f, n) = p.health();
             println!("  power health: backtracks={b} fallbacks={f} nonfinite={n}");
+            let (suppressed, attempts, midpoint_successes, successes) = p.continuation_health();
+            println!(
+                "  power attack: predictor_suppressions={suppressed} continuations={attempts} midpoint_successes={midpoint_successes} final_successes={successes}"
+            );
         }
     }
 }

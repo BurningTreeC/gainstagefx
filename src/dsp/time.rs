@@ -32,6 +32,18 @@ enum Pass {
     Stuck,
 }
 
+/// Outcome of one transient Newton solve. `EarlyStall` is intentionally
+/// separate from `Failed`: on a detected input attack it means the first two
+/// ordinary passes stopped shrinking the correction, so source continuation
+/// may restart the *same physical timestep* from a gentler source value before
+/// any reactive/device state is advanced.
+#[derive(Clone, Copy)]
+enum TransientSolve {
+    Settled,
+    EarlyStall,
+    Failed,
+}
+
 /// Called once at startup. Without this, denormal f64 values cause 10-100x
 /// slower arithmetic on x86/x64, producing crackling when signals get small.
 pub fn enable_ftz_daz() {
@@ -139,6 +151,20 @@ const FULL_STEPS: usize = 8;
 /// stage's samples landed on exactly nine passes, which is not a convergence
 /// distribution, it is a wall.
 const CONVERGING: f64 = 0.5;
+
+/// An attack must be substantially steeper than the preceding input
+/// derivative before the extrapolating predictor is suppressed. The second
+/// test below also requires the jump to be meaningful relative to the signal
+/// itself, which keeps smooth sine-wave extrema from looking like attacks just
+/// because the immediately preceding derivative happened to be tiny.
+const ATTACK_DERIVATIVE_MULTIPLE: f64 = 8.0;
+const ATTACK_ABSOLUTE_FLOOR: f64 = 1e-4;
+const ATTACK_SIGNAL_FRACTION: f64 = 0.05;
+
+/// The midpoint solve is only a numerical stepping stone. Eight passes gives
+/// it the same plain-Newton runway as the production solve before line-search
+/// work becomes dominant, while keeping a pathological midpoint bounded.
+const CONTINUATION_MIDPOINT_PASSES: usize = FULL_STEPS;
 
 /// How much bigger than the replayed pivot an entry below it may be before the
 /// order is considered out of date.
@@ -388,6 +414,12 @@ pub struct Simulation {
     /// produced -- and letting Newton walk from there, rather than from a
     /// number that has been exaggerated by the extrapolation.
     last_was_unsettled: bool,
+    /// Input history used only to recognise a genuine fast attack. These are
+    /// signal-history values, not circuit state: continuation may solve an
+    /// intermediate source value, but these fields advance exactly once per
+    /// real audio sample and therefore always describe the actual input.
+    last_input: f64,
+    last_input_delta: f64,
     /// The answer before that, so the next sample can be started from where
     /// the last two were heading rather than from where the last one was.
     earlier: Vec<f64>,
@@ -418,6 +450,15 @@ pub struct Simulation {
     fallbacks: u64,
     /// Newton corrections that came back non-finite.
     nonfinite: u64,
+    /// Fast-attack telemetry. Predictor suppressions count derivative jumps
+    /// that were large enough to start from V[n-1] instead of extrapolating.
+    /// Continuation attempts count samples whose first two normal Newton passes
+    /// then stalled; midpoint/final successes show whether the homotopy path
+    /// actually recovered them.
+    attack_predictor_suppressions: u64,
+    continuation_attempts: u64,
+    continuation_midpoint_successes: u64,
+    continuation_successes: u64,
     /// How far the last pass wanted to move, in convergence-test units. The
     /// solve loop watches it shrink; see `CONVERGING`.
     moved: f64,
@@ -496,6 +537,8 @@ impl Simulation {
         self.earlier.copy_from_slice(&source.earlier);
         self.recent_move.copy_from_slice(&source.recent_move);
         self.last_was_unsettled = source.last_was_unsettled;
+        self.last_input = source.last_input;
+        self.last_input_delta = source.last_input_delta;
         self.exact = source.exact;
         self.predictable = source.predictable;
         self.moved = source.moved;
@@ -649,6 +692,8 @@ impl Simulation {
             predicted: vec![0.0; n],
             recent_move: vec![0.0; n],
             last_was_unsettled: false,
+            last_input: 0.0,
+            last_input_delta: 0.0,
             earlier: vec![0.0; n],
             exact: true,
             predictable: false,
@@ -662,6 +707,10 @@ impl Simulation {
             backtrack_count: 0,
             fallbacks: 0,
             nonfinite: 0,
+            attack_predictor_suppressions: 0,
+            continuation_attempts: 0,
+            continuation_midpoint_successes: 0,
+            continuation_successes: 0,
             moved: f64::INFINITY,
             backtracks: MAX_BACKTRACKS,
             partition_zero_rhs: vec![0.0; n],
@@ -708,6 +757,18 @@ impl Simulation {
     /// tuple half the harnesses already destructure.
     pub fn health(&self) -> (u64, u64, u64) {
         (self.backtrack_count, self.fallbacks, self.nonfinite)
+    }
+
+    /// Fast-transient numerical telemetry: predictor suppressions,
+    /// continuation attempts, midpoint solves that converged, and attempts
+    /// whose final exact target solve converged.
+    pub fn continuation_health(&self) -> (u64, u64, u64, u64) {
+        (
+            self.attack_predictor_suppressions,
+            self.continuation_attempts,
+            self.continuation_midpoint_successes,
+            self.continuation_successes,
+        )
     }
 
     /// How often a replayed pivot order had to be thrown away and searched
@@ -826,6 +887,8 @@ impl Simulation {
         self.predicted.copy_from_slice(&self.voltage);
         self.earlier.copy_from_slice(&self.voltage);
         self.last_was_unsettled = false;
+        self.last_input = 0.0;
+        self.last_input_delta = 0.0;
         self.dirty = false;
     }
 
@@ -1374,6 +1437,8 @@ impl Simulation {
             self.rebuild();
         }
         if self.devices.is_empty() {
+            self.last_input = 0.0;
+            self.last_input_delta = 0.0;
             return true;
         }
         let mut settled = false;
@@ -1439,6 +1504,8 @@ impl Simulation {
         self.predicted.copy_from_slice(&self.voltage);
         self.earlier.copy_from_slice(&self.voltage);
         self.last_was_unsettled = false;
+        self.last_input = 0.0;
+        self.last_input_delta = 0.0;
         self.at_rest = true;
         settled
     }
@@ -1974,6 +2041,36 @@ impl Simulation {
         Pass::Moved
     }
 
+    /// Solve one transient source value without advancing any physical state.
+    ///
+    /// `stop_on_early_stall` is used only for a detected fast input attack.
+    /// The first two passes remain ordinary Newton, exactly like the normal
+    /// path. Before taking a third pass, if the second correction failed to
+    /// shrink by `CONVERGING`, return `EarlyStall` so the caller can restart
+    /// this same timestep through a midpoint source continuation instead of
+    /// paying for a long oscillating line-search tail.
+    fn solve_transient(&mut self, ceiling: usize, stop_on_early_stall: bool) -> TransientSolve {
+        self.moved = f64::INFINITY;
+        self.search_merit = 0.0;
+        let mut before = f64::INFINITY;
+
+        for pass in 0..ceiling {
+            let stalled = self.moved > before * CONVERGING;
+            if stop_on_early_stall && pass >= 2 && stalled {
+                return TransientSolve::EarlyStall;
+            }
+            before = self.moved;
+            self.newton_passes += 1;
+            match self.iterate(false, stalled || pass >= FULL_STEPS) {
+                Pass::Settled => return TransientSolve::Settled,
+                Pass::Moved => {}
+                Pass::Stuck => return TransientSolve::Failed,
+            }
+        }
+
+        TransientSolve::Failed
+    }
+
     /// One sample in, one out.
     pub fn process(&mut self, input: f64) -> f64 {
         self.solves += 1;
@@ -2041,6 +2138,15 @@ impl Simulation {
                 self.voltage.copy_from_slice(&self.rhs);
             }
         } else {
+            let input_delta = input - self.last_input;
+            let derivative_floor = ATTACK_ABSOLUTE_FLOOR.max(
+                ATTACK_SIGNAL_FRACTION * input.abs().max(self.last_input.abs()),
+            );
+            let attack_jump = input_delta.abs() > derivative_floor
+                && input_delta.abs()
+                    > self.last_input_delta.abs() * ATTACK_DERIVATIVE_MULTIPLE
+                        + ATTACK_ABSOLUTE_FLOOR;
+
             self.prepare_rhs(input, false);
             // Take the recent movement before the predictor runs.
             //
@@ -2077,7 +2183,12 @@ impl Simulation {
             // into one walk without changing any arithmetic or state order.
             // On the predictable path each element still observes the old
             // voltage/earlier pair before either is updated.
-            if self.predictable && !self.last_was_unsettled {
+            let predictor_available = self.predictable && !self.last_was_unsettled;
+            let use_predictor = predictor_available && !attack_jump;
+            if predictor_available && attack_jump {
+                self.attack_predictor_suppressions += 1;
+            }
+            if use_predictor {
                 for ((voltage, earlier), recent) in self
                     .voltage
                     .iter_mut()
@@ -2105,36 +2216,44 @@ impl Simulation {
             // below uses `recent_move` for its scale, not this.
             self.predicted.copy_from_slice(&self.voltage);
 
-            let mut settled = false;
             let ceiling = self.ceiling.clamp(PASS_FLOOR, MAX_ITERATIONS);
-            // No history at the start of a sample: the first two passes are
-            // plain whatever the last sample did.
-            self.moved = f64::INFINITY;
-            self.search_merit = 0.0;
-            let mut before = f64::INFINITY;
-            for pass in 0..ceiling {
-                self.newton_passes += 1;
-                // Plain Newton while it is converging, and the line search the
-                // moment it is not.
-                //
-                // "Is not" is measured rather than counted: a pass that failed
-                // to shrink the correction by `CONVERGING` was not approaching
-                // the answer, and no number of further plain passes will
-                // change that -- they will oscillate at the same price and
-                // arrive at `FULL_STEPS` having learnt nothing. `FULL_STEPS`
-                // stays as the backstop for a solve that shrinks a little
-                // every pass and still gets nowhere.
-                let stalled = self.moved > before * CONVERGING;
-                before = self.moved;
-                match self.iterate(false, stalled || pass >= FULL_STEPS) {
-                    Pass::Settled => {
-                        settled = true;
-                        break;
-                    }
-                    Pass::Moved => {}
-                    // Nothing helped, and running the same pass again would
-                    // only find that out again at the same price.
-                    Pass::Stuck => break,
+            let initial_solve =
+                self.solve_transient(ceiling, attack_jump && !self.last_was_unsettled);
+            let mut settled = matches!(initial_solve, TransientSolve::Settled);
+
+            // A genuine fast attack that stops converging after the first two
+            // ordinary Newton passes gets one source-continuation retry. This
+            // is homotopy inside the *same* physical sample: reactive histories
+            // and stateful devices are not advanced at the midpoint. We first
+            // restore the last trusted sample, solve halfway from the previous
+            // real input to this one, then solve the exact current input from
+            // that numerical seed. The state advance below still happens once.
+            if matches!(initial_solve, TransientSolve::EarlyStall) {
+                self.continuation_attempts += 1;
+                self.voltage.copy_from_slice(&self.earlier);
+
+                let midpoint = self.last_input + 0.5 * input_delta;
+                self.prepare_rhs(midpoint, false);
+                let midpoint_settled = matches!(
+                    self.solve_transient(CONTINUATION_MIDPOINT_PASSES, false),
+                    TransientSolve::Settled
+                );
+                if midpoint_settled {
+                    self.continuation_midpoint_successes += 1;
+                } else {
+                    // A non-converged midpoint is not a trustworthy seed. Go
+                    // back to the last real converged sample before solving
+                    // the exact source value.
+                    self.voltage.copy_from_slice(&self.earlier);
+                }
+
+                self.prepare_rhs(input, false);
+                settled = matches!(
+                    self.solve_transient(ceiling, false),
+                    TransientSolve::Settled
+                );
+                if settled {
+                    self.continuation_successes += 1;
                 }
             }
             if !settled {
@@ -2271,6 +2390,12 @@ impl Simulation {
             }
         }
 
+        // Input history follows the real audio stream, not any numerical
+        // continuation source values used above. Advance it exactly once per
+        // physical sample so the next derivative comparison is meaningful.
+        self.last_input_delta = input - self.last_input;
+        self.last_input = input;
+
         self.voltage[self.circuit.output]
     }
 
@@ -2314,6 +2439,8 @@ impl Simulation {
         self.point.fill(0.0);
         self.guess.fill(0.0);
         self.last_was_unsettled = false;
+        self.last_input = 0.0;
+        self.last_input_delta = 0.0;
         self.exact = true;
         self.moved = f64::INFINITY;
 

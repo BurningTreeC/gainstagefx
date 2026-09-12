@@ -902,6 +902,10 @@ pub struct SolverHealth {
     pub fallbacks: u64,
     pub nonfinite: u64,
     pub replans: u64,
+    pub attack_predictor_suppressions: u64,
+    pub continuation_attempts: u64,
+    pub continuation_midpoint_successes: u64,
+    pub continuation_successes: u64,
 }
 
 impl SolverHealth {
@@ -922,6 +926,18 @@ impl SolverHealth {
             fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
             nonfinite: self.nonfinite.saturating_sub(before.nonfinite),
             replans: self.replans.saturating_sub(before.replans),
+            attack_predictor_suppressions: self
+                .attack_predictor_suppressions
+                .saturating_sub(before.attack_predictor_suppressions),
+            continuation_attempts: self
+                .continuation_attempts
+                .saturating_sub(before.continuation_attempts),
+            continuation_midpoint_successes: self
+                .continuation_midpoint_successes
+                .saturating_sub(before.continuation_midpoint_successes),
+            continuation_successes: self
+                .continuation_successes
+                .saturating_sub(before.continuation_successes),
         }
     }
 }
@@ -1648,6 +1664,12 @@ impl Chain {
         fn health(sim: &Simulation) -> SolverHealth {
             let (solves, passes, unsettled, _) = sim.statistics();
             let (backtracks, fallbacks, nonfinite) = sim.health();
+            let (
+                attack_predictor_suppressions,
+                continuation_attempts,
+                continuation_midpoint_successes,
+                continuation_successes,
+            ) = sim.continuation_health();
             SolverHealth {
                 solves,
                 passes,
@@ -1656,6 +1678,10 @@ impl Chain {
                 fallbacks,
                 nonfinite,
                 replans: sim.replans(),
+                attack_predictor_suppressions,
+                continuation_attempts,
+                continuation_midpoint_successes,
+                continuation_successes,
             }
         }
 
@@ -1702,6 +1728,12 @@ impl Chain {
             h.fallbacks += fallbacks;
             h.nonfinite += nonfinite;
             h.replans += sim.replans();
+            let (suppressed, attempts, midpoint_successes, successes) =
+                sim.continuation_health();
+            h.attack_predictor_suppressions += suppressed;
+            h.continuation_attempts += attempts;
+            h.continuation_midpoint_successes += midpoint_successes;
+            h.continuation_successes += successes;
         }
         h
     }
