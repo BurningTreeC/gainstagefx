@@ -311,16 +311,15 @@ impl View for Knob {
     /// gesture opened with the host is never closed either, so it also thinks
     /// an edit is still in progress.
     ///
-    /// A button-up can genuinely go missing. On Windows the pointer is held
-    /// with `SetCapture`, and a `WM_CAPTURECHANGED` -- another window taking
-    /// capture, the host putting up a dialog, the plugin window being
-    /// deactivated mid-drag -- sends the button-up somewhere else entirely.
+    /// A button-up can genuinely go missing. The vendored Windows backend
+    /// now translates native capture loss into button releases and checks
+    /// physical button state on its existing UI frame timer. That repairs both
+    /// the native button tracking and vizia's cached state before another drag.
     ///
     /// So the drag is also ended by anything that says the mouse is no longer
-    /// down, and the check that does not depend on an event arriving at all is
-    /// in `MouseMove`: if the button is up while this knob thinks it is
-    /// dragging, the drag is over whether or not anyone said so. That one
-    /// heals the window the moment the pointer moves over it again.
+    /// down. The `MouseMove` check is an additional fallback, but cannot by
+    /// itself repair a missing native release: vizia's cached state would still
+    /// say Pressed. Native recovery belongs in the backend, not this widget.
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|param_event, _| {
             if let RawParamEvent::ParametersChanged = param_event {
@@ -334,6 +333,7 @@ impl View for Knob {
             WindowEvent::MouseDown(MouseButton::Left)
             | WindowEvent::MouseTripleClick(MouseButton::Left) => {
                 if cx.modifiers().command() {
+                    self.finish(cx);
                     self.param.begin_set_parameter(cx);
                     self.param
                         .set_normalized_value(cx, self.param.default_normalized_value());
@@ -344,17 +344,8 @@ impl View for Knob {
                     // heard about, and the widget has been sitting on the
                     // capture ever since.
                     //
-                    // This is the recovery that works when the others cannot.
-                    // The check in `MouseMove` reads vizia's cached button
-                    // state, and that state is exactly what goes stale: it is
-                    // only ever written from a real button event, so if the
-                    // up never arrived it still says `Pressed` and the heal
-                    // never fires. Baseview takes the pointer with
-                    // `SetCapture` on the way down and gives it back on the
-                    // way up, and handles no `WM_CAPTURECHANGED` in between --
-                    // so when the host puts up a dialog, or another window
-                    // takes the pointer mid-drag, there is no up, no capture
-                    // notification, and nothing to notice it with.
+                    // Keep this fallback even with native capture recovery:
+                    // a fresh down must not nest a second host edit gesture.
                     //
                     // A fresh press is proof on its own: the button cannot go
                     // down without having been up. So the stale drag is closed
@@ -375,6 +366,7 @@ impl View for Knob {
             }
             WindowEvent::MouseDoubleClick(MouseButton::Left)
             | WindowEvent::MouseDown(MouseButton::Right) => {
+                self.finish(cx);
                 self.param.begin_set_parameter(cx);
                 self.param
                     .set_normalized_value(cx, self.param.default_normalized_value());

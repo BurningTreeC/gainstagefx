@@ -65,6 +65,15 @@ pub struct Tremolo {
 }
 
 impl Tremolo {
+    /// Copy oscillator phase, bulb hysteresis and the cell's illumination.
+    /// The two oscillators must already have the same sample rate.
+    pub fn copy_runtime_state_from(&mut self, source: &Self) {
+        debug_assert_eq!(self.rate, source.rate);
+        self.phase = source.phase;
+        self.lit = source.lit;
+        self.struck = source.struck;
+    }
+
     pub fn new(rate: f64) -> Self {
         Self {
             rate,

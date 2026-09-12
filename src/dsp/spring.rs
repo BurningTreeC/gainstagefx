@@ -171,6 +171,28 @@ pub struct Tank {
 }
 
 impl Tank {
+    /// Copy a same-rate tank's complete tail into existing delay storage.
+    pub fn copy_runtime_state_from(&mut self, source: &Self) {
+        debug_assert_eq!(self.scale, source.scale);
+        debug_assert_eq!(self.springs.len(), source.springs.len());
+        for (dst, src) in self.springs.iter_mut().zip(&source.springs) {
+            debug_assert_eq!(dst.feedback, src.feedback);
+            debug_assert_eq!(dst.low, src.low);
+            debug_assert_eq!(dst.high, src.high);
+            debug_assert_eq!(dst.chain.len(), src.chain.len());
+            dst.line.buf.copy_from_slice(&src.line.buf);
+            dst.line.pos = src.line.pos;
+            for (dst, src) in dst.chain.iter_mut().zip(&src.chain) {
+                debug_assert_eq!(dst.a, src.a);
+                dst.x1 = src.x1;
+                dst.y1 = src.y1;
+            }
+            dst.lp = src.lp;
+            dst.hp = src.hp;
+            dst.fed = src.fed;
+        }
+    }
+
     /// An Accutronics-style long-decay tank, which is what a Twin carries.
     ///
     /// Three springs whose lengths are deliberately unequal, and a decay near

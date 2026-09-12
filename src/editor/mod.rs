@@ -724,7 +724,7 @@ fn drive(cx: &mut Context) {
         "All the way up on Drive is the sound the circuit is named for;",
         "down from there only cleans up, and the level is held across it.",
         "Master is the device's own level knob, and half way is where the",
-        "voice was calibrated -- so it starts where the voicing put it.",
+        "voice was calibrated - so it starts where the voicing put it.",
     ]
     .into_iter()
     .enumerate()

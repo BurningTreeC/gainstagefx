@@ -802,16 +802,27 @@ const FADE_LEN: usize = 256;
 
 /// A whole number of samples of delay.
 struct Delay {
-    buf: Vec<f64>,
+    // A dormant channel may still have its old padding length when it wakes.
+    // Reserve the maximum inline so copying any legal history cannot allocate.
+    buf: [f64; LATENCY as usize],
+    len: usize,
     pos: usize,
 }
 
 impl Delay {
     fn new(len: usize) -> Self {
+        assert!(len <= LATENCY as usize);
         Self {
-            buf: vec![0.0; len],
+            buf: [0.0; LATENCY as usize],
+            len,
             pos: 0,
         }
+    }
+
+    fn copy_runtime_state_from(&mut self, source: &Self) {
+        self.buf.copy_from_slice(&source.buf);
+        self.len = source.len;
+        self.pos = source.pos;
     }
 
     /// A length of zero means no delay at all, and has to mean that.
@@ -823,21 +834,22 @@ impl Delay {
     /// same signal is a comb filter, and the reported latency was wrong at
     /// that setting and right at every other.
     fn set_len(&mut self, len: usize) {
-        if len != self.buf.len() {
-            self.buf.clear();
-            self.buf.resize(len, 0.0);
+        assert!(len <= self.buf.len());
+        if len != self.len {
+            self.buf[..len].fill(0.0);
+            self.len = len;
             self.pos = 0;
         }
     }
 
     #[inline]
     fn process(&mut self, x: f64) -> f64 {
-        if self.buf.is_empty() {
+        if self.len == 0 {
             return x;
         }
         let out = self.buf[self.pos];
         self.buf[self.pos] = x;
-        self.pos = (self.pos + 1) % self.buf.len();
+        self.pos = (self.pos + 1) % self.len;
         out
     }
 
@@ -1038,14 +1050,80 @@ pub struct Chain {
     /// reset discontinuity.
     fade_remaining: usize,
     prev_output: f64,
-    /// When a circuit switch also changes the oversampling factor, the
-    /// oversampler reset is deferred until after the crossfade completes.
-    /// Resetting the oversampler mid-crossfade zeroes its filter histories,
-    /// creating a second discontinuity that the crossfade cannot mask.
+    /// A requested oversampling factor waiting to be installed at the first
+    /// sample of a fresh crossfade. Changing factor resets the FIR histories;
+    /// scheduling that reset at the fade boundary keeps the discontinuity
+    /// underneath the same switch fade instead of dropping it into live audio.
     deferred_oversample: Option<usize>,
 }
 
 impl Chain {
+    /// Wake a dormant, identically configured channel from this stream's exact
+    /// history. Call before applying the first divergent block's new settings.
+    /// Both chains must have received the same preceding `apply` calls.
+    ///
+    /// Only selected sections need copying: changing a gain/iron/tone/cabinet
+    /// selection resets that section before use, and changing the gain resets
+    /// its power stage, graphic EQ and Twin effects. Within a Twin, effects can
+    /// be disabled without resetting them, so copy their tails even when off.
+    pub fn copy_runtime_state_from(&mut self, source: &Self) {
+        debug_assert_eq!(self.rate, source.rate);
+        debug_assert_eq!(self.gain, source.gain);
+        debug_assert_eq!(self.voice, source.voice);
+        debug_assert_eq!(self.iron, source.iron);
+        debug_assert_eq!(self.tone, source.tone);
+        debug_assert_eq!(self.cabinet, source.cabinet);
+        debug_assert_eq!(self.requested_oversampling, source.requested_oversampling);
+        debug_assert_eq!(self.drive, source.drive);
+        debug_assert_eq!(self.master, source.master);
+        debug_assert_eq!(self.out_of_target, source.out_of_target);
+        debug_assert_eq!(self.reverb, source.reverb);
+        debug_assert_eq!(self.speed, source.speed);
+        debug_assert_eq!(self.intensity, source.intensity);
+
+        let effective_rate_changed = self.over.factor() != source.over.factor();
+        self.over.copy_runtime_state_from(&source.over);
+        // The active chain installs deferred quality changes in `process`.
+        // The dormant one has not reached that sample yet. Agree on the same
+        // effective timestep, then install the ready caches below; do not reset
+        // the FIRs or rebuild/settle a simulation to catch up.
+        if effective_rate_changed {
+            self.sync_oversampled_rates();
+        }
+        self.deferred_oversample = source.deferred_oversample;
+        self.pad.copy_runtime_state_from(&source.pad);
+        self.dry.copy_runtime_state_from(&source.dry);
+        self.gains[self.gain].copy_runtime_state_from(&source.gains[source.gain]);
+        if let (Some(dst), Some(src)) = (
+            self.powers[self.gain].as_mut(),
+            source.powers[source.gain].as_ref(),
+        ) {
+            dst.copy_runtime_state_from(src);
+        }
+        if let Some(i) = self.iron {
+            self.irons[i].copy_runtime_state_from(&source.irons[i]);
+        }
+        if let Some(i) = self.tone {
+            self.tones[i].0.copy_runtime_state_from(&source.tones[i].0);
+        }
+        if let Some(i) = self.cabinet {
+            self.cabinets[i]
+                .0
+                .copy_runtime_state_from(&source.cabinets[i].0);
+        }
+        if self.voice.has_graphic() {
+            self.graphic.copy_runtime_state_from(&source.graphic);
+        }
+        if self.voice.has_reverb_and_tremolo() {
+            self.tank.copy_runtime_state_from(&source.tank);
+            self.tail.copy_runtime_state_from(&source.tail);
+            self.tremolo.copy_runtime_state_from(&source.tremolo);
+        }
+        self.out_of = source.out_of;
+        self.fade_remaining = source.fade_remaining;
+        self.prev_output = source.prev_output;
+    }
+
     pub fn new(rate: f64) -> Self {
         let section = |built: Option<Result<Netlist, Fault>>| {
             let netlist = built
@@ -1160,8 +1238,8 @@ impl Chain {
             self.gain = index;
             self.tank.reset();
             self.tremolo.reset();
-            self.tail.reset();
-            self.gains[index].reset();
+            self.tail.reset_deferred();
+            self.gains[index].reset_deferred();
             // And its power stage, for the same reason and more so. A power
             // stage sits at four hundred volts with its output transformer
             // carrying the plates' standing current, and `set_voice` used to
@@ -1169,10 +1247,10 @@ impl Chain {
             // freshly settled preamp to a power stage still holding whatever
             // charge and flux it had when it was last switched away from.
             if let Some(sim) = self.powers[index].as_mut() {
-                sim.reset();
+                sim.reset_deferred();
             }
             // The graphic equaliser, unconditionally. See the doc comment.
-            self.graphic.reset();
+            self.graphic.reset_deferred();
             self.set_oversampling(self.requested_oversampling);
             self.set_drive(self.drive);
             // The make-up belongs to the voice, so it changes with the voice
@@ -1203,7 +1281,7 @@ impl Chain {
         let next = iron.index();
         if next != self.iron {
             if let Some(i) = next {
-                self.irons[i].reset();
+                self.irons[i].reset_deferred();
             }
             self.iron = next;
             self.fade_remaining = FADE_LEN;
@@ -1218,7 +1296,7 @@ impl Chain {
         };
         if next != self.tone {
             if let Some(i) = next {
-                self.tones[i].0.reset();
+                self.tones[i].0.reset_deferred();
             }
             self.tone = next;
             self.fade_remaining = FADE_LEN;
@@ -1233,7 +1311,7 @@ impl Chain {
         };
         if next != self.cabinet {
             if let Some(i) = next {
-                self.cabinets[i].0.reset();
+                self.cabinets[i].0.reset_deferred();
             }
             self.cabinet = next;
             self.fade_remaining = FADE_LEN;
@@ -1398,16 +1476,35 @@ impl Chain {
         self.set_tone(crate::circuits::tone::TREBLE, treble);
     }
 
-    /// Sets the oversampling factor -- and tells the circuit about it.
+    /// Keep every circuit that executes inside `Oversampler::process` on the
+    /// oversampler's effective timestep.
     ///
-    /// These two have to move together. The oversampler hands the circuit four
-    /// samples for every one the host sent, so a circuit still solving with
-    /// the host's timestep has every capacitor in it four times too slow and
-    /// every corner frequency four times too high. Measured, that put the
-    /// overdrive's mid-hump at 2.9 kHz instead of 720 Hz and cost eleven
-    /// decibels at the level the calibration had promised -- and it cost the
-    /// valve voices almost nothing, so nothing but the clipper would have
-    /// shown it.
+    /// This includes the gain circuit, the optional power amplifier, the Mark
+    /// graphic equaliser and the transformer. The modelled amplifier voices
+    /// are currently pinned to 1x, but keeping all four tied to the actual
+    /// factor prevents a latent sample-rate bug the moment that policy changes.
+    fn sync_oversampled_rates(&mut self) {
+        let inner = self.rate * self.over.factor() as f64;
+        for sim in self
+            .gains
+            .iter_mut()
+            .chain(self.powers.iter_mut().flatten())
+            .chain(self.irons.iter_mut())
+        {
+            sim.set_rate(inner);
+        }
+        self.graphic.set_rate(inner);
+    }
+
+    /// Sets the oversampling factor -- and tells every circuit running inside
+    /// it about the resulting timestep.
+    ///
+    /// These two have to move together. The oversampler hands its callback
+    /// several samples for every one the host sent, so a circuit still solving
+    /// with the host's timestep has every capacitor too slow and every corner
+    /// frequency too high. The factor change itself also resets the halfband
+    /// FIR histories, so it is installed on the first sample of a fresh
+    /// crossfade instead of in the middle of otherwise continuous audio.
     pub fn set_oversampling(&mut self, factor: usize) {
         let requested_changed = factor != self.requested_oversampling;
         self.requested_oversampling = factor;
@@ -1416,50 +1513,49 @@ impl Chain {
         } else {
             factor
         };
-        let pending_matches = self
-            .deferred_oversample
-            .map_or(true, |pending| pending == factor);
-        self.pad
-            .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
-        if !requested_changed && factor == self.over.factor() && pending_matches {
+
+        if !requested_changed && factor == self.over.factor() && self.deferred_oversample.is_none()
+        {
             return;
         }
-        // If a crossfade is active, defer the oversampler reset until it
-        // completes. Resetting mid-crossfade zeroes the filter histories and
-        // creates a second discontinuity that the crossfade cannot mask.
-        if self.fade_remaining > 0 && factor != self.over.factor() {
+
+        if factor != self.over.factor() {
+            // `Oversampler::set_factor` clears the FIR history. Restart the
+            // switch fade and perform that reset at its first sample, where
+            // `process` can cover the discontinuity deliberately.
             self.deferred_oversample = Some(factor);
+            self.fade_remaining = FADE_LEN;
         } else {
-            self.over.set_factor(factor);
+            // A request can change back before the next sample. Do not leave
+            // the old factor queued after the panel has returned to the factor
+            // that is already active.
+            self.deferred_oversample = None;
         }
+
         self.pad
             .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
-        let inner = self.rate * self.over.factor() as f64;
-        for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
-            sim.set_rate(inner);
-        }
-        // The power stage is outside the oversampler, so it keeps the host's
-        // rate rather than the inner one. See the note in `process`.
-        for sim in self.powers.iter_mut().flatten() {
-            sim.set_rate(self.rate);
-        }
+        self.sync_oversampled_rates();
     }
 
+    /// Retune the complete chain for a new host rate.
+    ///
+    /// The plugin currently rebuilds `Chain` in `initialize` when the host rate
+    /// changes, so this is a reconfiguration surface rather than something the
+    /// audio callback calls. Rebuilding the spring tank is intentional: its
+    /// physical delay lengths are stored as sample counts and cannot be made
+    /// correct at a new rate by changing a scalar alone.
     pub fn set_rate(&mut self, rate: f64) {
         if (self.rate - rate).abs() <= 1e-9 {
             return;
         }
         self.rate = rate;
-        let inner = self.rate * self.over.factor() as f64;
-        for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
-            sim.set_rate(inner);
-        }
-        for sim in self.powers.iter_mut().flatten() {
-            sim.set_rate(self.rate);
-        }
+        self.sync_oversampled_rates();
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.set_rate(rate);
         }
+        self.tail.set_rate(rate);
+        self.tremolo.set_rate(rate);
+        self.tank = Tank::accutronics(rate);
     }
 
     /// The factor actually used by the nonlinear gain path. Modelled circuits
@@ -1495,9 +1591,15 @@ impl Chain {
     /// power amplifier and the transformer together.
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
+        let reverb = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
+            Some(&self.tail)
+        } else {
+            None
+        };
         let sims = std::iter::once(&self.gains[self.gain])
             .chain(self.powers[self.gain].as_ref())
-            .chain(self.iron.map(|i| &self.irons[i]));
+            .chain(self.iron.map(|i| &self.irons[i]))
+            .chain(reverb);
         for sim in sims {
             let (solves, passes, unsettled, _) = sim.statistics();
             let (backtracks, fallbacks, nonfinite) = sim.health();
@@ -1510,6 +1612,11 @@ impl Chain {
             h.replans += sim.replans();
         }
         h
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_power(&self) -> Option<&Simulation> {
+        self.powers[self.gain].as_ref()
     }
 
     /// Puts a whole panel's worth of settings onto the chain.
@@ -1549,24 +1656,22 @@ impl Chain {
     pub fn process(&mut self, x: f64) -> f64 {
         // Apply any deferred oversampler reset at the START of the crossfade,
         // before the oversampler processes this sample. This way the entire
-        // reset discontinuity is covered by the crossfade blending.
+        // FIR-history discontinuity is covered by the fade, and every circuit
+        // in the oversampled path sees the new timestep before it sees audio.
         if self.fade_remaining == FADE_LEN {
             if let Some(factor) = self.deferred_oversample.take() {
                 self.over.set_factor(factor);
                 self.pad
                     .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
-                let inner = self.rate * self.over.factor() as f64;
-                for sim in self.gains.iter_mut().chain(self.irons.iter_mut()) {
-                    sim.set_rate(inner);
-                }
+                self.sync_oversampled_rates();
             }
         }
 
-        // Only the gain circuit can fold anything back into the band, so only
-        // the gain circuit runs at the higher rate. The tone stack and the
-        // cabinet are linear and cost nothing extra by staying down here.
-        // The iron runs inside the oversampling with the gain circuit, not
-        // after it: a saturating core is as nonlinear as anything else here.
+        // Every nonlinear section before the make-up lives inside the same
+        // oversampler callback: gain, optional power amplifier and optional
+        // transformer. The Mark graphic EQ is linear but sits there because
+        // that is its physical position between preamp and power stage. The
+        // plugin tone section and cabinet remain at host rate below.
         // One pole toward the target: about a millisecond at any sample rate
         // the plugin is likely to see.
         self.out_of += (self.out_of_target - self.out_of) * 0.02;
@@ -1620,11 +1725,8 @@ impl Chain {
             // section stands in for the amplifier's own stack, so its loss
             // lands in the wrong place; the master volume absorbs the level,
             // and the voicing being post-power is an approximation worth
-            // naming. It also means the power stage runs at the host rate
-            // rather than inside the oversampling -- which costs nothing
-            // today, because a modelled circuit is pinned to the host rate
-            // anyway (see `set_oversampling` and BUG-017), and would have to
-            // move if that ever changed.
+            // naming. The power stage itself executes in this callback, so it
+            // must use the same effective sample rate as the preamplifier.
             let mut amplified = gain.process(v);
             // The graphic equaliser, where the drawing puts it: `EQ INPUT` is
             // taken from `LEAD OUTPUT`, which is where the preamplifier above
@@ -1739,6 +1841,7 @@ impl Chain {
             .iter_mut()
             .chain(self.powers.iter_mut().flatten())
             .chain(self.irons.iter_mut())
+            .chain(std::iter::once(&mut self.tail))
         {
             sim.set_pass_ceiling(passes);
         }
@@ -1751,12 +1854,28 @@ impl Chain {
             .iter()
             .chain(self.powers.iter().flatten())
             .chain(self.irons.iter())
+            .chain(std::iter::once(&self.tail))
             .map(|s| s.pinched())
             .sum()
     }
 
+    /// Whether any active nonlinear section is at rest with a dirty matrix and
+    /// therefore needs its zero-input DC solution before audio starts.
+    ///
+    /// This deliberately does not include the linear tone, cabinet or graphic
+    /// sections: they rebuild directly on their next sample and have no Newton
+    /// operating-point hunt to perform.
     pub fn needs_operating_point(&self) -> bool {
         self.gains[self.gain].needs_operating_point()
+            || self
+                .iron
+                .map_or(false, |i| self.irons[i].needs_operating_point())
+            || self.powers[self.gain]
+                .as_ref()
+                .map_or(false, |s| s.needs_operating_point())
+            || (self.voice.has_reverb_and_tremolo()
+                && self.reverb > 0.0
+                && self.tail.needs_operating_point())
     }
 
     /// The operating point of the active voice's power stage, if it has one.
@@ -1765,48 +1884,107 @@ impl Chain {
     }
 
     /// Apply a pre-computed operating point to the active voice's power stage.
+    ///
+    /// The guard is essential: applying an operating point to a simulation
+    /// that already has audio in flight replaces its capacitor/inductor state.
     pub fn share_power_operating_point_from(&mut self, op: &[f64]) {
         if let Some(sim) = self.powers[self.gain].as_mut() {
-            sim.apply_operating_point(op);
+            if sim.needs_operating_point() {
+                sim.apply_operating_point(op);
+            }
         }
     }
 
-    /// Hunts the operating point now rather than on the next sample, so that
-    /// an identical channel can be handed the answer.
+    /// The Twin recovery stage's operating point, for sharing with another
+    /// otherwise identical channel before either channel has processed audio.
+    pub fn reverb_operating_point(&self) -> Option<&[f64]> {
+        if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
+            Some(self.tail.operating_point())
+        } else {
+            None
+        }
+    }
+
+    /// Apply a pre-computed Twin recovery-stage operating point when it is
+    /// still safe to do so.
+    pub fn share_reverb_operating_point_from(&mut self, op: &[f64]) {
+        if self.voice.has_reverb_and_tremolo()
+            && self.reverb > 0.0
+            && self.tail.needs_operating_point()
+        {
+            self.tail.apply_operating_point(op);
+        }
+    }
+
+    /// Hunts only the operating points that are actually pending.
+    ///
+    /// This distinction matters in a running stereo chain. One newly selected
+    /// transformer can be at rest while the gain stage is already carrying
+    /// audio; solving *all* sections here would erase the gain stage's dynamic
+    /// capacitor state just because the transformer needed a DC solution.
     pub fn find_operating_point(&mut self) -> bool {
-        let gain = self.gains[self.gain].find_operating_point();
-        let iron = self.iron.map(|i| self.irons[i].find_operating_point());
-        let power = self.powers[self.gain]
-            .as_mut()
-            .map(|s| s.find_operating_point());
-        gain && iron.unwrap_or(true) && power.unwrap_or(true)
+        let mut settled = true;
+
+        if self.gains[self.gain].needs_operating_point() {
+            settled &= self.gains[self.gain].find_operating_point();
+        }
+        if let Some(i) = self.iron {
+            if self.irons[i].needs_operating_point() {
+                settled &= self.irons[i].find_operating_point();
+            }
+        }
+        if let Some(sim) = self.powers[self.gain].as_mut() {
+            if sim.needs_operating_point() {
+                settled &= sim.find_operating_point();
+            }
+        }
+        if self.voice.has_reverb_and_tremolo()
+            && self.reverb > 0.0
+            && self.tail.needs_operating_point()
+        {
+            settled &= self.tail.find_operating_point();
+        }
+
+        settled
     }
 
     /// Apply a pre-computed operating point to the active gain circuit.
     /// Used when sharing a DC solution between identical channels.
     pub fn share_operating_point_from(&mut self, gain_op: &[f64]) {
-        self.gains[self.gain].apply_operating_point(gain_op);
+        if self.gains[self.gain].needs_operating_point() {
+            self.gains[self.gain].apply_operating_point(gain_op);
+        }
     }
 
     /// Apply a pre-computed operating point to the active iron stage.
     pub fn share_iron_operating_point_from(&mut self, iron_op: &[f64]) {
         if let Some(i) = self.iron {
-            self.irons[i].apply_operating_point(iron_op);
+            if self.irons[i].needs_operating_point() {
+                self.irons[i].apply_operating_point(iron_op);
+            }
         }
     }
 
     pub fn reset(&mut self) {
         self.out_of = self.out_of_target;
+        // A transport reset also ends any fade from the previous stereo
+        // stream. No channel-specific output may survive a complete reset.
+        self.fade_remaining = if self.deferred_oversample.is_some() {
+            FADE_LEN
+        } else {
+            0
+        };
+        self.prev_output = 0.0;
         for sim in self
             .gains
             .iter_mut()
             .chain(self.irons.iter_mut())
             .chain(self.powers.iter_mut().flatten())
         {
-            sim.reset();
+            sim.reset_deferred();
         }
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
-            sim.reset();
+            sim.reset_deferred();
         }
         // The four things `reset` used to miss. `graphic` is in the Boogie's
         // path and its LC state is large enough to be heard on its own;
@@ -1815,8 +1993,8 @@ impl Chain {
         // unless told otherwise. `set_voice` already resets the last three
         // and the graphic as well, but a reset is a bigger operation than a
         // voice switch and everything stateful belongs in it.
-        self.graphic.reset();
-        self.tail.reset();
+        self.graphic.reset_deferred();
+        self.tail.reset_deferred();
         self.tank.reset();
         self.tremolo.reset();
         self.over.reset();

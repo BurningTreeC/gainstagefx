@@ -5,12 +5,8 @@
 //! offset between that tangent and the curve itself. Iterate and the guess
 //! walks onto the real answer.
 //!
-//! The slopes are taken by finite difference rather than by hand. An analytic
-//! Jacobian is faster and is what the previous version used, but it is also
-//! one more expression to get wrong silently -- a derivative that disagrees
-//! with its own function converges to something, just not to the right thing.
-//! Three evaluations of a closed-form curve is not the expensive part of a
-//! circuit solve.
+//! Analytic slopes share intermediate values with the current equations, so
+//! Newton does not need repeated curve evaluations to estimate derivatives.
 
 use super::netlist::{BipolarSpec, CoreSpec, DiodeSpec, JfetSpec, PentodeSpec, TriodeSpec, GROUND};
 
@@ -1225,11 +1221,16 @@ impl Device for Core {
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
-        // The winding voltage is what drives the flux, and a long way in one
-        // iteration is how a steep curve makes the solve oscillate.
+        // Limit the change in flux, which is what makes this curve steep.
+        // A fixed eight-volt limit forced a power transformer to walk a
+        // normal plate swing across many Newton passes even when its flux
+        // barely moved. Bound each correction to knee/sharpness in flux;
+        // d(flux)/d(volts) is half_step. This limits Newton, not the signal
+        // or the magnetising curve, and scales with the actual timestep.
         let raw = across(v, self.a, self.b);
         let (volts, clamped) = if s.limiting {
-            limit(raw, self.volts, 4.0)
+            let scale = self.spec.knee / (2.0 * self.half_step * self.spec.sharpness);
+            limit(raw, self.volts, scale)
         } else {
             (raw, false)
         };
@@ -1243,11 +1244,11 @@ impl Device for Core {
         let flux = history + self.half_step * volts;
         self.flux = flux;
 
-        let i = self.magnetising(flux);
-        let step = self.spec.knee * 1e-3;
+        let (i, slope) = self.magnetising_with_slope(flux);
         // d(current)/d(volts) is d(current)/d(flux) times the half step, which
-        // is what the integration contributes.
-        let slope = (self.magnetising(flux + step) - self.magnetising(flux - step)) / (2.0 * step);
+        // is what the integration contributes. Use the exact derivative of
+        // this same current curve: differencing nearby flux values both loses
+        // precision and evaluates the power curve three times per stamp.
         let g = (slope * self.half_step).max(1e-12);
 
         s.conductance(self.a, self.b, g);
@@ -1434,6 +1435,32 @@ pub enum AnyDevice {
     Bipolar(Bipolar),
     OpAmp(OpAmp),
     Core(Core),
+}
+
+impl AnyDevice {
+    /// Copy an identical device's evolving state without reconstructing it.
+    /// All variants keep their component specifications and terminal indices.
+    /// A core additionally owns committed integration history, which is not
+    /// part of the trial Newton linearisation.
+    pub fn copy_runtime_state_from(&mut self, source: &Self) {
+        match (self, source) {
+            (Self::Diode(dst), Self::Diode(src)) => dst.relinearise(src.linearisation()),
+            (Self::Triode(dst), Self::Triode(src)) => dst.relinearise(src.linearisation()),
+            (Self::Pentode(dst), Self::Pentode(src)) => dst.relinearise(src.linearisation()),
+            (Self::Jfet(dst), Self::Jfet(src)) => dst.relinearise(src.linearisation()),
+            (Self::Bipolar(dst), Self::Bipolar(src)) => dst.relinearise(src.linearisation()),
+            (Self::OpAmp(dst), Self::OpAmp(src)) => dst.relinearise(src.linearisation()),
+            (Self::Core(dst), Self::Core(src)) => {
+                dst.relinearise(src.linearisation());
+                dst.last_flux = src.last_flux;
+                dst.last_volts = src.last_volts;
+                // The simulation's requested rate already agrees. A dormant
+                // device may not yet have installed that timestep's cache.
+                dst.half_step = src.half_step;
+            }
+            _ => panic!("runtime copy requires identical device variants"),
+        }
+    }
 }
 
 impl Device for AnyDevice {

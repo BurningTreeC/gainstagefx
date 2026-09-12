@@ -38,6 +38,11 @@ struct Delay {
 }
 
 impl Delay {
+    fn copy_runtime_state_from(&mut self, source: &Self) {
+        self.buf.copy_from_slice(&source.buf);
+        self.pos = source.pos;
+    }
+
     fn new(len: usize) -> Self {
         Self {
             buf: vec![0.0; len.max(1)],
@@ -71,6 +76,12 @@ struct OddPhase {
 }
 
 impl OddPhase {
+    fn copy_runtime_state_from(&mut self, source: &Self) {
+        debug_assert_eq!(self.coefs, source.coefs);
+        self.buf.copy_from_slice(&source.buf);
+        self.pos = source.pos;
+    }
+
     fn new(coefs: Vec<f64>) -> Self {
         let m = coefs.len();
         Self {
@@ -121,6 +132,13 @@ struct Stage {
 }
 
 impl Stage {
+    fn copy_runtime_state_from(&mut self, source: &Self) {
+        self.up_fir.copy_runtime_state_from(&source.up_fir);
+        self.up_delay.copy_runtime_state_from(&source.up_delay);
+        self.down_fir.copy_runtime_state_from(&source.down_fir);
+        self.down_delay.copy_runtime_state_from(&source.down_delay);
+    }
+
     fn new(m: usize, beta: f64) -> Self {
         let odd = halfband_odd_taps(m, beta);
         // The interpolator carries a factor of two to make up for the energy
@@ -168,6 +186,17 @@ pub struct Oversampler {
 }
 
 impl Oversampler {
+    /// Resume the same configured stream, including every FIR/delay history.
+    /// All stages already exist; installing the active stage count here must
+    /// not call `set_factor`, which would clear the history we are preserving.
+    pub fn copy_runtime_state_from(&mut self, source: &Self) {
+        debug_assert_eq!(self.stages.len(), source.stages.len());
+        for (dst, src) in self.stages.iter_mut().zip(&source.stages) {
+            dst.copy_runtime_state_from(src);
+        }
+        self.active = source.active;
+    }
+
     /// `factor` is rounded down to the nearest supported power of two.
     pub fn new(factor: usize) -> Self {
         let mut oversampler = Self {

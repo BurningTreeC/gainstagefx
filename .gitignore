@@ -20,3 +20,7 @@
 # somebody else's drawings, and publishing them is not ours to do. The modules
 # quote the values and say what they mean, which is the part that is ours.
 /docs/schematics/
+
+# Keep the panel image; other documentation stays local.
+/docs/*
+!/docs/panel.png

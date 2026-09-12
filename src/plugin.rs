@@ -1,56 +1,12 @@
 //! The plugin: parameters in, audio out.
 
 use nih_plug::prelude::*;
-use std::collections::VecDeque;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use crate::meters::Meters;
 use crate::params::{Amplifier, Diode, GainStageParams, Oversampling};
 use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
-
-/// The size of the plugin's internal processing block, in samples.
-///
-/// The host calls `process` with whatever block size it wants; the plugin
-/// accumulates input in a FIFO and drains it in bursts of this many samples.
-/// The reason is scheduling. A callback of M samples gives the plugin
-/// `M / rate` seconds to do the work for M samples, and the per-sample cost
-/// varies: the solver takes three passes on an ordinary sample and up to
-/// thirty-two on one that crosses a device's knee. Draining N samples in one
-/// burst averages that cost over a longer window, so a single expensive
-/// sample is a smaller fraction of a burst's budget than it is of a host
-/// callback's. Measured on the Twin Reverb, whose power stage has the largest
-/// solver in the catalogue and the worst callback of any voice: 64-sample
-/// host blocks crackle on loud input at 48 kHz, and 256 does not.
-///
-/// **What it does not do** is reduce total CPU. The same work per second is
-/// done either way; the buffer redistributes *when* the cost is paid. If the
-/// average cost exceeds realtime, no block size fixes it.
-///
-/// **The cost is latency.** The input waits for N samples to accumulate
-/// before processing begins, so the plugin's total delay becomes
-/// `LATENCY + INTERNAL_BLOCK` samples. At 48 kHz:
-///
-/// | block | added  | total  | note                              |
-/// |------:|-------:|-------:|-----------------------------------|
-/// |    64 | 1.3 ms | 2.7 ms | no help: same as one host block   |
-/// |   128 | 2.7 ms | 4.1 ms | recommended for 64-sample hosts   |
-/// |   256 | 5.3 ms | 6.7 ms | still under the 9 ms ceiling      |
-/// |   512 |10.7 ms |12.1 ms | over the ceiling                  |
-///
-/// **Bypass is unaffected in the sound but not in time.** The circuits always
-/// run, whatever this is set to; when the panel's bypass is on, the output is
-/// the host's samples untouched, and the FIFOs' delay does not apply. The two
-/// are inconsistent by `LATENCY + INTERNAL_BLOCK` samples, so toggling bypass
-/// mid-playback moves the track; that is the same shift the plugin has always
-/// had at `LATENCY`, made larger by this.
-///
-/// **The value is not measured on every voice.** The Twin is the reason it
-/// exists; the pedal voices do not need it and would sound the same at any
-/// setting. 128 is a compromise: enough to average two host callbacks at the
-/// 64-sample size the user reported, and small enough that the total latency
-/// stays well under the 9 ms ceiling.
-const INTERNAL_BLOCK: usize = 256;
 
 /// Below this level the trimmed input is quantised to zero.
 ///
@@ -82,38 +38,41 @@ const SILENCE_DBFS: f64 = -80.0;
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
     meters: Arc<Meters>,
-    /// The one signal chain. It owns every circuit in the catalogue, so
-    /// changing the selection while playing does not allocate.
+    /// One persistent nonlinear signal chain per host audio channel.
     ///
-    /// One, not one per channel: an amplifier has a single input jack, and the
-    /// host's channels are summed to mono before the circuit. See `process`.
-    chain: Option<Chain>,
+    /// Every `Chain` owns its own capacitors, inductors, transformer state,
+    /// oversampler history, spring/tremolo state, dry-delay line, and Newton
+    /// predictor history. Once inputs differ, that state must remain
+    /// independent even during later silence or equal inputs. Until then the
+    /// right chain can sleep and receive the left history once on wake-up.
+    /// The catalogue is therefore built once per active channel in
+    /// `initialize`, where allocation is allowed, and never allocated from the
+    /// realtime callback.
+    channels: Vec<Chain>,
+    /// Latched by the first bit-different stereo input block. Only a complete
+    /// reset/reinitialization permits duplicated-mono sharing again.
+    stereo_seen: bool,
     sample_rate: f64,
     oversampling: Oversampling,
     peak: f64,
     budget: Budget,
-    summing: Summing,
     /// The three parameters that reach the output arithmetic, ramped across
-    /// the block rather than read and converted per sample. See `BlockRamp`.
+    /// the host block rather than converted with a `powf` per sample.
     input_ramp: BlockRamp,
     output_ramp: BlockRamp,
     mix_ramp: BlockRamp,
-    /// Host samples, already summed to mono, waiting to fill an internal
-    /// block. See `INTERNAL_BLOCK`.
-    ///
-    /// The summing is done at the I/O boundary because it has per-frame
-    /// state -- `Summing::live` latches as it hears each channel carry a
-    /// signal -- so it cannot be moved inside the burst.
-    input_fifo: VecDeque<f64>,
-    /// Processed samples waiting to be released to the host in whatever
-    /// block size it asked for. Pushed in bursts of `INTERNAL_BLOCK`, popped
-    /// in blocks of `samples`.
-    ///
-    /// Primed with `INTERNAL_BLOCK` samples of near silence in `initialize`
-    /// and `reset`, so the very first callback has something to release; the
-    /// priming is exactly the plugin's added latency and is not a bigger
-    /// buffer that just happens to be there.
-    output_fifo: VecDeque<f64>,
+}
+
+/// Inspect host input before any in-place output writes. Signed zero and even
+/// a one-bit stereo difference deliberately count as different input.
+fn block_is_duplicated_mono(buffer: &Buffer) -> bool {
+    let channels = buffer.as_slice_immutable();
+    channels.len() == 2
+        && channels[0].len() == channels[1].len()
+        && channels[0]
+            .iter()
+            .zip(channels[1].iter())
+            .all(|(left, right)| left.to_bits() == right.to_bits())
 }
 
 /// A per-block linear ramp on a gain or a mix fraction.
@@ -147,12 +106,9 @@ pub struct GainStageFx {
 /// chances for the error to accumulate into something audible. Settling to
 /// the value the block was aimed at makes the ramp exactly re-enterable.
 ///
-/// With the internal block in place, the ramp is re-aimed once per burst
-/// rather than once per host callback. The two are equivalent over time,
-/// because bursts process the same samples the host handed over in the same
-/// order; they differ only in where the "settle" points sit. Aiming per
-/// burst keeps each burst self-contained, which is the property the FIFOs
-/// exist to give.
+/// The ramp is aimed once per host callback. It is advanced once per frame,
+/// not once per channel, so both sides of a stereo stream receive exactly the
+/// same trim and mix automation without making the smoother run twice as fast.
 #[derive(Clone, Copy)]
 struct BlockRamp {
     current: f32,
@@ -199,14 +155,13 @@ impl BlockRamp {
 /// which errs toward loud rather than silent.
 const MAX_CHANNELS: usize = 16;
 
-/// How the host's channels become the one signal the circuit sees.
+/// A tested mono-summing utility retained for callers and regression tests.
 ///
-/// An amplifier has a single input jack and a guitar has a single output, so
-/// the channels are summed to mono *before* the circuit rather than run
-/// through two copies of it. That is also what makes the catalogue meet its
-/// deadline live: a dual-mono plugin fed a guitar was solving the same circuit
-/// twice for the same answer, which is half the cost of the plugin spent
-/// computing numbers it already had.
+/// `GainStageFx` itself no longer uses this in its stereo layout. A stereo
+/// effect must preserve independent nonlinear state per channel; summing at
+/// the plugin boundary destroyed stereo information and duplicated a mono
+/// result at both outputs. The helper remains useful when an explicitly mono
+/// source really does need several channels folded into one signal.
 ///
 /// What the sum is divided by is the whole difference between this working and
 /// not, and it is why this is a type with tests rather than three lines in the
@@ -285,29 +240,22 @@ impl Default for GainStageFx {
         let params = Arc::new(GainStageParams::default());
         // Ramps start at the parameter's own value rather than at unity. A
         // preset loaded into a freshly-created plugin would otherwise arrive
-        // with a block-long ramp from 1.0 to the preset's trim, which is a
-        // step and a click on the first sample.
+        // with a block-long ramp from 1.0 to the preset's trim.
         let input_ramp = BlockRamp::new(util::db_to_gain(params.input_trim.value()));
         let output_ramp = BlockRamp::new(util::db_to_gain(params.output_trim.value()));
         let mix_ramp = BlockRamp::new(params.mix.value());
         Self {
             params,
             meters: Arc::new(Meters::default()),
-            chain: None,
+            channels: Vec::new(),
+            stereo_seen: false,
             sample_rate: 48_000.0,
             oversampling: Oversampling::Four,
             peak: 0.0,
             budget: Budget::new(),
-            summing: Summing::new(),
             input_ramp,
             output_ramp,
             mix_ramp,
-            // Capacity is a hint and not a limit; it is set generously so the
-            // first callbacks after `initialize` do not reallocate. The FIFOs
-            // stay bounded in the steady state at `INTERNAL_BLOCK` plus one
-            // host block each.
-            input_fifo: VecDeque::with_capacity(INTERNAL_BLOCK * 8),
-            output_fifo: VecDeque::with_capacity(INTERNAL_BLOCK * 8),
         }
     }
 }
@@ -339,14 +287,11 @@ impl Default for GainStageFx {
 ///   is not doing in real time. An offline bounce has all the time it wants
 ///   and must produce the same audio as the last one.
 ///
-/// The mechanism is now the wrong shape for this plugin, and that is worth
-/// saying rather than leaving as dead code. It reads a clock against the
-/// host's block, and the plugin no longer does its work in host-block units:
-/// bursts of `INTERNAL_BLOCK` samples are what the deadline applies to, and
-/// a burst's deadline is `INTERNAL_BLOCK / rate`, not `samples / rate`.
-/// Nothing in the plugin acts on the reading -- `WORKS` is false -- so this
-/// is a note for whoever next tries to make the budget do something, not a
-/// bug.
+/// Nothing in the current realtime path acts on the reading -- `WORKS` is
+/// false. The arithmetic and tests remain because a future bounded quality
+/// mechanism may use the same deadline accounting, but Newton iteration
+/// capping itself is deliberately disabled because measurements showed that
+/// it made deadline misses worse.
 #[derive(Clone, Copy)]
 pub struct Budget {
     /// Whether there is a deadline to hold to at all. Off for an offline
@@ -475,97 +420,61 @@ impl Plugin for GainStageFx {
 
     fn initialize(
         &mut self,
-        _layout: &AudioIOLayout,
+        layout: &AudioIOLayout,
         buffer: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = buffer.sample_rate as f64;
+        self.stereo_seen = false;
         // The work budget exists because a realtime callback has a deadline.
-        // An offline render has none: the host calls `process` back to back
-        // until the material is done, and a bounce must come out the same
-        // however fast or slow the machine was. Without this the budget would
-        // read its own compute time against a deadline nobody is holding it
-        // to, and pinch a render that had all the time in the world -- and any
-        // voice slower than realtime would be pinched in *every* bounce.
-        //
-        // `Buffered` is the VST3 mode where a host works ahead to loosen the
-        // constraint. There is still a deadline behind it, so the budget stays
-        // on.
+        // An offline render has none. Iteration capping is currently disabled
+        // (`Budget::WORKS == false`), but preserve the mode bookkeeping so a
+        // future safe budget mechanism still distinguishes the two cases.
         self.budget.armed = Budget::WORKS && !matches!(buffer.process_mode, ProcessMode::Offline);
         self.oversampling = self.params.oversampling.value();
 
-        // Built here, on the main thread, where allocating and hunting for an
-        // operating point are both allowed. Nothing after this point does
-        // either.
-        //
-        // One chain whatever the layout says, because the circuit is fed a
-        // mono sum of the host's channels. A second one would solve the same
-        // equations for the same answer.
-        let mut chain = Chain::new(self.sample_rate);
-        chain.set_oversampling(self.oversampling.factor());
-
-        // Prime the output FIFO with one burst's worth of near silence.
-        //
-        // The FIFOs balance in the steady state at `INTERNAL_BLOCK` samples
-        // each: stage 1 pushes a host block's worth of input, stage 2 drains
-        // whatever completes a burst, stage 3 releases a host block's worth
-        // of output. Starting the output FIFO empty would leave the first
-        // callbacks with nothing to release and the plugin silent for a
-        // burst's worth of samples; starting it at `INTERNAL_BLOCK` gives the
-        // host something from the first sample, at exactly the delay the
-        // plugin reports. Anything more than `INTERNAL_BLOCK` would over-report
-        // the latency, because the priming *is* the added delay.
-        self.input_fifo.clear();
-        self.output_fifo.clear();
-        for _ in 0..INTERNAL_BLOCK {
-            let _ = chain.delayed_dry(0.0);
-            let wet = chain.process(0.0);
-            self.output_fifo.push_back(wet);
+        // Build every nonlinear chain here, never in `process`. Stereo needs
+        // independent state: left and right may have different transients,
+        // capacitor charge, transformer flux, spring state and solver history.
+        // The layouts declared above have equal input/output channel counts.
+        let channel_count = layout
+            .main_output_channels
+            .map(NonZeroU32::get)
+            .unwrap_or(0) as usize;
+        self.channels.clear();
+        self.channels.reserve(channel_count);
+        for _ in 0..channel_count {
+            let mut chain = Chain::new(self.sample_rate);
+            chain.set_oversampling(self.oversampling.factor());
+            self.channels.push(chain);
         }
 
-        self.chain = Some(chain);
-
-        // Ramps re-seeded from whatever the host loaded into the parameters,
-        // which is not necessarily what they were constructed with.
+        // Ramps are re-seeded from whatever the host loaded into the
+        // parameters, which is not necessarily what `Default` saw.
         self.input_ramp
             .reset(util::db_to_gain(self.params.input_trim.value()));
         self.output_ramp
             .reset(util::db_to_gain(self.params.output_trim.value()));
         self.mix_ramp.reset(self.params.mix.value());
+        self.peak = 0.0;
+        self.meters.reset();
 
-        // Reported once, and the same whatever the oversampling is set to.
-        // The host compensates for the chain's own delay *and* the FIFOs';
-        // the FIFOs' contribution is `INTERNAL_BLOCK` and nothing else,
-        // because the priming above is exactly that size.
-        context.set_latency_samples(LATENCY + INTERNAL_BLOCK as u32);
+        // `Chain` deliberately pads every oversampling setting to the same
+        // latency, so no extra plugin-side FIFO delay is required.
+        context.set_latency_samples(LATENCY);
         true
     }
 
     fn reset(&mut self) {
-        if let Some(chain) = self.chain.as_mut() {
+        self.stereo_seen = false;
+        for chain in &mut self.channels {
             chain.reset();
         }
         self.peak = 0.0;
-        self.summing.reset();
         self.meters.reset();
-        // The FIFOs are emptied, then the output FIFO is primed again with
-        // near silence, exactly as in `initialize`. A reset is the moment a
-        // session starts, and the plugin has to be ready to release a burst's
-        // worth on the first callback; leaving the FIFOs empty would silence
-        // the start of playback.
-        self.input_fifo.clear();
-        self.output_fifo.clear();
-        if let Some(chain) = self.chain.as_mut() {
-            for _ in 0..INTERNAL_BLOCK {
-                let _ = chain.delayed_dry(0.0);
-                let wet = chain.process(0.0);
-                self.output_fifo.push_back(wet);
-            }
-        }
-        // The ramps as well. A reset is the moment a session starts, and a
-        // ramp that carried the previous session's trim across a transport
-        // stop would open the new one with a glide to the value it already
-        // has.
+        // Do not carry a previous transport pass's parameter ramp into the
+        // next one. The stateful circuit itself is reset above; the purely
+        // arithmetic trim/mix ramps should restart from the host's value too.
         self.input_ramp
             .reset(util::db_to_gain(self.params.input_trim.value()));
         self.output_ramp
@@ -579,18 +488,27 @@ impl Plugin for GainStageFx {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        // Set the flush-to-zero and denormals-are-zero bits on every
-        // callback, not just once in `initialize`. Two instructions, and
-        // they are the difference between arithmetic on a near-zero
-        // correction costing one cycle and costing a hundred. The plugin's
-        // own `enable_ftz_daz` in `Default::default` sets them once, and
-        // nothing in the plugin clears them -- but the host shares the
-        // audio thread with other plugins, and any of them that resets the
-        // FPU state on its own startup or its own `process` takes the bits
-        // with it. Measured by ear as intermittent crackle on the voices
-        // with the largest solvers, worse the louder the input, at a low
-        // average CPU. See the FTZ discussion in `docs/REALTIME_BUFFERING.md`.
+        // The host shares its audio thread with other plugins. Reassert FTZ
+        // and DAZ every callback so another plugin cannot leave denormal
+        // handling in a catastrophically slow state for the circuit solver.
         crate::dsp::time::enable_ftz_daz();
+
+        // Wake before applying this block's controls: both chains still have
+        // the preceding block's configuration. A new voice/control on this
+        // block then takes the normal path on both synchronized histories.
+        let duplicated_mono =
+            if !self.stereo_seen && self.channels.len() == 2 && buffer.channels() == 2 {
+                if block_is_duplicated_mono(buffer) {
+                    true
+                } else {
+                    let (left, right) = self.channels.split_at_mut(1);
+                    right[0].copy_runtime_state_from(&left[0]);
+                    self.stereo_seen = true;
+                    false
+                }
+            } else {
+                false
+            };
 
         let samples = buffer.samples() as u32;
         let oversampling = self.params.oversampling.value();
@@ -599,10 +517,9 @@ impl Plugin for GainStageFx {
         }
 
         let circuit = self.params.circuit.value();
-        // A circuit with no diodes in it ignores the choice, so it is pinned
-        // rather than left wherever the greyed-out control happens to sit --
-        // otherwise the same patch would load into a different array slot
-        // depending on a control that does nothing.
+        // Everything that reaches a circuit is sampled once per host block.
+        // Rebuilding a nonlinear matrix at audio rate would be far more
+        // expensive than the smoothing it was intended to provide.
         let settings = Settings {
             gain: circuit.voice(),
             diode: if circuit.has_diodes() {
@@ -618,13 +535,6 @@ impl Plugin for GainStageFx {
             iron: self.params.iron.value().voice(),
             tone: self.params.tone.value().voice(),
             cabinet: self.params.cabinet.value().voice(),
-            // `next_step`, not `next`. These four reach a circuit, and
-            // anything that reaches a circuit moves once a block -- so the
-            // smoother has to be advanced by the whole block, not by one
-            // sample. Advancing it by one made a twenty millisecond ramp take
-            // twenty milliseconds times the block size, which at 512 samples
-            // is ten seconds, and made the ramp's length depend on the host's
-            // buffer setting.
             drive: self.params.drive.smoothed.next_step(samples) as f64,
             master: self.params.master.smoothed.next_step(samples) as f64,
             graphic: [
@@ -643,109 +553,103 @@ impl Plugin for GainStageFx {
             oversampling: oversampling.factor(),
         };
 
-        // Everything that reaches a circuit moves once a block, not once a
-        // sample. Switching a circuit resets it, and moving a control
-        // invalidates the matrix so the next sample rebuilds it and hunts the
-        // operating point again -- either of those at audio rate is ruinous.
-        // It all goes through `Chain::apply`, so that forgetting one is a
-        // change to that function rather than a line missing from here.
-        let Some(chain) = self.chain.as_mut() else {
+        if self.channels.is_empty() {
             return ProcessStatus::Normal;
-        };
-        chain.apply(&settings);
-
-        // Only when there is an answer to hunt. `find_operating_point` solves
-        // the circuit with no signal in it and sets every capacitor's charge
-        // from the result, so calling it on a chain that is already running
-        // throws the audio in flight away. `needs_operating_point` is false
-        // the moment a sample has been processed -- see `tests/knobs.rs`.
-        if chain.needs_operating_point() {
-            chain.find_operating_point();
         }
 
-        // A peak that falls slowly enough to read but still follows playing.
-        let decay = (-1.0 / (0.3 * self.sample_rate)).exp();
-        // One pole toward the summing divisor, about fifty milliseconds.
-        let ramp = 1.0 - (-1.0 / (0.05 * self.sample_rate)).exp();
-        let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
-        // The linear value the input is compared against. See `SILENCE_DBFS`.
-        let silence_linear = 10f64.powf(SILENCE_DBFS / 20.0);
+        // Keep the split borrow in its own scope. The sample loop below needs
+        // mutable indexed access to `self.channels`, and ending this borrow
+        // here makes that separation explicit to both the compiler and reader.
+        {
+            let (first, rest) = self
+                .channels
+                .split_first_mut()
+                .expect("channel list was checked above");
 
-        // The three parameters that reach the output arithmetic, read once
-        // for the host callback and converted here rather than per sample.
-        // See `BlockRamp` for why the conversion moves out of the sample loop
-        // and why the ramp is linear rather than constant.
-        //
-        // They are advanced by the host's block size, not by the burst size:
-        // the smoother paces the knob move in wall-clock time, and `samples`
-        // is the amount of wall-clock time this callback represents. Within
-        // a burst, the ramp reconstructs that same move by re-aiming at each
-        // burst's start.
-        let input_trim_target = util::db_to_gain(self.params.input_trim.smoothed.next_step(samples));
+            first.apply(&settings);
+            // Keep selections and control values current on the dormant
+            // chain. `apply` does not process samples or hunt its DC point.
+            for chain in rest.iter_mut() {
+                chain.apply(&settings);
+            }
+
+            // Identical stereo channels have the same zero-input DC solution
+            // after the same parameter change. Hunt it once, then copy the
+            // voltage vectors into the other channels. This avoids doing the
+            // expensive DC Newton solve twice while keeping all *dynamic*
+            // state independent. No allocation occurs here: every accessor
+            // returns a borrowed slice.
+            if first.needs_operating_point() {
+                let _ = first.find_operating_point();
+                let gain_op = first.operating_point();
+                let iron_op = first.iron_operating_point();
+                let power_op = first.power_operating_point();
+                let reverb_op = first.reverb_operating_point();
+                for chain in rest.iter_mut().filter(|_| !duplicated_mono) {
+                    chain.share_operating_point_from(gain_op);
+                    if let Some(op) = iron_op {
+                        chain.share_iron_operating_point_from(op);
+                    }
+                    if let Some(op) = power_op {
+                        chain.share_power_operating_point_from(op);
+                    }
+                    if let Some(op) = reverb_op {
+                        chain.share_reverb_operating_point_from(op);
+                    }
+                }
+            }
+        }
+
+        // Input/output trim and wet/dry mix do not invalidate a circuit, so
+        // these remain smooth at audio rate. `BlockRamp` turns each smoother
+        // into one add per frame instead of a per-sample dB `powf`.
+        let input_trim_target =
+            util::db_to_gain(self.params.input_trim.smoothed.next_step(samples));
         let output_trim_target =
             util::db_to_gain(self.params.output_trim.smoothed.next_step(samples));
         let mix_target = self.params.mix.smoothed.next_step(samples);
+        self.input_ramp.aim(input_trim_target, samples);
+        self.output_ramp.aim(output_trim_target, samples);
+        self.mix_ramp.aim(mix_target, samples);
 
         let bypassed = self.params.bypass.value();
+        let decay = (-1.0 / (0.3 * self.sample_rate)).exp();
+        let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
+        let silence_linear = 10f64.powf(SILENCE_DBFS / 20.0);
         let mut peak = self.peak;
 
-        // ---- Stage 1: host frames into the input FIFO. ----
-        //
-        // Only the summing happens here, because it has per-frame state.
-        // Everything else -- the input trim, the silence floor, the chain,
-        // the mix, the output trim -- happens in stage 2, on samples that
-        // have been drained from the FIFO in burst-sized batches.
-        //
-        // The FIFO holds summed mono values. That is the plugin's inherent
-        // signal shape: an amplifier has one input jack and the chain is one
-        // circuit. See `Summing`.
+        // Process host frames directly. There is no plugin-side FIFO: each
+        // input channel enters its own `Chain` and returns to the same output
+        // channel. The only delay is `Chain::LATENCY`, already reported to the
+        // host and also applied to `delayed_dry`, so parallel mix remains
+        // phase/time aligned.
         for mut frame in buffer.iter_samples() {
-            self.summing.start();
+            // Advance shared automation once per *frame*. Doing this inside
+            // the channel loop would make a stereo stream traverse every ramp
+            // twice as fast as mono.
+            let input_trim = self.input_ramp.next() as f64;
+            let output_trim = self.output_ramp.next() as f64;
+            let mix = self.mix_ramp.next() as f64;
+            let mut frame_peak = 0.0f64;
+            let mut duplicated_output = 0.0f32;
+
             for (index, sample) in frame.iter_mut().enumerate() {
-                self.summing.add(index, *sample as f64);
-            }
-            self.input_fifo.push_back(self.summing.finish(ramp));
-        }
+                if duplicated_mono && index == 1 {
+                    if !bypassed {
+                        *sample = duplicated_output;
+                    }
+                    // Chain 1, including its dry delay, remains dormant.
+                    continue;
+                }
+                let Some(chain) = self.channels.get_mut(index) else {
+                    continue;
+                };
 
-        // ---- Stage 2: drain complete bursts through the chain. ----
-        //
-        // Every burst is `INTERNAL_BLOCK` samples. The ramps are re-aimed at
-        // the start of each one and settled at its end, so each burst is
-        // self-contained: whatever the smoother has reached, the burst
-        // traverses to it and stops.
-        //
-        // The chain runs whatever `bypassed` says, so its capacitors and
-        // devices stay at the state the signal left them in rather than
-        // frozen. A chain switched back on holding a stale answer is a click,
-        // and the cost of keeping it warm is the same either way.
-        while self.input_fifo.len() >= INTERNAL_BLOCK {
-            self.input_ramp
-                .aim(input_trim_target, INTERNAL_BLOCK as u32);
-            self.output_ramp
-                .aim(output_trim_target, INTERNAL_BLOCK as u32);
-            self.mix_ramp.aim(mix_target, INTERNAL_BLOCK as u32);
-
-            for _ in 0..INTERNAL_BLOCK {
-                let raw = self.input_fifo.pop_front().expect("burst is complete");
-
-                // The three output-arithmetic parameters, one add each
-                // rather than a smoother step and a `powf`. See `BlockRamp`.
-                let input_trim = self.input_ramp.next() as f64;
-                let output_trim = self.output_ramp.next() as f64;
-                let mix = self.mix_ramp.next() as f64;
-
+                // Keep the original host sample intact until the very end so
+                // bypass can remain a literal wire while the hidden circuit
+                // continues running and stays warm.
+                let raw = *sample as f64;
                 let trimmed = raw * input_trim;
-
-                // Below the silence floor, quantise to zero. See
-                // `SILENCE_DBFS` for the reasoning; the short of it is that
-                // the solve for a zero input converges in one or two passes
-                // rather than the three to five a real signal takes, and
-                // that a player is not playing for a large fraction of the
-                // time they are sitting with a guitar.
-                //
-                // The check is on the **trimmed** input, so a player who has
-                // turned the trim up to hear a quiet source has moved the
-                // threshold up with the signal.
                 let input = if trimmed.abs() < silence_linear {
                     0.0
                 } else {
@@ -754,52 +658,31 @@ impl Plugin for GainStageFx {
 
                 let dry = chain.delayed_dry(input);
                 let wet = chain.process(input);
-                let out = (dry * (1.0 - mix) + wet * mix) * output_trim;
-                self.output_fifo.push_back(out);
+                let processed = (dry * (1.0 - mix) + wet * mix) * output_trim;
 
-                let level = input.abs();
-                peak = if level > peak { level } else { peak * decay };
-            }
-
-            self.input_ramp.settle(input_trim_target);
-            self.output_ramp.settle(output_trim_target);
-            self.mix_ramp.settle(mix_target);
-        }
-
-        // ---- Stage 3: the output FIFO into the host's frames. ----
-        //
-        // When the plugin is in circuit, the frame is overwritten with the
-        // processed sample. When bypassed, the frame is left exactly as the
-        // host handed it over -- the plugin is a wire on the output side,
-        // even though it is still running inside -- and the value popped
-        // from the FIFO is discarded.
-        //
-        // That is a deliberate inconsistency. The FIFO's delay is real and
-        // reported, and both the wet and dry paths inside the chain are
-        // delayed by `LATENCY`; but bypass, by this design, is instantaneous
-        // host-in to host-out with no summing and no trims. Toggling bypass
-        // mid-playback therefore moves the track by `LATENCY +
-        // INTERNAL_BLOCK` samples. That is the same shift the plugin has
-        // always had at `LATENCY`, made larger by the buffer; the alternative
-        // -- delaying bypass to match -- was tried and rejected, because a
-        // user asking for "the sound comes through 1:1" means exactly that.
-        for mut frame in buffer.iter_samples() {
-            let processed = self.output_fifo.pop_front().unwrap_or(0.0);
-            if !bypassed {
-                let out = processed as f32;
-                for sample in frame.iter_mut() {
-                    *sample = out;
+                if !bypassed {
+                    *sample = processed as f32;
+                    duplicated_output = *sample;
                 }
+
+                frame_peak = frame_peak.max(input.abs());
             }
-            // When bypassed: frame is untouched, so its value is the host's
-            // original sample. The FIFO has been drained to keep it in sync
-            // with the input side; the value that was drained is discarded.
+
+            peak = if frame_peak > peak {
+                frame_peak
+            } else {
+                peak * decay
+            };
         }
 
+        self.input_ramp.settle(input_trim_target);
+        self.output_ramp.settle(output_trim_target);
+        self.mix_ramp.settle(mix_target);
         self.peak = peak;
 
-        // The meter reads relative to the level the voices were calibrated at,
-        // so its zero is where the panel means what it says.
+        // The meter remains referenced to the nominal digital level used by
+        // the circuit calibration. For stereo, display the hotter input side
+        // rather than an artificial mono sum or average.
         self.meters
             .set_input_db(20.0 * (self.peak / nominal).max(1e-6).log10() as f32);
         ProcessStatus::Normal
@@ -828,6 +711,10 @@ impl Vst3Plugin for GainStageFx {
 
 nih_export_clap!(GainStageFx);
 nih_export_vst3!(GainStageFx);
+
+#[cfg(test)]
+#[path = "../tests/support/plugin_mono.rs"]
+mod duplicated_mono_tests;
 
 #[cfg(test)]
 mod budget {
@@ -1034,12 +921,12 @@ mod block_ramp {
             ramp.next();
         }
         let last = ramp.next();
-        // `start + samples * ((target - start) / samples)` in f32 is not
-        // exactly `target` -- it is the target minus one step, which is what
-        // the smoother's own last sample would have been.
+        // `next` returns the current value before advancing it. Preserve that
+        // existing convention: the last frame is one step short, and the next
+        // block starts at the target after `settle`.
         assert!(
-            (last - 2.0).abs() < 1e-5,
-            "the block should have reached the target by its last sample: {last}"
+            (last - (2.0 - 1.0 / 64.0)).abs() < 1e-5,
+            "the last frame should be one step below the target: {last}"
         );
         ramp.settle(2.0);
         assert_eq!(ramp.next(), 2.0);
@@ -1088,7 +975,7 @@ mod silence {
     /// threshold has moved.
     #[test]
     fn the_floor_is_below_the_meter() {
-        assert!(SILENCE_DBFS < crate::meters::FLOOR as f64);
+        assert!(SILENCE_DBFS < crate::meters::Meters::default().input_db() as f64);
     }
 
     /// And it is far enough below a typical guitar level that the
