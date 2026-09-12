@@ -119,6 +119,7 @@ fn twin_power_four_backtracks_matches_full_reference() {
             .expect("Twin power stage builds");
         let mut realtime = Simulation::new(power.clone(), RATE);
         realtime.set_backtracks(4);
+        realtime.set_late_continuation(true);
         realtime.set_pass_ceiling(64);
         realtime.find_operating_point();
 
@@ -663,7 +664,16 @@ fn diagnose_the_pick_attack() {
         let cal = &CALIBRATION[index];
 
         let mut sim = Simulation::new(netlist, RATE);
-        let mut power_sim = power.map(|n| Simulation::new(n, RATE));
+        let mut power_sim = power.map(|n| {
+            let mut p = Simulation::new(n, RATE);
+            if gain == Gain::Twin {
+                p.set_backtracks(4);
+            }
+            if matches!(gain, Gain::Peavey | Gain::Twin) {
+                p.set_late_continuation(true);
+            }
+            p
+        });
 
         sim.set_control(gain.drive_control(), 0.85);
 
@@ -752,9 +762,10 @@ fn diagnose_the_pick_attack() {
         println!(
             "  gain health:  backtracks={backtracks} fallbacks={fallbacks} nonfinite={nonfinite}"
         );
-        let (suppressed, attempts, midpoint_successes, successes) = sim.continuation_health();
+        let (suppressed, attempts, midpoint_successes, successes, actual_rescues) =
+            sim.continuation_health();
         println!(
-            "  gain attack:  predictor_suppressions={suppressed} continuations={attempts} midpoint_successes={midpoint_successes} final_successes={successes}"
+            "  gain attack:  predictor_suppressions={suppressed} continuations={attempts} midpoint_successes={midpoint_successes} final_successes={successes} actual_rescues={actual_rescues}"
         );
         if let Some(p) = power_sim.as_ref() {
             let s = p.statistics();
@@ -764,9 +775,10 @@ fn diagnose_the_pick_attack() {
             );
             let (b, f, n) = p.health();
             println!("  power health: backtracks={b} fallbacks={f} nonfinite={n}");
-            let (suppressed, attempts, midpoint_successes, successes) = p.continuation_health();
+            let (suppressed, attempts, midpoint_successes, successes, actual_rescues) =
+                p.continuation_health();
             println!(
-                "  power attack: predictor_suppressions={suppressed} continuations={attempts} midpoint_successes={midpoint_successes} final_successes={successes}"
+                "  power attack: predictor_suppressions={suppressed} continuations={attempts} midpoint_successes={midpoint_successes} final_successes={successes} actual_rescues={actual_rescues}"
             );
         }
     }

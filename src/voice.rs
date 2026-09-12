@@ -906,6 +906,7 @@ pub struct SolverHealth {
     pub continuation_attempts: u64,
     pub continuation_midpoint_successes: u64,
     pub continuation_successes: u64,
+    pub continuation_actual_rescues: u64,
 }
 
 impl SolverHealth {
@@ -938,6 +939,9 @@ impl SolverHealth {
             continuation_successes: self
                 .continuation_successes
                 .saturating_sub(before.continuation_successes),
+            continuation_actual_rescues: self
+                .continuation_actual_rescues
+                .saturating_sub(before.continuation_actual_rescues),
         }
     }
 }
@@ -1212,6 +1216,13 @@ impl Chain {
                             // the same cap was measured at about -45.7 dB from reference.
                             if gain == Gain::Twin {
                                 sim.set_backtracks(4);
+                            }
+                            // Source continuation is deliberately a late power-stage
+                            // rescue only. Mark IIC+ keeps the proven normal path; the
+                            // 5150 and Twin may spend one existing Newton-pass slot on
+                            // a midpoint steering correction after a late rejected step.
+                            if matches!(gain, Gain::Peavey | Gain::Twin) {
+                                sim.set_late_continuation(true);
                             }
                             sim
                         })
@@ -1669,6 +1680,7 @@ impl Chain {
                 continuation_attempts,
                 continuation_midpoint_successes,
                 continuation_successes,
+                continuation_actual_rescues,
             ) = sim.continuation_health();
             SolverHealth {
                 solves,
@@ -1682,6 +1694,7 @@ impl Chain {
                 continuation_attempts,
                 continuation_midpoint_successes,
                 continuation_successes,
+                continuation_actual_rescues,
             }
         }
 
@@ -1728,12 +1741,13 @@ impl Chain {
             h.fallbacks += fallbacks;
             h.nonfinite += nonfinite;
             h.replans += sim.replans();
-            let (suppressed, attempts, midpoint_successes, successes) =
+            let (suppressed, attempts, midpoint_successes, successes, actual_rescues) =
                 sim.continuation_health();
             h.attack_predictor_suppressions += suppressed;
             h.continuation_attempts += attempts;
             h.continuation_midpoint_successes += midpoint_successes;
             h.continuation_successes += successes;
+            h.continuation_actual_rescues += actual_rescues;
         }
         h
     }
