@@ -40,7 +40,6 @@ pub(crate) struct StereoJob {
     pub mix: *const f32,
     pub len: usize,
     pub bypassed: bool,
-    pub silence_linear: f64,
 }
 
 struct Shared {
@@ -214,11 +213,7 @@ unsafe fn process_job(job: StereoJob) {
     for i in 0..job.len {
         let raw = samples[i] as f64;
         let trimmed = raw * input_trim[i] as f64;
-        let input = if trimmed.abs() < job.silence_linear {
-            0.0
-        } else {
-            trimmed
-        };
+        let input = trimmed;
         let dry = chain.delayed_dry(input);
         let wet = chain.process(input);
         if !job.bypassed {

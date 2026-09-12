@@ -669,7 +669,7 @@ fn diagnose_the_pick_attack() {
             if gain == Gain::Twin {
                 p.set_backtracks(4);
             }
-            if matches!(gain, Gain::Peavey | Gain::Twin) {
+            if gain == Gain::Twin {
                 p.set_late_continuation(true);
             }
             p

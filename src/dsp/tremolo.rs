@@ -44,16 +44,35 @@ const FASTEST_HZ: f64 = 11.0;
 /// the kind these assemblies use runs to megohms dark and to a few hundred
 /// ohms lit; these are estimates of that part, not measurements of one.
 const DARK_OHMS: f64 = 5_000_000.0;
+#[cfg(test)]
 const LIT_OHMS: f64 = 12_000.0;
+/// `ln(LIT_OHMS / DARK_OHMS)`. Keeping the logarithm constant turns the old
+/// generic `powf` into one `exp` without changing the logarithmic interpolation
+/// law of the cell.
+const LOG_CELL_RATIO: f64 = -6.032_286_541_628_237;
 
 /// How fast the cell responds. Down quickly, back slowly, and the asymmetry
 /// is the point.
 const FALL_SECONDS: f64 = 0.006;
 const RISE_SECONDS: f64 = 0.090;
 
+/// Recursive oscillator normalization interval. The rotation itself is only
+/// four multiplies and two adds per sample; the occasional normalization keeps
+/// round-off from changing its amplitude over a long session.
+const NORMALIZE_EVERY: u32 = 4096;
+
 pub struct Tremolo {
     rate: f64,
-    phase: f64,
+    /// Last speed control value whose oscillator increment is cached.
+    speed: f64,
+    /// Sin/cos of the oscillator phase. Advancing these with a fixed rotation
+    /// is algebraically the same sine oscillator as evaluating `sin(phase)`
+    /// every sample, but it avoids a libm call at audio rate.
+    oscillator_sin: f64,
+    oscillator_cos: f64,
+    step_sin: f64,
+    step_cos: f64,
+    since_normalize: u32,
     /// How lit the cell is, 0 to 1, after its own lag.
     lit: f64,
     /// Whether the bulb is currently struck. Neon has hysteresis: it fires at
@@ -65,30 +84,87 @@ pub struct Tremolo {
 }
 
 impl Tremolo {
-    /// Copy oscillator phase, bulb hysteresis and the cell's illumination.
-    /// The two oscillators must already have the same sample rate.
+    /// Copy oscillator phase, cached increment, bulb hysteresis and the cell's
+    /// illumination. The two oscillators must already have the same sample
+    /// rate.
     pub fn copy_runtime_state_from(&mut self, source: &Self) {
         debug_assert_eq!(self.rate, source.rate);
-        self.phase = source.phase;
+        self.speed = source.speed;
+        self.oscillator_sin = source.oscillator_sin;
+        self.oscillator_cos = source.oscillator_cos;
+        self.step_sin = source.step_sin;
+        self.step_cos = source.step_cos;
+        self.since_normalize = source.since_normalize;
         self.lit = source.lit;
         self.struck = source.struck;
     }
 
     pub fn new(rate: f64) -> Self {
-        Self {
+        let mut this = Self {
             rate,
-            phase: 0.0,
+            // Outside the legal 0..=1 control range so the first call caches
+            // the requested speed without a separate constructor path.
+            speed: -1.0,
+            oscillator_sin: 0.0,
+            oscillator_cos: 1.0,
+            step_sin: 0.0,
+            step_cos: 1.0,
+            since_normalize: 0,
             lit: 0.0,
             struck: false,
             fall: (-1.0 / (FALL_SECONDS * rate)).exp(),
             rise: (-1.0 / (RISE_SECONDS * rate)).exp(),
-        }
+        };
+        this.cache_speed(0.0);
+        this
     }
 
     pub fn set_rate(&mut self, rate: f64) {
         self.rate = rate;
         self.fall = (-1.0 / (FALL_SECONDS * rate)).exp();
         self.rise = (-1.0 / (RISE_SECONDS * rate)).exp();
+        // Recompute only the phase increment. Phase itself is continuous.
+        let speed = self.speed;
+        self.cache_speed(speed);
+    }
+
+    #[inline]
+    fn cache_speed(&mut self, speed: f64) {
+        let speed = speed.clamp(0.0, 1.0);
+        self.speed = speed;
+        let hz = SLOWEST_HZ * (FASTEST_HZ / SLOWEST_HZ).powf(speed);
+        let angle = std::f64::consts::TAU * hz / self.rate;
+        let (step_sin, step_cos) = angle.sin_cos();
+        self.step_sin = step_sin;
+        self.step_cos = step_cos;
+    }
+
+    #[inline]
+    fn oscillator(&mut self, speed: f64) -> f64 {
+        let speed = speed.clamp(0.0, 1.0);
+        if speed != self.speed {
+            self.cache_speed(speed);
+        }
+
+        // Rotate by exactly one cached phase increment. The old code advanced
+        // `phase` first and then evaluated the sine, so return the newly
+        // advanced sine here too.
+        let next_sin = self.oscillator_sin * self.step_cos + self.oscillator_cos * self.step_sin;
+        let next_cos = self.oscillator_cos * self.step_cos - self.oscillator_sin * self.step_sin;
+        self.oscillator_sin = next_sin;
+        self.oscillator_cos = next_cos;
+        self.since_normalize += 1;
+        if self.since_normalize >= NORMALIZE_EVERY {
+            let length = (self.oscillator_sin * self.oscillator_sin
+                + self.oscillator_cos * self.oscillator_cos)
+                .sqrt();
+            if length.is_finite() && length > 0.0 {
+                self.oscillator_sin /= length;
+                self.oscillator_cos /= length;
+            }
+            self.since_normalize = 0;
+        }
+        self.oscillator_sin
     }
 
     /// The cell's resistance this sample.
@@ -98,20 +174,9 @@ impl Tremolo {
     /// travel the bulb never strikes and the tremolo is off -- which is what
     /// the control does on the amplifier, rather than fading a depth.
     pub fn resistance(&mut self, speed: f64, intensity: f64) -> f64 {
-        let hz = SLOWEST_HZ * (FASTEST_HZ / SLOWEST_HZ).powf(speed.clamp(0.0, 1.0));
-        self.phase += hz / self.rate;
-        if self.phase >= 1.0 {
-            self.phase -= 1.0;
-        }
         // The oscillator, driving the bulb harder as Intensity is opened.
-        let drive = intensity.clamp(0.0, 1.0) * (std::f64::consts::TAU * self.phase).sin();
+        let drive = intensity.clamp(0.0, 1.0) * self.oscillator(speed);
         // Neon hysteresis: strikes high, extinguishes lower.
-        //
-        // There is a real dead zone at the bottom of the Intensity control
-        // because of this -- below the striking point the bulb never fires and
-        // the tremolo is simply off, which is what the amplifier does and not
-        // a fault. Where the strike sits decides how much of the travel that
-        // costs, and 0.35 leaves about two thirds of the control useful.
         const STRIKE: f64 = 0.35;
         const QUENCH: f64 = 0.18;
         self.struck = if self.struck {
@@ -120,13 +185,6 @@ impl Tremolo {
             drive > STRIKE
         };
         // How *brightly*, not merely whether.
-        //
-        // A neon bulb past its striking point passes more current the harder
-        // it is driven, and a brighter bulb pulls the cell's resistance
-        // further down. Modelled as on-or-off, the Intensity control changed
-        // only how *long* each pulse lasted and never how deep it went --
-        // measured, 12.5 dB at every setting that fired at all, which is not
-        // what the control does on the amplifier.
         let target = if self.struck {
             ((drive - QUENCH) / (1.0 - QUENCH)).clamp(0.0, 1.0)
         } else {
@@ -140,18 +198,13 @@ impl Tremolo {
         self.lit = target + (self.lit - target) * coefficient;
         // Log-interpolate, because a photoresistor's resistance is roughly
         // logarithmic in illumination and a linear blend would spend most of
-        // its travel doing nothing.
-        DARK_OHMS * (LIT_OHMS / DARK_OHMS).powf(self.lit)
+        // its travel doing nothing. This is the same law as
+        // `DARK * (LIT / DARK).powf(lit)`, with the constant logarithm removed
+        // from the audio-rate path.
+        DARK_OHMS * (self.lit * LOG_CELL_RATIO).exp()
     }
 
     /// What the shunt does to the signal at the point it sits.
-    ///
-    /// The cell is across the signal path to ground, between the stage driving
-    /// it and the load it drives. `source` is the driving stage's own output
-    /// resistance and `load` is what follows -- on an AB763 that is a valve
-    /// plate into the phase inverter's grid leak. The attenuation is then just
-    /// the divider those three make, which is the circuit's answer rather than
-    /// a depth parameter.
     pub fn attenuation(&mut self, speed: f64, intensity: f64, source: f64, load: f64) -> f64 {
         let cell = self.resistance(speed, intensity);
         let shunt = cell * load / (cell + load);
@@ -159,8 +212,65 @@ impl Tremolo {
     }
 
     pub fn reset(&mut self) {
-        self.phase = 0.0;
+        self.oscillator_sin = 0.0;
+        self.oscillator_cos = 1.0;
+        self.since_normalize = 0;
         self.lit = 0.0;
         self.struck = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The optimized oscillator/cell path must remain the same model as the
+    /// original direct phase + `sin` + logarithmic `powf` implementation. The
+    /// arithmetic is deliberately rearranged to remove libm work from the
+    /// audio-rate path, so require numerical agreement rather than bit identity.
+    #[test]
+    fn cached_oscillator_matches_direct_reference() {
+        let rate = 48_000.0;
+        let speed = 0.40;
+        let intensity = 0.75;
+        let mut optimized = Tremolo::new(rate);
+
+        let hz = SLOWEST_HZ * (FASTEST_HZ / SLOWEST_HZ).powf(speed);
+        let mut phase = 0.0f64;
+        let mut lit = 0.0f64;
+        let mut struck = false;
+        let fall = (-1.0 / (FALL_SECONDS * rate)).exp();
+        let rise = (-1.0 / (RISE_SECONDS * rate)).exp();
+        const STRIKE: f64 = 0.35;
+        const QUENCH: f64 = 0.18;
+
+        let mut worst_relative = 0.0f64;
+        for _ in 0..(48_000 * 10) {
+            phase += hz / rate;
+            if phase >= 1.0 {
+                phase -= 1.0;
+            }
+            let drive = intensity * (std::f64::consts::TAU * phase).sin();
+            struck = if struck {
+                drive > QUENCH
+            } else {
+                drive > STRIKE
+            };
+            let target = if struck {
+                ((drive - QUENCH) / (1.0 - QUENCH)).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let coefficient = if target > lit { fall } else { rise };
+            lit = target + (lit - target) * coefficient;
+            let reference = DARK_OHMS * (LIT_OHMS / DARK_OHMS).powf(lit);
+            let actual = optimized.resistance(speed, intensity);
+            let relative = ((actual - reference) / reference.max(1.0)).abs();
+            worst_relative = worst_relative.max(relative);
+        }
+        assert!(
+            worst_relative < 1e-9,
+            "optimized tremolo drifted from the direct model: {worst_relative:e}"
+        );
     }
 }

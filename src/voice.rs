@@ -1217,11 +1217,13 @@ impl Chain {
                             if gain == Gain::Twin {
                                 sim.set_backtracks(4);
                             }
-                            // Source continuation is deliberately a late power-stage
-                            // rescue only. Mark IIC+ keeps the proven normal path; the
-                            // 5150 and Twin may spend one existing Newton-pass slot on
-                            // a midpoint steering correction after a late rejected step.
-                            if matches!(gain, Gain::Peavey | Gain::Twin) {
+                            // Source continuation is deliberately Twin-only. The 5150
+                            // already settles every measured sample on the proven normal
+                            // path, and the tight rescue fired only once in 384k samples
+                            // without rescuing anything. Keeping it disabled there restores
+                            // the exact pre-continuation hot loop. The Twin, by contrast,
+                            // measurably benefits from one late midpoint steering step.
+                            if gain == Gain::Twin {
                                 sim.set_late_continuation(true);
                             }
                             sim

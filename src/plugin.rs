@@ -9,32 +9,16 @@ use crate::params::{Amplifier, Diode, GainStageParams, Oversampling};
 use crate::stereo_worker::{StereoJob, StereoWorker};
 use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 
-/// Below this level the trimmed input is quantised to zero.
+/// The input is never hard-gated inside the plugin.
 ///
-/// A guitar at rest puts out roughly -70 dBFS of its own noise, and any
-/// converter worth the name adds a few decibels below that. Below -80 there
-/// is nothing the circuit can respond to that is not the source's own
-/// self-noise, and the solve for a zero input is much cheaper than the solve
-/// for a real one: the predictor lands on the previous answer, the residual
-/// sits at the operating point's own round-off, and Newton converges in one
-/// or two passes instead of the three to five a real signal takes. A player
-/// is not playing for a substantial fraction of the time they are sitting
-/// with a guitar in front of them, and that fraction of the CPU was being
-/// spent solving for a signal the speaker cannot reproduce.
-///
-/// It is applied **after** the input trim, not before: a player who has
-/// turned the trim up to hear a quiet source has moved the threshold up with
-/// the signal, which is what turning the trim up means.
-///
-/// The floor is below the meter's own bottom (`meters::FLOOR` is -60 dBFS),
-/// so the panel reads exactly what it always did during a rest, and it is a
-/// thousandth of a typical guitar level, which is below the noise floor of
-/// any converter the plugin is likely to see.
-///
-/// Nothing about the chain is frozen or bypassed. The circuits keep running;
-/// they simply advance toward their own operating point rather than
-/// following a signal, which is what a real amplifier does between notes.
-const SILENCE_DBFS: f64 = -80.0;
+/// Earlier builds quantised samples below -80 dBFS to exact zero as a CPU
+/// optimisation. That creates a numerical discontinuity exactly where a live
+/// guitar wakes from converter noise into a pick attack: every nonlinear
+/// circuit has been solving the zero-source operating trajectory and then sees
+/// a finite source jump in one sample. The physical amplifier does not contain
+/// that gate, and the saved CPU during silence is not worth a crackle/dropout
+/// on the first transient. FTZ/DAZ already handles denormal arithmetic, so the
+/// chain now receives the trimmed source exactly as the host supplied it.
 
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
@@ -677,7 +661,6 @@ impl Plugin for GainStageFx {
         let bypassed = self.params.bypass.value();
         let decay = (-1.0 / (0.3 * self.sample_rate)).exp();
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
-        let silence_linear = 10f64.powf(SILENCE_DBFS / 20.0);
         let mut peak = self.peak;
 
         // Process host frames directly. There is no plugin-side FIFO. Exact
@@ -715,11 +698,7 @@ impl Plugin for GainStageFx {
             // worker overwrites the right output in place.
             for (i, &sample) in right_samples.iter().take(sample_count).enumerate() {
                 let trimmed = sample as f64 * self.stereo_input_trim[i] as f64;
-                self.stereo_right_peak[i] = if trimmed.abs() < silence_linear {
-                    0.0
-                } else {
-                    trimmed.abs()
-                };
+                self.stereo_right_peak[i] = trimmed.abs();
             }
 
             let (left_chains, right_chains) = self.channels.split_at_mut(1);
@@ -733,7 +712,6 @@ impl Plugin for GainStageFx {
                 mix: self.stereo_mix.as_ptr(),
                 len: sample_count,
                 bypassed,
-                silence_linear,
             };
             // SAFETY: all pointers in the job refer to disjoint right-channel
             // storage that remains alive until finish_or_steal() below.
@@ -742,11 +720,7 @@ impl Plugin for GainStageFx {
             for (i, sample) in left_samples.iter_mut().take(sample_count).enumerate() {
                 let raw = *sample as f64;
                 let trimmed = raw * self.stereo_input_trim[i] as f64;
-                let input = if trimmed.abs() < silence_linear {
-                    0.0
-                } else {
-                    trimmed
-                };
+                let input = trimmed;
                 let dry = left_chain.delayed_dry(input);
                 let wet = left_chain.process(input);
                 if !bypassed {
@@ -796,11 +770,7 @@ impl Plugin for GainStageFx {
                     // continues running and stays warm.
                     let raw = *sample as f64;
                     let trimmed = raw * input_trim;
-                    let input = if trimmed.abs() < silence_linear {
-                        0.0
-                    } else {
-                        trimmed
-                    };
+                    let input = trimmed;
 
                     let dry = chain.delayed_dry(input);
                     let wet = chain.process(input);
@@ -1114,30 +1084,4 @@ mod block_ramp {
     }
 }
 
-#[cfg(test)]
-mod silence {
-    use super::SILENCE_DBFS;
 
-    /// The floor sits below the meter's own bottom, so the panel reads
-    /// exactly what it always did during a rest and no user-visible
-    /// threshold has moved.
-    #[test]
-    fn the_floor_is_below_the_meter() {
-        assert!(SILENCE_DBFS < crate::meters::Meters::default().input_db() as f64);
-    }
-
-    /// And it is far enough below a typical guitar level that the
-    /// quantisation cannot touch anything a player would call playing.
-    #[test]
-    fn the_floor_is_far_below_a_typical_guitar() {
-        let typical_dbfs = -20.0;
-        assert!(SILENCE_DBFS <= typical_dbfs - 60.0);
-    }
-
-    /// The linear value the loop compares against, for the record.
-    #[test]
-    fn the_linear_floor_is_a_ten_thousandth() {
-        let linear = 10f64.powf(SILENCE_DBFS / 20.0);
-        assert!((linear - 1e-12).abs() < 1e-12 || (linear - 1e-4).abs() < 1e-12);
-    }
-}
