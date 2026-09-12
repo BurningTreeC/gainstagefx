@@ -14,7 +14,7 @@
 use nih_plug::prelude::*;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::{assets, widgets::RawParamEvent};
+use nih_plug_vizia::{vizia_assets, widgets::RawParamEvent};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -338,7 +338,7 @@ impl PresetButton {
             .child_left(Pixels(10.0))
             .child_top(Stretch(1.0))
             .child_bottom(Stretch(1.0))
-            .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+            .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
             .font_size(11.0)
             .color(Color::rgb(0xff, 0xb2, 0x6a))
             .hoverable(false);
@@ -412,7 +412,7 @@ impl Press {
                 .child_right(Stretch(1.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                 .font_size(10.5)
                 .color(if !enabled {
                     Color::rgba(0xff, 0xff, 0xff, 0x33)
@@ -484,7 +484,7 @@ impl SizeButton {
                 .child_right(Stretch(1.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                 .font_size(10.0)
                 .color(Color::rgb(0xc9, 0xd2, 0xd8))
                 .hoverable(false);
@@ -562,7 +562,7 @@ impl SizeRow {
                     .child_left(Pixels(14.0))
                     .child_top(Stretch(1.0))
                     .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                     .font_size(10.5)
                     .color(Session::scale.map(move |current| {
                         if (*current - scale).abs() < 1e-6 {
@@ -681,7 +681,7 @@ fn heading(cx: &mut Context, text: &'static str) {
         .child_left(Pixels(10.0))
         .child_top(Stretch(1.0))
         .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0x7e, 0x8a, 0x96))
         .hoverable(false);
@@ -703,7 +703,7 @@ impl Row {
                     .child_left(Pixels(20.0))
                     .child_top(Stretch(1.0))
                     .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                     .font_size(11.0)
                     .color(Session::current.map(move |current| {
                         if *current == name {
@@ -775,7 +775,7 @@ pub fn dialogs(cx: &mut Context) {
                 .child_left(Pixels(16.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                 .font_size(11.5)
                 .color(Color::rgb(0xe8, 0xee, 0xf4))
                 .hoverable(false);
@@ -787,7 +787,7 @@ pub fn dialogs(cx: &mut Context) {
                         .height(Pixels(26.0))
                         .left(Pixels(16.0))
                         .right(Pixels(16.0))
-                        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                         .font_size(11.0)
                         .color(Color::rgb(0xe8, 0xee, 0xf4))
                         .background_color(Color::rgba(0x00, 0x00, 0x00, 0x55))
@@ -828,7 +828,7 @@ pub fn dialogs(cx: &mut Context) {
                     .left(Pixels(16.0))
                     .child_top(Stretch(1.0))
                     .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
                     .font_size(10.0)
                     .color(Color::rgb(0xe8, 0x7a, 0x5a))
                     .hoverable(false);
@@ -880,7 +880,7 @@ fn note(cx: &mut Context, text: impl Lens<Target = String>) {
         .right(Pixels(16.0))
         .child_top(Stretch(1.0))
         .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
         .font_size(10.5)
         .color(Color::rgb(0xa8, 0xb2, 0xba))
         .hoverable(false);

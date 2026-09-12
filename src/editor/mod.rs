@@ -20,7 +20,7 @@ mod widgets;
 
 use nih_plug::prelude::Editor;
 use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
+use nih_plug_vizia::{create_vizia_editor, vizia_assets, ViziaState, ViziaTheming};
 use std::sync::Arc;
 
 use crate::params::{
@@ -122,8 +122,11 @@ pub fn create(
 ) -> Option<Box<dyn Editor>> {
     let state = editor_state.clone();
     create_vizia_editor(editor_state, ViziaTheming::None, move |cx, gui| {
-        assets::register_noto_sans_regular(cx);
-        assets::register_noto_sans_bold(cx);
+        // Vizia ships Roboto as TTF byte slices. Registering the faces from
+        // memory makes them part of the plugin binary, so the GUI never
+        // depends on a system-wide ttf-roboto installation.
+        vizia_assets::register_roboto(cx);
+        vizia_assets::register_roboto_bold(cx);
         // The only styling the panel takes from a sheet rather than from its
         // own drawing: the scroll bar, which vizia builds but cannot size or
         // colour without a theme.
@@ -172,7 +175,7 @@ fn label(cx: &mut Context, text: &str, x: f32, y: f32, size: f32, width: f32, co
         .child_right(Stretch(1.0))
         .child_top(Stretch(1.0))
         .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
         .font_size(size)
         .color(Color::rgb(
             ((colour >> 16) & 0xff) as u8,
@@ -209,7 +212,7 @@ where
         .child_right(Stretch(1.0))
         .child_top(Stretch(1.0))
         .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0xff, 0xb2, 0x6a))
         .hoverable(false);
@@ -258,7 +261,7 @@ fn gutter(cx: &mut Context) {
             .height(Pixels(28.0))
             .child_top(Stretch(1.0))
             .child_bottom(Stretch(1.0))
-            .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+            .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
             .font_size(22.0)
             .color(Color::rgba(0xff, 0xff, 0xff, 0x24))
             .hoverable(false);
@@ -530,7 +533,7 @@ fn circuit(cx: &mut Context) {
         .height(Pixels(22.0))
         .child_top(Stretch(1.0))
         .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0x86, 0x92, 0x9c))
         .hoverable(false);
@@ -650,7 +653,7 @@ fn drive(cx: &mut Context) {
     .height(Pixels(LABEL_H))
     .child_left(Stretch(1.0))
     .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0x9a, 0xa6, 0xb0))
     .hoverable(false);
@@ -665,7 +668,7 @@ fn drive(cx: &mut Context) {
     .height(Pixels(LABEL_H))
     .child_left(Stretch(1.0))
     .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0xff, 0xb2, 0x6a))
     .hoverable(false);
@@ -714,7 +717,7 @@ fn drive(cx: &mut Context) {
     .height(Pixels(LABEL_H))
     .child_left(Stretch(1.0))
     .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(assets::NOTO_SANS))])
+    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0xff, 0x8a, 0x3c))
     .hoverable(false);

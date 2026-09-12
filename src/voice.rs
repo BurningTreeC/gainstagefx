@@ -1516,6 +1516,16 @@ impl Chain {
 
         if !requested_changed && factor == self.over.factor() && self.deferred_oversample.is_none()
         {
+            // `Chain::new` constructs the oversampler at its default factor
+            // before the simulations know that effective rate. Even when the
+            // requested factor is already active, these two derived pieces
+            // of state still have to be brought into agreement with it.
+            // Keeping this invariant here also makes restoring/reapplying a
+            // quality setting idempotent instead of depending on constructor
+            // details.
+            self.pad
+                .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+            self.sync_oversampled_rates();
             return;
         }
 

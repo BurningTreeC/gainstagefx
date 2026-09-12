@@ -52,6 +52,11 @@ fn the_whole_catalogue_builds() {
 /// The full schematic models are intentionally kept at the host rate. They
 /// are large nonlinear solves, and applying the global 4x default to them can
 /// make a DAW miss its real-time deadline.
+///
+/// Oversampling-factor changes are deliberately installed on the first sample
+/// of a switch fade so resetting the halfband histories cannot click. The test
+/// therefore has to advance the chain once before asking which factor is
+/// actually active.
 #[test]
 fn modelled_circuits_stay_at_host_rate() {
     for gain in [
@@ -60,10 +65,12 @@ fn modelled_circuits_stay_at_host_rate() {
         Gain::Boogie,
         Gain::Peavey,
         Gain::Neve,
+        Gain::Twin,
     ] {
         let mut chain = Chain::new(RATE);
         chain.set_voice(gain, voice::Diode::Silicon, voice::Amplifier::Valve);
         chain.set_oversampling(8);
+        chain.process(0.0);
         assert_eq!(
             chain.effective_oversampling(),
             1,
@@ -79,6 +86,7 @@ fn modelled_circuits_stay_at_host_rate() {
         voice::Amplifier::Valve,
     );
     generic.set_oversampling(4);
+    generic.process(0.0);
     assert_eq!(generic.effective_oversampling(), 4);
 }
 
@@ -382,7 +390,7 @@ fn a_pick_attack_is_followed_and_does_not_leave_the_chain_ringing() {
         // on a hard pick: a one-or-two-sample rise from nothing to the
         // peak, a short plateau, then an exponential decay over about
         // eighty milliseconds.
-        let mut play = |chain: &mut Chain, seconds: f64, amplitude: f64, hz: f64| {
+        let play = |chain: &mut Chain, seconds: f64, amplitude: f64, hz: f64| {
             let n = (seconds * RATE) as usize;
             let mut peak_output: f64 = 0.0;
             for i in 0..n {
@@ -452,9 +460,14 @@ fn a_pick_attack_is_followed_and_does_not_leave_the_chain_ringing() {
         );
 
         // And after the input stops, the chain has to return to silence
-        // rather than keep ringing. A quarter of a second is long enough
-        // for the transformer core's flux and every coupling capacitor to
-        // settle.
+        // rather than keep ringing. First allow a quarter of a second for
+        // the transformer's flux and the coupling capacitors to settle, then
+        // listen for another quarter second. Measuring from the very first
+        // silent sample mistakes the ordinary decay of the last note for the
+        // persistent ringing this regression test is meant to catch.
+        for _ in 0..(RATE as usize / 4) {
+            chain.process(0.0);
+        }
         let mut worst: f64 = 0.0;
         for _ in 0..(RATE as usize / 4) {
             worst = worst.max(chain.process(0.0).abs());
@@ -503,7 +516,13 @@ fn a_chord_of_picks_does_not_leave_the_twin_pulsating() {
         }
     }
 
-    // Two seconds of silence.
+    // Give the ordinary note/capacitor tail the same quarter-second settling
+    // window as the single-pick test, then listen for two full seconds. The
+    // old test started measuring at sample zero, so a perfectly decaying last
+    // note could fail a test whose purpose is persistent self-oscillation.
+    for _ in 0..(RATE as usize / 4) {
+        chain.process(0.0);
+    }
     let mut worst: f64 = 0.0;
     let mut worst_at = 0usize;
     for i in 0..(RATE as usize * 2) {
@@ -516,7 +535,7 @@ fn a_chord_of_picks_does_not_leave_the_twin_pulsating() {
     assert!(
         worst < 0.05,
         "the Twin kept pulsating after a chord of picks: peak {worst:.4} \
-         at sample {worst_at}, which is {:.3} s into the silence",
+         at sample {worst_at}, which is {:.3} s after the settling window",
         worst_at as f64 / RATE,
     );
 }
