@@ -498,9 +498,12 @@ pub const PRESETS: &[Preset] = &[
     // swallowing it. Tremolo off: it is a per-song effect rather than a
     // default, and the preset below has it.
     //
-    // Steel iron, because this circuit stops at the phase inverter and has no
-    // output transformer of its own yet -- see `twin.rs`. A 2x12 combo, which
-    // is what a Twin is.
+    // Steel iron stays deliberately enabled as the plugin's selectable output-
+    // iron colour stage. The Twin power model now has its own physical output
+    // transformer as part of the amplifier, so this is additional user-selected
+    // transformer colour rather than a substitute for missing amplifier iron.
+    // Keeping it here also makes Blackface presets exercise the same Steel path
+    // available from the panel. A 2x12 combo is what a Twin is.
     Preset {
         drive: 0.60,
         circuit: Circuit::Twin,

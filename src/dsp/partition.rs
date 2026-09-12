@@ -343,6 +343,15 @@ pub struct ReducedNonlinear {
     reduced_matrix: Vec<f64>,
     /// Reduced RHS and, after factorisation, the boundary solution.
     reduced_rhs: Vec<f64>,
+    /// Dedicated unfactorised workspace for line-search residual trials. The
+    /// Newton matrix above is destroyed by LU factorisation; keeping this
+    /// separate lets a difficult sample restamp only nonlinear coefficients
+    /// instead of rebuilding the whole b x b Schur matrix for every trial.
+    trial_matrix: Vec<f64>,
+    trial_rhs: Vec<f64>,
+    /// Compact boundary-matrix slots a nonlinear device can change. These are
+    /// configured once from the Simulation's declared device footprint.
+    trial_device_slots: Vec<usize>,
     /// Per-sample Schur RHS correction `A_bi * inv(A_ii) * b_i`. The internal
     /// RHS cannot be touched by nonlinear devices, so recomputing this dot
     /// product on every Newton pass is identical repeated work.
@@ -383,6 +392,8 @@ impl ReducedNonlinear {
         self.condensed.copy_runtime_state_from(&source.condensed);
         self.coupling.copy_from_slice(&source.coupling);
         self.boundary_base.copy_from_slice(&source.boundary_base);
+        self.trial_matrix.copy_from_slice(&source.trial_matrix);
+        self.trial_rhs.copy_from_slice(&source.trial_rhs);
         self.internal_boundary_response
             .copy_from_slice(&source.internal_boundary_response);
         self.internal_rhs_responses
@@ -465,6 +476,9 @@ impl ReducedNonlinear {
             boundary_matrix_slots,
             reduced_matrix: vec![0.0; b * b],
             reduced_rhs: vec![0.0; b],
+            trial_matrix: vec![0.0; b * b],
+            trial_rhs: vec![0.0; b],
+            trial_device_slots: Vec::new(),
             rhs_internal_correction: vec![0.0; b],
             internal_rhs_base: vec![0.0; i],
             internal_boundary_response: vec![0.0; i * b],
@@ -482,11 +496,36 @@ impl ReducedNonlinear {
         result.update_coupling();
         result.update_boundary_base(matrix);
         result.update_rhs_responses();
+        result.reset_trial_base();
         Some(result)
     }
 
     pub fn boundary_len(&self) -> usize {
         self.condensed.boundary.len()
+    }
+
+    /// Configure the compact line-search footprint from full-MNA matrix slots.
+    /// Construction/rebuild code calls this once for a newly created reduction;
+    /// the audio thread only reads the resulting compact list.
+    pub fn set_trial_device_footprint(&mut self, full_slots: &[usize]) {
+        let global_n = self.node_to_boundary.len();
+        let b = self.condensed.boundary.len();
+        self.trial_device_slots.clear();
+        self.trial_device_slots.reserve(full_slots.len());
+        for &slot in full_slots {
+            let row = slot / global_n;
+            let column = slot % global_n;
+            if row >= global_n || column >= global_n {
+                continue;
+            }
+            let local_row = self.node_to_boundary[row];
+            let local_column = self.node_to_boundary[column];
+            if local_row != usize::MAX && local_column != usize::MAX {
+                self.trial_device_slots.push(local_row * b + local_column);
+            }
+        }
+        self.trial_device_slots.sort_unstable();
+        self.trial_device_slots.dedup();
     }
 
     pub fn internal_len(&self) -> usize {
@@ -512,6 +551,8 @@ impl ReducedNonlinear {
             || self.boundary_matrix_slots.len() != b * b
             || self.reduced_matrix.len() != b * b
             || self.reduced_rhs.len() != b
+            || self.trial_matrix.len() != b * b
+            || self.trial_rhs.len() != b
             || self.rhs_internal_correction.len() != b
             || self.internal_rhs_base.len() != i
             || self.internal_boundary_response.len() != i * b
@@ -604,6 +645,7 @@ impl ReducedNonlinear {
         self.update_coupling();
         self.update_boundary_base(matrix);
         self.update_rhs_responses();
+        self.reset_trial_base();
         self.rhs_prepared = false;
         self.pivot_planned = false;
         self.valid = true;
@@ -675,6 +717,65 @@ impl ReducedNonlinear {
         {
             *value -= correction;
         }
+    }
+
+    /// Prepare the dedicated line-search workspace. Non-device coefficients
+    /// remain cached as the already-condensed Schur base; only coefficients a
+    /// nonlinear device may overwrite are restored to their pre-device A_bb
+    /// values. This preserves the exact old arithmetic order on those slots:
+    /// `base + device - coupling`.
+    pub fn begin_trial_stamp<'a>(
+        &'a mut self,
+        fixed_rhs: &[f64],
+    ) -> Option<(&'a mut [f64], &'a mut [f64], &'a [usize])> {
+        if !self.valid || !self.rhs_prepared || fixed_rhs.len() != self.node_to_boundary.len() {
+            return None;
+        }
+        for &slot in &self.trial_device_slots {
+            self.trial_matrix[slot] = self.boundary_base[slot];
+        }
+        for (value, &global) in self.trial_rhs.iter_mut().zip(&self.condensed.boundary) {
+            *value = fixed_rhs[global];
+        }
+        let Self {
+            trial_matrix,
+            trial_rhs,
+            node_to_boundary,
+            ..
+        } = self;
+        Some((trial_matrix, trial_rhs, node_to_boundary))
+    }
+
+    /// Finish a line-search trial after device stamping. Non-device matrix
+    /// entries are already condensed; only the restored/stamped device slots
+    /// need their Schur coupling subtracted. RHS correction is sample-dependent
+    /// and therefore still runs over the compact boundary vector.
+    pub fn finish_trial_stamp(&mut self) {
+        for &slot in &self.trial_device_slots {
+            self.trial_matrix[slot] -= self.coupling[slot];
+        }
+        for (value, &correction) in self
+            .trial_rhs
+            .iter_mut()
+            .zip(&self.rhs_internal_correction)
+        {
+            *value -= correction;
+        }
+    }
+
+    /// Exact reduced residual for the dedicated unfactorised trial workspace.
+    #[inline]
+    pub fn trial_merit_stamped(&self, full: &[f64]) -> f64 {
+        let b = self.condensed.boundary.len();
+        let mut total = 0.0;
+        for row in 0..b {
+            let mut residual = -self.trial_rhs[row];
+            for (column, &global) in self.condensed.boundary.iter().enumerate() {
+                residual += self.trial_matrix[row * b + column] * full[global];
+            }
+            total += residual * residual;
+        }
+        total
     }
 
     /// Exact reduced residual at a full-vector candidate. Internal linear rows
@@ -814,6 +915,19 @@ impl ReducedNonlinear {
     fn update_boundary_base(&mut self, matrix: &[f64]) {
         for (value, &slot) in self.boundary_base.iter_mut().zip(&self.boundary_matrix_slots) {
             *value = matrix[slot];
+        }
+    }
+
+    /// Refresh every non-device trial coefficient after construction or a
+    /// control/sample-rate rebuild. This runs outside the Newton hot path.
+    fn reset_trial_base(&mut self) {
+        for ((trial, &base), &coupling) in self
+            .trial_matrix
+            .iter_mut()
+            .zip(&self.boundary_base)
+            .zip(&self.coupling)
+        {
+            *trial = base - coupling;
         }
     }
 
@@ -1375,6 +1489,55 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn sparse_trial_workspace_matches_full_reduced_restamp_exactly() {
+        let base = [
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5,
+            0.4, 2.0, 0.5, 1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
+        ];
+        let fixed_rhs = [2.0, -1.25, 0.8, 1.0, -0.3];
+        let point = [0.25, -0.5, 0.75, 1.25, -0.1];
+        let mut reduced = ReducedNonlinear::new(&base, &[0.0; 5], &[0, 3]).unwrap();
+        // Boundary [0, 3]: stand in for a nonlinear device whose Jacobian can
+        // touch all four entries in that compact 2 x 2 block.
+        reduced.set_trial_device_footprint(&[0, 3, 15, 18]);
+        assert!(reduced.prepare_rhs(&fixed_rhs));
+
+        {
+            let (matrix, rhs, _) = reduced.begin_stamp(&fixed_rhs).unwrap();
+            matrix[0] += 2.3;
+            matrix[1] -= 0.7;
+            matrix[2] += 0.25;
+            matrix[3] += 1.1;
+            rhs[0] += 0.7;
+            rhs[1] -= 0.4;
+        }
+        reduced.finish_stamp();
+        let expected = reduced.merit_stamped(&point);
+
+        // Dirty the trial workspace once, then stamp the desired point. The
+        // second begin must restore every device slot rather than accumulating
+        // the previous trial.
+        {
+            let (matrix, rhs, _) = reduced.begin_trial_stamp(&fixed_rhs).unwrap();
+            matrix[0] += 99.0;
+            rhs[0] += 99.0;
+        }
+        reduced.finish_trial_stamp();
+        {
+            let (matrix, rhs, _) = reduced.begin_trial_stamp(&fixed_rhs).unwrap();
+            matrix[0] += 2.3;
+            matrix[1] -= 0.7;
+            matrix[2] += 0.25;
+            matrix[3] += 1.1;
+            rhs[0] += 0.7;
+            rhs[1] -= 0.4;
+        }
+        reduced.finish_trial_stamp();
+        let actual = reduced.trial_merit_stamped(&point);
+        assert_eq!(actual.to_bits(), expected.to_bits());
+    }
 
     #[test]
     fn split_internal_recovery_matches_full_system_with_boundary_rhs_changes() {

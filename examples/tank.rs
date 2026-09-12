@@ -88,9 +88,6 @@ fn main() {
 fn tremolo() {
     use gainstagefx::dsp::tremolo::Tremolo;
     println!("\n\n=== the tremolo, at the phase inverter's grid ===");
-    // A 12AX7 plate with a 100 k load looks like about 38 k; the phase
-    // inverter's grid leak is 1 M.
-    let (source, load) = (38_000.0, 1_000_000.0);
     println!(
         "  {:<10}{:>8}{:>12}{:>12}{:>12}{:>10}",
         "speed", "Hz", "intensity", "deepest", "shallowest", "duty"
@@ -105,7 +102,7 @@ fn tremolo() {
             let mut below = 0usize;
             let mut v = Vec::with_capacity(n);
             for _ in 0..n {
-                let a = t.attenuation(speed, intensity, source, load);
+                let a = t.attenuation(speed, intensity);
                 v.push(a);
                 lo = lo.min(a);
                 hi = hi.max(a);

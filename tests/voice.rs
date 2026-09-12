@@ -668,8 +668,6 @@ fn diagnose_the_pick_attack() {
             let mut p = Simulation::new(n, RATE);
             if gain == Gain::Twin {
                 p.set_backtracks(4);
-            }
-            if gain == Gain::Twin {
                 p.set_late_continuation(true);
             }
             p

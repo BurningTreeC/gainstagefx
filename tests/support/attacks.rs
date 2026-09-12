@@ -161,7 +161,12 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
         assert!(left.iter().all(|x| x.is_finite()));
     }
     let health = plugin.channels[0].solver_health();
-    assert_eq!(health.unsettled, 0, "failed solves");
+    assert_eq!(
+        health.unsettled, 0,
+        "{} failed solves: {:?}",
+        plugin.params.circuit.value().name(),
+        plugin.channels[0].solver_breakdown()
+    );
     assert_eq!(health.nonfinite, 0, "nonfinite corrections");
     assert_eq!(
         plugin.channels[1].solver_health().solves,

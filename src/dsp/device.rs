@@ -485,7 +485,7 @@ impl Device for Diode {
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
-        let scale = self.scale;
+        let _scale = self.scale;
         let guess = self.limit_junction(across(v, self.a, self.k));
         s.junction_held |= self.clamped;
         self.delta = (guess - self.voltage).abs();

@@ -405,7 +405,7 @@ pub struct Simulation {
     /// midpoint work never changes this; it advances exactly once per sample.
     last_input: f64,
     /// Per-circuit numerical policy. Disabled by default; the voice catalogue
-    /// enables it only for the 5150 and Twin power stages.
+    /// currently enables it only for the Twin power stage.
     late_continuation: bool,
     /// The answer before that, so the next sample can be started from where
     /// the last two were heading rather than from where the last one was.
@@ -1294,19 +1294,23 @@ impl Simulation {
                     if !nonlinear_reduction_worthwhile(n, candidate.len()) {
                         continue;
                     }
-                    let transient = ReducedNonlinear::new_with_active_rhs(
+                    let mut transient = ReducedNonlinear::new_with_active_rhs(
                         &self.base,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
-                    let dc_partition = ReducedNonlinear::new_with_active_rhs(
+                    let mut dc_partition = ReducedNonlinear::new_with_active_rhs(
                         &self.base_dc,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
-                    if transient.is_some() {
+                    if let Some(partition) = transient.as_mut() {
+                        partition.set_trial_device_footprint(&self.device_matrix_slots);
+                        if let Some(dc) = dc_partition.as_mut() {
+                            dc.set_trial_device_footprint(&self.device_matrix_slots);
+                        }
                         self.nonlinear_boundary = candidate;
                         self.nonlinear_partition = transient;
                         self.nonlinear_partition_dc = dc_partition;
@@ -1759,7 +1763,7 @@ impl Simulation {
         }?;
         let n = partition.boundary_len();
         let (exact, mapping_ok) = {
-            let (matrix, rhs, map) = partition.begin_stamp(&self.fixed_rhs)?;
+            let (matrix, rhs, map) = partition.begin_trial_stamp(&self.fixed_rhs)?;
             let mut stamper = Stamper {
                 matrix,
                 rhs,
@@ -1778,8 +1782,8 @@ impl Simulation {
         if !mapping_ok {
             return None;
         }
-        partition.finish_stamp();
-        Some(partition.merit_stamped(point))
+        partition.finish_trial_stamp();
+        Some(partition.trial_merit_stamped(point))
     }
 
     #[inline]
@@ -2410,10 +2414,11 @@ impl Simulation {
                     *earlier = voltage;
                 }
             }
-            // Save the starting point for the record; the failure branch
-            // below uses `recent_move` for its scale, not this.
-            self.predicted.copy_from_slice(&self.voltage);
-
+            // `predicted` used to receive a copy of this starting point on
+            // every nonlinear sample. Nothing reads that copy: continuation
+            // overwrites the buffer immediately before using it as a backup,
+            // and the failure bound uses `recent_move`. Avoid that full-vector
+            // write in the realtime hot path.
             let mut settled = false;
             let ceiling = self.ceiling.clamp(PASS_FLOOR, MAX_ITERATIONS);
 
@@ -2449,6 +2454,7 @@ impl Simulation {
                 let mut used_passes = 0usize;
                 let mut target_passes = 0usize;
                 let mut continuation_from_stuck = None;
+                let mut source_changed = false;
 
                 while used_passes < ceiling {
                     let stalled = self.moved > before * CONVERGING;
@@ -2456,7 +2462,12 @@ impl Simulation {
                     self.newton_passes += 1;
                     used_passes += 1;
                     let fallbacks_before = self.fallbacks;
-                    let pass = self.iterate(false, stalled || target_passes >= FULL_STEPS);
+                    // A midpoint correction satisfies a different source RHS.
+                    // Recover the exact target's linear internal equations with
+                    // one plain Newton pass before judging reduced residuals.
+                    let search = !source_changed && (stalled || target_passes >= FULL_STEPS);
+                    let pass = self.iterate(false, search);
+                    source_changed = false;
                     target_passes += 1;
                     let line_search_failed = self.fallbacks > fallbacks_before;
 
@@ -2504,6 +2515,9 @@ impl Simulation {
                         // movement at the exact source, so the next exact-target
                         // correction starts plain from the steered voltage seed.
                         before = f64::INFINITY;
+                        self.moved = f64::INFINITY;
+                        self.search_merit = 0.0;
+                        source_changed = true;
 
                         if ordinary_stuck && !midpoint_usable {
                             break;
