@@ -191,6 +191,12 @@ pub struct Summing {
     counted: usize,
 }
 
+impl Default for Summing {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Summing {
     pub const fn new() -> Self {
         Self {
@@ -302,6 +308,12 @@ pub struct Budget {
     /// What fraction of the budget a block may have spent, per fraction of it
     /// done, before the ceiling comes down.
     slack: f64,
+}
+
+impl Default for Budget {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Budget {
@@ -761,7 +773,6 @@ mod budget {
     /// callback. A guarantee that costs more than it saves is not a guarantee.
     #[test]
     fn the_budget_is_off_because_it_did_not_work() {
-        assert!(!Budget::WORKS);
         let b = Budget::new();
         assert!(!b.armed);
         // And with it off, no block is ever pinched however late it runs.

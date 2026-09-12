@@ -123,13 +123,13 @@ fn change(settings: &mut Settings, kind: &str, block: usize) {
         "graphic" => settings.graphic = [position; 5],
         "reverb" => settings.reverb = position,
         "switch" => {
-            settings.gain = if block % 2 == 0 {
+            settings.gain = if block.is_multiple_of(2) {
                 Gain::Twin
             } else {
                 Gain::Boogie
             }
         }
-        "quality" => settings.oversampling = if block % 2 == 0 { 1 } else { 4 },
+        "quality" => settings.oversampling = if block.is_multiple_of(2) { 1 } else { 4 },
         _ => {}
     }
 }

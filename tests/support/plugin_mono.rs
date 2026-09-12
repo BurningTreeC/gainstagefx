@@ -372,17 +372,30 @@ fn initial_four_times_quality_keeps_the_existing_timestep_on_wakeup() {
 
 /// Actual Plugin::process timing, unlike examples/realtime.rs which invokes
 /// two Chains directly and therefore cannot exercise the plugin's fast path.
-/// Run alone in release mode; the recording is external and is never bundled.
+///
+/// The checked-in guitar take is deliberately driven harder than recorded:
+/// its loudest sample is trimmed to +12 dB on GainStageFx's input meter. The
+/// meter is centred at the circuit calibration level (-18 dBFS), so this puts
+/// the test peak at about -6 dBFS -- three quarters of the way across the
+/// panel meter, well above its midpoint without digitally clipping the input.
+///
+/// Run alone in release mode. This is a wall-clock regression for the normal
+/// duplicated-mono fast path used by a mono guitar source feeding the stereo
+/// plugin. The reference two-chain and mono-layout paths are still timed and
+/// printed for diagnostics, but only the duplicated-mono fast path is required
+/// to finish every 256-frame callback before the host's 5.33 ms deadline.
 #[test]
-#[ignore = "uses GAINSTAGEFX_REALTIME_WAV and wall-clock timing; run alone in release mode"]
+#[ignore = "wall-clock dropout probe using the bundled guitar WAV; run alone in release mode"]
 fn realtime_recording() {
     const BLOCK: usize = 256;
-    assert!(
-        !cfg!(debug_assertions),
-        "use cargo test --release for timing"
+    const TARGET_METER_DB: f32 = 12.0;
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for timing");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/01-260911_0537.wav"
     );
-    let path = std::env::var("GAINSTAGEFX_REALTIME_WAV").expect("set GAINSTAGEFX_REALTIME_WAV");
-    let (rate, recording) = read_mono_pcm24(&path);
+    let (rate, recording) = read_mono_pcm24(path);
     assert_eq!(rate, 48_000, "this probe matches the live REAPER session");
     let seconds = std::env::var("GAINSTAGEFX_REALTIME_SECONDS")
         .map(|s| s.parse::<f64>().expect("seconds"))
@@ -407,33 +420,54 @@ fn realtime_recording() {
         }
     }
     let input = &recording[offset..offset + frames];
+    let input_peak = input.iter().fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+    assert!(input_peak > 0.0, "recording excerpt is silent");
+    let input_peak_dbfs = 20.0 * input_peak.log10();
+    let target_peak_dbfs = NOMINAL_DBFS as f32 + TARGET_METER_DB;
+    let input_trim_db = target_peak_dbfs - input_peak_dbfs;
+    assert!(
+        (-24.0..=24.0).contains(&input_trim_db),
+        "fixture needs {input_trim_db:.2} dB of trim to reach the dropout-test level"
+    );
     println!(
-        "recording={path}, rate={rate}, start_seconds={:.3}, seconds={:.3}",
+        "recording={path}, rate={rate}, start_seconds={:.3}, seconds={:.3}, raw_peak_dbfs={input_peak_dbfs:.2}, input_trim_db={input_trim_db:.2}, target_meter_db={TARGET_METER_DB:.2}",
         offset as f64 / rate as f64,
         frames as f64 / rate as f64
     );
-    println!("voice,mode,blocks,mean_us,p99_us,max_us,budget_percent,misses,right_solves");
+    println!("voice,mode,blocks,mean_us,p99_us,max_us,budget_percent,misses,right_solves,max_meter_db");
     for circuit in [Circuit::Boogie, Circuit::Peavey, Circuit::Twin] {
         let mut reference_output = vec![0.0f32; frames];
         let mut means = [0.0; 3];
         for (mode, mean_slot) in means.iter_mut().enumerate() {
-            let mut plugin = attacks::configured(circuit);
+            let mono_layout = mode == 2;
+            let mut plugin = attacks::configured_layout(circuit, mono_layout);
+            // Drive the real plugin input trim rather than pre-scaling the WAV.
+            // Reset both layers because these callback tests bypass NIH-plug's
+            // host-side parameter seeding.
+            plugin.params.input_trim.smoothed.reset(input_trim_db);
+            plugin.input_ramp.reset(util::db_to_gain(input_trim_db));
             plugin.stereo_seen = mode == 0;
             let mut times = Vec::with_capacity(frames.div_ceil(BLOCK));
             let mut misses = 0;
+            let mut max_meter_db = f32::NEG_INFINITY;
             for (block, chunk) in input.chunks(BLOCK).enumerate() {
                 let mut left = [0.0; BLOCK];
                 left[..chunk.len()].copy_from_slice(chunk);
-                let mut right = if mode == 2 { [0.0; BLOCK] } else { left };
-                let elapsed = process(
-                    &mut plugin,
-                    &mut left[..chunk.len()],
-                    Some(&mut right[..chunk.len()]),
-                );
+                let mut right = left;
+                let elapsed = if mono_layout {
+                    process(&mut plugin, &mut left[..chunk.len()], None)
+                } else {
+                    process(
+                        &mut plugin,
+                        &mut left[..chunk.len()],
+                        Some(&mut right[..chunk.len()]),
+                    )
+                };
                 times.push(elapsed * 1e6);
                 if elapsed > chunk.len() as f64 / rate as f64 {
                     misses += 1;
                 }
+                max_meter_db = max_meter_db.max(plugin.meters.input_db());
                 let expected = &mut reference_output[block * BLOCK..block * BLOCK + chunk.len()];
                 if mode == 0 {
                     expected.copy_from_slice(&left[..chunk.len()]);
@@ -452,18 +486,31 @@ fn realtime_recording() {
             if mode == 1 {
                 assert_eq!(right_solves, 0);
             }
+            let mode_name = match mode {
+                0 => "two_chains",
+                1 => "duplicated_mono",
+                _ => "left_only",
+            };
             println!(
-                "{},{},{},{mean:.2},{p99:.2},{:.2},{:.2},{misses},{right_solves}",
+                "{},{mode_name},{},{mean:.2},{p99:.2},{:.2},{:.2},{misses},{right_solves},{max_meter_db:.2}",
                 circuit.name(),
-                match mode {
-                    0 => "two_chains",
-                    1 => "duplicated_mono",
-                    _ => "left_only",
-                },
                 times.len(),
                 times[times.len() - 1],
                 times.iter().sum::<f64>() / (frames as f64 / rate as f64 * 1e6) * 100.0
             );
+            assert!(
+                max_meter_db >= TARGET_METER_DB - 0.25,
+                "{} {mode_name} only reached {max_meter_db:.2} dB on the input meter; the dropout probe must run well above centre",
+                circuit.name()
+            );
+            if mode == 1 {
+                assert_eq!(
+                    misses,
+                    0,
+                    "{} {mode_name} dropped {misses} blocks while the input meter was driven to about +{TARGET_METER_DB:.0} dB",
+                    circuit.name()
+                );
+            }
         }
         assert!(
             means[1] < means[0] * 0.75,
@@ -509,8 +556,7 @@ fn read_mono_pcm24(path: &str) -> (u32, Vec<f32>) {
     assert_eq!(data.len() % 3, 0);
     (
         rate,
-        data.chunks_exact(3)
-            .map(|b| {
+        data.as_chunks::<3>().0.iter().map(|b| {
                 let value = i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8;
                 value as f32 / 8_388_608.0
             })

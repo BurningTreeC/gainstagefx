@@ -13,7 +13,11 @@ fn treble_pick(k: usize, rate: f64) -> f32 {
 }
 
 pub(super) fn configured(circuit: Circuit) -> GainStageFx {
-    let mut p = initialized(circuit, false, 48_000.0);
+    configured_layout(circuit, false)
+}
+
+pub(super) fn configured_layout(circuit: Circuit, mono: bool) -> GainStageFx {
+    let mut p = initialized(circuit, mono, 48_000.0);
     let params = Arc::get_mut(&mut p.params).unwrap();
     params.iron = EnumParam::new("Iron", Iron::Off);
     params.tone = EnumParam::new("Tone", ToneStack::Wide);
@@ -75,7 +79,8 @@ fn apply_preset(plugin: &mut GainStageFx, circuit: Circuit, name: &str) {
 #[ignore = "offline level/deadline sweep; run alone in release mode"]
 fn attack_level_sweep() {
     const BLOCK: usize = 256;
-    assert!(!cfg!(debug_assertions));
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for timing");
     let picks: Vec<_> = (0..96_000).map(|k| treble_pick(k, 48_000.0)).collect();
     let crest = picks.iter().fold(0.0f32, |p, x| p.max(x.abs()));
     let mut failed = 0;
@@ -87,7 +92,7 @@ fn attack_level_sweep() {
                 plugin.params.drive.smoothed.reset(drive);
                 let scale = util::db_to_gain(dbfs) / crest;
                 let mut times = Vec::with_capacity(picks.len() / BLOCK);
-                for chunk in picks.chunks_exact(BLOCK) {
+                for chunk in picks.as_chunks::<BLOCK>().0 {
                     let mut left = std::array::from_fn::<_, BLOCK, _>(|j| chunk[j] * scale);
                     let mut right = left;
                     times.push(process(&mut plugin, &mut left, Some(&mut right)) * 1e6);
@@ -157,7 +162,8 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
 #[ignore = "offline attack/timing probe; GAINSTAGEFX_REALTIME_WAV, release mode"]
 fn attack_recording_probe() {
     const BLOCK: usize = 256;
-    assert!(!cfg!(debug_assertions));
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for timing");
     let path = std::env::var("GAINSTAGEFX_REALTIME_WAV").unwrap();
     let (rate, recording) = read_mono_pcm24(&path);
     assert_eq!(rate, 48_000);

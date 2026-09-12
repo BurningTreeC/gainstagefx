@@ -1198,9 +1198,7 @@ impl Simulation {
         }
 
         let n = self.n;
-        for marked in &mut self.structure_pattern {
-            *marked = false;
-        }
+        self.structure_pattern.fill(false);
         for (slot, marked) in self.base.iter().zip(self.structure_pattern.iter_mut()) {
             *marked |= *slot != 0.0;
         }
@@ -1457,10 +1455,14 @@ impl Simulation {
         let mut total = 0.0;
         for row in 0..n {
             let mut sum = -self.rhs[row];
-            for col in 0..=self.reach_template[row] {
+            for (col, &value) in x
+                .iter()
+                .enumerate()
+                .take(self.reach_template[row] + 1)
+            {
                 let a = self.work[row * n + col];
                 if a != 0.0 {
-                    sum += a * x[col];
+                    sum += a * value;
                 }
             }
             total += sum * sum;
@@ -2045,27 +2047,13 @@ impl Simulation {
             l.current = 0.0;
         }
 
-        for value in &mut self.voltage {
-            *value = 0.0;
-        }
-        for value in &mut self.predicted {
-            *value = 0.0;
-        }
-        for value in &mut self.earlier {
-            *value = 0.0;
-        }
-        for value in &mut self.recent_move {
-            *value = 0.0;
-        }
-        for value in &mut self.point {
-            *value = 0.0;
-        }
-        for value in &mut self.trial {
-            *value = 0.0;
-        }
-        for value in &mut self.guess {
-            *value = 0.0;
-        }
+        self.voltage.fill(0.0);
+        self.predicted.fill(0.0);
+        self.earlier.fill(0.0);
+        self.recent_move.fill(0.0);
+        self.point.fill(0.0);
+        self.trial.fill(0.0);
+        self.guess.fill(0.0);
         self.last_was_unsettled = false;
         self.exact = true;
         self.moved = f64::INFINITY;
@@ -2209,6 +2197,7 @@ fn nonlinear_reduction_worthwhile(n: usize, boundary: usize) -> bool {
     reduced < 0.70 * full
 }
 
+#[allow(clippy::too_many_arguments)]
 fn factorise(
     m: &mut [f64],
     pivots: &mut [usize],
@@ -2369,9 +2358,9 @@ fn factorise(
         }
         // And it goes as far down as this column's own entries did, which is
         // what keeps the pivot search's bound honest for the columns to come.
-        for k in (col + 1)..=stop {
-            if depth[k] < bottom {
-                depth[k] = bottom;
+        for value in depth.iter_mut().take(stop + 1).skip(col + 1) {
+            if *value < bottom {
+                *value = bottom;
             }
         }
     }

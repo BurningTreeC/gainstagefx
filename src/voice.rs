@@ -1879,10 +1879,10 @@ impl Chain {
         self.gains[self.gain].needs_operating_point()
             || self
                 .iron
-                .map_or(false, |i| self.irons[i].needs_operating_point())
+                .is_some_and(|i| self.irons[i].needs_operating_point())
             || self.powers[self.gain]
                 .as_ref()
-                .map_or(false, |s| s.needs_operating_point())
+                .is_some_and(|s| s.needs_operating_point())
             || (self.voice.has_reverb_and_tremolo()
                 && self.reverb > 0.0
                 && self.tail.needs_operating_point())

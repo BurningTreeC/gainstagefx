@@ -105,8 +105,11 @@ fn solve(a: &mut [[f64; NZ]; ROWS], b: &mut [f64; ROWS]) -> Option<[f64; NZ]> {
             if f == 0.0 {
                 continue;
             }
-            for k in col..NZ {
-                a[row][k] -= f * a[col][k];
+            let (pivot_rows, lower_rows) = a.split_at_mut(col + 1);
+            let pivot = &pivot_rows[col];
+            let target = &mut lower_rows[row - col - 1];
+            for (target_value, &pivot_value) in target[col..].iter_mut().zip(&pivot[col..]) {
+                *target_value -= f * pivot_value;
             }
             b[row] -= f * b[col];
         }

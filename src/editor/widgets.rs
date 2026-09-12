@@ -172,7 +172,7 @@ impl Knob {
 
         // The cap, at the value. Up is more, as a fader reads.
         let v = self.param.modulated_normalized_value().clamp(0.0, 1.0);
-        let cy = b.y + cap_h / 2.0 + travel * (1.0 - v as f32);
+        let cy = b.y + cap_h / 2.0 + travel * (1.0 - v);
         let cap_w = b.w.min(20.0 * scale);
         let mut shadow = vg::Path::new();
         shadow.rounded_rect(
