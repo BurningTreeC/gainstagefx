@@ -65,6 +65,7 @@ pub struct SolverTrace {
     pub deep_last_moved_after: f64,
     pub deep_last_merit_before: f64,
     pub deep_last_merit_after: f64,
+    pub post_deep_confirmation_passes: usize,
     pub settled: bool,
 }
 
@@ -97,6 +98,7 @@ impl SolverTrace {
         deep_last_moved_after: 0.0,
         deep_last_merit_before: 0.0,
         deep_last_merit_after: 0.0,
+        post_deep_confirmation_passes: 0,
         settled: false,
     };
 }
@@ -248,6 +250,20 @@ const MAX_BACKTRACKS: usize = 6;
 /// giving genuinely pathological solves access to 1/16 and 1/32 steps.
 const CONTINUATION_BACKTRACKS: usize = MAX_BACKTRACKS;
 const CONTINUATION_DEEPENING_TAIL_PASSES: usize = 4;
+
+/// Once a genuinely deeper continuation trial (1/16 or 1/32) has reduced the
+/// exact target residual, allow a few ordinary Newton passes to finish the
+/// trajectory it opened.  These are confirmation passes only: deep search is
+/// latched off after the first accepted deep step, the circuit equations and
+/// convergence test stay unchanged, and a host-reduced pass ceiling is never
+/// exceeded.
+///
+/// v13 telemetry showed the useful Twin step at pass 61 for four hard solves
+/// and at pass 63 for another.  In each case the following ordinary passes
+/// collapsed the correction by orders of magnitude but the fixed 64-pass
+/// ceiling arrived before `moved < 1`.  Three extra ordinary passes are enough
+/// to test that convergence path without broadening the normal realtime path.
+const POST_DEEP_CONFIRMATION_PASSES: usize = 3;
 
 /// The shortest step the line search will try, as a fraction of Newton's own.
 const MIN_LAMBDA: f64 = 1.0 / 64.0;
@@ -2600,6 +2616,13 @@ impl Simulation {
                 let mut target_passes = 0usize;
                 let mut continuation_from_stuck = None;
                 let mut source_changed = false;
+                // A deep continuation step that actually beats the exact-target
+                // merit opens a useful Newton basin.  Once that happens, stop
+                // paying for 1/16 and 1/32 trials and spend any remaining work
+                // on ordinary Newton confirmation instead.
+                let mut deep_rescue_accepted = false;
+                #[cfg(test)]
+                let mut post_deep_confirmation_passes = 0usize;
                 #[cfg(test)]
                 let sample_backtracks_start = self.backtrack_count;
                 #[cfg(test)]
@@ -2633,7 +2656,26 @@ impl Simulation {
                 #[cfg(test)]
                 let mut deep_last_merit_after = 0.0f64;
 
-                while used_passes < ceiling {
+                loop {
+                    // The normal path is still capped by `ceiling`.  Only a
+                    // sample that (a) is already using the full 64-pass ceiling
+                    // and (b) accepted a deeper continuation step may spend up
+                    // to three additional *ordinary* passes confirming strict
+                    // convergence.  A host-pinched ceiling is never exceeded.
+                    let confirmation_limit = if deep_rescue_accepted
+                        && ceiling == MAX_ITERATIONS
+                    {
+                        ceiling + POST_DEEP_CONFIRMATION_PASSES
+                    } else {
+                        ceiling
+                    };
+                    if used_passes >= confirmation_limit {
+                        break;
+                    }
+                    #[cfg(test)]
+                    if used_passes >= ceiling {
+                        post_deep_confirmation_passes += 1;
+                    }
                     // A continuation midpoint solves a different source RHS.
                     // Invalidate every progress/merit comparison that belonged
                     // to that RHS before returning to the exact target.  The
@@ -2663,6 +2705,7 @@ impl Simulation {
                     let normal_backtracks = self.backtracks;
                     let deep_continuation_search = search
                         && continuation_from_stuck.is_some()
+                        && !deep_rescue_accepted
                         && normal_backtracks < CONTINUATION_BACKTRACKS
                         && self.continuation_deepening_enabled()
                         && used_passes < ceiling
@@ -2687,6 +2730,10 @@ impl Simulation {
                         && self.backtrack_count - backtracks_before
                             >= normal_backtracks as u64
                     {
+                        // A 1/16 or 1/32 trial beat the exact-target merit.
+                        // Latch deep search off for the rest of this solve;
+                        // subsequent work is plain Newton/search confirmation.
+                        deep_rescue_accepted = true;
                         #[cfg(test)]
                         {
                             continuation_deep_rescues += 1;
@@ -2794,6 +2841,7 @@ impl Simulation {
                         deep_last_moved_after,
                         deep_last_merit_before,
                         deep_last_merit_after,
+                        post_deep_confirmation_passes,
                         settled,
                     });
                 }

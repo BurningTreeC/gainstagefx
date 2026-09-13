@@ -163,7 +163,7 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
     if std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some() {
         for trace in plugin.channels[0].power_solver_trace() {
             println!(
-                "solver_tail,solve={},input={:.17e},last_input={:.17e},ceiling={},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},deep_first_pass={},deep_last_pass={},deep_first_lambda={:.8e},deep_last_lambda={:.8e},deep_first_moved_before={:.17e},deep_first_moved_after={:.17e},deep_first_merit_before={:.17e},deep_first_merit_after={:.17e},deep_last_moved_before={:.17e},deep_last_moved_after={:.17e},deep_last_merit_before={:.17e},deep_last_merit_after={:.17e},settled={}",
+                "solver_tail,solve={},input={:.17e},last_input={:.17e},ceiling={},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},deep_first_pass={},deep_last_pass={},deep_first_lambda={:.8e},deep_last_lambda={:.8e},deep_first_moved_before={:.17e},deep_first_moved_after={:.17e},deep_first_merit_before={:.17e},deep_first_merit_after={:.17e},deep_last_moved_before={:.17e},deep_last_moved_after={:.17e},deep_last_merit_before={:.17e},deep_last_merit_after={:.17e},post_deep_confirmation_passes={},settled={}",
                 trace.solve,
                 trace.input,
                 trace.last_input,
@@ -190,6 +190,7 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
                 trace.deep_last_moved_after,
                 trace.deep_last_merit_before,
                 trace.deep_last_merit_after,
+                trace.post_deep_confirmation_passes,
                 trace.settled,
             );
         }
