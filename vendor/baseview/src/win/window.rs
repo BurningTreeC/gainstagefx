@@ -16,6 +16,7 @@ use winapi::um::winuser::{
     WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
     XBUTTON1, XBUTTON2, WM_CAPTURECHANGED, WM_CANCELMODE, WM_KILLFOCUS,
+    TrackMouseEvent, TRACKMOUSEEVENT, TME_LEAVE, WM_MOUSELEAVE,
     VK_LBUTTON, VK_MBUTTON, VK_RBUTTON, VK_XBUTTON1, VK_XBUTTON2, SM_SWAPBUTTON,
 };
 
@@ -133,35 +134,26 @@ unsafe extern "system" fn wnd_proc(
 
     let window_state_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut WindowState;
     if !window_state_ptr.is_null() {
-        let result = wnd_proc_inner(hwnd, msg, wparam, lparam, &*window_state_ptr);
+        // DestroyWindow can send WM_NCDESTROY from a nested dispatch. Keep
+        // this invocation's state alive until all its callbacks have returned.
+        Rc::increment_strong_count(window_state_ptr);
+        let window_state = Rc::from_raw(window_state_ptr);
+        let result = wnd_proc_inner(hwnd, msg, wparam, lparam, &window_state);
+
+        if msg == WM_NCDESTROY {
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+            RevokeDragDrop(hwnd);
+            unregister_wnd_class(window_state.window_class);
+            drop(Rc::from_raw(window_state_ptr));
+        }
 
         // Capture loss can be sent synchronously from inside an on_event or
         // on_frame callback. Deliver cancellations once the handler borrow is
         // available; the posted wake-up covers nested/modal message loops.
-        (*window_state_ptr).flush_button_releases();
+        window_state.flush_button_releases();
+        window_state.flush_events();
 
-        // If any of the above event handlers caused tasks to be pushed to the deferred tasks list,
-        // then we'll try to handle them now
-        loop {
-            // NOTE: This is written like this instead of using a `while let` loop to avoid exending
-            //       the borrow of `window_state.deferred_tasks` into the call of
-            //       `window_state.handle_deferred_task()` since that may also generate additional
-            //       messages.
-            let task = match (*window_state_ptr).deferred_tasks.borrow_mut().pop_front() {
-                Some(task) => task,
-                None => break,
-            };
-
-            (*window_state_ptr).handle_deferred_task(task);
-        }
-
-        // NOTE: This is not handled in `wnd_proc_inner` because of the deferred task loop above
-        if msg == WM_NCDESTROY {
-            RevokeDragDrop(hwnd);
-            unregister_wnd_class((*window_state_ptr).window_class);
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            drop(Rc::from_raw(window_state_ptr));
-        }
+        window_state.flush_deferred_tasks();
 
         // The actual custom window proc has been moved to another function so we can always handle
         // the deferred tasks regardless of whether the custom window proc returns early or not
@@ -193,11 +185,28 @@ unsafe fn wnd_proc_inner(
             None
         }
         BV_RELEASE_LOST_BUTTONS => Some(0),
+        WM_MOUSELEAVE => {
+            window_state.set_cursor_inside(false);
+            Some(0)
+        }
         WM_MOUSEMOVE => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let x = (lparam & 0xFFFF) as i16 as i32;
             let y = ((lparam >> 16) & 0xFFFF) as i16 as i32;
+
+            // Vizia stops hit-testing when the root loses its OVER flag.
+            // Native capture keeps sending moves outside the client rectangle,
+            // so track both directions explicitly, including reentry while a
+            // button remains held. WM_MOUSELEAVE covers uncaptured departures.
+            let size = window_state.window_info.borrow().physical_size();
+            let inside = x >= 0 && y >= 0 && (x as u32) < size.width && (y as u32) < size.height;
+            if inside && !window_state.cursor_inside.get() {
+                let mut tracking: TRACKMOUSEEVENT = std::mem::zeroed();
+                tracking.cbSize = std::mem::size_of::<TRACKMOUSEEVENT>() as u32;
+                tracking.dwFlags = TME_LEAVE;
+                tracking.hwndTrack = hwnd;
+                TrackMouseEvent(&mut tracking);
+            }
+            window_state.set_cursor_inside(inside);
 
             let physical_pos = PhyPoint { x, y };
             let logical_pos = physical_pos.to_logical(&window_state.window_info.borrow());
@@ -209,13 +218,11 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+            window_state.send_event(event);
 
             Some(0)
         }
         WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let value = (wparam >> 16) as i16;
             let value = value as i32;
             let value = value as f32 / WHEEL_DELTA as f32;
@@ -232,14 +239,12 @@ unsafe fn wnd_proc_inner(
                     .get_modifiers_from_mouse_wparam(wparam),
             });
 
-            window_state.handler.borrow_mut().as_mut().unwrap().on_event(&mut window, event);
+            window_state.send_event(event);
 
             Some(0)
         }
         WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP | WM_RBUTTONDOWN
         | WM_RBUTTONUP | WM_XBUTTONDOWN | WM_XBUTTONUP => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let mut pressed = window_state.pressed_buttons.get();
 
             let button = match msg {
@@ -296,12 +301,7 @@ unsafe fn wnd_proc_inner(
                     }
                 };
 
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Mouse(event));
+                window_state.send_event(Event::Mouse(event));
             }
 
             None
@@ -315,23 +315,20 @@ unsafe fn wnd_proc_inner(
                 // This is the existing UI frame timer, never the audio thread.
                 window_state.reconcile_buttons();
                 window_state.flush_button_releases();
-                window_state.handler.borrow_mut().as_mut().unwrap().on_frame(&mut window);
+                window_state.flush_events();
+                // Modal host/native calls can pump WM_TIMER during a frame.
+                // Skip that tick; the existing timer will schedule the next.
+                if let Ok(mut handler) = window_state.handler.try_borrow_mut() {
+                    if let Some(handler) = handler.as_mut() {
+                        handler.on_frame(&mut window);
+                    }
+                }
             }
 
             Some(0)
         }
         WM_CLOSE => {
-            // Make sure to release the borrow before the DefWindowProc call
-            {
-                let mut window = crate::Window::new(window_state.create_window());
-
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Window(WindowEvent::WillClose));
-            }
+            window_state.send_event(Event::Window(WindowEvent::WillClose));
 
             // DestroyWindow(hwnd);
             // Some(0)
@@ -339,18 +336,11 @@ unsafe fn wnd_proc_inner(
         }
         WM_CHAR | WM_SYSCHAR | WM_KEYDOWN | WM_SYSKEYDOWN | WM_KEYUP | WM_SYSKEYUP
         | WM_INPUTLANGCHANGE => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let opt_event =
                 window_state.keyboard_state.borrow_mut().process_message(hwnd, msg, wparam, lparam);
 
             if let Some(event) = opt_event {
-                window_state
-                    .handler
-                    .borrow_mut()
-                    .as_mut()
-                    .unwrap()
-                    .on_event(&mut window, Event::Keyboard(event));
+                window_state.send_event(Event::Keyboard(event));
             }
 
             if msg != WM_SYSKEYDOWN {
@@ -360,8 +350,6 @@ unsafe fn wnd_proc_inner(
             }
         }
         WM_SIZE => {
-            let mut window = crate::Window::new(window_state.create_window());
-
             let width = (lparam & 0xFFFF) as u16 as u32;
             let height = ((lparam >> 16) & 0xFFFF) as u16 as u32;
 
@@ -380,12 +368,7 @@ unsafe fn wnd_proc_inner(
                 new_window_info
             };
 
-            window_state
-                .handler
-                .borrow_mut()
-                .as_mut()
-                .unwrap()
-                .on_event(&mut window, Event::Window(WindowEvent::Resized(new_window_info)));
+            window_state.send_event(Event::Window(WindowEvent::Resized(new_window_info)));
 
             None
         }
@@ -486,8 +469,10 @@ pub(super) struct WindowState {
     keyboard_state: RefCell<KeyboardState>,
     pressed_buttons: Cell<Buttons>,
     pending_releases: Cell<Buttons>,
+    cursor_inside: Cell<bool>,
     // Initialized late so the `Window` can hold a reference to this `WindowState`
     handler: RefCell<Option<Box<dyn WindowHandler>>>,
+    pending_events: RefCell<VecDeque<Event>>,
     _drop_target: RefCell<Option<Rc<DropTarget>>>,
     scale_policy: WindowScalePolicy,
     dw_style: u32,
@@ -498,12 +483,39 @@ pub(super) struct WindowState {
     /// borrowed in `wnd_proc`. So the `resize()` function below cannot also mutably borrow that
     /// window state at the same time.
     pub deferred_tasks: RefCell<VecDeque<WindowTask>>,
+    draining_tasks: Cell<bool>,
 
     #[cfg(feature = "opengl")]
     pub gl_context: Option<GlContext>,
 }
 
 impl WindowState {
+    fn send_event(&self, event: Event) {
+        self.pending_events.borrow_mut().push_back(event);
+        self.flush_events();
+    }
+
+    fn flush_events(&self) {
+        let Ok(mut handler) = self.handler.try_borrow_mut() else { return; };
+        let Some(handler) = handler.as_mut() else { return; };
+        let mut window = crate::Window::new(self.create_window());
+        loop {
+            // Drop the queue borrow before the callback: native calls can
+            // synchronously enqueue more events, which must retain FIFO order.
+            let event = self.pending_events.borrow_mut().pop_front();
+            let Some(event) = event else { break; };
+            handler.on_event(&mut window, event);
+        }
+    }
+
+    fn set_cursor_inside(&self, inside: bool) {
+        if self.cursor_inside.replace(inside) == inside {
+            return;
+        }
+        let event = if inside { MouseEvent::CursorEntered } else { MouseEvent::CursorLeft };
+        self.send_event(Event::Mouse(event));
+    }
+
     fn queue_button_releases(&self, released: Buttons) {
         if released.is_empty() {
             return;
@@ -526,18 +538,16 @@ impl WindowState {
         if self.pending_releases.get().is_empty() {
             return;
         }
-        let Ok(mut handler) = self.handler.try_borrow_mut() else { return; };
-        let Some(handler) = handler.as_mut() else { return; };
         let released = self.pending_releases.replace(Buttons::default());
         let modifiers = self.keyboard_state.borrow().get_modifiers();
-        let mut window = crate::Window::new(self.create_window());
         for button in BUTTONS {
             if released.contains(button) {
-                handler.on_event(&mut window, Event::Mouse(MouseEvent::ButtonReleased {
+                self.pending_events.borrow_mut().push_back(Event::Mouse(MouseEvent::ButtonReleased {
                     button, modifiers,
                 }));
             }
         }
+        self.flush_events();
     }
 
     unsafe fn reconcile_buttons(&self) {
@@ -587,17 +597,32 @@ impl WindowState {
         self.handler.borrow_mut()
     }
 
+    fn flush_deferred_tasks(&self) {
+        // A nested native dispatch is not the end of the UI callback that
+        // triggered it. Nor may it drain tasks halfway through SetWindowPos:
+        // that would finish later requests before the current resize completes.
+        if self.draining_tasks.get() || self.handler.try_borrow_mut().is_err() {
+            return;
+        }
+        self.draining_tasks.set(true);
+        while unsafe { GetWindowLongPtrW(self.hwnd, GWLP_USERDATA) } != 0 {
+            // Release the queue borrow before calling into the native API.
+            let task = self.deferred_tasks.borrow_mut().pop_front();
+            let Some(task) = task else { break; };
+            self.handle_deferred_task(task);
+        }
+        self.draining_tasks.set(false);
+    }
+
     /// Handle a deferred task as described in [`Self::deferred_tasks
     pub(self) fn handle_deferred_task(&self, task: WindowTask) {
         match task {
             WindowTask::Resize(size) => {
-                let window_info = {
-                    let mut window_info = self.window_info.borrow_mut();
-                    let scaling = window_info.scale();
-                    *window_info = WindowInfo::from_logical_size(size, scaling);
-
-                    *window_info
-                };
+                // Keep the committed size until WM_SIZE reports the actual
+                // client rectangle. Pre-updating it makes that handler suppress
+                // the notification Vizia needs to resize its canvas and layout.
+                let window_info =
+                    WindowInfo::from_logical_size(size, self.window_info.borrow().scale());
 
                 // If the window is a standalone window then the size needs to include the window
                 // decorations
@@ -761,14 +786,17 @@ impl Window<'_> {
                 keyboard_state: RefCell::new(KeyboardState::new()),
                 pressed_buttons: Cell::new(Buttons::default()),
                 pending_releases: Cell::new(Buttons::default()),
+                cursor_inside: Cell::new(false),
                 // The Window refers to this `WindowState`, so this `handler` needs to be
                 // initialized later
                 handler: RefCell::new(None),
+                pending_events: RefCell::new(VecDeque::new()),
                 _drop_target: RefCell::new(None),
                 scale_policy: options.scale,
                 dw_style: flags,
 
                 deferred_tasks: RefCell::new(VecDeque::with_capacity(4)),
+                draining_tasks: Cell::new(false),
 
                 #[cfg(feature = "opengl")]
                 gl_context,

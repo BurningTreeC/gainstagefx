@@ -10,7 +10,7 @@ description = "GainStageFx, circuit modelled gain stages from subtle saturation 
 members = ["installer", "xtask"]
 exclude = ["vendor/baseview"]
 
-# Preserve the pinned GUI backend, with the Windows capture fix vendored.
+# Preserve the pinned GUI backend, with Windows input and resize fixes vendored.
 [patch."https://github.com/RustAudio/baseview.git"]
 baseview = { path = "vendor/baseview" }
 

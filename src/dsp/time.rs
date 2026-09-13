@@ -33,6 +33,74 @@ enum Pass {
     Stuck,
 }
 
+#[cfg(test)]
+const SOLVER_TRACE_CAPACITY: usize = 32;
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub struct SolverTrace {
+    pub solve: u64,
+    pub input: f64,
+    pub last_input: f64,
+    pub ceiling: usize,
+    pub used_passes: usize,
+    pub target_passes: usize,
+    pub moved: f64,
+    pub before: f64,
+    pub search_merit: f64,
+    pub backtracks: u64,
+    pub fallbacks: u64,
+    pub continuation: bool,
+    pub tail_deep_passes: usize,
+    pub tail_deep_improvements: usize,
+    pub deep_first_improvement_pass: usize,
+    pub deep_last_improvement_pass: usize,
+    pub deep_first_lambda: f64,
+    pub deep_last_lambda: f64,
+    pub deep_first_moved_before: f64,
+    pub deep_first_moved_after: f64,
+    pub deep_first_merit_before: f64,
+    pub deep_first_merit_after: f64,
+    pub deep_last_moved_before: f64,
+    pub deep_last_moved_after: f64,
+    pub deep_last_merit_before: f64,
+    pub deep_last_merit_after: f64,
+    pub settled: bool,
+}
+
+#[cfg(test)]
+impl SolverTrace {
+    const EMPTY: Self = Self {
+        solve: 0,
+        input: 0.0,
+        last_input: 0.0,
+        ceiling: 0,
+        used_passes: 0,
+        target_passes: 0,
+        moved: 0.0,
+        before: 0.0,
+        search_merit: 0.0,
+        backtracks: 0,
+        fallbacks: 0,
+        continuation: false,
+        tail_deep_passes: 0,
+        tail_deep_improvements: 0,
+        deep_first_improvement_pass: 0,
+        deep_last_improvement_pass: 0,
+        deep_first_lambda: 0.0,
+        deep_last_lambda: 0.0,
+        deep_first_moved_before: 0.0,
+        deep_first_moved_after: 0.0,
+        deep_first_merit_before: 0.0,
+        deep_first_merit_after: 0.0,
+        deep_last_moved_before: 0.0,
+        deep_last_moved_after: 0.0,
+        deep_last_merit_before: 0.0,
+        deep_last_merit_after: 0.0,
+        settled: false,
+    };
+}
+
 /// Called once at startup. Without this, denormal f64 values cause 10-100x
 /// slower arithmetic on x86/x64, producing crackling when signals get small.
 pub fn enable_ftz_daz() {
@@ -103,15 +171,16 @@ const MAX_ITERATIONS: usize = 64;
 /// whole allowance and hands the next sample a worse place to start from.
 const PASS_FLOOR: usize = 12;
 
-/// How many times a Newton step may be halved before the solve gives up on it.
+/// Maximum number of line-search trial lengths, including the full Newton
+/// step.
 ///
 /// The default, and what every circuit uses unless it has been measured to
 /// want otherwise -- see `Simulation::set_backtracks`.
 ///
 /// The full step is tried first and almost always taken, so this is the depth
-/// of a path the solver rarely walks. Six halvings reach a sixty-fourth, which
-/// is far enough to step into a sliver a full step jumps over, and the cost of
-/// reaching it is bounded and known.
+/// of a path the solver rarely walks. With six trials the sequence is
+/// 1, 1/2, 1/4, 1/8, 1/16 and 1/32. The cost of reaching the shortest trial is
+/// therefore bounded and known.
 /// How many plain Newton passes to take before the line search is worth its
 /// cost.
 ///
@@ -170,6 +239,15 @@ const LATE_CONTINUATION_MIN_TARGET_PASSES: usize = FULL_STEPS + 2;
 const GROWTH: f64 = 16.0;
 
 const MAX_BACKTRACKS: usize = 6;
+
+/// Keep the Twin's measured four-trial search on every ordinary and early
+/// continuation pass. The two extra damping trials are reserved for solves
+/// already entering the final four Newton slots; broad continuation deepening
+/// rescued non-failing samples around passes 12-13 and made realtime slower.
+/// Tail-only deepening leaves those successful samples bit-identical while
+/// giving genuinely pathological solves access to 1/16 and 1/32 steps.
+const CONTINUATION_BACKTRACKS: usize = MAX_BACKTRACKS;
+const CONTINUATION_DEEPENING_TAIL_PASSES: usize = 4;
 
 /// The shortest step the line search will try, as a fraction of Newton's own.
 const MIN_LAMBDA: f64 = 1.0 / 64.0;
@@ -400,9 +478,9 @@ pub struct Simulation {
     /// produced -- and letting Newton walk from there, rather than from a
     /// number that has been exaggerated by the extrapolation.
     last_was_unsettled: bool,
-    /// Previous real audio input. Used only by the optional late one-step
-    /// source-continuation rescue to form a midpoint source value. Numerical
-    /// midpoint work never changes this; it advances exactly once per sample.
+    /// Input of the last sample whose nonlinear solve actually settled.
+    /// Late source continuation must start from the same source value whose
+    /// reactive/device state was committed, never from an unsettled sample.
     last_input: f64,
     /// Per-circuit numerical policy. Disabled by default; the voice catalogue
     /// currently enables it only for the Twin power stage.
@@ -491,6 +569,18 @@ pub struct Simulation {
     /// DC makes the chosen internal block singular); DC then uses the original
     /// full MNA solve while realtime audio still gets the reduced path.
     nonlinear_partition_dc: Option<ReducedNonlinear>,
+    #[cfg(test)]
+    solver_trace: [SolverTrace; SOLVER_TRACE_CAPACITY],
+    #[cfg(test)]
+    solver_trace_len: usize,
+    #[cfg(test)]
+    test_disable_continuation_deepening: bool,
+    #[cfg(test)]
+    last_search_here: f64,
+    #[cfg(test)]
+    last_search_accepted_lambda: f64,
+    #[cfg(test)]
+    last_search_accepted_merit: f64,
 }
 
 impl Simulation {
@@ -734,6 +824,21 @@ impl Simulation {
             nonlinear_partition_initialized: false,
             nonlinear_partition: None,
             nonlinear_partition_dc: None,
+            #[cfg(test)]
+            solver_trace: [SolverTrace::EMPTY; SOLVER_TRACE_CAPACITY],
+            #[cfg(test)]
+            solver_trace_len: 0,
+            #[cfg(test)]
+            test_disable_continuation_deepening: std::env::var_os(
+                "GAINSTAGEFX_DISABLE_CONTINUATION_DEEPENING",
+            )
+            .is_some(),
+            #[cfg(test)]
+            last_search_here: 0.0,
+            #[cfg(test)]
+            last_search_accepted_lambda: 0.0,
+            #[cfg(test)]
+            last_search_accepted_merit: 0.0,
         };
         sim.rebuild();
         // Apply initial voltages from the circuit to help the DC solver
@@ -784,6 +889,31 @@ impl Simulation {
             self.continuation_successes,
             self.continuation_actual_rescues,
         )
+    }
+
+    #[cfg(test)]
+    pub fn solver_trace(&self) -> &[SolverTrace] {
+        &self.solver_trace[..self.solver_trace_len]
+    }
+
+    #[cfg(test)]
+    fn push_solver_trace(&mut self, trace: SolverTrace) {
+        if self.solver_trace_len < SOLVER_TRACE_CAPACITY {
+            self.solver_trace[self.solver_trace_len] = trace;
+            self.solver_trace_len += 1;
+        }
+    }
+
+    #[inline(always)]
+    fn continuation_deepening_enabled(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_continuation_deepening
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
     }
 
     /// How often a replayed pivot order had to be thrown away and searched
@@ -1294,23 +1424,19 @@ impl Simulation {
                     if !nonlinear_reduction_worthwhile(n, candidate.len()) {
                         continue;
                     }
-                    let mut transient = ReducedNonlinear::new_with_active_rhs(
+                    let transient = ReducedNonlinear::new_with_active_rhs(
                         &self.base,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
-                    let mut dc_partition = ReducedNonlinear::new_with_active_rhs(
+                    let dc_partition = ReducedNonlinear::new_with_active_rhs(
                         &self.base_dc,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
-                    if let Some(partition) = transient.as_mut() {
-                        partition.set_trial_device_footprint(&self.device_matrix_slots);
-                        if let Some(dc) = dc_partition.as_mut() {
-                            dc.set_trial_device_footprint(&self.device_matrix_slots);
-                        }
+                    if transient.is_some() {
                         self.nonlinear_boundary = candidate;
                         self.nonlinear_partition = transient;
                         self.nonlinear_partition_dc = dc_partition;
@@ -1763,7 +1889,7 @@ impl Simulation {
         }?;
         let n = partition.boundary_len();
         let (exact, mapping_ok) = {
-            let (matrix, rhs, map) = partition.begin_trial_stamp(&self.fixed_rhs)?;
+            let (matrix, rhs, map) = partition.begin_stamp(&self.fixed_rhs)?;
             let mut stamper = Stamper {
                 matrix,
                 rhs,
@@ -1782,8 +1908,11 @@ impl Simulation {
         if !mapping_ok {
             return None;
         }
-        partition.finish_trial_stamp();
-        Some(partition.trial_merit_stamped(point))
+        // A line-search trial is judged but never solved. Evaluate the exact
+        // Schur residual directly from the unfinished stamp instead of first
+        // writing the fixed coupling subtraction into every reduced-matrix
+        // coefficient. The production Newton path still calls `finish_stamp`.
+        Some(partition.merit_unfinished_stamp(point))
     }
 
     #[inline]
@@ -2006,6 +2135,12 @@ impl Simulation {
         // rolls forward, is reset every sample, and never changes the full
         // correction/device convergence test below. DC keeps its old search.
         let reference = if dc { here } else { here.max(self.search_merit) };
+        #[cfg(test)]
+        {
+            self.last_search_here = here;
+            self.last_search_accepted_lambda = 0.0;
+            self.last_search_accepted_merit = 0.0;
+        }
         if search {
             self.search_merit = here;
         }
@@ -2178,6 +2313,8 @@ impl Simulation {
         let mut taken = false;
         let mut best_lambda = 1.0;
         let mut best_merit = f64::INFINITY;
+        #[cfg(test)]
+        let mut accepted_merit = 0.0;
         // `point` is both the device linearisation point and the candidate
         // voltage vector. Keeping one buffer removes the old trial->point copy
         // from every backtracking attempt.
@@ -2240,6 +2377,10 @@ impl Simulation {
                 }
                 if there.is_finite() && there < reference {
                     taken = true;
+                    #[cfg(test)]
+                    {
+                        accepted_merit = there;
+                    }
                     break;
                 }
             }
@@ -2283,6 +2424,11 @@ impl Simulation {
             return Pass::Moved;
         }
 
+        #[cfg(test)]
+        {
+            self.last_search_accepted_lambda = lambda;
+            self.last_search_accepted_merit = accepted_merit;
+        }
         self.voltage.copy_from_slice(&self.point);
         Pass::Moved
     }
@@ -2415,10 +2561,9 @@ impl Simulation {
                 }
             }
             // `predicted` used to receive a copy of this starting point on
-            // every nonlinear sample. Nothing reads that copy: continuation
-            // overwrites the buffer immediately before using it as a backup,
-            // and the failure bound uses `recent_move`. Avoid that full-vector
-            // write in the realtime hot path.
+            // every nonlinear sample. Continuation overwrites the buffer
+            // immediately before it needs a backup, and the failure bound uses
+            // `recent_move`, so this write was dead work in the realtime path.
             let mut settled = false;
             let ceiling = self.ceiling.clamp(PASS_FLOOR, MAX_ITERATIONS);
 
@@ -2455,21 +2600,113 @@ impl Simulation {
                 let mut target_passes = 0usize;
                 let mut continuation_from_stuck = None;
                 let mut source_changed = false;
+                #[cfg(test)]
+                let sample_backtracks_start = self.backtrack_count;
+                #[cfg(test)]
+                let sample_fallbacks_start = self.fallbacks;
+                #[cfg(test)]
+                let mut continuation_deep_passes = 0usize;
+                #[cfg(test)]
+                let mut continuation_deep_rescues = 0usize;
+                #[cfg(test)]
+                let mut deep_first_improvement_pass = 0usize;
+                #[cfg(test)]
+                let mut deep_last_improvement_pass = 0usize;
+                #[cfg(test)]
+                let mut deep_first_lambda = 0.0f64;
+                #[cfg(test)]
+                let mut deep_last_lambda = 0.0f64;
+                #[cfg(test)]
+                let mut deep_first_moved_before = 0.0f64;
+                #[cfg(test)]
+                let mut deep_first_moved_after = 0.0f64;
+                #[cfg(test)]
+                let mut deep_first_merit_before = 0.0f64;
+                #[cfg(test)]
+                let mut deep_first_merit_after = 0.0f64;
+                #[cfg(test)]
+                let mut deep_last_moved_before = 0.0f64;
+                #[cfg(test)]
+                let mut deep_last_moved_after = 0.0f64;
+                #[cfg(test)]
+                let mut deep_last_merit_before = 0.0f64;
+                #[cfg(test)]
+                let mut deep_last_merit_after = 0.0f64;
 
                 while used_passes < ceiling {
+                    // A continuation midpoint solves a different source RHS.
+                    // Invalidate every progress/merit comparison that belonged
+                    // to that RHS before returning to the exact target.  The
+                    // target pass may still line-search immediately: iterate()
+                    // rebuilds the exact-target system first and measures a
+                    // fresh `here` merit there, so no residual from the
+                    // midpoint is compared with a target residual.
+                    if source_changed {
+                        before = f64::INFINITY;
+                        self.moved = f64::INFINITY;
+                        self.search_merit = 0.0;
+                        source_changed = false;
+                    }
                     let stalled = self.moved > before * CONVERGING;
                     before = self.moved;
                     self.newton_passes += 1;
                     used_passes += 1;
                     let fallbacks_before = self.fallbacks;
-                    // A midpoint correction satisfies a different source RHS.
-                    // Recover the exact target's linear internal equations with
-                    // one plain Newton pass before judging reduced residuals.
-                    let search = !source_changed && (stalled || target_passes >= FULL_STEPS);
+                    let backtracks_before = self.backtrack_count;
+                    let search = stalled || target_passes >= FULL_STEPS;
+
+                    // Keep the Twin's four-trial realtime search until a
+                    // continuation solve is genuinely running out of Newton
+                    // budget. Only the final few slots may try 1/16 and 1/32;
+                    // this avoids charging successful pass-12/13 rescues for
+                    // work that the v9 timing run proved they did not need.
+                    let normal_backtracks = self.backtracks;
+                    let deep_continuation_search = search
+                        && continuation_from_stuck.is_some()
+                        && normal_backtracks < CONTINUATION_BACKTRACKS
+                        && self.continuation_deepening_enabled()
+                        && used_passes < ceiling
+                        && used_passes
+                            .saturating_add(CONTINUATION_DEEPENING_TAIL_PASSES)
+                            >= ceiling;
+                    if deep_continuation_search {
+                        self.backtracks = CONTINUATION_BACKTRACKS;
+                        #[cfg(test)]
+                        {
+                            continuation_deep_passes += 1;
+                        }
+                    }
+                    #[cfg(test)]
+                    let deep_moved_before = if deep_continuation_search { before } else { 0.0 };
                     let pass = self.iterate(false, search);
-                    source_changed = false;
+                    self.backtracks = normal_backtracks;
                     target_passes += 1;
                     let line_search_failed = self.fallbacks > fallbacks_before;
+                    if deep_continuation_search
+                        && !line_search_failed
+                        && self.backtrack_count - backtracks_before
+                            >= normal_backtracks as u64
+                    {
+                        #[cfg(test)]
+                        {
+                            continuation_deep_rescues += 1;
+                            let lambda = self.last_search_accepted_lambda;
+                            if deep_first_improvement_pass == 0 {
+                                deep_first_improvement_pass = used_passes;
+                                deep_first_lambda = lambda;
+                                deep_first_moved_before = deep_moved_before;
+                                deep_first_moved_after = self.moved;
+                                deep_first_merit_before = self.last_search_here;
+                                deep_first_merit_after = self.last_search_accepted_merit;
+                            }
+                            deep_last_improvement_pass = used_passes;
+                            deep_last_lambda = lambda;
+                            deep_last_moved_before = deep_moved_before;
+                            deep_last_moved_after = self.moved;
+                            deep_last_merit_before = self.last_search_here;
+                            deep_last_merit_after = self.last_search_accepted_merit;
+                        }
+                    }
 
                     if matches!(pass, Pass::Settled) {
                         settled = true;
@@ -2511,12 +2748,10 @@ impl Simulation {
                         }
                         self.prepare_rhs(input, false);
 
-                        // Movement at the midpoint source is not comparable to
-                        // movement at the exact source, so the next exact-target
-                        // correction starts plain from the steered voltage seed.
-                        before = f64::INFINITY;
-                        self.moved = f64::INFINITY;
-                        self.search_merit = 0.0;
+                        // Mark the source transition.  The next loop
+                        // iteration discards midpoint progress/merit history,
+                        // then evaluates any line search against a freshly
+                        // stamped exact-target merit.
                         source_changed = true;
 
                         if ordinary_stuck && !midpoint_usable {
@@ -2528,6 +2763,39 @@ impl Simulation {
                     if ordinary_stuck {
                         break;
                     }
+                }
+
+                #[cfg(test)]
+                if !settled || continuation_deep_passes > 0 {
+                    self.push_solver_trace(SolverTrace {
+                        solve: self.solves,
+                        input,
+                        last_input: self.last_input,
+                        ceiling,
+                        used_passes,
+                        target_passes,
+                        moved: self.moved,
+                        before,
+                        search_merit: self.search_merit,
+                        backtracks: self.backtrack_count - sample_backtracks_start,
+                        fallbacks: self.fallbacks - sample_fallbacks_start,
+                        continuation: continuation_from_stuck.is_some(),
+                        tail_deep_passes: continuation_deep_passes,
+                        tail_deep_improvements: continuation_deep_rescues,
+                        deep_first_improvement_pass,
+                        deep_last_improvement_pass,
+                        deep_first_lambda,
+                        deep_last_lambda,
+                        deep_first_moved_before,
+                        deep_first_moved_after,
+                        deep_first_merit_before,
+                        deep_first_merit_after,
+                        deep_last_moved_before,
+                        deep_last_moved_after,
+                        deep_last_merit_before,
+                        deep_last_merit_after,
+                        settled,
+                    });
                 }
             }
             if !settled {
@@ -2664,7 +2932,9 @@ impl Simulation {
             }
         }
 
-        if self.late_continuation {
+        // Keep the continuation source synchronized with the dynamic state
+        // committed above. An unsettled sample advances neither.
+        if self.late_continuation && !failed {
             self.last_input = input;
         }
         self.voltage[self.circuit.output]

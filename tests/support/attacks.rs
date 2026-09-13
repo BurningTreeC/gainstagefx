@@ -160,6 +160,40 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
         assert_eq!(left, right);
         assert!(left.iter().all(|x| x.is_finite()));
     }
+    if std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some() {
+        for trace in plugin.channels[0].power_solver_trace() {
+            println!(
+                "solver_tail,solve={},input={:.17e},last_input={:.17e},ceiling={},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},deep_first_pass={},deep_last_pass={},deep_first_lambda={:.8e},deep_last_lambda={:.8e},deep_first_moved_before={:.17e},deep_first_moved_after={:.17e},deep_first_merit_before={:.17e},deep_first_merit_after={:.17e},deep_last_moved_before={:.17e},deep_last_moved_after={:.17e},deep_last_merit_before={:.17e},deep_last_merit_after={:.17e},settled={}",
+                trace.solve,
+                trace.input,
+                trace.last_input,
+                trace.ceiling,
+                trace.used_passes,
+                trace.target_passes,
+                trace.moved,
+                trace.before,
+                trace.search_merit,
+                trace.backtracks,
+                trace.fallbacks,
+                trace.continuation,
+                trace.tail_deep_passes,
+                trace.tail_deep_improvements,
+                trace.deep_first_improvement_pass,
+                trace.deep_last_improvement_pass,
+                trace.deep_first_lambda,
+                trace.deep_last_lambda,
+                trace.deep_first_moved_before,
+                trace.deep_first_moved_after,
+                trace.deep_first_merit_before,
+                trace.deep_first_merit_after,
+                trace.deep_last_moved_before,
+                trace.deep_last_moved_after,
+                trace.deep_last_merit_before,
+                trace.deep_last_merit_after,
+                trace.settled,
+            );
+        }
+    }
     let health = plugin.channels[0].solver_health();
     assert_eq!(
         health.unsettled, 0,

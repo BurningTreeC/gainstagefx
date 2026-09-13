@@ -69,6 +69,10 @@ jobs:
         with:
           key: ${{ matrix.name }}
 
+      - name: Test the Windows window backend
+        if: startsWith(matrix.os, 'windows')
+        run: cargo test --manifest-path vendor/baseview/Cargo.toml --features opengl --lib -- --test-threads=1
+
       - name: Build the installer
         # A small dependency free program that copies the bundles into place,
         # shipped in the Windows archive as install.exe.

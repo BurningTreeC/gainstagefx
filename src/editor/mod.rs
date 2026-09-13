@@ -45,22 +45,10 @@ pub fn default_state() -> Arc<ViziaState> {
     ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 1.0)
 }
 
-/// Writes the chosen size into the state the host saves and reads the window
-/// size from.
-///
-/// `cx.set_user_scale_factor` changes what vizia *draws* at, and that is all
-/// it changes. Two other things depend on the figure, and both of them read it
-/// out of `ViziaState` instead: `Editor::size`, which is what the host is told
-/// to make the window, and the serialised editor state, which is what comes
-/// back next session.
-///
-/// So it is written here, directly. `PersistentField::set` is the only door
-/// into that field and it takes a whole `ViziaState`, so one is made to carry
-/// the number in and is dropped on the way out. Its size function is never
-/// asked anything -- `set` copies the scale and nothing else.
-///
-/// This on its own makes the size *persist*. It does not make the window
-/// change size, and on its own it actively prevents it -- see `apply_scale`.
+/// Updates the scale used by `Editor::size()` and saved in the host session.
+/// Vizia's drawing scale is separate and must only change after the host has
+/// accepted the resize. `PersistentField::set` copies the carrier's scale;
+/// the original state's size function and open status stay intact.
 pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
     use nih_plug::params::persist::PersistentField;
     let carrier = ViziaState::new_with_default_scale_factor(|| (0, 0), scale);
@@ -69,44 +57,21 @@ pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
     }
 }
 
-/// Chooses a window size: stores it, then asks the host for it.
-///
-/// The second half is the one that was missing, and the reason is worth
-/// writing down because the first half is what hid it.
-///
-/// Only one thing in the stack actually asks a host to resize a window:
-/// `GuiContext::request_resize`. nih-plug calls it from one place, its
-/// `WindowModel`, when a `GeometryChanged` reaches the root -- and that
-/// handler opens with a guard:
-///
-/// ```text
-/// if logical_size == old_logical_size && scale_factor == old_user_scale_factor {
-///     return;
-/// }
-/// ```
-///
-/// `logical_size` is the size *before* scaling. Our size function is a
-/// constant, so that half never moves and the guard rests entirely on the
-/// scale. `old_user_scale_factor` is read from `ViziaState` -- the very field
-/// `remember_scale` writes. So storing the scale first, which is what the
-/// panel did, made both halves equal by the time the event arrived: the
-/// handler returned early, `request_resize` was never called, and the host was
-/// never told. The panel redrew itself at the new scale inside a window that
-/// stayed the old size, on every platform, which is exactly the reported bug.
-///
-/// Emitting `GuiContextEvent::Resize` does not rescue it either. That handler
-/// sets the window to `inner_logical_size`, the unscaled size, which has not
-/// moved -- so it asks for the size the window already is.
-///
-/// Rather than remove the store and depend on a `GeometryChanged` firing at
-/// the right moment, the request is made directly. `Editor::size` is
-/// `scaled_logical_size`, so once the scale is stored the host is asking for
-/// the right window; the order below is therefore load-bearing. Doing it this
-/// way also means the resize does not depend on vizia emitting anything, which
-/// is what makes it behave the same under every host.
-pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) {
+/// Stores the requested scale before the host reads `Editor::size()`.
+/// Returns whether the UI should adopt it. A refusal restores the persisted
+/// size, so drawing and host geometry continue to agree.
+pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) -> bool {
+    let previous = state.user_scale_factor();
+    if scale == previous {
+        return true;
+    }
     remember_scale(state, scale);
-    gui.request_resize();
+    if gui.request_resize() {
+        true
+    } else {
+        remember_scale(state, previous);
+        false
+    }
 }
 
 /// Height of a label box, which is centred on its anchor point.

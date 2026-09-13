@@ -1206,11 +1206,11 @@ impl Chain {
                         let gain = voice_at(i).0;
                         build_power(gain).map(|built| {
                             let mut sim = Simulation::new(built.expect("catalogue builds"), rate);
-                            // The Twin power stage is the one measured circuit where six
-                            // line-search halvings become a numerical spiral: the 1/32 and
-                            // 1/64 trials barely move the solve, then the following Newton
-                            // pass searches again.  Four backtracks still reaches 1/16 and
-                            // was reference-checked at the same -190..-205 dB error floor,
+                            // The Twin power stage is the one measured circuit where the
+                            // shortest line-search trials can become a numerical spiral. The
+                            // 1/16 and 1/32 trials barely move an ordinary solve, then the
+                            // following Newton pass searches again. Four trials stop at 1/8 and
+                            // were reference-checked at the same -190..-205 dB error floor,
                             // while materially reducing realtime misses.  Do not apply this
                             // to the 5150: its solver genuinely needs the shorter steps and
                             // the same cap was measured at about -45.7 dB from reference.
@@ -1720,6 +1720,14 @@ impl Chain {
             iron,
             reverb_return,
         }
+    }
+
+    #[cfg(test)]
+    pub fn power_solver_trace(&self) -> &[crate::dsp::time::SolverTrace] {
+        self.powers[self.gain]
+            .as_ref()
+            .map(Simulation::solver_trace)
+            .unwrap_or(&[])
     }
 
     pub fn solver_health(&self) -> SolverHealth {

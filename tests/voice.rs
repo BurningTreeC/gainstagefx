@@ -90,7 +90,7 @@ fn modelled_circuits_stay_at_host_rate() {
     assert_eq!(generic.effective_oversampling(), 4);
 }
 
-/// The Twin power stage deliberately stops its realtime line search at 1/16.
+/// The Twin power stage deliberately stops its normal realtime line search at 1/8.
 /// Keep that performance policy tied to an explicit accuracy measurement: the
 /// normal four-backtrack solve must null far below audibility against the full
 /// six-backtrack / 64-pass reference on hard, preamp-driven attacks.
