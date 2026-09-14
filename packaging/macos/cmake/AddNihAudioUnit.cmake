@@ -8,7 +8,10 @@ function(add_nih_clap_audio_unit plugin)
     if(NOT AU_BUILD_CONFIG MATCHES "^(Debug|Release)$")
         message(FATAL_ERROR "AU_BUILD_CONFIG must be Debug or Release, got '${AU_BUILD_CONFIG}'")
     endif()
-    set(output "${CMAKE_BINARY_DIR}/products/${AU_BUILD_CONFIG}")
+    # Xcode is a multi-config generator. Using $<CONFIG> keeps the configuration
+    # in the path while preventing CMake/Xcode from appending another Release/Debug
+    # directory.
+    set(output "${CMAKE_BINARY_DIR}/products/$<CONFIG>")
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/products/Release" "${CMAKE_BINARY_DIR}/products/Debug")
     set(target "${package}_${AU_FORMAT}")
     if(AU_FORMAT STREQUAL "auv2")
