@@ -31,6 +31,8 @@ jobs:
             libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Check packaging metadata and validation helpers
+        run: python3 -m unittest discover -s packaging/macos -p test_packaging.py
       - run: cargo test --release
       # --workspace so the installer that ships to users is linted too.
       - run: cargo clippy --release --workspace --all-targets -- -D warnings
@@ -46,7 +48,7 @@ jobs:
       matrix:
         include:
           - { name: linux, os: ubuntu-22.04 }
-          - { name: macos-universal, os: macos-latest }
+          - { name: macos-universal, os: macos-15 }
           - { name: windows, os: windows-latest }
     runs-on: ${{ matrix.os }}
     steps:
@@ -82,15 +84,45 @@ jobs:
       - name: Build the plugin
         run: |
           if [[ '${{ matrix.name }}' == 'macos-universal' ]]; then
-            # Anything older than this cannot run the plugin anyway.
-            export MACOSX_DEPLOYMENT_TARGET=10.13
-            # cargo xtask ad-hoc signs the bundles after lipo. That is free and
-            # needs no Apple account, and an arm64 binary will not load at all
-            # without at least an ad-hoc signature.
-            cargo xtask bundle-universal "$PACKAGE" --release
+            # This repository's own products, including native NIH CLAP/VST3.
+            # Shared Rust/CMake deployment policy lives in packaging/macos/plugins.json.
+            test "$(uname -m)" = arm64
+            cargo xtask bundle-au --all --release
           else
             cargo xtask bundle "$PACKAGE" --release
           fi
+
+      - name: Validate self-contained AUv2 (no standalone CLAP installed)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          python3 packaging/macos/au.py install --format auv2
+          python3 packaging/macos/au.py validate
+          python3 packaging/macos/au.py probe --format auv2
+
+      - name: Register and test ad-hoc AUv3 containing apps
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          python3 packaging/macos/au.py install --format auv3
+          python3 packaging/macos/au.py register --allow-unregistered-auv3
+          python3 packaging/macos/au.py probe --format auv3 --allow-unregistered-auv3
+
+      - name: Retain completed AU products if a later build or validation fails
+        if: failure() && startsWith(matrix.os, 'macos')
+        run: |
+          if [[ -d dist/macos ]]; then
+            mkdir -p target/macos-au/logs
+            tar -czf target/macos-au/logs/partial-products-UNVALIDATED.tar.gz -C dist macos
+          fi
+
+      - name: Upload exact macOS build and validation results
+        if: always() && startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN }}-macos-au-diagnostics
+          path: |
+            target/macos-au/logs/
+            target/macos-au/build-manifest.json
+          if-no-files-found: warn
 
       - name: Stage the archive contents
         run: |
@@ -98,7 +130,13 @@ jobs:
           mkdir -p "$staged"
           # The standalone binary is a development aid, not something to ship.
           rm -rf "target/bundled/$PLUGIN"
-          cp -R target/bundled/* "$staged/"
+          if [[ '${{ runner.os }}' == macOS ]]; then
+            # Each repository stages only its own dist/macos products and licenses.
+            for product in dist/macos/*/; do cp -R "$product"* "$staged/"; done
+            cp docs/MACOS_AUDIO_UNITS.md "$staged/"
+          else
+            cp -R target/bundled/* "$staged/"
+          fi
           # The GPL requires the licence to travel with the binaries, and the
           # permissive licences of the dependencies require their notices.
           cp LICENSE THIRD-PARTY-NOTICES.md "$staged/"
@@ -118,7 +156,19 @@ jobs:
           esac
           ls -la "$staged"
 
+      - name: Preserve macOS executable modes and bundle symlinks
+        if: startsWith(matrix.os, 'macos')
+        run: tar -czf "staged/$PLUGIN-${{ matrix.name }}.tar.gz" -C staged "$PLUGIN-${{ matrix.name }}"
+
       - uses: actions/upload-artifact@v4
+        if: startsWith(matrix.os, 'macos')
+        with:
+          name: ${{ env.PLUGIN }}-${{ matrix.name }}
+          path: staged/${{ env.PLUGIN }}-${{ matrix.name }}.tar.gz
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: "!startsWith(matrix.os, 'macos')"
         with:
           name: ${{ env.PLUGIN }}-${{ matrix.name }}
           path: staged/${{ env.PLUGIN }}-${{ matrix.name }}
@@ -142,6 +192,13 @@ jobs:
           mkdir -p release
           for dir in artifacts/*/; do
             name="$(basename "$dir")"
+            # Validation logs are artifacts for review, not distributable plugins.
+            [[ "$name" == *-macos-au-diagnostics ]] && continue
+            if [[ -f "$dir/$name.tar.gz" ]]; then
+              tar -xzf "$dir/$name.tar.gz" -C "$dir"
+              (cd "$dir/$name" && zip -qry "../../../release/$name-${GITHUB_REF_NAME}.zip" .)
+              continue
+            fi
             # Executability is not preserved through the artifact round trip.
             chmod +x "$dir/Install.command" "$dir/install.sh" 2>/dev/null || true
             (cd "$dir" && zip -qr "../../release/$name-${GITHUB_REF_NAME}.zip" .)

@@ -1,0 +1,17 @@
+{
+  "clap_wrapper": {
+    "url": "https://github.com/free-audio/clap-wrapper.git",
+    "version": "v0.16.0",
+    "commit": "1cca996e96f29ab2be7ae9f8cfe532bbc92e1dd6"
+  },
+  "clap_sdk": {
+    "url": "https://github.com/free-audio/clap.git",
+    "version": "1.2.6",
+    "commit": "69a69252fdd6ac1d06e246d9a04c0a89d9607a17"
+  },
+  "audiounit_sdk": {
+    "url": "https://github.com/apple/AudioUnitSDK.git",
+    "version": "AudioUnitSDK-1.1.0",
+    "commit": "53a9a2008aae7fb1b0a9f093dd523b9b12f6c0d9"
+  }
+}

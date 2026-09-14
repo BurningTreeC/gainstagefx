@@ -24,3 +24,11 @@
 # Keep the panel image; other documentation stays local.
 /docs/*
 !/docs/panel.png
+
+# macOS AU packaging output; keep its documentation tracked.
+/dist/
+*.component
+*.appex
+*.app
+**/__pycache__/
+!/docs/MACOS_AUDIO_UNITS.md

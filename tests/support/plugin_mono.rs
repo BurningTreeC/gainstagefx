@@ -688,10 +688,12 @@ fn twin_realtime_recording_solver_trace() {
     let target_peak_dbfs = NOMINAL_DBFS as f32 + TARGET_METER_DB;
     let input_trim_db = target_peak_dbfs - input_peak_dbfs;
 
-    let repeat_cycle_guard =
-        std::env::var_os("GAINSTAGEFX_TEST_REPEAT_CYCLE_GUARD").is_some();
+    let weak_deep_recovery =
+        std::env::var_os("GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY").is_some();
+    let last_settled_restart =
+        std::env::var_os("GAINSTAGEFX_TEST_LAST_SETTLED_RESTART").is_some();
     println!(
-        "twin_solver_trace,recording={path},start_seconds={:.3},seconds={:.3},input_trim_db={input_trim_db:.2},low_residual_confirmation=true,repeat_cycle_guard={repeat_cycle_guard}",
+        "twin_solver_trace,recording={path},start_seconds={:.3},seconds={:.3},input_trim_db={input_trim_db:.2},low_residual_confirmation=true,repeat_cycle_guard=true,weak_deep_recovery={weak_deep_recovery},last_settled_restart={last_settled_restart}",
         offset as f64 / rate as f64,
         frames as f64 / rate as f64,
     );
@@ -951,7 +953,7 @@ fn run_realtime_pass(
                 }
             });
             println!(
-                "realtime_solver_unsettled,solve={},relative_sample={},block={},frame={},input={:.17e},last_input={:.17e},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},post_deep_confirmation_passes={},post_low_residual_confirmation_passes={},repeat_cycle_rejections={},continuation_trigger_pass={},continuation_trigger_target_passes={},continuation_trigger_was_stuck={},continuation_trigger_moved={:.17e},continuation_trigger_merit={:.17e},continuation_midpoint={:.17e},continuation_midpoint_moved={:.17e},continuation_midpoint_stuck={},tail_trace_count={},tail_passes={:?},tail_here={:?},tail_reference={:?},tail_accepted_lambda={:?},tail_accepted_merit={:?},tail_trial_count={:?},tail_trial_lambdas={:?},tail_trial_merits={:?},tail_moved_before={:?},tail_moved_after={:?},tail_fallback={:?},tail_max_unknown={:?},tail_max_unknown_names={:?},tail_max_norm={:?},tail_unsettled_devices={:?}",
+                "realtime_solver_unsettled,solve={},relative_sample={},block={},frame={},input={:.17e},last_input={:.17e},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},tail_deep_weak_improvements={},post_deep_confirmation_passes={},post_low_residual_confirmation_passes={},repeat_cycle_rejections={},continuation_trigger_pass={},continuation_trigger_target_passes={},continuation_trigger_was_stuck={},continuation_trigger_moved={:.17e},continuation_trigger_merit={:.17e},continuation_midpoint={:.17e},continuation_midpoint_moved={:.17e},continuation_midpoint_stuck={},last_settled_restart_attempted={},last_settled_restart_passes={},last_settled_restart_backtracks={},last_settled_restart_fallbacks={},last_settled_restart_settled={},tail_trace_count={},tail_passes={:?},tail_here={:?},tail_reference={:?},tail_accepted_lambda={:?},tail_accepted_merit={:?},tail_trial_count={:?},tail_trial_lambdas={:?},tail_trial_merits={:?},tail_moved_before={:?},tail_moved_after={:?},tail_fallback={:?},tail_max_unknown={:?},tail_max_unknown_names={:?},tail_max_norm={:?},tail_unsettled_devices={:?}",
                 trace.solve,
                 relative_sample,
                 relative_sample / BLOCK,
@@ -968,6 +970,7 @@ fn run_realtime_pass(
                 trace.continuation,
                 trace.tail_deep_passes,
                 trace.tail_deep_improvements,
+                trace.tail_deep_weak_improvements,
                 trace.post_deep_confirmation_passes,
                 trace.post_low_residual_confirmation_passes,
                 trace.repeat_cycle_rejections,
@@ -979,6 +982,11 @@ fn run_realtime_pass(
                 trace.continuation_midpoint,
                 trace.continuation_midpoint_moved,
                 trace.continuation_midpoint_stuck,
+                trace.last_settled_restart_attempted,
+                trace.last_settled_restart_passes,
+                trace.last_settled_restart_backtracks,
+                trace.last_settled_restart_fallbacks,
+                trace.last_settled_restart_settled,
                 trace.tail_trace_count,
                 trace.tail_trace_passes,
                 trace.tail_trace_here,
@@ -995,6 +1003,33 @@ fn run_realtime_pass(
                 tail_unknown_names,
                 trace.tail_trace_max_norm,
                 trace.tail_trace_unsettled_devices,
+            );
+        }
+
+        for trace in plugin.channels[0]
+            .power_solver_trace()
+            .iter()
+            .filter(|trace| trace.last_settled_restart_attempted)
+        {
+            let relative_sample = trace
+                .solve
+                .saturating_sub(power_before.saturating_add(1)) as usize;
+            println!(
+                "realtime_solver_restart,solve={},relative_sample={},block={},frame={},input={:.17e},last_input={:.17e},used_passes={},target_passes={},restart_passes={},restart_backtracks={},restart_fallbacks={},restart_settled={},moved={:.17e},search_merit={:.17e}",
+                trace.solve,
+                relative_sample,
+                relative_sample / BLOCK,
+                relative_sample % BLOCK,
+                trace.input,
+                trace.last_input,
+                trace.used_passes,
+                trace.target_passes,
+                trace.last_settled_restart_passes,
+                trace.last_settled_restart_backtracks,
+                trace.last_settled_restart_fallbacks,
+                trace.last_settled_restart_settled,
+                trace.moved,
+                trace.search_merit,
             );
         }
     }
