@@ -87,7 +87,11 @@ jobs:
             # This repository's own products, including native NIH CLAP/VST3.
             # Shared Rust/CMake deployment policy lives in packaging/macos/plugins.json.
             test "$(uname -m)" = arm64
-            cargo xtask bundle-au --all --release
+            # Validate AUv2 before any AUv3 app exists on this runner.
+            # macOS can discover build-tree extensions before explicit installation.
+            # Discard only this project's generated AU apps restored by rust-cache.
+            rm -rf target/macos-au/auv3 dist/macos
+            cargo xtask bundle-au --all --release --format auv2
           else
             cargo xtask bundle "$PACKAGE" --release
           fi
@@ -98,6 +102,12 @@ jobs:
           python3 packaging/macos/au.py install --format auv2
           python3 packaging/macos/au.py validate
           python3 packaging/macos/au.py probe --format auv2
+
+      - name: Complete the distribution with AUv3
+        if: startsWith(matrix.os, 'macos')
+        # Reuses the Rust/AUv2 build cache and stages the complete distribution.
+        # AUv2 validation above cannot accidentally select the same-ID AUv3.
+        run: cargo xtask bundle-au --all --release
 
       - name: Register and test ad-hoc AUv3 containing apps
         if: startsWith(matrix.os, 'macos')

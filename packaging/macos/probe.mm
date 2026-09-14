@@ -110,6 +110,8 @@ int main(int argc, char **argv) {
             check(component != nullptr, "Requested AU version is not registered");
             AudioComponentDescription actual{};
             check(AudioComponentGetDescription(component, &actual) == noErr, "Cannot inspect AU description");
+            std::cout << "Requested " << argv[3] << "; selected component flags: "
+                      << actual.componentFlags << std::endl;
             check(bool(actual.componentFlags & kAudioComponentFlag_IsV3AudioUnit) == v3,
                   "Host selected the wrong AU version");
             AUAudioUnit *unit = instantiate(desc);
