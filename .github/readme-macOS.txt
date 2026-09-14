@@ -44,20 +44,3 @@ This program comes with ABSOLUTELY NO WARRANTY. It is free software under the
 GNU General Public License version 3 or later; see LICENSE. The licences of
 the libraries it uses are in THIRD-PARTY-NOTICES.md.
 Source: https://github.com/BurningTreeC/gainstagefx
-
-Audio Units
------------
-This archive also includes self-contained AUv2 .component bundles and AUv3
-containing apps in auv3/. Install.command installs AUv2 in your user's
-Components folder and AUv3 apps in ~/Applications, then records registration
-output. Do not install an .appex by itself in Components.
-
-An Apple Developer account is NOT part of this project's build requirements.
-These builds are ad-hoc signed, not Developer ID signed, and not notarized.
-Downloaded/transferred builds may trigger Gatekeeper/quarantine warnings.
-The installer clears quarantine only for these bundles you chose to install.
-AUv3 registration/loading remains dependent on the local macOS host: consult
-MACOS_AUDIO_UNITS.md and the per-plugin CI validation results. A built app is
-not proof that an AUv3 extension registered or loaded.
-
-The AU distribution minimum is macOS 11.0. Binaries include arm64 and x86_64.

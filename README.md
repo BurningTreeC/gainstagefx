@@ -217,9 +217,3 @@ listed with its own licence and copyright notice in
 VST is a trademark of Steinberg Media Technologies GmbH, registered in Europe
 and other countries. CLAP is a trademark of its respective owners. Neither this
 project nor its authors are affiliated with or endorsed by them.
-
-On macOS, `cargo xtask bundle-au --all --release` also builds self-contained
-AUv2 components and AUv3 containing apps for this workspace, using ad-hoc
-signing without an Apple Developer account. See
-[macOS Audio Units](docs/MACOS_AUDIO_UNITS.md) for build, installation,
-validation and the current macOS testing status.
