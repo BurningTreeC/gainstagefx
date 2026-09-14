@@ -632,6 +632,85 @@ fn realtime_recording() {
     }
 }
 
+/// Fast, deterministic solver-only companion to `realtime_recording`.
+///
+/// It uses the exact same energetic excerpt, trim and 64-sample block size,
+/// but runs only the Twin mono playback-ahead path. With
+/// `GAINSTAGEFX_TRACE_UNSETTLED=1`, `run_realtime_pass` prints the dedicated
+/// failure-only power-solver trace. No wall-clock pacing is involved, so this
+/// is the probe to use while classifying convergence failures.
+#[test]
+#[ignore = "focused Twin recording solver trace; run alone in release mode"]
+fn twin_realtime_recording_solver_trace() {
+    const BLOCK: usize = 64;
+    const TARGET_METER_DB: f32 = 12.0;
+    const LIVE_SETTLE_BLOCKS: usize = 16;
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for solver tracing");
+
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/01-260912_1044.wav"
+    );
+    let (rate, recording) = read_mono_pcm24(path);
+    assert_eq!(rate, 48_000, "this probe matches the live REAPER session");
+
+    let seconds = std::env::var("GAINSTAGEFX_REALTIME_SECONDS")
+        .map(|s| s.parse::<f64>().expect("seconds"))
+        .unwrap_or(8.0);
+    assert!(seconds.is_finite() && seconds >= 0.0);
+    let frames = if seconds == 0.0 {
+        recording.len()
+    } else {
+        ((seconds * rate as f64) as usize).min(recording.len())
+    };
+    assert!(frames >= BLOCK * (LIVE_SETTLE_BLOCKS + 1));
+
+    let energy = |x: f32| (x as f64) * (x as f64);
+    let mut sum: f64 = recording[..frames].iter().map(|&x| energy(x)).sum();
+    let (mut best, mut offset) = (sum, 0);
+    for end in frames..recording.len() {
+        sum += energy(recording[end]) - energy(recording[end - frames]);
+        if sum > best {
+            best = sum;
+            offset = end + 1 - frames;
+        }
+    }
+    let input = &recording[offset..offset + frames];
+    let settle_frames = LIVE_SETTLE_BLOCKS * BLOCK;
+    let warmup_start = offset.saturating_sub(settle_frames);
+    let warmup = &recording[warmup_start..offset];
+    let input_peak = input
+        .iter()
+        .fold(0.0f32, |peak, sample| peak.max(sample.abs()));
+    assert!(input_peak > 0.0, "recording excerpt is silent");
+    let input_peak_dbfs = 20.0 * input_peak.log10();
+    let target_peak_dbfs = NOMINAL_DBFS as f32 + TARGET_METER_DB;
+    let input_trim_db = target_peak_dbfs - input_peak_dbfs;
+
+    let repeat_cycle_guard =
+        std::env::var_os("GAINSTAGEFX_TEST_REPEAT_CYCLE_GUARD").is_some();
+    println!(
+        "twin_solver_trace,recording={path},start_seconds={:.3},seconds={:.3},input_trim_db={input_trim_db:.2},low_residual_confirmation=true,repeat_cycle_guard={repeat_cycle_guard}",
+        offset as f64 / rate as f64,
+        frames as f64 / rate as f64,
+    );
+
+    let mut output = vec![0.0f32; frames];
+    let result = run_realtime_pass(
+        Circuit::Twin,
+        warmup,
+        input,
+        input_trim_db,
+        rate,
+        false,
+        ProbeLayout::Mono,
+        &mut output,
+    );
+    print_realtime_pass(Circuit::Twin, "solver_trace_mono", &result);
+    assert!(output.iter().all(|sample| sample.is_finite()));
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ProbeLayout {
     Mono,
@@ -850,6 +929,74 @@ fn run_realtime_pass(
         let p99 = samples[((samples.len() - 1) as f64 * 0.99).round() as usize];
         let max = samples[samples.len() - 1];
         (mean, p99, max)
+    }
+
+    if std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some()
+        && circuit == Circuit::Twin
+        && !live_paced
+        && layout == ProbeLayout::Mono
+    {
+        let power_before = solver_before.power.solves;
+        for trace in plugin.channels[0].unsettled_power_solver_trace() {
+            let relative_sample = trace
+                .solve
+                .saturating_sub(power_before.saturating_add(1)) as usize;
+            let tail_unknown_names = std::array::from_fn::<_, 8, _>(|i| {
+                if i < trace.tail_trace_count {
+                    plugin.channels[0]
+                        .power_solver_unknown_name(trace.tail_trace_max_unknown[i])
+                        .unwrap_or("?")
+                } else {
+                    "-"
+                }
+            });
+            println!(
+                "realtime_solver_unsettled,solve={},relative_sample={},block={},frame={},input={:.17e},last_input={:.17e},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},post_deep_confirmation_passes={},post_low_residual_confirmation_passes={},repeat_cycle_rejections={},continuation_trigger_pass={},continuation_trigger_target_passes={},continuation_trigger_was_stuck={},continuation_trigger_moved={:.17e},continuation_trigger_merit={:.17e},continuation_midpoint={:.17e},continuation_midpoint_moved={:.17e},continuation_midpoint_stuck={},tail_trace_count={},tail_passes={:?},tail_here={:?},tail_reference={:?},tail_accepted_lambda={:?},tail_accepted_merit={:?},tail_trial_count={:?},tail_trial_lambdas={:?},tail_trial_merits={:?},tail_moved_before={:?},tail_moved_after={:?},tail_fallback={:?},tail_max_unknown={:?},tail_max_unknown_names={:?},tail_max_norm={:?},tail_unsettled_devices={:?}",
+                trace.solve,
+                relative_sample,
+                relative_sample / BLOCK,
+                relative_sample % BLOCK,
+                trace.input,
+                trace.last_input,
+                trace.used_passes,
+                trace.target_passes,
+                trace.moved,
+                trace.before,
+                trace.search_merit,
+                trace.backtracks,
+                trace.fallbacks,
+                trace.continuation,
+                trace.tail_deep_passes,
+                trace.tail_deep_improvements,
+                trace.post_deep_confirmation_passes,
+                trace.post_low_residual_confirmation_passes,
+                trace.repeat_cycle_rejections,
+                trace.continuation_trigger_pass,
+                trace.continuation_trigger_target_passes,
+                trace.continuation_trigger_was_stuck,
+                trace.continuation_trigger_moved,
+                trace.continuation_trigger_merit,
+                trace.continuation_midpoint,
+                trace.continuation_midpoint_moved,
+                trace.continuation_midpoint_stuck,
+                trace.tail_trace_count,
+                trace.tail_trace_passes,
+                trace.tail_trace_here,
+                trace.tail_trace_reference,
+                trace.tail_trace_accepted_lambda,
+                trace.tail_trace_accepted_merit,
+                trace.tail_trace_trial_count,
+                trace.tail_trace_trial_lambdas,
+                trace.tail_trace_trial_merits,
+                trace.tail_trace_moved_before,
+                trace.tail_trace_moved_after,
+                trace.tail_trace_fallback,
+                trace.tail_trace_max_unknown,
+                tail_unknown_names,
+                trace.tail_trace_max_norm,
+                trace.tail_trace_unsettled_devices,
+            );
+        }
     }
 
     let (mean_us, p99_us, max_us) = summarize(&mut times);

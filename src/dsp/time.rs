@@ -35,6 +35,12 @@ enum Pass {
 
 #[cfg(test)]
 const SOLVER_TRACE_CAPACITY: usize = 32;
+#[cfg(test)]
+const UNSETTLED_TRACE_CAPACITY: usize = 32;
+#[cfg(test)]
+const SEARCH_TRACE_TRIALS: usize = 9;
+#[cfg(test)]
+const TAIL_TRACE_PASSES: usize = 8;
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug)]
@@ -66,6 +72,44 @@ pub struct SolverTrace {
     pub deep_last_merit_before: f64,
     pub deep_last_merit_after: f64,
     pub post_deep_confirmation_passes: usize,
+    pub post_low_residual_confirmation_passes: usize,
+    pub repeat_cycle_rejections: usize,
+    pub continuation_trigger_pass: usize,
+    pub continuation_trigger_target_passes: usize,
+    pub continuation_trigger_was_stuck: bool,
+    pub continuation_trigger_moved: f64,
+    pub continuation_trigger_merit: f64,
+    pub continuation_midpoint: f64,
+    pub continuation_midpoint_moved: f64,
+    pub continuation_midpoint_stuck: bool,
+    pub tail_trace_count: usize,
+    pub tail_trace_passes: [usize; TAIL_TRACE_PASSES],
+    pub tail_trace_here: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_reference: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_accepted_lambda: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_accepted_merit: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_trial_count: [usize; TAIL_TRACE_PASSES],
+    pub tail_trace_trial_lambdas: [[f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES],
+    pub tail_trace_trial_merits: [[f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES],
+    pub tail_trace_moved_before: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_moved_after: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_fallback: [bool; TAIL_TRACE_PASSES],
+    pub tail_trace_max_unknown: [usize; TAIL_TRACE_PASSES],
+    pub tail_trace_max_norm: [f64; TAIL_TRACE_PASSES],
+    pub tail_trace_unsettled_devices: [usize; TAIL_TRACE_PASSES],
+    pub probe_pass: usize,
+    pub probe_here: f64,
+    pub probe_reference: f64,
+    pub probe_trial_count: usize,
+    pub probe_lambdas: [f64; SEARCH_TRACE_TRIALS],
+    pub probe_merits: [f64; SEARCH_TRACE_TRIALS],
+    pub probe_exact: [bool; SEARCH_TRACE_TRIALS],
+    pub probe_max_correction_unknown: usize,
+    pub probe_max_correction_norm: f64,
+    pub probe_max_correction_abs: f64,
+    pub probe_max_correction_voltage: f64,
+    pub probe_max_correction_guess: f64,
+    pub probe_unsettled_devices: usize,
     pub settled: bool,
 }
 
@@ -99,6 +143,44 @@ impl SolverTrace {
         deep_last_merit_before: 0.0,
         deep_last_merit_after: 0.0,
         post_deep_confirmation_passes: 0,
+        post_low_residual_confirmation_passes: 0,
+        repeat_cycle_rejections: 0,
+        continuation_trigger_pass: 0,
+        continuation_trigger_target_passes: 0,
+        continuation_trigger_was_stuck: false,
+        continuation_trigger_moved: 0.0,
+        continuation_trigger_merit: 0.0,
+        continuation_midpoint: 0.0,
+        continuation_midpoint_moved: 0.0,
+        continuation_midpoint_stuck: false,
+        tail_trace_count: 0,
+        tail_trace_passes: [0; TAIL_TRACE_PASSES],
+        tail_trace_here: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_reference: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_accepted_lambda: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_accepted_merit: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_trial_count: [0; TAIL_TRACE_PASSES],
+        tail_trace_trial_lambdas: [[0.0; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES],
+        tail_trace_trial_merits: [[0.0; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES],
+        tail_trace_moved_before: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_moved_after: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_fallback: [false; TAIL_TRACE_PASSES],
+        tail_trace_max_unknown: [0; TAIL_TRACE_PASSES],
+        tail_trace_max_norm: [0.0; TAIL_TRACE_PASSES],
+        tail_trace_unsettled_devices: [0; TAIL_TRACE_PASSES],
+        probe_pass: 0,
+        probe_here: 0.0,
+        probe_reference: 0.0,
+        probe_trial_count: 0,
+        probe_lambdas: [0.0; SEARCH_TRACE_TRIALS],
+        probe_merits: [0.0; SEARCH_TRACE_TRIALS],
+        probe_exact: [false; SEARCH_TRACE_TRIALS],
+        probe_max_correction_unknown: 0,
+        probe_max_correction_norm: 0.0,
+        probe_max_correction_abs: 0.0,
+        probe_max_correction_voltage: 0.0,
+        probe_max_correction_guess: 0.0,
+        probe_unsettled_devices: 0,
         settled: false,
     };
 }
@@ -212,6 +294,160 @@ const FULL_STEPS: usize = 8;
 /// distribution, it is a wall.
 const CONVERGING: f64 = 0.5;
 
+/// Minimum meaningful progress for a deliberately nonmonotone line-search
+/// step, expressed as a fraction of the window between the current residual
+/// and the previous search residual.
+///
+/// The two-point reference is allowed to accept a short residual increase so
+/// Newton can cross a device-conduction boundary.  A plain `there < reference`
+/// test, however, also accepts a point that is numerically the *same* as the
+/// previous search point by a few ulps.  The Twin power stage had one attack
+/// sample that then alternated forever between two states: A -> B was accepted
+/// for improving the stale reference by only ~6e-8 of the A/B residual gap,
+/// and B -> A was a genuine decrease.
+///
+/// One millionth is the proven production threshold from v17/v20.  The v22
+/// A/B recording test confirmed that tightening this to 1e-5 changes later
+/// realtime trajectories and creates a different failure set, so keep the
+/// proven production value.
+const NONMONOTONE_MIN_PROGRESS: f64 = 1.0e-6;
+#[cfg(test)]
+const TEST_V21_NONMONOTONE_MIN_PROGRESS: f64 = 1.0e-5;
+#[cfg(test)]
+const TEST_REPEAT_CYCLE_MAX_PROGRESS: f64 = 1.0e-5;
+#[cfg(test)]
+const TEST_REPEAT_CYCLE_MATCH_REL: f64 = 1.0e-4;
+
+#[cfg(test)]
+#[inline]
+fn repeat_cycle_edge(here: f64, reference: f64, there: f64) -> bool {
+    if !there.is_finite() || there < here {
+        return false;
+    }
+    let window = reference - here;
+    if window <= 0.0 {
+        return false;
+    }
+    let progress = (reference - there) / window;
+    progress > NONMONOTONE_MIN_PROGRESS && progress <= TEST_REPEAT_CYCLE_MAX_PROGRESS
+}
+
+#[cfg(test)]
+#[inline]
+fn repeat_cycle_pair_matches(
+    old_here: f64,
+    old_reference: f64,
+    here: f64,
+    reference: f64,
+) -> bool {
+    fn close(a: f64, b: f64) -> bool {
+        let scale = a.abs().max(b.abs()).max(1.0e-12);
+        (a - b).abs() <= scale * TEST_REPEAT_CYCLE_MATCH_REL
+    }
+    close(old_here, here) && close(old_reference, reference)
+}
+
+#[inline]
+fn search_trial_improves_with_progress(
+    here: f64,
+    reference: f64,
+    there: f64,
+    min_progress: f64,
+) -> bool {
+    if !there.is_finite() {
+        return false;
+    }
+    if there < here {
+        return true;
+    }
+
+    let window = reference - here;
+    window > 0.0
+        && there < reference
+        && reference - there > window * min_progress
+}
+
+#[inline]
+fn search_trial_improves(here: f64, reference: f64, there: f64) -> bool {
+    search_trial_improves_with_progress(here, reference, there, NONMONOTONE_MIN_PROGRESS)
+}
+
+#[cfg(test)]
+#[test]
+fn nonmonotone_search_rejects_roundoff_two_cycle_edge() {
+    let here = 0.141_976_311_873_356_33;
+    let reference = 0.162_927_833_355_882_32;
+    let cycle_edge = 0.162_927_832_100_732_92;
+    assert!(!search_trial_improves(here, reference, cycle_edge));
+}
+
+#[cfg(test)]
+#[test]
+fn nonmonotone_search_baseline_keeps_near_reference_realtime_step() {
+    // This is intentionally accepted by the proven v20/v17 production
+    // threshold.  v22's A/B mode can tighten the threshold without silently
+    // changing the default solver trajectory.
+    let here = 0.084_340_116_374_264_49;
+    let reference = 0.633_248_107_882_544_5;
+    let cycle_edge = 0.633_246_975_258_810_5;
+    assert!(search_trial_improves(here, reference, cycle_edge));
+}
+
+#[cfg(test)]
+#[test]
+fn nonmonotone_search_rejects_near_reference_realtime_cycle() {
+    // Twin recording solve 156871: the full step goes from the low-residual
+    // side back almost exactly to the previous high-residual state.  It beats
+    // that stale reference by only about 2e-6 of the available window and is
+    // another numerical two-cycle, not useful boundary progress.
+    let here = 0.084_340_116_374_264_49;
+    let reference = 0.633_248_107_882_544_5;
+    let cycle_edge = 0.633_246_975_258_810_5;
+    assert!(!search_trial_improves_with_progress(
+        here,
+        reference,
+        cycle_edge,
+        TEST_V21_NONMONOTONE_MIN_PROGRESS,
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn repeat_cycle_guard_requires_recurrence_of_same_pair() {
+    let first_here = 0.114_945_277_989_292_97;
+    let first_reference = 0.680_489_151_575_063_5;
+    let first_return = 0.680_488_142_785_411_4;
+    let second_here = 0.114_945_309_999_195_18;
+    let second_reference = 0.680_488_142_785_411_4;
+    let second_return = 0.680_487_432_007_531_6;
+
+    assert!(repeat_cycle_edge(first_here, first_reference, first_return));
+    assert!(repeat_cycle_edge(second_here, second_reference, second_return));
+    assert!(repeat_cycle_pair_matches(
+        first_here,
+        first_reference,
+        second_here,
+        second_reference,
+    ));
+
+    // The known useful boundary crossing is much larger progress toward the
+    // current residual, so it is not even eligible for repeat-cycle gating.
+    assert!(!repeat_cycle_edge(
+        0.033_794_202_049_355_44,
+        0.073_825_018_786_463_82,
+        0.071_505_251_319_160_08,
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn nonmonotone_search_keeps_real_boundary_crossing() {
+    let here = 0.033_794_202_049_355_44;
+    let reference = 0.073_825_018_786_463_82;
+    let useful_crossing = 0.071_505_251_319_160_08;
+    assert!(search_trial_improves(here, reference, useful_crossing));
+}
+
 /// Source continuation is a late rescue, not part of the normal solve. The
 /// first FULL_STEPS target passes are left exactly as the pre-continuation
 /// solver ran them. Only a later target pass whose complete line search fell
@@ -264,6 +500,18 @@ const CONTINUATION_DEEPENING_TAIL_PASSES: usize = 4;
 /// ceiling arrived before `moved < 1`.  Three extra ordinary passes are enough
 /// to test that convergence path without broadening the normal realtime path.
 const POST_DEEP_CONFIRMATION_PASSES: usize = 3;
+
+/// A different tail class reaches the normal 64-pass wall already inside a
+/// low-residual basin without ever needing a deep continuation step.  The
+/// recording traces for solves 145404 and 156871 ended with exact residuals
+/// below 1e-2, every device locally settled, and a newly accepted improving
+/// step.  Give only that state up to three ordinary confirmation passes.
+///
+/// This is deliberately not a general pass-budget increase: it is available
+/// only at the full 64-pass ceiling, only after a successful searched pass,
+/// and never overrides a host-reduced realtime ceiling.
+const LOW_RESIDUAL_CONFIRMATION_MERIT: f64 = 1.0e-2;
+const POST_LOW_RESIDUAL_CONFIRMATION_PASSES: usize = 3;
 
 /// The shortest step the line search will try, as a fraction of Newton's own.
 const MIN_LAMBDA: f64 = 1.0 / 64.0;
@@ -589,14 +837,62 @@ pub struct Simulation {
     solver_trace: [SolverTrace; SOLVER_TRACE_CAPACITY],
     #[cfg(test)]
     solver_trace_len: usize,
+    /// Dedicated failure-only trace storage. The general trace also records
+    /// successful deep-rescue solves and can fill quickly on a long recording;
+    /// keeping unsettled solves separate guarantees that a traced realtime pass
+    /// retains every rare failure without changing production state or work.
+    #[cfg(test)]
+    unsettled_solver_trace: [SolverTrace; UNSETTLED_TRACE_CAPACITY],
+    #[cfg(test)]
+    unsettled_solver_trace_len: usize,
     #[cfg(test)]
     test_disable_continuation_deepening: bool,
+    /// Test-only A/B switch for a recurrence-based two-cycle guard.  Unlike
+    /// the rejected global 1e-5 threshold, this does not reject the first
+    /// near-reference nonmonotone crossing. It acts only when the same
+    /// low/high residual pair reappears within two searched passes.
+    #[cfg(test)]
+    test_repeat_cycle_guard: bool,
+    #[cfg(test)]
+    test_cycle_armed: bool,
+    #[cfg(test)]
+    test_cycle_age: usize,
+    #[cfg(test)]
+    test_cycle_here: f64,
+    #[cfg(test)]
+    test_cycle_reference: f64,
+    #[cfg(test)]
+    last_search_cycle_rejected: bool,
     #[cfg(test)]
     last_search_here: f64,
     #[cfg(test)]
     last_search_accepted_lambda: f64,
     #[cfg(test)]
     last_search_accepted_merit: f64,
+    #[cfg(test)]
+    test_trace_search_geometry: bool,
+    #[cfg(test)]
+    last_search_reference: f64,
+    #[cfg(test)]
+    last_search_trial_count: usize,
+    #[cfg(test)]
+    last_search_trial_lambdas: [f64; SEARCH_TRACE_TRIALS],
+    #[cfg(test)]
+    last_search_trial_merits: [f64; SEARCH_TRACE_TRIALS],
+    #[cfg(test)]
+    last_search_trial_exact: [bool; SEARCH_TRACE_TRIALS],
+    #[cfg(test)]
+    last_search_max_correction_unknown: usize,
+    #[cfg(test)]
+    last_search_max_correction_norm: f64,
+    #[cfg(test)]
+    last_search_max_correction_abs: f64,
+    #[cfg(test)]
+    last_search_max_correction_voltage: f64,
+    #[cfg(test)]
+    last_search_max_correction_guess: f64,
+    #[cfg(test)]
+    last_search_unsettled_devices: usize,
 }
 
 impl Simulation {
@@ -845,16 +1141,60 @@ impl Simulation {
             #[cfg(test)]
             solver_trace_len: 0,
             #[cfg(test)]
+            unsettled_solver_trace: [SolverTrace::EMPTY; UNSETTLED_TRACE_CAPACITY],
+            #[cfg(test)]
+            unsettled_solver_trace_len: 0,
+            #[cfg(test)]
             test_disable_continuation_deepening: std::env::var_os(
                 "GAINSTAGEFX_DISABLE_CONTINUATION_DEEPENING",
             )
             .is_some(),
+            #[cfg(test)]
+            test_repeat_cycle_guard: std::env::var_os(
+                "GAINSTAGEFX_TEST_REPEAT_CYCLE_GUARD",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_cycle_armed: false,
+            #[cfg(test)]
+            test_cycle_age: 0,
+            #[cfg(test)]
+            test_cycle_here: 0.0,
+            #[cfg(test)]
+            test_cycle_reference: 0.0,
+            #[cfg(test)]
+            last_search_cycle_rejected: false,
             #[cfg(test)]
             last_search_here: 0.0,
             #[cfg(test)]
             last_search_accepted_lambda: 0.0,
             #[cfg(test)]
             last_search_accepted_merit: 0.0,
+            #[cfg(test)]
+            test_trace_search_geometry: std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED")
+                .is_some(),
+            #[cfg(test)]
+            last_search_reference: 0.0,
+            #[cfg(test)]
+            last_search_trial_count: 0,
+            #[cfg(test)]
+            last_search_trial_lambdas: [0.0; SEARCH_TRACE_TRIALS],
+            #[cfg(test)]
+            last_search_trial_merits: [0.0; SEARCH_TRACE_TRIALS],
+            #[cfg(test)]
+            last_search_trial_exact: [false; SEARCH_TRACE_TRIALS],
+            #[cfg(test)]
+            last_search_max_correction_unknown: 0,
+            #[cfg(test)]
+            last_search_max_correction_norm: 0.0,
+            #[cfg(test)]
+            last_search_max_correction_abs: 0.0,
+            #[cfg(test)]
+            last_search_max_correction_voltage: 0.0,
+            #[cfg(test)]
+            last_search_max_correction_guess: 0.0,
+            #[cfg(test)]
+            last_search_unsettled_devices: 0,
         };
         sim.rebuild();
         // Apply initial voltages from the circuit to help the DC solver
@@ -913,10 +1253,28 @@ impl Simulation {
     }
 
     #[cfg(test)]
+    pub fn unsettled_solver_trace(&self) -> &[SolverTrace] {
+        &self.unsettled_solver_trace[..self.unsettled_solver_trace_len]
+    }
+
+    #[cfg(test)]
+    pub fn solver_unknown_name(&self, at: usize) -> &str {
+        self.circuit.node_name(at)
+    }
+
+    #[cfg(test)]
     fn push_solver_trace(&mut self, trace: SolverTrace) {
         if self.solver_trace_len < SOLVER_TRACE_CAPACITY {
             self.solver_trace[self.solver_trace_len] = trace;
             self.solver_trace_len += 1;
+        }
+    }
+
+    #[cfg(test)]
+    fn push_unsettled_solver_trace(&mut self, trace: SolverTrace) {
+        if self.unsettled_solver_trace_len < UNSETTLED_TRACE_CAPACITY {
+            self.unsettled_solver_trace[self.unsettled_solver_trace_len] = trace;
+            self.unsettled_solver_trace_len += 1;
         }
     }
 
@@ -2146,16 +2504,37 @@ impl Simulation {
         };
         // A two-point nonmonotone search lets Newton cross a short increase
         // in residual instead of getting trapped taking tiny steps around a
-        // power tube's conduction boundary. It must still improve on the
-        // larger of this and the previous search residual. The reference
+        // power tube's conduction boundary. A worsening step must make a tiny
+        // but meaningful amount of progress from the previous residual toward
+        // the current one; merely beating the stale reference by floating-point
+        // noise is not enough (see `search_trial_improves`). The reference
         // rolls forward, is reset every sample, and never changes the full
         // correction/device convergence test below. DC keeps its old search.
         let reference = if dc { here } else { here.max(self.search_merit) };
         #[cfg(test)]
         {
             self.last_search_here = here;
+            self.last_search_reference = reference;
             self.last_search_accepted_lambda = 0.0;
             self.last_search_accepted_merit = 0.0;
+            self.last_search_trial_count = 0;
+            self.last_search_trial_lambdas = [0.0; SEARCH_TRACE_TRIALS];
+            self.last_search_trial_merits = [0.0; SEARCH_TRACE_TRIALS];
+            self.last_search_trial_exact = [false; SEARCH_TRACE_TRIALS];
+            self.last_search_max_correction_unknown = 0;
+            self.last_search_max_correction_norm = 0.0;
+            self.last_search_max_correction_abs = 0.0;
+            self.last_search_max_correction_voltage = 0.0;
+            self.last_search_max_correction_guess = 0.0;
+            self.last_search_unsettled_devices = 0;
+            self.last_search_cycle_rejected = false;
+            if search && self.test_cycle_armed {
+                self.test_cycle_age = self.test_cycle_age.saturating_add(1);
+                if self.test_cycle_age > 2 {
+                    self.test_cycle_armed = false;
+                    self.test_cycle_age = 0;
+                }
+            }
         }
         if search {
             self.search_merit = here;
@@ -2297,6 +2676,29 @@ impl Simulation {
         // Kept so the caller can see whether this pass made progress, and turn
         // the line search on the moment one does not. See `CONVERGING`.
         self.moved = moved;
+        #[cfg(test)]
+        if search && self.test_trace_search_geometry {
+            let mut max_norm = 0.0f64;
+            let mut max_at = 0usize;
+            for (at, (&delta, &voltage)) in self.scratch.iter().zip(&self.voltage).enumerate() {
+                let scale = TOLERANCE + RELATIVE * voltage.abs();
+                let norm = delta.abs() / scale;
+                if norm > max_norm {
+                    max_norm = norm;
+                    max_at = at;
+                }
+            }
+            self.last_search_max_correction_unknown = max_at;
+            self.last_search_max_correction_norm = max_norm;
+            self.last_search_max_correction_abs = self.scratch[max_at].abs();
+            self.last_search_max_correction_voltage = self.voltage[max_at];
+            self.last_search_max_correction_guess = self.guess[max_at];
+            self.last_search_unsettled_devices = self
+                .devices
+                .iter()
+                .filter(|device| !device.settled(TOLERANCE))
+                .count();
+        }
 
         // Converged? Then stop here, before the line search, and take the
         // full step -- which is by definition a tiny one.
@@ -2387,11 +2789,49 @@ impl Simulation {
                     break;
                 }
                 let there = reduced_there.unwrap_or_else(|| self.merit(&self.point, false));
+                #[cfg(test)]
+                if self.test_trace_search_geometry
+                    && self.last_search_trial_count < SEARCH_TRACE_TRIALS
+                {
+                    let slot = self.last_search_trial_count;
+                    self.last_search_trial_lambdas[slot] = lambda;
+                    self.last_search_trial_merits[slot] = there;
+                    self.last_search_trial_exact[slot] = self.exact;
+                    self.last_search_trial_count += 1;
+                }
                 if there.is_finite() && there < best_merit {
                     best_merit = there;
                     best_lambda = lambda;
                 }
-                if there.is_finite() && there < reference {
+                let improves = search_trial_improves(here, reference, there);
+                #[cfg(test)]
+                let improves = if improves
+                    && self.test_repeat_cycle_guard
+                    && !dc
+                    && repeat_cycle_edge(here, reference, there)
+                {
+                    if self.test_cycle_armed
+                        && self.test_cycle_age <= 2
+                        && repeat_cycle_pair_matches(
+                            self.test_cycle_here,
+                            self.test_cycle_reference,
+                            here,
+                            reference,
+                        )
+                    {
+                        self.last_search_cycle_rejected = true;
+                        false
+                    } else {
+                        self.test_cycle_armed = true;
+                        self.test_cycle_age = 0;
+                        self.test_cycle_here = here;
+                        self.test_cycle_reference = reference;
+                        true
+                    }
+                } else {
+                    improves
+                };
+                if improves {
                     taken = true;
                     #[cfg(test)]
                     {
@@ -2410,6 +2850,82 @@ impl Simulation {
             if lambda < MIN_LAMBDA {
                 break;
             }
+        }
+
+        #[cfg(test)]
+        if !taken
+            && self.test_trace_search_geometry
+            && search
+            && self.backtracks >= CONTINUATION_BACKTRACKS
+            && self.last_search_trial_count < SEARCH_TRACE_TRIALS
+        {
+            // Diagnostic-only continuation of the same Newton ray. Production
+            // still stops after its six bounded trials (through 1/32). These
+            // passive probes measure 1/64, 1/128 and 1/256, restore every
+            // device linearisation, and never participate in step selection.
+            // That tells us whether a pathological refusal merely needs a
+            // shorter damping length or whether the Newton direction itself
+            // has flattened out.
+            let exact_before_probe = self.exact;
+            let mut probe_lambda = 0.5f64.powi(self.backtracks as i32);
+            while self.last_search_trial_count < SEARCH_TRACE_TRIALS {
+                let mut finite = true;
+                for ((point, &voltage), &delta) in self
+                    .point
+                    .iter_mut()
+                    .zip(&self.voltage)
+                    .zip(&self.scratch)
+                {
+                    let value = voltage + probe_lambda * delta;
+                    *point = value;
+                    finite &= value.is_finite();
+                }
+                if !finite {
+                    break;
+                }
+
+                let reduced_there = if reduced_direct && !self.watching {
+                    match self.reduced_trial_merit(dc) {
+                        Some(merit) => Some(merit),
+                        None => {
+                            self.build_point_full(dc);
+                            None
+                        }
+                    }
+                } else {
+                    if self.watching {
+                        self.build_point_full(dc);
+                    } else {
+                        self.restamp_trial(dc);
+                    }
+                    None
+                };
+                let exact_probe = self.exact;
+                if !exact_probe {
+                    for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                        device.relinearise(*saved);
+                    }
+                    break;
+                }
+                let there = reduced_there.unwrap_or_else(|| self.merit(&self.point, false));
+                let slot = self.last_search_trial_count;
+                self.last_search_trial_lambdas[slot] = probe_lambda;
+                self.last_search_trial_merits[slot] = there;
+                self.last_search_trial_exact[slot] = true;
+                self.last_search_trial_count += 1;
+
+                for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                    device.relinearise(*saved);
+                }
+                probe_lambda *= 0.5;
+            }
+            self.exact = exact_before_probe;
+        }
+
+        #[cfg(test)]
+        if self.last_search_cycle_rejected {
+            self.test_cycle_armed = false;
+            self.test_cycle_age = 0;
         }
 
         if !taken {
@@ -2582,6 +3098,14 @@ impl Simulation {
             // `recent_move`, so this write was dead work in the realtime path.
             let mut settled = false;
             let ceiling = self.ceiling.clamp(PASS_FLOOR, MAX_ITERATIONS);
+            #[cfg(test)]
+            {
+                self.test_cycle_armed = false;
+                self.test_cycle_age = 0;
+                self.test_cycle_here = 0.0;
+                self.test_cycle_reference = 0.0;
+                self.last_search_cycle_rejected = false;
+            }
 
             if !self.late_continuation {
                 // Exact pre-continuation fast path. Keep this branch structurally
@@ -2621,8 +3145,29 @@ impl Simulation {
                 // paying for 1/16 and 1/32 trials and spend any remaining work
                 // on ordinary Newton confirmation instead.
                 let mut deep_rescue_accepted = false;
+                let mut low_residual_confirmation = false;
                 #[cfg(test)]
                 let mut post_deep_confirmation_passes = 0usize;
+                #[cfg(test)]
+                let mut post_low_residual_confirmation_passes = 0usize;
+                #[cfg(test)]
+                let mut repeat_cycle_rejections = 0usize;
+                #[cfg(test)]
+                let mut continuation_trigger_pass = 0usize;
+                #[cfg(test)]
+                let mut continuation_trigger_target_passes = 0usize;
+                #[cfg(test)]
+                let mut continuation_trigger_was_stuck = false;
+                #[cfg(test)]
+                let mut continuation_trigger_moved = 0.0f64;
+                #[cfg(test)]
+                let mut continuation_trigger_merit = 0.0f64;
+                #[cfg(test)]
+                let mut continuation_midpoint = 0.0f64;
+                #[cfg(test)]
+                let mut continuation_midpoint_moved = 0.0f64;
+                #[cfg(test)]
+                let mut continuation_midpoint_stuck = false;
                 #[cfg(test)]
                 let sample_backtracks_start = self.backtrack_count;
                 #[cfg(test)]
@@ -2655,17 +3200,78 @@ impl Simulation {
                 let mut deep_last_merit_before = 0.0f64;
                 #[cfg(test)]
                 let mut deep_last_merit_after = 0.0f64;
+                #[cfg(test)]
+                let mut probe_pass = 0usize;
+                #[cfg(test)]
+                let mut probe_here = 0.0f64;
+                #[cfg(test)]
+                let mut probe_reference = 0.0f64;
+                #[cfg(test)]
+                let mut probe_trial_count = 0usize;
+                #[cfg(test)]
+                let mut probe_lambdas = [0.0; SEARCH_TRACE_TRIALS];
+                #[cfg(test)]
+                let mut probe_merits = [0.0; SEARCH_TRACE_TRIALS];
+                #[cfg(test)]
+                let mut probe_exact = [false; SEARCH_TRACE_TRIALS];
+                #[cfg(test)]
+                let mut probe_max_correction_unknown = 0usize;
+                #[cfg(test)]
+                let mut probe_max_correction_norm = 0.0f64;
+                #[cfg(test)]
+                let mut probe_max_correction_abs = 0.0f64;
+                #[cfg(test)]
+                let mut probe_max_correction_voltage = 0.0f64;
+                #[cfg(test)]
+                let mut probe_max_correction_guess = 0.0f64;
+                #[cfg(test)]
+                let mut probe_unsettled_devices = 0usize;
+                #[cfg(test)]
+                let mut tail_trace_count = 0usize;
+                #[cfg(test)]
+                let mut tail_trace_passes = [0usize; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_here = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_reference = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_accepted_lambda = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_accepted_merit = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_trial_count = [0usize; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_trial_lambdas = [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_trial_merits = [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_moved_before = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_moved_after = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_fallback = [false; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_max_unknown = [0usize; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_max_norm = [0.0f64; TAIL_TRACE_PASSES];
+                #[cfg(test)]
+                let mut tail_trace_unsettled_devices = [0usize; TAIL_TRACE_PASSES];
 
                 loop {
-                    // The normal path is still capped by `ceiling`.  Only a
-                    // sample that (a) is already using the full 64-pass ceiling
-                    // and (b) accepted a deeper continuation step may spend up
-                    // to three additional *ordinary* passes confirming strict
-                    // convergence.  A host-pinched ceiling is never exceeded.
-                    let confirmation_limit = if deep_rescue_accepted
-                        && ceiling == MAX_ITERATIONS
-                    {
-                        ceiling + POST_DEEP_CONFIRMATION_PASSES
+                    // The normal path is still capped by `ceiling`.  At the
+                    // full 64-pass ceiling only two proven production cases may
+                    // spend up to three additional ordinary passes: confirmation
+                    // after an accepted deep step, or confirmation after entering
+                    // the measured low-residual basin. A host-pinched ceiling is
+                    // never exceeded.
+                    let confirmation_limit = if ceiling == MAX_ITERATIONS {
+                        if deep_rescue_accepted {
+                            ceiling + POST_DEEP_CONFIRMATION_PASSES
+                        } else if low_residual_confirmation {
+                            ceiling + POST_LOW_RESIDUAL_CONFIRMATION_PASSES
+                        } else {
+                            ceiling
+                        }
                     } else {
                         ceiling
                     };
@@ -2674,7 +3280,11 @@ impl Simulation {
                     }
                     #[cfg(test)]
                     if used_passes >= ceiling {
-                        post_deep_confirmation_passes += 1;
+                        if deep_rescue_accepted {
+                            post_deep_confirmation_passes += 1;
+                        } else if low_residual_confirmation {
+                            post_low_residual_confirmation_passes += 1;
+                        }
                     }
                     // A continuation midpoint solves a different source RHS.
                     // Invalidate every progress/merit comparison that belonged
@@ -2725,6 +3335,69 @@ impl Simulation {
                     self.backtracks = normal_backtracks;
                     target_passes += 1;
                     let line_search_failed = self.fallbacks > fallbacks_before;
+                    #[cfg(test)]
+                    if self.last_search_cycle_rejected {
+                        repeat_cycle_rejections += 1;
+                    }
+                    #[cfg(test)]
+                    if self.test_trace_search_geometry && search {
+                        // Keep a rolling, allocation-free history of the last
+                        // few *actual* line searches.  Earlier diagnostics only
+                        // recorded the final deep-continuation window, which
+                        // left short 3-20 pass failures opaque.  This is test
+                        // instrumentation only and does not alter solver policy.
+                        let slot = if tail_trace_count < TAIL_TRACE_PASSES {
+                            let slot = tail_trace_count;
+                            tail_trace_count += 1;
+                            slot
+                        } else {
+                            tail_trace_passes.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_here.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_reference.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_accepted_lambda.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_accepted_merit.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_trial_count.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_trial_lambdas.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_trial_merits.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_moved_before.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_moved_after.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_fallback.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_max_unknown.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_max_norm.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            tail_trace_unsettled_devices.copy_within(1..TAIL_TRACE_PASSES, 0);
+                            TAIL_TRACE_PASSES - 1
+                        };
+                        tail_trace_passes[slot] = used_passes;
+                        tail_trace_here[slot] = self.last_search_here;
+                        tail_trace_reference[slot] = self.last_search_reference;
+                        tail_trace_accepted_lambda[slot] = self.last_search_accepted_lambda;
+                        tail_trace_accepted_merit[slot] = self.last_search_accepted_merit;
+                        tail_trace_trial_count[slot] = self.last_search_trial_count;
+                        tail_trace_trial_lambdas[slot] = self.last_search_trial_lambdas;
+                        tail_trace_trial_merits[slot] = self.last_search_trial_merits;
+                        tail_trace_moved_before[slot] = before;
+                        tail_trace_moved_after[slot] = self.moved;
+                        tail_trace_fallback[slot] = line_search_failed;
+                        tail_trace_max_unknown[slot] = self.last_search_max_correction_unknown;
+                        tail_trace_max_norm[slot] = self.last_search_max_correction_norm;
+                        tail_trace_unsettled_devices[slot] = self.last_search_unsettled_devices;
+                    }
+                    #[cfg(test)]
+                    if deep_continuation_search && line_search_failed && probe_pass == 0 {
+                        probe_pass = used_passes;
+                        probe_here = self.last_search_here;
+                        probe_reference = self.last_search_reference;
+                        probe_trial_count = self.last_search_trial_count;
+                        probe_lambdas = self.last_search_trial_lambdas;
+                        probe_merits = self.last_search_trial_merits;
+                        probe_exact = self.last_search_trial_exact;
+                        probe_max_correction_unknown = self.last_search_max_correction_unknown;
+                        probe_max_correction_norm = self.last_search_max_correction_norm;
+                        probe_max_correction_abs = self.last_search_max_correction_abs;
+                        probe_max_correction_voltage = self.last_search_max_correction_voltage;
+                        probe_max_correction_guess = self.last_search_max_correction_guess;
+                        probe_unsettled_devices = self.last_search_unsettled_devices;
+                    }
                     if deep_continuation_search
                         && !line_search_failed
                         && self.backtrack_count - backtracks_before
@@ -2755,6 +3428,24 @@ impl Simulation {
                         }
                     }
 
+                    // Some solves arrive at the 64-pass wall only one or
+                    // two strict Newton confirmations short of convergence,
+                    // without having used the deep-continuation rescue.  The
+                    // exact pre-step merit is already tiny, the searched step
+                    // was accepted (not a fallback), and every nonlinear
+                    // device agrees locally.  Latch a three-pass ordinary
+                    // confirmation window for only that case.
+                    if used_passes == ceiling
+                        && ceiling == MAX_ITERATIONS
+                        && !deep_rescue_accepted
+                        && !line_search_failed
+                        && search
+                        && self.search_merit <= LOW_RESIDUAL_CONFIRMATION_MERIT
+                        && self.devices.iter().all(|device| device.settled(TOLERANCE))
+                    {
+                        low_residual_confirmation = true;
+                    }
+
                     if matches!(pass, Pass::Settled) {
                         settled = true;
                         if let Some(from_stuck) = continuation_from_stuck {
@@ -2774,6 +3465,14 @@ impl Simulation {
                         && used_passes < ceiling
                         && late_rejection
                     {
+                        #[cfg(test)]
+                        {
+                            continuation_trigger_pass = used_passes;
+                            continuation_trigger_target_passes = target_passes;
+                            continuation_trigger_was_stuck = ordinary_stuck;
+                            continuation_trigger_moved = self.moved;
+                            continuation_trigger_merit = self.search_merit;
+                        }
                         self.continuation_attempts += 1;
                         continuation_from_stuck = Some(ordinary_stuck);
 
@@ -2783,11 +3482,20 @@ impl Simulation {
                         // itself cannot produce an improving step.
                         self.predicted.copy_from_slice(&self.voltage);
                         let midpoint = self.last_input + 0.5 * (input - self.last_input);
+                        #[cfg(test)]
+                        {
+                            continuation_midpoint = midpoint;
+                        }
                         self.prepare_rhs(midpoint, false);
                         self.newton_passes += 1;
                         used_passes += 1;
                         let midpoint_pass = self.iterate(false, false);
                         let midpoint_usable = !matches!(midpoint_pass, Pass::Stuck);
+                        #[cfg(test)]
+                        {
+                            continuation_midpoint_moved = self.moved;
+                            continuation_midpoint_stuck = !midpoint_usable;
+                        }
                         if midpoint_usable {
                             self.continuation_midpoint_successes += 1;
                         } else {
@@ -2814,7 +3522,7 @@ impl Simulation {
 
                 #[cfg(test)]
                 if !settled || continuation_deep_passes > 0 {
-                    self.push_solver_trace(SolverTrace {
+                    let trace = SolverTrace {
                         solve: self.solves,
                         input,
                         last_input: self.last_input,
@@ -2842,8 +3550,50 @@ impl Simulation {
                         deep_last_merit_before,
                         deep_last_merit_after,
                         post_deep_confirmation_passes,
+                        post_low_residual_confirmation_passes,
+                        repeat_cycle_rejections,
+                        continuation_trigger_pass,
+                        continuation_trigger_target_passes,
+                        continuation_trigger_was_stuck,
+                        continuation_trigger_moved,
+                        continuation_trigger_merit,
+                        continuation_midpoint,
+                        continuation_midpoint_moved,
+                        continuation_midpoint_stuck,
+                        tail_trace_count,
+                        tail_trace_passes,
+                        tail_trace_here,
+                        tail_trace_reference,
+                        tail_trace_accepted_lambda,
+                        tail_trace_accepted_merit,
+                        tail_trace_trial_count,
+                        tail_trace_trial_lambdas,
+                        tail_trace_trial_merits,
+                        tail_trace_moved_before,
+                        tail_trace_moved_after,
+                        tail_trace_fallback,
+                        tail_trace_max_unknown,
+                        tail_trace_max_norm,
+                        tail_trace_unsettled_devices,
+                        probe_pass,
+                        probe_here,
+                        probe_reference,
+                        probe_trial_count,
+                        probe_lambdas,
+                        probe_merits,
+                        probe_exact,
+                        probe_max_correction_unknown,
+                        probe_max_correction_norm,
+                        probe_max_correction_abs,
+                        probe_max_correction_voltage,
+                        probe_max_correction_guess,
+                        probe_unsettled_devices,
                         settled,
-                    });
+                    };
+                    if !settled {
+                        self.push_unsettled_solver_trace(trace);
+                    }
+                    self.push_solver_trace(trace);
                 }
             }
             if !settled {

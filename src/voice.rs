@@ -1730,6 +1730,21 @@ impl Chain {
             .unwrap_or(&[])
     }
 
+    #[cfg(test)]
+    pub fn unsettled_power_solver_trace(&self) -> &[crate::dsp::time::SolverTrace] {
+        self.powers[self.gain]
+            .as_ref()
+            .map(Simulation::unsettled_solver_trace)
+            .unwrap_or(&[])
+    }
+
+    #[cfg(test)]
+    pub fn power_solver_unknown_name(&self, at: usize) -> Option<&str> {
+        self.powers[self.gain]
+            .as_ref()
+            .map(|simulation| simulation.solver_unknown_name(at))
+    }
+
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
         let reverb = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {

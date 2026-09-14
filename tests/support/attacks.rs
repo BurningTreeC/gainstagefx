@@ -162,8 +162,24 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
     }
     if std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some() {
         for trace in plugin.channels[0].power_solver_trace() {
+            let probe_unknown_name = if trace.probe_pass != 0 {
+                plugin.channels[0]
+                    .power_solver_unknown_name(trace.probe_max_correction_unknown)
+                    .unwrap_or("?")
+            } else {
+                "-"
+            };
+            let tail_unknown_names = std::array::from_fn::<_, 8, _>(|i| {
+                if i < trace.tail_trace_count {
+                    plugin.channels[0]
+                        .power_solver_unknown_name(trace.tail_trace_max_unknown[i])
+                        .unwrap_or("?")
+                } else {
+                    "-"
+                }
+            });
             println!(
-                "solver_tail,solve={},input={:.17e},last_input={:.17e},ceiling={},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},deep_first_pass={},deep_last_pass={},deep_first_lambda={:.8e},deep_last_lambda={:.8e},deep_first_moved_before={:.17e},deep_first_moved_after={:.17e},deep_first_merit_before={:.17e},deep_first_merit_after={:.17e},deep_last_moved_before={:.17e},deep_last_moved_after={:.17e},deep_last_merit_before={:.17e},deep_last_merit_after={:.17e},post_deep_confirmation_passes={},settled={}",
+                "solver_tail,solve={},input={:.17e},last_input={:.17e},ceiling={},used_passes={},target_passes={},moved={:.17e},before={:.17e},search_merit={:.17e},backtracks={},fallbacks={},continuation={},tail_deep_passes={},tail_deep_improvements={},deep_first_pass={},deep_last_pass={},deep_first_lambda={:.8e},deep_last_lambda={:.8e},deep_first_moved_before={:.17e},deep_first_moved_after={:.17e},deep_first_merit_before={:.17e},deep_first_merit_after={:.17e},deep_last_moved_before={:.17e},deep_last_moved_after={:.17e},deep_last_merit_before={:.17e},deep_last_merit_after={:.17e},post_deep_confirmation_passes={},post_low_residual_confirmation_passes={},repeat_cycle_rejections={},continuation_trigger_pass={},continuation_trigger_target_passes={},continuation_trigger_was_stuck={},continuation_trigger_moved={:.17e},continuation_trigger_merit={:.17e},continuation_midpoint={:.17e},continuation_midpoint_moved={:.17e},continuation_midpoint_stuck={},tail_trace_count={},tail_passes={:?},tail_here={:?},tail_reference={:?},tail_accepted_lambda={:?},tail_accepted_merit={:?},tail_trial_count={:?},tail_trial_lambdas={:?},tail_trial_merits={:?},tail_moved_before={:?},tail_moved_after={:?},tail_fallback={:?},tail_max_unknown={:?},tail_max_unknown_names={:?},tail_max_norm={:?},tail_unsettled_devices={:?},probe_pass={},probe_here={:.17e},probe_reference={:.17e},probe_trial_count={},probe_lambdas={:?},probe_merits={:?},probe_exact={:?},probe_max_unknown={},probe_max_unknown_name={},probe_max_norm={:.17e},probe_max_abs={:.17e},probe_voltage={:.17e},probe_guess={:.17e},probe_unsettled_devices={},settled={}",
                 trace.solve,
                 trace.input,
                 trace.last_input,
@@ -191,6 +207,46 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
                 trace.deep_last_merit_before,
                 trace.deep_last_merit_after,
                 trace.post_deep_confirmation_passes,
+                trace.post_low_residual_confirmation_passes,
+                trace.repeat_cycle_rejections,
+                trace.continuation_trigger_pass,
+                trace.continuation_trigger_target_passes,
+                trace.continuation_trigger_was_stuck,
+                trace.continuation_trigger_moved,
+                trace.continuation_trigger_merit,
+                trace.continuation_midpoint,
+                trace.continuation_midpoint_moved,
+                trace.continuation_midpoint_stuck,
+                trace.tail_trace_count,
+                trace.tail_trace_passes,
+                trace.tail_trace_here,
+                trace.tail_trace_reference,
+                trace.tail_trace_accepted_lambda,
+                trace.tail_trace_accepted_merit,
+                trace.tail_trace_trial_count,
+                trace.tail_trace_trial_lambdas,
+                trace.tail_trace_trial_merits,
+                trace.tail_trace_moved_before,
+                trace.tail_trace_moved_after,
+                trace.tail_trace_fallback,
+                trace.tail_trace_max_unknown,
+                tail_unknown_names,
+                trace.tail_trace_max_norm,
+                trace.tail_trace_unsettled_devices,
+                trace.probe_pass,
+                trace.probe_here,
+                trace.probe_reference,
+                trace.probe_trial_count,
+                trace.probe_lambdas,
+                trace.probe_merits,
+                trace.probe_exact,
+                trace.probe_max_correction_unknown,
+                probe_unknown_name,
+                trace.probe_max_correction_norm,
+                trace.probe_max_correction_abs,
+                trace.probe_max_correction_voltage,
+                trace.probe_max_correction_guess,
+                trace.probe_unsettled_devices,
                 trace.settled,
             );
         }
