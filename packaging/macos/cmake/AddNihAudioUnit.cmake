@@ -8,10 +8,8 @@ function(add_nih_clap_audio_unit plugin)
     if(NOT AU_BUILD_CONFIG MATCHES "^(Debug|Release)$")
         message(FATAL_ERROR "AU_BUILD_CONFIG must be Debug or Release, got '${AU_BUILD_CONFIG}'")
     endif()
-    # Xcode is a multi-config generator. Using $<CONFIG> keeps the configuration
-    # in the path while preventing CMake/Xcode from appending another Release/Debug
-    # directory.
-    set(output "${CMAKE_BINARY_DIR}/products/$<CONFIG>")
+    set(output "${CMAKE_BINARY_DIR}/products/${AU_BUILD_CONFIG}")
+    string(TOUPPER "${AU_BUILD_CONFIG}" output_config)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/products/Release" "${CMAKE_BINARY_DIR}/products/Debug")
     set(target "${package}_${AU_FORMAT}")
     if(AU_FORMAT STREQUAL "auv2")
@@ -45,12 +43,19 @@ function(add_nih_clap_audio_unit plugin)
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/../Host-Info.plist.in"
             MACOSX_BUNDLE_BUNDLE_VERSION "${version}"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${version}"
-            RUNTIME_OUTPUT_DIRECTORY "${output}")
+            RUNTIME_OUTPUT_DIRECTORY "${output}"
+            RUNTIME_OUTPUT_DIRECTORY_${output_config} "${output}")
     endif()
-    # Upstream's embedded-CLAP PRE_BUILD command uses LIBRARY_OUTPUT_DIRECTORY
-    # as its working directory, including for the executable AUv3 target.
+    # clap-wrapper's embedded-CLAP PRE_BUILD command reads the generic
+    # LIBRARY_OUTPUT_DIRECTORY property as its working directory. Keep that
+    # property concrete (no nested $<CONFIG> expression), while also setting
+    # the config-specific properties so Xcode does not append Release/Debug a
+    # second time.
     set_target_properties(${target} PROPERTIES
-        LIBRARY_OUTPUT_DIRECTORY "${output}" RUNTIME_OUTPUT_DIRECTORY "${output}")
+        LIBRARY_OUTPUT_DIRECTORY "${output}"
+        RUNTIME_OUTPUT_DIRECTORY "${output}"
+        LIBRARY_OUTPUT_DIRECTORY_${output_config} "${output}"
+        RUNTIME_OUTPUT_DIRECTORY_${output_config} "${output}")
     # Xcode does not honor LINK_DEPENDS. Change a helper-only translation unit
     # when CLAP bytes/metadata change so the helper relinks and its descriptor
     # generation POST_BUILD runs again. This never enters the shipped plugin.
