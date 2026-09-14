@@ -89,6 +89,42 @@ static void settle() {
     [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
 }
 
+// State and parameter tests use an initialized, processing host lifecycle.
+// AUv2 SaveState/RestoreState require initialization; queued CLAP parameter
+// events reach the plugin during rendering, not merely by pumping NSRunLoop.
+static AVAudioFormat *prepareStateTest(AUAudioUnit *unit) {
+    NSError *error = nil;
+    AVAudioFormat *format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:48000 channels:2];
+    check([unit.inputBusses[0] setFormat:format error:&error], "State test input format failed");
+    check([unit.outputBusses[0] setFormat:format error:&error], "State test output format failed");
+    unit.maximumFramesToRender = 128;
+    if (![unit allocateRenderResourcesAndReturnError:&error]) {
+        std::cerr << error.description.UTF8String << "\n";
+        check(false, "State test resource allocation failed");
+    }
+    return format;
+}
+
+static void renderStateTest(AUAudioUnit *unit, AVAudioFormat *format) {
+    AVAudioPCMBuffer *output = [[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:128];
+    output.frameLength = 128;
+    AURenderPullInputBlock silence = ^AUAudioUnitStatus(AudioUnitRenderActionFlags *,
+        const AudioTimeStamp *, AUAudioFrameCount count, NSInteger, AudioBufferList *data) {
+        for (UInt32 c = 0; c < data->mNumberBuffers; ++c) {
+            if (!data->mBuffers[c].mData) return kAudioUnitErr_InvalidPropertyValue;
+            memset(data->mBuffers[c].mData, 0, count * sizeof(float));
+            data->mBuffers[c].mDataByteSize = count * sizeof(float);
+        }
+        return noErr;
+    };
+    AudioTimeStamp stamp{};
+    stamp.mFlags = kAudioTimeStampSampleTimeValid;
+    AudioUnitRenderActionFlags flags = 0;
+    check(unit.renderBlock(&flags, &stamp, 128, 0, output.mutableAudioBufferList, silence) == noErr,
+          "State test render failed");
+    settle();
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
         try {
@@ -117,6 +153,7 @@ int main(int argc, char **argv) {
             AUAudioUnit *unit = instantiate(desc);
             check(bool(unit.componentDescription.componentFlags & kAudioComponentFlag_IsV3AudioUnit) == v3,
                   "Instantiated AU version differs from request");
+            AVAudioFormat *stateFormat = prepareStateTest(unit);
             ClapReference clap(@(argv[4]), plugin[@"clap_id"]);
             NSArray<AUParameter *> *parameters = unit.parameterTree.allParameters;
             size_t expectedCount = 0;
@@ -146,7 +183,7 @@ int main(int argc, char **argv) {
                 }
             }
             check(parameters.count == expectedCount, "AU/CLAP parameter count mismatch");
-            settle();
+            renderStateTest(unit, stateFormat);
             for (NSNumber *address in changedValues)
                 check(near([unit.parameterTree parameterWithAddress:address.unsignedLongLongValue].value,
                            [changedValues[address] doubleValue]), "Host parameter update was not applied");
@@ -158,21 +195,30 @@ int main(int argc, char **argv) {
             NSData *serialized = [NSPropertyListSerialization dataWithPropertyList:state
                 format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error];
             check(serialized != nil, "AU state is not serializable");
+            [unit deallocateRenderResources];
             unit = nil;
             settle();
             unit = instantiate(desc);
+            stateFormat = prepareStateTest(unit);
             unit.fullState = [NSPropertyListSerialization propertyListWithData:serialized
                 options:NSPropertyListImmutable format:nullptr error:&error];
-            settle();
-            for (AUParameter *parameter in unit.parameterTree.allParameters)
-                check(near(parameter.value, [values[@(parameter.address)] doubleValue]),
-                      "Parameter did not survive serialized state restoration");
+            renderStateTest(unit, stateFormat);
+            for (AUParameter *parameter in unit.parameterTree.allParameters) {
+                double expected = [values[@(parameter.address)] doubleValue];
+                if (!near(parameter.value, expected)) {
+                    std::cerr << "State mismatch for " << parameter.displayName.UTF8String
+                              << " (" << parameter.address << "): expected " << expected
+                              << ", got " << parameter.value << "\n";
+                    check(false, "Parameter did not survive serialized state restoration");
+                }
+            }
             // Restore reference defaults before rendering so all probes have
             // comparable settings. This is a finite-output/layout smoke test,
             // not a claim of sample-exact DSP equivalence or a realtime audit.
             for (const auto &info : clap.infos)
                 [unit.parameterTree parameterWithAddress:info.id].value = (AUValue)info.default_value;
-            settle();
+            renderStateTest(unit, stateFormat);
+            [unit deallocateRenderResources];
             check(unit.inputBusses.count == 1 && unit.outputBusses.count == 1, "Unexpected AU bus count");
             NSMutableArray *renders = [NSMutableArray array];
             for (double rate : {44100.0, 48000.0, 96000.0}) {
