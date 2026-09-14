@@ -23,7 +23,7 @@ static OSType fourcc(NSString *string) {
 
 static bool pendingCallback = false;
 static const void *hostExtension(const clap_host_t *, const char *) { return nullptr; }
-static void noRequest(const clap_host_t *) {}
+static void clapHostIgnoreRequest(const clap_host_t *) {}
 static void callback(const clap_host_t *) { pendingCallback = true; }
 
 struct ClapReference {
@@ -33,7 +33,7 @@ struct ClapReference {
     const clap_plugin_params_t *params = nullptr;
     clap_host_t host{CLAP_VERSION, nullptr, "BurningTreeC AU validation", "BurningTreeC",
                      "https://github.com/BurningTreeC", "1", hostExtension,
-                     noRequest, noRequest, callback};
+                     clapHostIgnoreRequest, clapHostIgnoreRequest, callback};
     std::vector<clap_param_info_t> infos;
 
     ClapReference(NSString *bundle, NSString *identifier) {
