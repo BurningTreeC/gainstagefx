@@ -316,6 +316,26 @@ def install(dist, manifest, kind):
             print(f"Containing app installed: {dest}; run the register command next.")
 
 
+    if kind in ("all", "auv2") and "auv2" in manifest["formats"]:
+        # Restart only this user's registrar after installing new components.
+        # An absent process is harmless; no cache files are removed.
+        import pwd
+        run(["killall", "-u", pwd.getpwuid(os.getuid()).pw_name,
+             "AudioComponentRegistrar"], check=False)
+
+
+def wait_for_components(manifest, logs):
+    expected = {(p["type"], p["subtype"], p["manufacturer"]) for p in manifest["plugins"]}
+    for attempt in range(30):
+        listing = logs / f"au-discovery-{attempt + 1}.log"
+        result = run(["auval", "-a"], log=listing, check=False, timeout=30)
+        found = {tuple(line.split()[:3]) for line in listing.read_text().splitlines()}
+        if result.returncode == 0 and expected <= found:
+            return
+        time.sleep(1)
+    require(False, "Installed Audio Units were not discovered; see au-discovery logs")
+
+
 def register(manifest, logs):
     results = {}
     for p in manifest["plugins"]:
@@ -343,6 +363,7 @@ def register(manifest, logs):
 
 
 def validate(manifest, logs):
+    wait_for_components(manifest, logs)
     results = {}
     for p in manifest["plugins"]:
         # With both formats installed auval may choose either for the shared

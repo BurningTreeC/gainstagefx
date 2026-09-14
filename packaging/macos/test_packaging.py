@@ -13,6 +13,28 @@ import au
 
 
 class PackagingTests(unittest.TestCase):
+    def test_discovery_waits_for_every_exact_component(self):
+        config = au.catalog()
+        plugins = [dict(p, type="aufx", manufacturer=config["manufacturer"]) for p in config["plugins"]]
+        manifest = {"plugins": plugins}
+        calls = []
+        def listing(args, **kwargs):
+            calls.append(args)
+            entries = plugins if len(calls) > 1 else []
+            kwargs["log"].write_text("\n".join(
+                f'{p["type"]} {p["subtype"]} {p["manufacturer"]} - {p["name"]}' for p in entries))
+            return subprocess.CompletedProcess(args, 0)
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(au, "run", side_effect=listing), patch.object(au.time, "sleep"):
+                au.wait_for_components(manifest, Path(directory))
+            self.assertEqual(len(calls), 2)
+            def missing(args, **kwargs):
+                kwargs["log"].write_text("aufx XXXX YYYY - unrelated plugin\n")
+                return subprocess.CompletedProcess(args, 0)
+            with patch.object(au, "run", side_effect=missing), patch.object(au.time, "sleep"):
+                with self.assertRaisesRegex(RuntimeError, "not discovered"):
+                    au.wait_for_components(manifest, Path(directory))
+
     def test_metadata_matches_this_workspace(self):
         manifest = au.plan([], True)
         self.assertEqual({p["package"] for p in manifest["plugins"]},
