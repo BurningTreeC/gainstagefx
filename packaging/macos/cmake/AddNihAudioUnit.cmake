@@ -24,6 +24,15 @@ function(add_nih_clap_audio_unit plugin)
             XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${bundle_id}.auv2"
             MACOSX_BUNDLE_GUI_IDENTIFIER "${bundle_id}.auv2")
         set(helper "${target}-build-helper")
+        # Both Xcode's plist processing and upstream's PRE_BUILD copy must read
+        # the same generated AU metadata. Otherwise the default application
+        # plist can win the race and erase AudioComponents (CI produced APPL).
+        set_target_properties(${target} PROPERTIES
+            MACOSX_BUNDLE FALSE
+            XCODE_PRODUCT_TYPE "com.apple.product-type.bundle"
+            XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO"
+            XCODE_ATTRIBUTE_INFOPLIST_FILE
+                "${CMAKE_CURRENT_BINARY_DIR}/${helper}-output/auv2_Info.plist")
     else()
         # An executable with the Xcode app-extension product type, not a MODULE.
         add_executable(${target})

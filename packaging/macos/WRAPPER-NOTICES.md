@@ -5,6 +5,8 @@ CLAP SDK 1.2.6 (MIT), and, for AUv2 only, Apple AudioUnitSDK 1.1.0
 (Apache-2.0). Exact upstream URLs and commits are in dependencies.json.
 Their license files are copied from the pinned source into the distribution.
 No wrapped VST3, AAX, RtAudio, RtMidi or JUCE code is built by this integration.
+A local two-brace AUv3 host compilation fix is applied; see
+`packaging/macos/patches/README.md` and `auv3-switch-scope.patch`.
 The Rust/native plugin's notices remain in THIRD-PARTY-NOTICES.md.
 
 clap-wrapper also embeds fmt. Its source-header license follows:

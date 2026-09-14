@@ -79,6 +79,87 @@ class PackagingTests(unittest.TestCase):
             self.assertRegex(result.stderr, "macOS-only|CMake 3.27 or higher is required")
             self.assertFalse((Path(directory) / "_deps").exists())
 
+    def test_cmake_output_paths_and_auv2_plist_input(self):
+        # Exercise the actual consumer CMake module using lightweight upstream
+        # target stubs. Ninja Multi-Config exposes accidental Release/Release
+        # suffixes without needing Xcode or compiling any plugin source.
+        with tempfile.TemporaryDirectory(prefix="au cmake ") as directory:
+            root = Path(directory)
+            plugins = []
+            for p in au.catalog()["plugins"]:
+                clap = root / (p["name"] + ".clap")
+                (clap / "Contents/MacOS").mkdir(parents=True)
+                (clap / "Contents/MacOS" / p["name"]).write_bytes(b"CLAP test input")
+                plugins.append(dict(p, clap_path=str(clap), bundle_id=p["clap_id"],
+                                    version="0.8.0", manufacturer="BTrC", vendor="BurningTreeC"))
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps(dict(plugins=plugins)))
+            (root / "stub.cpp").write_text("int main() { return 0; }\n")
+            fixture = r'''
+cmake_minimum_required(VERSION 3.18)
+project(AUContract LANGUAGES CXX)
+function(target_add_auv2_wrapper)
+    cmake_parse_arguments(W "" "TARGET" "" ${ARGN})
+    target_sources(${W_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/stub.cpp")
+    add_executable(${W_TARGET}-build-helper "${CMAKE_CURRENT_SOURCE_DIR}/stub.cpp")
+    set_target_properties(${W_TARGET} PROPERTIES BUNDLE TRUE MACOSX_BUNDLE TRUE)
+endfunction()
+function(target_add_auv3_wrapper)
+    cmake_parse_arguments(W "" "TARGET" "" ${ARGN})
+    target_sources(${W_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/stub.cpp")
+    add_executable(${W_TARGET}-auv3-build-helper "${CMAKE_CURRENT_SOURCE_DIR}/stub.cpp")
+endfunction()
+function(target_add_auv3_standalone_wrapper)
+    cmake_parse_arguments(W "" "TARGET" "" ${ARGN})
+    target_sources(${W_TARGET} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/stub.cpp")
+endfunction()
+include("${AU_MODULE}")
+file(READ "${AU_MANIFEST}" data)
+string(JSON count LENGTH "${data}" plugins)
+math(EXPR last "${count} - 1")
+foreach(index RANGE ${last})
+    string(JSON plugin GET "${data}" plugins ${index})
+    string(JSON package GET "${plugin}" package)
+    add_nih_clap_audio_unit("${plugin}")
+    set(target "${package}_${AU_FORMAT}")
+    file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/${package}-$<CONFIG>.txt"
+        CONTENT "$<TARGET_PROPERTY:${target},LIBRARY_OUTPUT_DIRECTORY>\n$<TARGET_FILE_DIR:${target}>\n")
+    if(AU_FORMAT STREQUAL "auv2")
+        get_target_property(plist ${target} XCODE_ATTRIBUTE_INFOPLIST_FILE)
+        get_target_property(app ${target} MACOSX_BUNDLE)
+        get_target_property(bundle ${target} BUNDLE)
+        get_target_property(product ${target} XCODE_PRODUCT_TYPE)
+        if(app OR NOT bundle OR NOT product STREQUAL "com.apple.product-type.bundle")
+            message(FATAL_ERROR "AUv2 must be a CFBundle, not an application")
+        endif()
+        if(NOT plist STREQUAL "${CMAKE_CURRENT_BINARY_DIR}/${target}-build-helper-output/auv2_Info.plist")
+            message(FATAL_ERROR "Xcode must process the CLAP-generated AUv2 plist")
+        endif()
+    else()
+        file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/${package}-app-$<CONFIG>.txt"
+            CONTENT "$<TARGET_FILE_DIR:${package}_app>")
+    endif()
+endforeach()
+'''
+            (root / "CMakeLists.txt").write_text(fixture)
+            for kind in ("auv2", "auv3"):
+                for config in ("Debug", "Release"):
+                    with self.subTest(format=kind, config=config):
+                        build = root / (kind + config)
+                        result = subprocess.run([
+                            "cmake", "-S", str(root), "-B", str(build), "-G", "Ninja Multi-Config",
+                            "-DAU_MODULE=" + str(au.HERE / "cmake/AddNihAudioUnit.cmake"),
+                            "-DAU_MANIFEST=" + str(manifest), "-DAU_FORMAT=" + kind,
+                            "-DAU_BUILD_CONFIG=" + config,
+                        ], capture_output=True, text=True)
+                        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                        expected = str(build / "products" / config)
+                        for p in plugins:
+                            paths = (build / (p["package"] + "-" + config + ".txt")).read_text().splitlines()
+                            self.assertEqual(paths, [expected, expected])
+                            if kind == "auv3":
+                                self.assertEqual((build / (p["package"] + "-app-" + config + ".txt")).read_text(), expected)
+
     def test_bundle_metadata_and_embedded_clap(self):
         p = dict(au.catalog()["plugins"][0], version="0.7.0", type="aufx",
                  manufacturer="BTrC", vendor="BurningTreeC")
