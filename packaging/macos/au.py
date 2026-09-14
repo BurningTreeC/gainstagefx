@@ -257,7 +257,7 @@ def build(args):
     for kind in manifest["formats"]:
         build_dir = work / kind / (args.arch + "-" + config.lower())
         run(["cmake", "-S", HERE, "-B", build_dir, "-G", "Xcode",
-             f"-DAU_MANIFEST={manifest_file}", f"-DAU_FORMAT={kind}",
+             f"-DAU_MANIFEST={manifest_file}", f"-DAU_FORMAT={kind}", f"-DAU_BUILD_CONFIG={config}",
              "-DCMAKE_OSX_ARCHITECTURES=" + ";".join(manifest["architectures"])],
             env=env, log=logs / (kind + "-configure.log"))
         run(["cmake", "--build", build_dir, "--config", config, "--", "CODE_SIGN_IDENTITY=-",
@@ -355,7 +355,7 @@ def validate(manifest, logs):
 
 
 def probe(dist, manifest, kind, logs, allow_unregistered):
-    require(kind in ("auv2", "auv3"), "Select --format auv2 or --format auv3 for the probe")
+    require(kind in ("auv2", "auv3"), "Select --format auv2 or auv3 for the probe")
     target = Path(manifest["target_directory"]) / "macos-au"
     includes = list((target / kind).glob("*/_deps/clap_sdk-src/include"))
     require(includes, "Build this format before running its probe")
