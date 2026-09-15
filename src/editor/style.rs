@@ -27,7 +27,8 @@ pub const HEADER_H: f32 = 32.0;
 pub const SECTIONS: [(&str, &str, f32); 6] = [
     // Trim and meter, then the pedal in front of the circuit.
     ("1", "INPUT", 124.0),
-    ("2", "CIRCUIT", 296.0),
+    // Six dropdowns in two columns, and the line describing the circuit.
+    ("2", "CIRCUIT", 128.0),
     ("3", "DRIVE", 160.0),
     // Two rows: the stack's Bass/Middle/Treble, and beneath them the three
     // the Twin Reverb adds. Below rather than beside, because beside put
@@ -35,7 +36,7 @@ pub const SECTIONS: [(&str, &str, f32); 6] = [
     // two things in one place, which is the layout fault that is hardest to
     // see in code and most obvious on screen.
     ("4", "TONE", 168.0),
-    // Cabinet, speaker and microphones: model steppers, placement knobs, dual-mic toggles.
+    // Cabinet, speaker and microphones: dropdowns, placement knobs, dual-mic toggles.
     ("5", "CABINET", 204.0),
     ("6", "OUTPUT", 96.0),
 ];

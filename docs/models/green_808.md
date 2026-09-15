@@ -39,10 +39,10 @@ Display: Green 808.
 | **Level pot** | **B100K** (linear) | 100 k | 100 k **audio** | Keen: "100K audio"; code keeps audio, the Cerutti "B" is recorded |
 | Output buffer | .1 uF, 510 k, 2SC1815, 10 k, 100 ohm, 10 uF, 10 k | same (RB 100, RC 10 k) | same | agree |
 
-   The code's own comment records that R8 and R11 were once 220 ohm and 1 k and were
+   The code's comment used to record that R8 and R11 were once 220 ohm and 1 k and were
    "corrected" to 1 k and 220 ohm, citing `TS808.md` section 12. That file is not in this
    repository. Both drawings support the *original* values. The code's "R9 unresolved (10 k
-   vs 1 k)" note is a designator mix-up: the 10 k is the U1B bias resistor, which the
+   vs 1 k)" note was a designator mix-up: the 10 k is the U1B bias resistor, which the
    code already has as 10 k.
 6. **Modeled from the drawings.** The complete signal path (input buffer, clipping amp,
    tone/level, output buffer) at node level.
@@ -50,21 +50,20 @@ Display: Green 808.
    - The JFET bypass switching is not modeled.
    - BC549 stands in for 2SC1815.
    - The op-amp is ideal with a rail.
-   - The three conflicts above remain in the code.
-8. **Resolution (2026-09-15).**
-   - `ts808::LEGACY` keeps the netlist every existing `circuit = ts808` session and preset
-     uses, bit for bit.
+   - Level taper: audio (Keen); the Cerutti drawing's "B100K" is recorded, not used.
+8. **Resolution (2026-09-15, owner decision: correct everywhere).**
    - `ts808::TS808` carries the three-source values (C1 20 nF, tone shunt 220 ohm, level
-     feed 1 k, audio Level). It is used by the **independent pedal slot's Green 808**
-     (`pedal_ts808`), which is new, so no stored state depends on it.
-   - Tested: `tests/pedal_slot.rs` (the verified tone control reaches more than 3 dB further
-     at 6 kHz than the legacy one).
-
-   **Why the catalogue voice is not corrected now.** Correcting the tone shunt, level feed and level taper
-   changes the sound of every existing session and preset that uses Green 808.
-   Preservation of sessions ranks above accuracy in the project priorities.
-   **Proposed:** a versioned correction (a new stable id such as `ts808_rev2`, or a state
-   version flag) with its own regression capture, subject to the owner's decision.
+     feed 1 k). `ts808::build` and `ts808::tap` use it, so the **catalogue voice**
+     (`circuit = ts808`) and the **pedal slot** (`pedal_ts808`) are the same circuit.
+   - `ts808::LEGACY` keeps the old values for measurement only; nothing builds with it.
+   - Consequence, accepted by the owner: existing sessions and presets that use Green 808
+     sound different (brighter tone reach, different level structure). No new id was
+     introduced; the stored `ts808` value now means the corrected circuit.
+   - The drive make-up table was regenerated (`cargo run --release --example calibrate`).
+     Only the TS808 row changed, by 0.08 dB at most.
+   - Tested: `tests/pedal_slot.rs` (the corrected tone control reaches more than 3 dB
+     further at 6 kHz than the old values), `tests/ts808.rs`, `tests/voice.rs`
+     calibration, `tests/presets.rs` level matching.
 
 ## TS9 relationship (for Green 9)
 

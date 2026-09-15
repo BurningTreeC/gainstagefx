@@ -8,7 +8,10 @@ The chain now selects complete power circuits independently, including a new
 1981 2203-inspired Brit EL34 stage. Matched retains the old routing. The 73P line
 driver has separate storage and remains part of the studio preamp. Host/saved-state
 migration defaults missing power selection to Matched; saved presets carry stable
-model IDs. Physical speaker/cabinet/microphone processing is still pending.
+model IDs. Since then: an independent pedal slot before the circuit, and a physical
+speaker/cabinet/microphone path (`src/acoustics`) whose speaker load is solved inside
+the power-stage netlist; Legacy cabinet remains the default. See SPEAKER_MODEL.md,
+CABINET_MODEL.md and MICROPHONE_MODEL.md.
 
 Audit completed 2026-09-14, before implementation changes. Working tree was clean.
 Version: 0.10.0. Rust/nih-plug pinned to f36931f7; CLAP and VST3 exported from

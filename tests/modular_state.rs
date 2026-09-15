@@ -73,7 +73,8 @@ fn display_names_change_without_reinterpreting_legacy_enum_positions() {
         ]
     );
     assert_eq!(Circuit::Boogie.name(), "Cali IIC+");
-    for preset in presets::PRESETS {
-        assert!(preset.dials().contains(&("power_amp", 0.0)));
+    // Every preset from before modular power keeps Matched; era presets choose freely.
+    for preset in presets::PRESETS.iter().filter(|p| !["Metal / Heavy", "Blues"].contains(&p.group)) {
+        assert!(preset.dials().contains(&("power_amp", 0.0)), "{}", preset.name);
     }
 }

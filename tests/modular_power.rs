@@ -157,3 +157,34 @@ fn custom_power_rates_resets_and_arbitrary_block_partitions_are_stable() {
         assert_eq!(chain.latency(), 66);
     }
 }
+
+#[test]
+fn a_power_stage_released_by_an_override_returns_to_its_own_master_position() {
+    // Reported: American Twin on Matched power came out as nearly all reverb after the
+    // Twin power stage had been used behind another preamplifier.
+    let twin = Settings { gain: Gain::Twin, tone: Tone::Off, ..Settings::default() };
+    let level = |chain: &mut Chain| {
+        chain.find_operating_point();
+        let mut sum = 0.0;
+        for k in 0..24_000 {
+            let y = chain.process(signal(k));
+            if k >= 12_000 {
+                sum += y * y;
+            }
+        }
+        sum.sqrt()
+    };
+    let mut fresh = Chain::new(48000.0);
+    fresh.apply(&twin);
+    fresh.settle();
+    let reference = level(&mut fresh);
+    let mut chain = Chain::new(48000.0);
+    for voice in [Gain::Boogie, Gain::Screamer, Gain::Peavey] {
+        chain.apply(&Settings { gain: voice, power_amp: PowerAmp::American6L6Clean, ..twin });
+        level(&mut chain);
+        chain.apply(&twin);
+        let back = level(&mut chain);
+        let db = 20.0 * (back / reference).log10();
+        assert!(db.abs() < 0.5, "after {voice:?}: {db:+.2} dB");
+    }
+}

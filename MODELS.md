@@ -27,9 +27,14 @@ reuses the MNA builder and pentode fit with documented component data and estima
 see [research checkpoint](docs/models/brit_el34.md). No Brit 800 preamp was added.
 The five requested display-name changes for existing hardware models are applied.
 
-Still not implemented: American 312, Tube 610, Green 9, Rodent, Round Fuzz, Brit 800
-preamp, Cali Rectifier, DR103, AC30, EL34 Hi-Headroom and EL84 power families,
-physical speakers/cabinets and all microphones. Never expose an unavailable family
+Added since: an independent pedal slot (Green 808, Big Muff, Green 9); the catalogue
+Green 808 corrected to the three-source TS-808 values; physical speakers with a
+reactive load coupled into the power stage, geometry-based cabinets, and eleven
+microphone profiles with placement and dual mic. See docs/MODEL_INVENTORY.md.
+
+Still not implemented: American 312, Tube 610, Rodent, Round Fuzz, Brit 800 preamp
+(research checkpoint only), Cali Rectifier, DR103, AC30, EL34 Hi-Headroom and EL84
+power families. Never expose an unavailable family
 under an approximate alias.
 
 Each hardware change requires a per-device log in docs/models with revision,

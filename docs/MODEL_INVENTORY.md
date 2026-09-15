@@ -57,11 +57,11 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 
 | Internal ID | Current display | Hardware inspiration | Implementation | Status | Source status | Power-stage status | Cab/speaker dependency | Presets | Serialization concerns | Proposed display |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `ts808` (proposed `pedal_ts808`) | Green 808 | Ibanez **TS808** Tube Screamer (JRC4558D, 1N4148 pair, BC549 buffers) | `src/circuits/ts808.rs` | IMPLEMENTED (input buffer, clipper, tone, level, output buffer) | Local drawing `docs/schematics/ts808.png` (untracked); no online cross-check or `docs/models` log yet; production revision not recorded | none | Selected as the only gain block: cannot currently sit *in front of* an amp | Green Overdrive, Screamer Boost | Display changed (was "TS808") | Green 808 |
-| — (proposed `pedal_ts9`) | — | Ibanez **TS9** Tube Screamer (output network differs from TS808) | none | PLANNED | Not researched; must not be assumed identical to TS808 | none | needs pedal slot | none | new selection | Green 9 |
+| `ts808` (proposed `pedal_ts808`) | Green 808 | Ibanez **TS808** Tube Screamer (JRC4558D, 1N4148 pair, BC549 buffers) | `src/circuits/ts808.rs` | IMPLEMENTED (input buffer, clipper, tone, level, output buffer); **values corrected 2026-09-15** to the three-source TS-808 values (owner decision), catalogue voice and pedal slot `pedal_ts808` build the same circuit | [green_808.md](models/green_808.md): Cerutti and ElectroSmash drawings, Keen analysis; manufacturer sheet not obtained | none | Catalogue voice, or in front of any circuit via the pedal slot | Green Overdrive, Screamer Boost, Texas Storm '83 (slot) | Display changed (was "TS808"); stored `ts808` now means the corrected values | Green 808 |
+| `pedal_ts9` (pedal slot only) | Green 9 | Ibanez **TS9** Tube Screamer (TS808 with 470 ohm / 100 k output resistors) | `ts808::TS9` via `ts808::build_with` | IMPLEMENTED (op-amp type variation not represented) | [green_9.md](models/green_9.md) | none | pedal slot | none | new `pedal` parameter id | Green 9 |
 | — (proposed `pedal_rat`) | — | **ProCo RAT** (revision TBD: original/RAT2; LM308 with 30 pF compensation, 1N914 hard clip, Filter control) | none | PLANNED | Not researched. Solver gap: op-amp has rail clamp only, no GBW/slew, which the RAT's LM308 behavior depends on | none | needs pedal slot | none | new selection | Rodent |
 | — (proposed `pedal_fuzz_face`) | — | Dallas Arbiter **Fuzz Face** (germanium PNP AC128/NKT275 vs silicon BC108/BC183 NPN: must pick one and document) | none | PLANNED | Not researched. Solver gap: no PNP device (a positive-ground PNP circuit can be written as its exact negative-ground NPN mirror, which must be documented) | none | needs pedal slot | none | new selection | Round Fuzz |
-| `bigmuff` (proposed `pedal_bigmuff_ramshead`) | Big Muff | Electro-Harmonix **Big Muff Pi, 1973 Ram's Head** (4 transistors, 1N914) | `src/circuits/bigmuff.rs` (`RAMS_HEAD` selected) | IMPLEMENTED | Values from "eighteen traced variants"; tracing source not cited in code; no `docs/models` log | none | same pedal-slot limitation | Sustain Fuzz | Not in the target list: **keep**. Display name is still a trademark and needs a decision | proposed "Ram Fuzz '73" (needs user approval) |
+| `bigmuff` (proposed `pedal_bigmuff_ramshead`) | Big Muff | Electro-Harmonix **Big Muff Pi, 1973 Ram's Head** (4 transistors, 1N914) | `src/circuits/bigmuff.rs` (`RAMS_HEAD` selected); also `pedal_bigmuff_ramshead` in the pedal slot | IMPLEMENTED | Kit Rae's traced archive ([big_muff.md](models/big_muff.md)); value-by-value cross-check not yet done | none | same pedal-slot limitation | Sustain Fuzz | Not in the target list: **keep**. Display name is still a trademark and needs a decision | proposed "Ram Fuzz '73" (needs user approval) |
 | (voicing) `bigmuff::TRIANGLE` | — | EHX Big Muff Pi **1971 Triangle** | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (netlist voicing, tested in `tests/bigmuff.rs`, not selectable) | as above | none | — | none | would need selection | TBD |
 | (voicing) `bigmuff::SUPA` | — | **Colorsound Supa Tonebender** (Muff topology, first stage without diodes) | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (not selectable) | as above | none | — | none | would need selection | TBD |
 | — | — | **Boss HM-2** Heavy Metal | only `docs/schematics/boss-hm2.png` (untracked) | REFERENCED ONLY | Local drawing present; no code, no log | — | — | — | — | not assigned |
@@ -98,57 +98,61 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 
 ## 5. Speakers, cabinets, microphones
 
-Existing physical speaker, cabinet and microphone models: **none**. The only
-existing acoustic stage is the legacy baked filter below. Every power stage
-terminates in a resistor.
+Physical speakers, cabinets and microphones are **IMPLEMENTED** (2026-09-15) as new
+parameters `cab_model`, `speaker`, `mic_a`, `mic_b` (+ placement), whose first entries
+keep the legacy behaviour. With a physical cabinet the power stage drives a reactive
+Thiele-Small speaker load inside its own netlist (`acoustics::speaker`,
+`power::build_with_speaker`); otherwise it still terminates in a resistor and the
+legacy baked filter below applies. See SPEAKER_MODEL.md, CABINET_MODEL.md,
+MICROPHONE_MODEL.md.
 
 | Internal ID | Display | What it is | Implementation | Status | Evidence | Presets | Serialization |
 |---|---|---|---|---|---|---|---|
 | `cabinet=combo` | Combo | GENERIC loaded RLC: 110 Hz/Q .9 HP, 8.5 kHz/Q .72 LP, 14 kHz pole; peak-normalized | `circuits/cabinet.rs::COMBO` | IMPLEMENTED (legacy) | EMPIRICALLY TUNED response, no geometry, no mic | 8 presets | must remain for old sessions |
 | `cabinet=stack` | Stack | GENERIC: 85 Hz/Q 1.35, 7 kHz/Q .8, 11 kHz pole | `cabinet.rs::STACK` | IMPLEMENTED (legacy) | EMPIRICALLY TUNED | 15 presets | must remain |
 
-Speaker targets (research: `docs/models/speakers.md`, fits in `tools/speaker_fit/`):
+Speakers (research: `docs/models/speakers.md`, fits in `tools/speaker_fit/`):
 
 | Proposed ID | Display | Hardware inspiration | Data found | Status |
 |---|---|---|---|---|
-| `spk_celestion_v30` | Brit V30 | Celestion Vintage 30, 8 ohm | Mfr: Fs 75, Re 7.3, 100 dB, 44 mm VC, 1.42 kg ceramic, response plot. **No Qms/Qes/Bl/Mms/Le published** | PLANNED: research done, remaining T/S ESTIMATED |
-| `spk_celestion_g12m25` | Brit Green 25 | Celestion G12M-25 Greenback, 8 ohm | Mfr: Fs 75, Re 6.7, 98 dB, response plot; same gaps | PLANNED |
-| `spk_celestion_g12t75` | Brit T75 | Celestion G12T-75, 8 ohm | Mfr: Fs 85, Re 6.77, 97 dB, response plot; same gaps | PLANNED |
-| `spk_jensen_p12r` | American Vintage 12 | Jensen P12R (reissue) 8 ohm | Mfr full T/S + numeric SPL and impedance curves | PLANNED |
-| `spk_jensen_p10r` | American Vintage 10 | Jensen P10R 8 ohm | Mfr full T/S + curves (impedance peak conflicts with T/S: 82 vs 61 ohm) | PLANNED |
-| `spk_jensen_c12n` | American Ceramic | Jensen C12N 8 ohm | Mfr full T/S + curves | PLANNED |
-| `spk_jensen_p12n` | American Alnico | Jensen P12N 8 ohm | Mfr full T/S + curves | PLANNED |
+| `spk_celestion_v30` | Brit V30 | Celestion Vintage 30, 8 ohm | Mfr: Fs 75, Re 7.3, 100 dB, 44 mm VC, 1.42 kg ceramic, response plot. **No Qms/Qes/Bl/Mms/Le published** | IMPLEMENTED (remaining T/S ESTIMATED from priors) |
+| `spk_celestion_g12m25` | Brit Green 25 | Celestion G12M-25 Greenback, 8 ohm | Mfr: Fs 75, Re 6.7, 98 dB, response plot; same gaps | IMPLEMENTED |
+| `spk_celestion_g12t75` | Brit T75 | Celestion G12T-75, 8 ohm | Mfr: Fs 85, Re 6.77, 97 dB, response plot; same gaps | IMPLEMENTED |
+| `spk_jensen_p12r` | American Vintage 12 | Jensen P12R (reissue) 8 ohm | Mfr full T/S + numeric SPL and impedance curves | IMPLEMENTED |
+| `spk_jensen_p10r` | American Vintage 10 | Jensen P10R 8 ohm | Mfr full T/S + curves (impedance peak conflicts with T/S: 82 vs 61 ohm) | IMPLEMENTED |
+| `spk_jensen_c12n` | American Ceramic | Jensen C12N 8 ohm | Mfr full T/S + curves | IMPLEMENTED |
+| `spk_jensen_p12n` | American Alnico | Jensen P12N 8 ohm | Mfr full T/S + curves | IMPLEMENTED |
 
-Cabinet targets (research in progress; values to be marked DOCUMENTED / DERIVED / ESTIMATED / TUNED):
+Cabinets (values marked DOCUMENTED / DERIVED / ESTIMATED / TUNED in docs/models/cabinets.md):
 
 | Proposed ID | Display | Inspiration | Documented so far | Status |
 |---|---|---|---|---|
-| `cab_marshall_1960a` | Brit 1960 4x12 | Marshall 1960A (angled), G12T-75 factory | 770 W x 755 H x 365 D mm (marshall.com); 16/4 ohm mono | PLANNED |
-| `cab_marshall_1960b` | Brit Closed 4x12 | Marshall 1960B (straight), G12T-75 | same outer dims (marshall.com) | PLANNED |
-| `cab_marshall_1960ax` | Brit Green 4x12 | Marshall 1960AX, G12M-25 16 ohm | 770 x 755 x 365 mm | PLANNED |
-| `cab_marshall_1960av` | Brit V30 4x12 | Marshall 1960AV (V30-loaded 1960) | geometry as 1960A; model page not yet fetched | PLANNED |
-| `cab_mesa_recto_standard` | Cali Oversized 4x12 | Mesa/Boogie Rectifier Standard 4x12, V30 | 32.9 H x 30.1 W x 14.25 D in (retail/Mesa text); ply thickness unverified | PLANNED |
-| `cab_generic_oversized_412` | Oversized 4x12 | GENERIC oversized closed 4x12 | no hardware claim; geometry ESTIMATED | PLANNED |
-| `cab_fender_twin_open_212` | American Open 2x12 | Fender Twin Reverb combo (AB763-style) open back | 20 H x 26-1/8 W x 10-1/2 D in (reproduction cabinet maker); openness ESTIMATED | PLANNED |
-| `cab_fender_deluxe_open_112` | American Open 1x12 | Fender '65 Deluxe Reverb open back | 17.5 H x 24.5 W x 9.5 D in (retail spec) | PLANNED |
-| `cab_marshall_1912` | Closed 1x12 | Marshall 1912 closed 1x12 | ~500 W x 470 H x 290 D mm (retail) | PLANNED |
-| `cab_marshall_1936` | Closed 2x12 | Marshall 1936 closed 2x12 | 750 W x 600 H x 310 D mm (retail) | PLANNED |
+| `cab_marshall_1960a` | Brit 1960 4x12 | Marshall 1960A (angled), G12T-75 factory | 770 W x 755 H x 365 D mm (marshall.com); 16/4 ohm mono | IMPLEMENTED |
+| `cab_marshall_1960b` | Brit Closed 4x12 | Marshall 1960B (straight), G12T-75 | same outer dims (marshall.com) | IMPLEMENTED |
+| `cab_marshall_1960ax` | Brit Green 4x12 | Marshall 1960AX, G12M-25 16 ohm | 770 x 755 x 365 mm | IMPLEMENTED |
+| `cab_marshall_1960av` | Brit V30 4x12 | Marshall 1960AV (V30-loaded 1960) | geometry as 1960A; model page not yet fetched | IMPLEMENTED |
+| `cab_mesa_recto_standard` | Cali Oversized 4x12 | Mesa/Boogie Rectifier Standard 4x12, V30 | 32.9 H x 30.1 W x 14.25 D in (retail/Mesa text); ply thickness unverified | IMPLEMENTED |
+| `cab_generic_oversized_412` | Oversized 4x12 | GENERIC oversized closed 4x12 | no hardware claim; geometry ESTIMATED | IMPLEMENTED |
+| `cab_fender_twin_open_212` | American Open 2x12 | Fender Twin Reverb combo (AB763-style) open back | 20 H x 26-1/8 W x 10-1/2 D in (reproduction cabinet maker); openness ESTIMATED | IMPLEMENTED |
+| `cab_fender_deluxe_open_112` | American Open 1x12 | Fender '65 Deluxe Reverb open back | 17.5 H x 24.5 W x 9.5 D in (retail spec) | IMPLEMENTED |
+| `cab_marshall_1912` | Closed 1x12 | Marshall 1912 closed 1x12 | ~500 W x 470 H x 290 D mm (retail) | IMPLEMENTED |
+| `cab_marshall_1936` | Closed 2x12 | Marshall 1936 closed 2x12 | 750 W x 600 H x 310 D mm (retail) | IMPLEMENTED |
 
-Microphone targets (research: `docs/models/microphones.md`, in progress):
+Microphones (research: `docs/models/microphones.md`):
 
 | Proposed ID | Display | Inspiration | Primary data found | Status |
 |---|---|---|---|---|
-| `mic_shure_sm57` | Dynamic 57 | Shure SM57 | Shure user guide v3.6: response chart, polar 125 Hz-8 kHz, -56 dBV/Pa, proximity statement | PLANNED |
-| `mic_sennheiser_md421` | Dynamic 421 | Sennheiser MD 421 II | product sheet: 30-17k, cardioid, 2 mV/Pa, small response/polar plot | PLANNED |
-| `mic_sennheiser_e906` | Dynamic 906 | Sennheiser e 906 | 40-18k, supercardioid, 2.2 mV/Pa, presence 4.2 kHz; response shape **secondary source** (manual PDF blocked) | PLANNED |
-| `mic_sennheiser_md409` | Dynamic 409 | Sennheiser MD 409 U3 | 1986 data sheet: 50-15k, 1.18 mV/Pa, 5 cm and 100 cm curves; datasheet says *cardioid*, later marketing says supercardioid (conflict recorded) | PLANNED |
-| `mic_royer_r121` | Ribbon 121 | Royer R-121 | cut sheet: 30-15k +-3 dB, fig-8, -50 dBV/Pa, response + polar | PLANNED |
-| `mic_beyer_m160` | Ribbon 160 | beyerdynamic M 160 | data sheet: 40-18k, hypercardioid (>25 dB at 110 deg), 1.0 mV/Pa, 10 cm and 1 m curves | PLANNED |
-| `mic_coles_4038` | Ribbon 38 | Coles 4038 | data sheet: 30-15k flat, fig-8, -65 dB re 1V/Pa, response chart | PLANNED |
-| `mic_neumann_u87ai` | Condenser 87 | Neumann U 87 Ai (cardioid) | operating manual: 20-20k, 20/28/22 mV/Pa, curves and polars for 3 patterns | PLANNED |
-| `mic_akg_c414` | Condenser 414 | AKG C414 (XLS vs XLII to be chosen) | range/sensitivity only; chart not retrieved | PLANNED (APPROXIMATED unless chart found) |
-| `mic_neumann_u67` | Tube Condenser 67 | Neumann U 67 (reissue = 1960-71 design) | range, 15/24/16 mV/Pa; chart not retrieved | PLANNED (APPROXIMATED unless chart found) |
-| `mic_neumann_u47fet` | FET Condenser 47 | Neumann U 47 fet | 40-16k, 8 mV/Pa; chart not retrieved | PLANNED (APPROXIMATED unless chart found) |
+| `mic_shure_sm57` | Dynamic 57 | Shure SM57 | Shure user guide v3.6: response chart, polar 125 Hz-8 kHz, -56 dBV/Pa, proximity statement | IMPLEMENTED |
+| `mic_sennheiser_md421` | Dynamic 421 | Sennheiser MD 421 II | product sheet: 30-17k, cardioid, 2 mV/Pa, small response/polar plot | IMPLEMENTED |
+| `mic_sennheiser_e906` | Dynamic 906 | Sennheiser e 906 | 40-18k, supercardioid, 2.2 mV/Pa, presence 4.2 kHz; response shape **secondary source** (manual PDF blocked) | IMPLEMENTED |
+| `mic_sennheiser_md409` | Dynamic 409 | Sennheiser MD 409 U3 | 1986 data sheet: 50-15k, 1.18 mV/Pa, 5 cm and 100 cm curves; datasheet says *cardioid*, later marketing says supercardioid (conflict recorded) | IMPLEMENTED |
+| `mic_royer_r121` | Ribbon 121 | Royer R-121 | cut sheet: 30-15k +-3 dB, fig-8, -50 dBV/Pa, response + polar | IMPLEMENTED |
+| `mic_beyer_m160` | Ribbon 160 | beyerdynamic M 160 | data sheet: 40-18k, hypercardioid (>25 dB at 110 deg), 1.0 mV/Pa, 10 cm and 1 m curves | IMPLEMENTED |
+| `mic_coles_4038` | Ribbon 38 | Coles 4038 | data sheet: 30-15k flat, fig-8, -65 dB re 1V/Pa, response chart | IMPLEMENTED |
+| `mic_neumann_u87ai` | Condenser 87 | Neumann U 87 Ai (cardioid) | operating manual: 20-20k, 20/28/22 mV/Pa, curves and polars for 3 patterns | IMPLEMENTED |
+| `mic_akg_c414` | Condenser 414 | AKG C414 (XLS vs XLII to be chosen) | range/sensitivity only; chart not retrieved | IMPLEMENTED (APPROXIMATED: no chart found) |
+| `mic_neumann_u67` | Tube Condenser 67 | Neumann U 67 (reissue = 1960-71 design) | range, 15/24/16 mV/Pa; chart not retrieved | IMPLEMENTED (APPROXIMATED: no chart found) |
+| `mic_neumann_u47fet` | FET Condenser 47 | Neumann U 47 fet | 40-16k, 8 mV/Pa; chart not retrieved | IMPLEMENTED (APPROXIMATED: no chart found) |
 
 ## 6. Transformers, tone stacks, effects and device fits (building blocks)
 
@@ -178,16 +182,16 @@ Microphone targets (research: `docs/models/microphones.md`, in progress):
   (not selectable), the seven generic topologies, the Iron materials, the Twin
   spring and tremolo, and the legacy Combo/Stack cabinets.
 - **Referenced only:** Boss HM-2 and MT-2 (local schematics, no code).
-- **Missing preamps and pedals:** American 312, Tube 610, Green 9, Rodent,
-  Round Fuzz, Brit 800 preamp, Cali Rectifier, Brit DR103, Brit AC30.
+- **Missing preamps and pedals:** American 312, Tube 610, Rodent, Round Fuzz,
+  Brit 800 preamp (research checkpoint in `docs/models/brit_800.md`), Cali Rectifier,
+  Brit DR103, Brit AC30.
 - **Missing power stages:** EL34 Hi-Headroom, EL84 Class-A, Rectifier power.
-- **Missing chain stages:** all physical speakers, cabinets and microphones, plus the
-  independent pedal slot.
-- **Research logs still owed for implemented models:** TS808 (revision, online
-  cross-check), Big Muff (tracing source), 73P (online DIYRE source record).
+- **Chain stages:** pedal slot, speaker load, cabinets and microphones are implemented.
+- **Research logs still owed for implemented models:** Big Muff (value-by-value
+  cross-check), 73P (online DIYRE source record).
 - **Solver capability gaps:** PNP devices (Fuzz Face), op-amp GBW/slew (RAT LM308),
   cathode-biased no-NFB power stage (AC30), tube rectifier sag (Rectifier/AC30),
-  and control-rate adjustable R/L/C (added 2026-09-15 for speaker loads; tests pending).
+  control-rate adjustable R/L/C was added 2026-09-15 for speaker loads (`tests/speaker_load.rs`).
 - **Naming decision needed from the user:** a generic display name for Big Muff.
 
 ## 8. Prioritized research / implementation queue
@@ -196,17 +200,17 @@ Each item runs research, documentation, baseline, implementation, tests, benchma
 and documented results before the next one starts. Hardware circuits require the
 schematic-first checkpoint in `docs/models/<model>.md` *before* code.
 
-1. **Speaker electrical and mechanical model + reactive load coupling** (research done:
+1. DONE: **Speaker electrical and mechanical model + reactive load coupling** (research done:
    `docs/models/speakers.md`). Validate the adjustable-part solver extension,
    stamp the load into each power netlist, keep the legacy resistive path bit-identical.
-2. **Physical cabinets** (finish geometry research: 1960AV page, Mesa ply, Twin/Deluxe
+2. DONE: **Physical cabinets** (finish geometry research: 1960AV page, Mesa ply, Twin/Deluxe
    baffle layout), then sealed/open/array processing.
-3. **Microphones + placement + dual mic** (finish C414/U67/U47 fet chart search).
-4. **Parameters, GUI, legacy-default migration** for speaker/cabinet/mic; level policy
+3. DONE: **Microphones + placement + dual mic** (finish C414/U67/U47 fet chart search).
+4. DONE: **Parameters, GUI, legacy-default migration** for speaker/cabinet/mic; level policy
    for power overrides (make-up for non-matched combinations).
-5. **Independent pedal slot** reusing the existing TS808 and Big Muff netlists; write
+5. DONE: **Independent pedal slot** reusing the existing TS808 and Big Muff netlists; write
    the TS808 and Big Muff research logs (schematic re-verification) before routing.
-6. **Green 9 (TS9)**: schematic research on TS808 vs TS9 differences; implement as a
+6. DONE: **Green 9 (TS9)**: schematic research on TS808 vs TS9 differences; implement as a
    revision of the TS808 netlist only where the drawings agree.
 7. **Brit 800 preamp (2203)**: analyze the located 1981 preamp drawing; Matched = Brit EL34.
 8. **Rodent (ProCo RAT)**: revision research plus an op-amp GBW/slew device extension.

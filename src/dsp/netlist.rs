@@ -964,7 +964,8 @@ impl Netlist {
                 Part::Inductor { henry, .. } => henry <= 0.0,
                 Part::Pot { ohms, .. } => ohms <= 0.0,
                 Part::Adjustable { slot, .. } => {
-                    !(self.adjustables.get(slot).copied().unwrap_or(0.0) > 0.0)
+                    let value = self.adjustables.get(slot).copied().unwrap_or(0.0);
+                    value.is_nan() || value <= 0.0
                 }
                 Part::Input { series, .. } | Part::Supply { series, .. } => series <= 0.0,
                 Part::Diode { spec, .. } => spec.saturation <= 0.0 || spec.emission <= 0.0,

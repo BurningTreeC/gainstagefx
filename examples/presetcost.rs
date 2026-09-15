@@ -1,6 +1,5 @@
 //! What each shipped preset costs, set up exactly as it ships.
 
-use gainstagefx::circuits::tone;
 use gainstagefx::presets::PRESETS;
 use gainstagefx::voice::{Chain, NOMINAL_DBFS};
 
@@ -12,20 +11,10 @@ fn main() {
     let mut worst = ("", 0.0f64);
     for preset in PRESETS {
         let mut chain = Chain::new(RATE);
-        chain.set_voice(
-            preset.circuit.voice(),
-            preset.diode.voice(),
-            preset.amplifier.voice(),
-        );
-        chain.set_iron(preset.iron.voice());
-        chain.set_tone_section(preset.tone.voice());
-        chain.set_cabinet(preset.cabinet.voice());
-        chain.set_oversampling(preset.oversampling.factor());
-        chain.set_drive(preset.drive as f64);
-        chain.set_tone(tone::BASS, preset.bass as f64);
-        chain.set_tone(tone::MID, preset.mid as f64);
-        chain.set_tone(tone::TREBLE, preset.treble as f64);
+        // The whole chain as it ships: pedal, power stage, cabinet and mics too.
+        chain.apply(&preset.settings());
         chain.settle();
+        chain.find_operating_point();
 
         let amplitude = 10f64.powf((NOMINAL_DBFS + preset.input_trim as f64) / 20.0);
         let n = (RATE * SECONDS) as usize;

@@ -2004,11 +2004,24 @@ impl Chain {
         } else {
             voice.level_control()
         };
+        let resolved = self.power_selection.resolved(self.voice);
+        // A power stage the knob does not own goes back to where it rests. Without
+        // this, a Twin power stage that had been driven from another preamplifier
+        // kept that chain's master position (0.30) when the Twin's own voice took it
+        // back on Matched -- where nothing sets it, because an AB763 has no master --
+        // and its dry signal came out 27 dB down under the reverb.
+        if !matches!(level, Some(Level::Power(_))) {
+            let loaded = resolved.map(|model| &mut self.loaded[model.slot()].sim);
+            for sim in self.powers[self.power].as_mut().into_iter().chain(loaded) {
+                if let Some(rest) = sim.resting_position(power::MASTER) {
+                    sim.set_control(power::MASTER, rest);
+                }
+            }
+        }
         let Some(level) = level else {
             self.master_lift = 1.0;
             return;
         };
-        let resolved = self.power_selection.resolved(self.voice);
         let (sim, which) = match level {
             Level::Circuit(which) => (Some(&mut self.gains[self.gain]), which),
             Level::Power(which) => (self.powers[self.power].as_mut(), which),

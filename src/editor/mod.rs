@@ -12,6 +12,7 @@
 //! signal travels, and nothing on it said what happened before what. A layout
 //! is a claim about how a thing works; that one made no claim at all.
 
+mod dropdown;
 mod panel;
 pub mod session;
 mod sprites;
@@ -24,12 +25,13 @@ use nih_plug_vizia::{create_vizia_editor, vizia_assets, ViziaState, ViziaTheming
 use std::sync::Arc;
 
 use crate::params::{
-    Amplifier, CabModel, Cabinet, Circuit, Diode, GainStageParams, Iron, MicModel, Oversampling,
-    PedalModel, PowerAmp, SpeakerModel, ToneStack,
+    CabModel, Cabinet, Circuit, GainStageParams, MicModel, Oversampling, PedalModel, SpeakerModel,
+    ToneStack,
 };
+use dropdown::{Choice, DropButton, Dropdowns};
 use panel::Faceplate;
 use style::*;
-use widgets::{Knob, Meter, Selector, Stepper};
+use widgets::{Knob, Meter, Selector};
 
 #[derive(Lens)]
 pub struct Panel {
@@ -109,6 +111,7 @@ pub fn create(
         .build(cx);
 
         session::Session::build_into(cx, params.clone(), state.user_scale_factor(), gui);
+        Dropdowns::build_into(cx, params.clone());
 
         Faceplate::new(cx);
         gutter(cx);
@@ -123,6 +126,7 @@ pub fn create(
         // Last, so they draw over the panel and take the clicks first. The
         // dialogs come after the menu: a question has to sit on top of
         // whatever asked it.
+        dropdown::menu(cx);
         session::menu(cx);
         session::sizes(cx);
         session::dialogs(cx);
@@ -378,14 +382,7 @@ fn input(cx: &mut Context) {
     // The pedal, between the guitar and the circuit. Its knobs are its own, so
     // a pedal in front of an amplifier keeps both sets of controls.
     label(cx, "pedal", body_x() + 30.0, top + 84.0, 9.5, 76.0, 0x7e8a96);
-    Stepper::new(
-        cx,
-        Panel::params,
-        |p| &p.pedal,
-        PedalModel::ALL.iter().map(|m| m.name()).collect(),
-        0,
-        true,
-    )
+    DropButton::new(cx, Panel::params, |p| &p.pedal, Choice::Pedal, true)
     .position_type(PositionType::SelfDirected)
     .left(Pixels(body_x() + 76.0))
     .top(Pixels(top + 74.0))
@@ -411,152 +408,52 @@ fn input(cx: &mut Context) {
 fn circuit(cx: &mut Context) {
     let top = section_top(1);
 
-    // Four rows, in the order the signal meets them: what the topology is,
-    // what part does the bending, what part does the amplifying, and what
-    // iron it comes out through. Two of them apply to any given circuit and
-    // two do not, and the ones that do not are greyed rather than hidden --
-    // a panel that changes shape as the selection moves is harder to aim at,
-    // and a control that vanishes is one you cannot see the state of.
-    // Two rows for one control. The first seven entries are topologies -- a
-    // valve cascade, a clipper, a channel -- and the rest are models of
-    // particular circuits built from their schematics. Those are different
-    // kinds of claim and deserve to look it, and ten segments on one row was
-    // already too many before the rest of the models arrive.
-    let names: Vec<&'static str> = Circuit::ALL.iter().map(|c| c.name()).collect();
-    let modelled = Circuit::ALL.iter().filter(|c| !c.is_modelled()).count();
-    label(
-        cx,
-        "topology",
-        body_x() + 30.0,
-        top + 18.0,
-        9.5,
-        76.0,
-        0x7e8a96,
-    );
-    Selector::window(
-        cx,
-        Panel::params,
-        |p| &p.circuit,
-        names[..modelled].to_vec(),
-        true,
-        0,
-        names.len(),
-        None,
-    )
-    .position_type(PositionType::SelfDirected)
-    .left(Pixels(body_x() + 76.0))
-    .top(Pixels(top + 8.0))
-    .width(Pixels(body_w() - 76.0))
-    .height(Pixels(20.0));
-
-    label(
-        cx,
-        "modelled",
-        body_x() + 30.0,
-        top + 48.0,
-        9.5,
-        76.0,
-        0x7e8a96,
-    );
-    for (row_index, slice) in names[modelled..].chunks(3).enumerate() {
-        Selector::window(
-            cx,
-            Panel::params,
-            |p| &p.circuit,
-            slice.to_vec(),
-            true,
-            modelled + row_index * 3,
-            names.len(),
-            None,
-        )
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(body_x() + 76.0))
-        .top(Pixels(top + 38.0 + row_index as f32 * 30.0))
-        .width(Pixels(body_w() - 76.0))
-        .height(Pixels(20.0));
-    }
+    // Six lists in two columns, read left to right in the order the signal
+    // meets them: what the circuit is, what part bends and what part
+    // amplifies, then the iron and the power stage it comes out through.
+    //
+    // The circuit list is one parameter behind two buttons. The first seven
+    // entries are topologies -- a valve cascade, a clipper, a channel -- and
+    // the rest are models of particular circuits built from their schematics.
+    // Those are different kinds of claim and deserve to look it; the button
+    // that does not hold the current circuit shows a dash.
+    //
+    // Clipping and amplifier apply to some circuits and not others. The ones
+    // that do not are greyed rather than hidden: a panel that changes shape as
+    // the selection moves is harder to aim at.
+    let grid = Grid::new(top);
+    grid.dropdown(cx, 0, 0, "topology", |p| &p.circuit, Choice::Topology, true);
+    grid.dropdown(cx, 1, 0, "modelled", |p| &p.circuit, Choice::Modelled, true);
 
     Binding::new(
         cx,
         Panel::params.map(|p| p.circuit.value().has_diodes()),
-        |cx, live| {
+        move |cx, live| {
             let live = live.get(cx);
-            row(
-                cx,
-                section_top(1) + 98.0,
-                "clipping",
-                |p| &p.diode,
-                Diode::ALL.iter().map(|d| d.name()).collect(),
-                live,
-                210.0,
-            );
+            grid.dropdown(cx, 0, 1, "clipping", |p| &p.diode, Choice::Clipping, live);
         },
     );
-
     Binding::new(
         cx,
         Panel::params.map(|p| p.circuit.value().has_amplifier()),
-        |cx, live| {
+        move |cx, live| {
             let live = live.get(cx);
-            row(
-                cx,
-                section_top(1) + 128.0,
-                "amplifier",
-                |p| &p.amplifier,
-                Amplifier::ALL.iter().map(|a| a.name()).collect(),
-                live,
-                210.0,
-            );
+            grid.dropdown(cx, 1, 1, "amplifier", |p| &p.amplifier, Choice::Amplifier, live);
         },
     );
 
     // Iron applies to everything, which is the point of it being a control
     // rather than part of a circuit: a transformer belongs after a distortion
     // pedal exactly as much as after a console channel.
-    row(
-        cx,
-        top + 158.0,
-        "iron",
-        |p| &p.iron,
-        Iron::ALL.iter().map(|i| i.name()).collect(),
-        true,
-        268.0,
-    );
-
-    label(
-        cx,
-        "power amp",
-        body_x() + 30.0,
-        top + 198.0,
-        9.5,
-        76.0,
-        0x7e8a96,
-    );
-    let power_names: Vec<_> = PowerAmp::ALL.iter().map(|p| p.name()).collect();
-    for (row_index, slice) in power_names.chunks(2).enumerate() {
-        Selector::window(
-            cx,
-            Panel::params,
-            |p| &p.power_amp,
-            slice.to_vec(),
-            true,
-            row_index * 2,
-            power_names.len(),
-            None,
-        )
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(body_x() + 76.0))
-        .top(Pixels(top + 188.0 + row_index as f32 * 26.0))
-        .width(Pixels(body_w() - 76.0))
-        .height(Pixels(20.0));
-    }
+    grid.dropdown(cx, 0, 2, "iron", |p| &p.iron, Choice::Iron, true);
+    grid.dropdown(cx, 1, 2, "power amp", |p| &p.power_amp, Choice::PowerAmp, true);
 
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
     Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 270.0))
+        .top(Pixels(top + 98.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
         .child_top(Stretch(1.0))
@@ -590,6 +487,78 @@ fn row<P, F>(
         if enabled { 0x7e8a96 } else { 0x5a636b },
     );
     selector(cx, body_x() + 76.0, y, width, to_param, labels, enabled);
+}
+
+/// Two columns of captioned dropdowns, the layout the circuit and cabinet
+/// sections share so their lists line up down the panel.
+#[derive(Clone, Copy)]
+struct Grid {
+    top: f32,
+}
+
+impl Grid {
+    const LEFT_W: f32 = 230.0;
+    const ROW: f32 = 28.0;
+
+    fn new(top: f32) -> Self {
+        Self { top }
+    }
+
+    fn left() -> f32 {
+        body_x() + 76.0
+    }
+
+    fn right() -> f32 {
+        Self::left() + Self::LEFT_W + 64.0
+    }
+
+    fn right_w() -> f32 {
+        body_x() + body_w() - Self::right()
+    }
+
+    /// The top of a row's controls.
+    fn y(&self, row: usize) -> f32 {
+        self.top + 10.0 + row as f32 * Self::ROW
+    }
+
+    /// A caption in front of column `column` of row `row`.
+    fn caption(&self, cx: &mut Context, column: usize, row: usize, name: &str, live: bool) {
+        let colour = if live { 0x7e8a96 } else { 0x5a636b };
+        let y = self.y(row) + 10.0;
+        if column == 0 {
+            label(cx, name, body_x() + 30.0, y, 9.5, 76.0, colour);
+        } else {
+            label(cx, name, Self::right() - 32.0, y, 9.5, 60.0, colour);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn dropdown<P, F>(
+        &self,
+        cx: &mut Context,
+        column: usize,
+        row: usize,
+        name: &str,
+        to_param: F,
+        choice: Choice,
+        live: bool,
+    ) where
+        F: Fn(&Arc<GainStageParams>) -> &P + Copy + 'static,
+        P: nih_plug::prelude::Param + 'static,
+    {
+        self.caption(cx, column, row, name, live);
+        let (x, w) = if column == 0 {
+            (Self::left(), Self::LEFT_W)
+        } else {
+            (Self::right(), Self::right_w())
+        };
+        DropButton::new(cx, Panel::params, to_param, choice, live)
+            .position_type(PositionType::SelfDirected)
+            .left(Pixels(x))
+            .top(Pixels(self.y(row)))
+            .width(Pixels(w))
+            .height(Pixels(20.0));
+    }
 }
 
 /// One line saying what the selected circuit actually is. It changes with the
@@ -1023,40 +992,27 @@ fn tone(cx: &mut Context) {
 
 fn cabinet(cx: &mut Context) {
     let top = section_top(4);
-    let left = body_x() + 76.0;
-    let wide = 230.0;
-    let right = left + wide + 64.0;
-    let rest = body_x() + body_w() - right;
+    let grid = Grid::new(top);
+    let left = Grid::left();
+    let right = Grid::right();
+    let rest = Grid::right_w();
     let dim = |live: bool| if live { 0x7e8a96 } else { 0x5a636b };
 
     // --- which cabinet, and the legacy filter it replaces -------------------
     // Legacy is what every old session is: the resistor load and the baked
     // Combo/Stack response. The two are never stacked, so the legacy row only
     // applies while Legacy is chosen.
-    label(cx, "cabinet", body_x() + 30.0, top + 20.0, 9.5, 76.0, 0x7e8a96);
-    Stepper::new(
-        cx,
-        Panel::params,
-        |p| &p.cab_model,
-        CabModel::ALL.iter().map(|c| c.name()).collect(),
-        0,
-        true,
-    )
-    .position_type(PositionType::SelfDirected)
-    .left(Pixels(left))
-    .top(Pixels(top + 10.0))
-    .width(Pixels(wide))
-    .height(Pixels(20.0));
+    grid.dropdown(cx, 0, 0, "cabinet", |p| &p.cab_model, Choice::Cabinet, true);
     Binding::new(
         cx,
         Panel::params.map(|p| p.cab_model.value() == CabModel::Legacy),
         move |cx, legacy| {
             let live = legacy.get(cx);
-            label(cx, "legacy", right - 30.0, top + 20.0, 9.5, 56.0, dim(live));
+            grid.caption(cx, 1, 0, "legacy", live);
             selector(
                 cx,
                 right,
-                top + 10.0,
+                grid.y(0),
                 rest,
                 |p| &p.cabinet,
                 Cabinet::ALL.iter().map(|c| c.name()).collect(),
@@ -1071,27 +1027,14 @@ fn cabinet(cx: &mut Context) {
         Panel::params.map(|p| p.cab_model.value() != CabModel::Legacy),
         move |cx, live| {
             let live = live.get(cx);
-            label(cx, "speaker", body_x() + 30.0, top + 48.0, 9.5, 76.0, dim(live));
-            Stepper::new(
-                cx,
-                Panel::params,
-                |p| &p.speaker,
-                SpeakerModel::ALL.iter().map(|s| s.name()).collect(),
-                0,
-                live,
-            )
-            .position_type(PositionType::SelfDirected)
-            .left(Pixels(left))
-            .top(Pixels(top + 38.0))
-            .width(Pixels(wide))
-            .height(Pixels(20.0));
+            grid.dropdown(cx, 0, 1, "speaker", |p| &p.speaker, Choice::Speaker, live);
         },
     );
     // What the selection physically is, rather than what it is named after.
     Label::new(cx, Panel::params.map(|p| cabinet_summary(p)))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(right - 58.0))
-        .top(Pixels(top + 38.0))
+        .top(Pixels(grid.y(1)))
         .width(Pixels(rest + 58.0))
         .height(Pixels(20.0))
         .child_top(Stretch(1.0))
@@ -1107,35 +1050,9 @@ fn cabinet(cx: &mut Context) {
         Panel::params.map(|p| p.physical_cabinet()),
         move |cx, live| {
             let live = live.get(cx);
-            label(cx, "mic A", body_x() + 30.0, top + 76.0, 9.5, 76.0, dim(live));
             // Mic A always exists; Bypass is an ideal omni at the placement.
-            Stepper::new(
-                cx,
-                Panel::params,
-                |p| &p.mic_a,
-                MicModel::ALL.iter().map(|m| m.name()).collect(),
-                1,
-                live,
-            )
-            .position_type(PositionType::SelfDirected)
-            .left(Pixels(left))
-            .top(Pixels(top + 66.0))
-            .width(Pixels(wide))
-            .height(Pixels(20.0));
-            label(cx, "mic B", right - 30.0, top + 76.0, 9.5, 56.0, dim(live));
-            Stepper::new(
-                cx,
-                Panel::params,
-                |p| &p.mic_b,
-                MicModel::ALL.iter().map(|m| m.name()).collect(),
-                0,
-                live,
-            )
-            .position_type(PositionType::SelfDirected)
-            .left(Pixels(right))
-            .top(Pixels(top + 66.0))
-            .width(Pixels(rest))
-            .height(Pixels(20.0));
+            grid.dropdown(cx, 0, 2, "mic A", |p| &p.mic_a, Choice::MicA, live);
+            grid.dropdown(cx, 1, 2, "mic B", |p| &p.mic_b, Choice::MicB, live);
         },
     );
 
@@ -1279,38 +1196,6 @@ fn output(cx: &mut Context) {
         |p| format!("{:+.1} dB", p.output_trim.value()),
     );
 
-    // The plugin's processing in or out of circuit, bottom right where a
-    // footswitch would be. `make_bypass` tells the host this is the bypass,
-    // so it can sit on the DAW's own strip and be automated -- which is the
-    // point: dropping a Screamer in for a solo from a controller.
-    //
-    // OFF is a wire. The host's samples pass through 1:1, unchanged and
-    // undelayed, which means the reported latency stops describing the
-    // output while the plugin is switched out and the track sits a little
-    // ahead of the rest of the mix until it is switched back on. See
-    // `GainStageParams::bypass` for why that trade is made.
-    //
-    // ON is the parameter being *false*. A bypass parameter reads "is it
-    // bypassed", and a switch on a panel reads "is it on", so the row is
-    // ordered to make those the same gesture.
-    selector(
-        cx,
-        PANEL_W - 14.0 - 86.0,
-        top + 40.0,
-        86.0,
-        |p| &p.bypass,
-        vec!["ON", "OFF"],
-        true,
-    );
-    label(
-        cx,
-        "plugin",
-        PANEL_W - 14.0 - 43.0,
-        top + 22.0,
-        9.5,
-        86.0,
-        0x7e8a96,
-    );
     let x = body_x() + 340.0;
     label(
         cx,

@@ -229,3 +229,46 @@ completion.
 Storm '83 with the pedal slot) after rig research. Then Brit 800 preamp research and
 implementation, Rodent (op-amp GBW/slew), Round Fuzz (PNP mirror), AC30/EL84, DR103,
 Rectifier, 312, 610.
+
+## Session 4 (2026-09-15): owner requests
+
+**Catalogue Green 808 corrected (owner decision: "correct it everywhere").**
+- `ts808::build`/`tap` now use `ts808::TS808`; `LEGACY` is kept for measurement only.
+- `src/calibration.rs` regenerated with `examples/calibrate`. Only the TS808 make-up row
+  changed (by at most 0.08 dB), plus a rounding in one Studio comment.
+- Existing sessions and presets using `circuit = ts808` now sound different (accepted).
+- Research log resolution updated in [green_808.md](docs/models/green_808.md).
+
+**User-reported bug: American Twin on Matched power, reverb only.**
+- Cause: the Twin power stage's master was left at the override position after that
+  stage had run behind another preamp. That was 27 dB down, with the reverb path
+  unaffected.
+- Fix: `Chain::set_master` returns the resolved power stage's master to its rest
+  whenever the level control is not the power stage's own.
+- Regression test: `tests/modular_power.rs::a_power_stage_released_by_an_override_returns_to_its_own_master_position`.
+- Probed after every power override, resistor-loaded and speaker-loaded: matched level
+  identical to a fresh chain.
+
+**GUI: dropdowns and no plugin On/Off switch (user request).**
+- New `src/editor/dropdown.rs`:
+  - `DropButton` shows the current entry plus a caret; the wheel steps through entries.
+  - One overlay list at a time, drawn after the panel so it covers later sections. It
+    opens below the button, or above it if there is no room, and scrolls only when
+    longer than 360 px.
+  - Choosing an entry emits a Begin/Set/End parameter gesture.
+- Dropdowns: pedal, topology, modelled circuit, clipping, amplifier, iron, power amp,
+  cabinet, speaker, mic A (no Off), mic B.
+  - Topology and modelled are one `circuit` parameter; the button that does not hold
+    the current circuit shows "--".
+- The circuit section is now a two-column grid (296 to 128 px); the window is
+  780 x 912.
+- The output section's ON/OFF selector is removed. The host bypass parameter stays.
+- The `Stepper` widget was removed (unused).
+- Verified with `shot.sh`, including open menus (temporary hook, removed).
+
+**Docs.** README rewritten (chain, pedal slot, modelled circuits, power stages,
+speaker/cabinet/microphones, presets, costs, tests). MODELS.md, ARCHITECTURE.md and
+docs/MODEL_INVENTORY.md statuses brought up to date. `examples/presetcost.rs` now
+applies each preset's full `Settings` (pedal, power, cabinet, mics).
+
+**Owner decision outstanding.** Generic display name for Big Muff.

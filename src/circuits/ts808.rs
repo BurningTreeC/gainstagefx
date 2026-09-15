@@ -80,11 +80,10 @@ pub struct Values {
     pub out_shunt: f64,
 }
 
-/// The values this netlist has always had, kept so every existing session and
-/// preset using the `ts808` circuit sounds exactly as it did. They depart from all
-/// three drawings consulted in the tone shunt (1 k instead of 220 ohm), the level
-/// feed (220 ohm instead of 1 k) and C1 (22 nF instead of 20 nF). A versioned
-/// correction is pending an owner decision.
+/// The values this netlist carried until 2026-09-15. They depart from all three
+/// drawings consulted in the tone shunt (1 k instead of 220 ohm), the level feed
+/// (220 ohm instead of 1 k) and C1 (22 nF instead of 20 nF). Kept only so the
+/// correction stays measurable; nothing builds with them. See green_808.md.
 pub const LEGACY: Values = Values {
     input_cap: 22e-9,
     tone_shunt: 1_000.0,
@@ -95,8 +94,8 @@ pub const LEGACY: Values = Values {
 
 /// The TS-808 as the three consulted sources agree it: S. Cerutti's traced
 /// drawing, ElectroSmash's analysis drawing, and R. G. Keen's "The Technology of
-/// the Tube Screamer" (220 ohm shunt with 0.22 uF, turnover near 3.2 kHz). Used by
-/// the independent pedal slot, which no older session depends on.
+/// the Tube Screamer" (220 ohm shunt with 0.22 uF, turnover near 3.2 kHz). What the
+/// catalogue voice and the pedal slot both build.
 pub const TS808: Values = Values {
     input_cap: 20e-9,
     tone_shunt: 220.0,
@@ -119,7 +118,7 @@ pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
 
-/// A chosen revision. `build` is `LEGACY`.
+/// A chosen revision. `build` is `TS808`.
 pub fn build_with(values: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
     assemble(values, source, load, "out")
 }
@@ -127,7 +126,7 @@ pub fn build_with(values: &Values, source: f64, load: f64) -> Result<Circuit, Fa
 /// The same pedal, brought out at a chosen node. For measuring one stage at a
 /// time, which is the only way to find out which of them is wrong.
 pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
-    assemble(&LEGACY, source, load, at)
+    assemble(&TS808, source, load, at)
 }
 
 fn assemble(v: &Values, source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
@@ -207,25 +206,14 @@ fn assemble(v: &Values, source: f64, load: f64, at: &str) -> Result<Circuit, Fau
     // then decides how much of what is left goes through C6 and R8 to ground,
     // against how much goes to the inverting input of U1B.
     //
-    // R8 was 220 ohm and R11 was 1 k: the two were transposed against the
-    // reference values in `TS808.md` section 12, which give R8 = 1 k and
-    // R11 = 220. R8 is the leg C6 shunts the wiper to ground through, so at
-    // 220 ohm the Tone control cut four and a half times harder than the
-    // drawing asks. Corrected both ways round.
-    //
-    // R9 is unresolved and left at 1 k. The reference list says 10 k, and at
-    // 10 k this topology gives the Tone control 21 dB of *level* swing and
-    // moves the bottom end by 5.5 dB -- a tone control must not move the
-    // bottom end, and `the_tone_control_works_on_the_top_of_the_band` says so.
-    // Either R9 is not 10 k here, or U1B's reference and shunt are not wired
-    // as assumed: with R9 = 10 k, C6's 7.2 k at 100 Hz is comparable to the
-    // feedback, so the shunt reaches the bass. The BOM does not list C6 at
-    // all, so its 220 nF is an assumption of ours as well.
-    //
-    // Settling it needs the actual TS808 drawing, which this repository does
-    // not have -- only the Mark IIC+ PDFs are project-local, and `CLAUDE.md`
-    // section 3.3 puts a reproduction BOM fourth behind an exact schematic.
-    // Recorded rather than guessed at.
+    // R8 (the shunt under C6) and R11 (the feed to the Level pot) are 220 ohm
+    // and 1 k. They were once swapped to 1 k and 220 ohm on the strength of a
+    // reference file this repository never had; three independent sources --
+    // S. Cerutti's traced TS-808 drawing, ElectroSmash's drawing and R. G.
+    // Keen's analysis, which derives the tone turnover near 3.2 kHz from exactly
+    // 220 ohm and 0.22 uF -- all give 220 ohm and 1 k, and C6 = 0.22 uF. The
+    // "R9 = 10 k" once recorded as unresolved is U1B's bias resistor (R10 here),
+    // already 10 k; U1B's feedback resistor is 1 k. See docs/models/green_808.md.
     net.resistor("u1a", "tone_in", 1_000.0) // R7
         .capacitor("tone_in", "gnd", 220e-9) // C5
         .resistor("tone_in", "vref", 10_000.0) // R10

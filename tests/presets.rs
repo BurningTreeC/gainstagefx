@@ -1,9 +1,9 @@
 //! What the plugin ships knowing how to sound like.
 
 use gainstagefx::dsp::measure::{self, Tone};
-use gainstagefx::params::{Cabinet, Circuit, ToneStack};
+use gainstagefx::params::{Cabinet, Circuit};
 use gainstagefx::presets::{GROUPS, PRESETS};
-use gainstagefx::voice::{Cabinet as VCabinet, Chain, Tone as VTone, CALIBRATION, NOMINAL_DBFS};
+use gainstagefx::voice::{Chain, CALIBRATION, NOMINAL_DBFS};
 
 const RATE: f64 = 96_000.0;
 
