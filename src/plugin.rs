@@ -1,6 +1,7 @@
 //! The plugin: parameters in, audio out.
 
 use nih_plug::prelude::*;
+use nih_plug::wrapper::state::ParamValue;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -442,6 +443,21 @@ impl Plugin for GainStageFx {
         )
     }
 
+    fn filter_state(state: &mut PluginState) {
+        // Loading a legacy session into an already configured instance must
+        // clear a previous override, not depend on constructor defaults.
+        state
+            .params
+            .entry("power_amp".into())
+            .or_insert_with(|| ParamValue::String("matched".into()));
+        // Sessions from before the physical cabinet keep the resistor load and the
+        // baked Combo/Stack filter they were made with.
+        state
+            .params
+            .entry("cab_model".into())
+            .or_insert_with(|| ParamValue::String("legacy".into()));
+    }
+
     fn initialize(
         &mut self,
         layout: &AudioIOLayout,
@@ -560,7 +576,28 @@ impl Plugin for GainStageFx {
         // Everything that reaches a circuit is sampled once per host block.
         // Rebuilding a nonlinear matrix at audio rate would be far more
         // expensive than the smoothing it was intended to provide.
+        let place = |position: &FloatParam, distance: &FloatParam, angle: &FloatParam| {
+            crate::acoustics::mic::MicPlacement {
+                position: position.smoothed.next_step(samples) as f64,
+                distance: distance.smoothed.next_step(samples) as f64,
+                angle: angle.smoothed.next_step(samples) as f64,
+            }
+        };
+        let p = &self.params;
+        let acoustic = crate::voice::AcousticSettings {
+            cabinet: p.cab_model.value().voice(),
+            speaker: p.speaker.value().voice(),
+            mic_a: p.mic_a.value().voice(false),
+            mic_b: p.mic_b.value().voice(true),
+            place_a: place(&p.mic_a_position, &p.mic_a_distance, &p.mic_a_angle),
+            place_b: place(&p.mic_b_position, &p.mic_b_distance, &p.mic_b_angle),
+            blend: p.mic_blend.smoothed.next_step(samples) as f64,
+            invert_b: p.mic_b_invert.value(),
+            align: p.mic_align.value(),
+        };
         let settings = Settings {
+            power_amp: self.params.power_amp.value().voice(),
+            acoustic,
             gain: circuit.voice(),
             diode: if circuit.has_diodes() {
                 self.params.diode.value().voice()
@@ -629,11 +666,15 @@ impl Plugin for GainStageFx {
                 let gain_op = first.operating_point();
                 let iron_op = first.iron_operating_point();
                 let power_op = first.power_operating_point();
+                let line_op = first.line_operating_point();
                 let reverb_op = first.reverb_operating_point();
                 for chain in rest.iter_mut().filter(|_| !duplicated_mono) {
                     chain.share_operating_point_from(gain_op);
                     if let Some(op) = iron_op {
                         chain.share_iron_operating_point_from(op);
+                    }
+                    if let Some(op) = line_op {
+                        chain.share_line_operating_point_from(op);
                     }
                     if let Some(op) = power_op {
                         chain.share_power_operating_point_from(op);
@@ -725,8 +766,7 @@ impl Plugin for GainStageFx {
                 if !bypassed {
                     *sample = ((dry * (1.0 - self.stereo_mix[i] as f64)
                         + wet * self.stereo_mix[i] as f64)
-                        * self.stereo_output_trim[i] as f64)
-                        as f32;
+                        * self.stereo_output_trim[i] as f64) as f32;
                 }
 
                 let frame_peak = input.abs().max(self.stereo_right_peak[i]);
@@ -1082,5 +1122,3 @@ mod block_ramp {
         );
     }
 }
-
-

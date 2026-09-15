@@ -24,7 +24,7 @@ use nih_plug_vizia::{create_vizia_editor, vizia_assets, ViziaState, ViziaTheming
 use std::sync::Arc;
 
 use crate::params::{
-    Amplifier, Cabinet, Circuit, Diode, GainStageParams, Iron, Oversampling, ToneStack,
+    Amplifier, Cabinet, Circuit, Diode, GainStageParams, Iron, Oversampling, PowerAmp, ToneStack,
 };
 use panel::Faceplate;
 use style::*;
@@ -60,7 +60,11 @@ pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
 /// Stores the requested scale before the host reads `Editor::size()`.
 /// Returns whether the UI should adopt it. A refusal restores the persisted
 /// size, so drawing and host geometry continue to agree.
-pub fn apply_scale(state: &Arc<ViziaState>, gui: &dyn nih_plug::prelude::GuiContext, scale: f64) -> bool {
+pub fn apply_scale(
+    state: &Arc<ViziaState>,
+    gui: &dyn nih_plug::prelude::GuiContext,
+    scale: f64,
+) -> bool {
     let previous = state.user_scale_factor();
     if scale == previous {
         return true;
@@ -425,21 +429,23 @@ fn circuit(cx: &mut Context) {
         76.0,
         0x7e8a96,
     );
-    Selector::window(
-        cx,
-        Panel::params,
-        |p| &p.circuit,
-        names[modelled..].to_vec(),
-        true,
-        modelled,
-        names.len(),
-        None,
-    )
-    .position_type(PositionType::SelfDirected)
-    .left(Pixels(body_x() + 76.0))
-    .top(Pixels(top + 38.0))
-    .width(Pixels(body_w() - 76.0))
-    .height(Pixels(20.0));
+    for (row_index, slice) in names[modelled..].chunks(3).enumerate() {
+        Selector::window(
+            cx,
+            Panel::params,
+            |p| &p.circuit,
+            slice.to_vec(),
+            true,
+            modelled + row_index * 3,
+            names.len(),
+            None,
+        )
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(body_x() + 76.0))
+        .top(Pixels(top + 38.0 + row_index as f32 * 30.0))
+        .width(Pixels(body_w() - 76.0))
+        .height(Pixels(20.0));
+    }
 
     Binding::new(
         cx,
@@ -448,7 +454,7 @@ fn circuit(cx: &mut Context) {
             let live = live.get(cx);
             row(
                 cx,
-                section_top(1) + 68.0,
+                section_top(1) + 98.0,
                 "clipping",
                 |p| &p.diode,
                 Diode::ALL.iter().map(|d| d.name()).collect(),
@@ -465,7 +471,7 @@ fn circuit(cx: &mut Context) {
             let live = live.get(cx);
             row(
                 cx,
-                section_top(1) + 98.0,
+                section_top(1) + 128.0,
                 "amplifier",
                 |p| &p.amplifier,
                 Amplifier::ALL.iter().map(|a| a.name()).collect(),
@@ -480,7 +486,7 @@ fn circuit(cx: &mut Context) {
     // pedal exactly as much as after a console channel.
     row(
         cx,
-        top + 128.0,
+        top + 158.0,
         "iron",
         |p| &p.iron,
         Iron::ALL.iter().map(|i| i.name()).collect(),
@@ -488,12 +494,40 @@ fn circuit(cx: &mut Context) {
         268.0,
     );
 
+    label(
+        cx,
+        "power amp",
+        body_x() + 30.0,
+        top + 198.0,
+        9.5,
+        76.0,
+        0x7e8a96,
+    );
+    let power_names: Vec<_> = PowerAmp::ALL.iter().map(|p| p.name()).collect();
+    for (row_index, slice) in power_names.chunks(2).enumerate() {
+        Selector::window(
+            cx,
+            Panel::params,
+            |p| &p.power_amp,
+            slice.to_vec(),
+            true,
+            row_index * 2,
+            power_names.len(),
+            None,
+        )
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(body_x() + 76.0))
+        .top(Pixels(top + 188.0 + row_index as f32 * 26.0))
+        .width(Pixels(body_w() - 76.0))
+        .height(Pixels(20.0));
+    }
+
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
     Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 152.0))
+        .top(Pixels(top + 270.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
         .child_top(Stretch(1.0))
@@ -647,7 +681,7 @@ fn drive(cx: &mut Context) {
     // already the Drive knob. See `Gain::level_control`.
     Binding::new(
         cx,
-        Panel::params.map(|p| p.circuit.value().voice().level_control().is_some()),
+        Panel::params.map(|p| p.master_enabled()),
         move |cx, live| {
             let live = live.get(cx);
             Knob::new(cx, Panel::params, |p| &p.master, 21.0, live)
@@ -668,7 +702,7 @@ fn drive(cx: &mut Context) {
     Label::new(
         cx,
         Panel::params.map(|p| {
-            if p.circuit.value().voice().level_control().is_some() {
+            if p.master_enabled() {
                 format!("{:.0} %", p.master.value() * 100.0)
             } else {
                 String::from("--")

@@ -7,6 +7,7 @@
 //! solver can be asked for a network's frequency response directly rather than
 //! by running audio through it and taking a spectrum.
 
+pub mod acoustics;
 pub mod circuits;
 pub mod dsp;
 pub mod editor;

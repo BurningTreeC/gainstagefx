@@ -21,7 +21,7 @@
 //! measured the slow way, around a chosen operating point.
 
 use super::complex::C;
-use super::netlist::{Circuit, Part, GROUND};
+use super::netlist::{Adjust, Circuit, Part, GROUND};
 
 /// A network's response at one frequency.
 #[derive(Clone, Copy, Debug)]
@@ -90,6 +90,16 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
         match *part {
             Part::Resistor { a, b, ohms } => stamp(&mut y, a, b, C::real(1.0 / ohms)),
             Part::Capacitor { a, b, farads } => stamp(&mut y, a, b, C::new(0.0, w * farads)),
+            Part::Adjustable { a, b, kind, slot } => {
+                let value = circuit.adjustables[slot];
+                let adm = match kind {
+                    Adjust::Resistor => C::real(1.0 / value),
+                    Adjust::Capacitor => C::new(0.0, w * value),
+                    Adjust::Inductor if w * value > 1e-12 => C::new(0.0, -1.0 / (w * value)),
+                    Adjust::Inductor => C::real(1e12),
+                };
+                stamp(&mut y, a, b, adm);
+            }
             Part::Inductor { a, b, henry } => {
                 // 1 / (jwL), and at DC an inductor is a short: a very large
                 // real admittance stands in, because the alternative is a

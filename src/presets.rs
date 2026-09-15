@@ -9,9 +9,30 @@
 //! They are grouped by what they are for rather than by which circuit they
 //! use, because that is how somebody looking for a sound is thinking.
 
-use crate::params::{Amplifier, Cabinet, Circuit, Diode, Iron, Oversampling, ToneStack};
+use crate::params::{
+    Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, MicModel, Oversampling, PowerAmp,
+    SpeakerModel, ToneStack,
+};
 
 pub struct Preset {
+    pub power_amp: PowerAmp,
+    /// Speaker, cabinet and microphones. `CabModel::Legacy` keeps the old baked
+    /// `cabinet` filter; see `Chain::set_acoustic`.
+    pub cab_model: CabModel,
+    pub speaker: SpeakerModel,
+    pub mic_a: MicModel,
+    pub mic_a_position: f32,
+    /// Metres.
+    pub mic_a_distance: f32,
+    /// Degrees.
+    pub mic_a_angle: f32,
+    pub mic_b: MicModel,
+    pub mic_b_position: f32,
+    pub mic_b_distance: f32,
+    pub mic_b_angle: f32,
+    pub mic_blend: f32,
+    pub mic_b_invert: bool,
+    pub mic_align: bool,
     pub group: &'static str,
     pub name: &'static str,
     pub circuit: Circuit,
@@ -64,6 +85,20 @@ pub struct Preset {
 /// preset in the file.
 const fn base(group: &'static str, name: &'static str) -> Preset {
     Preset {
+        power_amp: PowerAmp::Matched,
+        cab_model: CabModel::Legacy,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.025,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::Off,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.05,
+        mic_b_angle: 0.0,
+        mic_blend: 0.5,
+        mic_b_invert: false,
+        mic_align: false,
         group,
         name,
         circuit: Circuit::Crunch,
@@ -602,10 +637,11 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 23] {
+    pub fn dials(&self) -> [(&'static str, f32); 37] {
         [
             ("in_trim", self.input_trim),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
+            ("power_amp", index_in(&PowerAmp::ALL, self.power_amp)),
             ("diode", index_in(&Diode::ALL, self.diode)),
             ("amplifier", index_in(&Amplifier::ALL, self.amplifier)),
             ("iron", index_in(&Iron::ALL, self.iron)),
@@ -621,6 +657,19 @@ impl Preset {
             ("mid", self.mid),
             ("treble", self.treble),
             ("cabinet", index_in(&Cabinet::ALL, self.cabinet)),
+            ("cab_model", index_in(&CabModel::ALL, self.cab_model)),
+            ("speaker", index_in(&SpeakerModel::ALL, self.speaker)),
+            ("mic_a", index_in(&MicModel::ALL, self.mic_a)),
+            ("mic_a_position", self.mic_a_position),
+            ("mic_a_distance", self.mic_a_distance),
+            ("mic_a_angle", self.mic_a_angle),
+            ("mic_b", index_in(&MicModel::ALL, self.mic_b)),
+            ("mic_b_position", self.mic_b_position),
+            ("mic_b_distance", self.mic_b_distance),
+            ("mic_b_angle", self.mic_b_angle),
+            ("mic_blend", self.mic_blend),
+            ("mic_b_invert", if self.mic_b_invert { 1.0 } else { 0.0 }),
+            ("mic_align", if self.mic_align { 1.0 } else { 0.0 }),
             ("reverb", self.reverb),
             ("speed", self.speed),
             ("intensity", self.intensity),
@@ -685,6 +734,9 @@ pub const SAVED: &str = "Saved";
 /// version would silently reinterpret every saved file.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Stored {
+    /// Stable enum values are authoritative; numeric values retain old-reader support.
+    #[serde(default)]
+    pub model_ids: BTreeMap<String, String>,
     pub name: String,
     pub values: BTreeMap<String, f32>,
     /// Compiled in rather than loaded from disk, so it cannot be overwritten
@@ -720,6 +772,9 @@ pub fn preset_dir() -> Option<PathBuf> {
 pub fn load_all(params: &impl Params) -> Vec<Stored> {
     let mut all = shipped(params);
     all.extend(load_saved());
+    for preset in &mut all {
+        migrate(preset, params);
+    }
     all
 }
 
@@ -734,6 +789,7 @@ fn shipped(params: &impl Params) -> Vec<Stored> {
     PRESETS
         .iter()
         .map(|preset| Stored {
+            model_ids: BTreeMap::new(),
             name: preset.name.to_string(),
             values: preset
                 .dials()
@@ -780,6 +836,58 @@ fn load_saved() -> Vec<Stored> {
     presets
 }
 
+/// Enum identities are independent of display labels and normalized list lengths.
+fn ids(id: &str) -> Option<&'static [&'static str]> {
+    use nih_plug::prelude::Enum;
+    match id {
+        "circuit" => Circuit::ids(),
+        "power_amp" => PowerAmp::ids(),
+        "diode" => Diode::ids(),
+        "amplifier" => Amplifier::ids(),
+        "iron" => Iron::ids(),
+        "tone" => ToneStack::ids(),
+        "cabinet" => Cabinet::ids(),
+        "cab_model" => CabModel::ids(),
+        "speaker" => SpeakerModel::ids(),
+        "mic_a" | "mic_b" => MicModel::ids(),
+        "oversampling" => Oversampling::ids(),
+        _ => None,
+    }
+}
+
+fn model_ids(values: &BTreeMap<String, f32>, params: &impl Params) -> BTreeMap<String, String> {
+    params
+        .param_map()
+        .into_iter()
+        .filter_map(|(id, ptr, _)| {
+            let names = ids(&id)?;
+            let value = values.get(&id)?;
+            // SAFETY: param_map pointers are owned by params for this call.
+            let index = unsafe { ptr.preview_plain(*value) } as usize;
+            Some((id, names.get(index)?.to_string()))
+        })
+        .collect()
+}
+
+/// Upgrade routing defaults and resolve saved stable IDs on the UI/state thread.
+/// Older enum lists remain unchanged, so their normalized legacy values still load.
+pub fn migrate(preset: &mut Stored, params: &impl Params) {
+    preset.values.entry("power_amp".into()).or_insert(0.0);
+    // Legacy is the first cabinet model, so an old preset keeps its baked filter.
+    preset.values.entry("cab_model".into()).or_insert(0.0);
+    for (id, ptr, _) in params.param_map() {
+        if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {
+            if let Some(index) = names.iter().position(|name| *name == saved) {
+                // SAFETY: pointers belong to params and outlive this operation.
+                preset
+                    .values
+                    .insert(id, unsafe { ptr.preview_normalized(index as f32) });
+            }
+        }
+    }
+    preset.model_ids = model_ids(&preset.values, params);
+}
+
 /// The panel as it stands, as parameter ids against normalised values.
 ///
 /// The one thing here that cannot be tested without a host: nih-plug keeps
@@ -815,6 +923,7 @@ pub fn same(live: &BTreeMap<String, f32>, saved: &BTreeMap<String, f32>) -> bool
 /// Take the current panel settings as a preset.
 pub fn capture(params: &impl Params, name: &str) -> Stored {
     Stored {
+        model_ids: model_ids(&live_values(params), params),
         name: name.trim().to_string(),
         values: live_values(params),
         built_in: false,

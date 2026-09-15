@@ -44,14 +44,15 @@
 //!   times the current. Real tubes are not matched, but the mismatch is a
 //!   manufacturing tolerance rather than a circuit property, and inventing one
 //!   would be inventing a sound.
-//! - **The speaker's impedance curve.** The secondary works into a resistance.
-//!   A real speaker is a resonant load whose impedance rises at its resonance
-//!   and again at the top of the band, and that reflects back through the
-//!   transformer and changes the damping. The cabinet section models the
-//!   response; it does not model the load.
+//! - **The speaker's impedance curve**, in `build`. That secondary works into a
+//!   resistance, which every calibration was measured against and which old
+//!   sessions keep. `build_with_speaker` stamps a loudspeaker's
+//!   electromechanical equivalent there instead, so its resonance and coil
+//!   inductance reach the tubes and the feedback loop.
 //! - **Bias drift.** The bias supply is a fixed voltage. A real one moves with
 //!   the mains and with how hard the amplifier is being driven.
 
+use crate::acoustics::speaker::{self, LoadSlots, LoadValues};
 use crate::dsp::netlist::{Circuit, CoreSpec, Fault, Netlist, PentodeSpec, Taper, TriodeSpec};
 
 /// The presence control.
@@ -104,6 +105,8 @@ pub struct PowerSpec {
     pub pi_plate_other: f64,
     pub pi_supply: f64,
     pub pi_tube: TriodeSpec,
+    /// Optional phase-inverter plate-to-plate stability capacitor.
+    pub pi_plate_cap: f64,
 
     // --- the output stage -------------------------------------------------
     /// Coupling from each inverter plate to its output tubes.
@@ -169,6 +172,52 @@ pub struct PowerSpec {
 }
 
 impl PowerSpec {
+    /// 1981 2203 EL34 circuit with Hammond replacement-iron data.
+    /// See docs/models/brit_el34.md for sources, revisions and approximation boundaries.
+    pub const BRIT_EL34: PowerSpec = PowerSpec {
+        name: "Brit EL34 (2203 1981)",
+        master: 1_000_000.0,
+        master_rest: 0.30,
+        pi_couple: 22e-9,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 470.0,
+        pi_tail: 10_000.0,
+        pi_tail_lower: 4_700.0,
+        pi_cross: 0.1e-6,
+        pi_plate_driven: 82_000.0,
+        pi_plate_other: 100_000.0,
+        pi_supply: 330.0,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 47e-12,
+        couple: 22e-9,
+        grid_leak: 220_000.0,
+        // Two parallel tubes per side: equivalent of 5k6 / 1k per tube.
+        stopper: 2_800.0,
+        screen_resistor: 500.0,
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::EL34,
+        bias: -42.0,
+        plate_supply: 470.0,
+        screen_supply: 468.0,
+        supply_resistance: 100.0,
+        reservoir: 50e-6,
+        screen_resistance: 100.0,
+        screen_reservoir: 50e-6,
+        ratio: 20.615_528_128_088_304,
+        primary_resistance: 15.96,
+        primary_inductance: 8.85,
+        leakage: 7.97e-3 / 425.0,
+        saturation_volts: 28.284_271_247_461_902,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 4.0,
+        feedback: 100_000.0,
+        presence_pot: 22_000.0,
+        presence_cap: 0.1e-6,
+    };
+
     /// The Peavey EVH 5150's, read off page 5 of Peavey's drawing at 200 dpi.
     ///
     /// Four 6L6GC, two a side, into a 70500207 transformer with 8 and 4 ohm
@@ -190,6 +239,7 @@ impl PowerSpec {
         pi_plate_other: 100_000.0,  // R58
         pi_supply: 410.0,           // V3, not printed -- see the note below
         pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 0.0,
 
         couple: 0.047e-6,       // C28, C29
         grid_leak: 220_000.0,   // R54, R55
@@ -252,6 +302,7 @@ impl PowerSpec {
         pi_plate_other: 100_000.0,
         pi_supply: 410.0,
         pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 0.0,
 
         couple: 0.1e-6,
         grid_leak: 220_000.0,
@@ -337,6 +388,7 @@ impl PowerSpec {
         pi_plate_other: 100_000.0,
         pi_supply: 410.0,
         pi_tube: TriodeSpec::ECC81,
+        pi_plate_cap: 0.0,
 
         couple: 0.1e-6,
         grid_leak: 220_000.0,
@@ -389,6 +441,81 @@ pub fn build(spec: &PowerSpec, source: f64) -> Result<Circuit, Fault> {
 /// The same amplifier brought out at a chosen node, for measuring one stage at
 /// a time.
 pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
+    assemble(spec, source, at, None).map(|(circuit, _)| circuit)
+}
+
+/// The amplifier driving a loudspeaker instead of a resistor. The driver is
+/// stamped into this netlist, at the transformer tap the spec was drawn for, so
+/// the tubes, the transformer and the feedback loop all see its impedance. See
+/// `acoustics::speaker`.
+pub fn build_with_speaker(
+    spec: &PowerSpec,
+    source: f64,
+    load: &LoadValues,
+) -> Result<(Circuit, LoadSlots), Fault> {
+    build_with_speaker_and(spec, source, load, &Parasitics::of(spec))
+}
+
+/// As `build_with_speaker`, with the high-frequency parasitics stated explicitly.
+pub fn build_with_speaker_and(
+    spec: &PowerSpec,
+    source: f64,
+    load: &LoadValues,
+    parasitics: &Parasitics,
+) -> Result<(Circuit, LoadSlots), Fault> {
+    assemble(spec, source, "spk", Some((load, parasitics)))
+        .map(|(circuit, slots)| (circuit, slots.expect("a speaker was stamped")))
+}
+
+/// The capacitance a resistor-loaded power netlist leaves out.
+///
+/// Into a resistor it barely matters, and the legacy netlists every calibration
+/// was measured on do not have it. Into a loudspeaker it does. When the output
+/// tubes cut off hard into an inductive load, only the transformer's winding
+/// capacitance limits how fast the plates can fly. Without it, a heavily fed-back
+/// stage (Twin, 5150) driven far into clipping at high frequency failed to
+/// converge and swung to a kilovolt at 192 kHz. Measured with the lossy coil:
+/// 1.5-4.7 nF removed every unsettled solve and bounded the output, and changed
+/// moderate-drive output by under 0.1 %.
+///
+/// No winding capacitance is published for any of these transformers. Hammond's
+/// 1750U (2203 replacement) response tolerance, 50 Hz-12 kHz at 0/-1 dB, bounds it
+/// below about 11 nF. So `of` is ESTIMATED by one rule: the capacitance that puts the
+/// loaded primary's high-frequency corner at 30 kHz. The published tube
+/// interelectrode capacitances (JJ EL34, RCA 6L6GC) were tried as well. With this
+/// otherwise incomplete high-frequency network they *reduced* stability margins,
+/// so they are not stamped. See docs/models/speakers.md.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Parasitics {
+    /// Across the whole primary, plate to plate, farads. Zero means not stamped.
+    pub primary_cap: f64,
+}
+
+impl Parasitics {
+    pub const NONE: Parasitics = Parasitics { primary_cap: 0.0 };
+
+    /// Where the loaded primary's high-frequency corner is put. See above.
+    pub const PRIMARY_CORNER_HZ: f64 = 30_000.0;
+
+    pub fn of(spec: &PowerSpec) -> Parasitics {
+        let raa = spec.ratio * spec.ratio * spec.speaker;
+        Parasitics {
+            primary_cap: 1.0 / (std::f64::consts::TAU * Self::PRIMARY_CORNER_HZ * raa),
+        }
+    }
+}
+
+/// The impedance multiplier that refers an 8 ohm driver to this spec's tap.
+pub fn speaker_scale(spec: &PowerSpec) -> f64 {
+    spec.speaker / crate::acoustics::speaker::SpeakerProfile::NOMINAL_OHMS
+}
+
+fn assemble(
+    spec: &PowerSpec,
+    source: f64,
+    at: &str,
+    load: Option<(&LoadValues, &Parasitics)>,
+) -> Result<(Circuit, Option<LoadSlots>), Fault> {
     let mut net = Netlist::new(spec.name);
 
     // --- the long-tailed pair ----------------------------------------------
@@ -401,17 +528,25 @@ pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
         .rest(MASTER, spec.master_rest)
         .pot("in", "master", "gnd", spec.master, Taper::Audio, MASTER)
         .capacitor("master", "pi_a", spec.pi_couple)
-        .resistor("pi_a", "pi_b", spec.pi_leak_upper)
-        .resistor("pi_a", "pi_g1", spec.pi_stopper)
-        .resistor("pi_b", "pi_k", spec.pi_cathode)
+        .resistor("pi_a", "pi_b", spec.pi_leak_upper);
+    let driven_grid = if spec.pi_stopper > 0.0 {
+        net.resistor("pi_a", "pi_g1", spec.pi_stopper);
+        "pi_g1"
+    } else {
+        "pi_a"
+    };
+    net.resistor("pi_b", "pi_k", spec.pi_cathode)
         .resistor("pi_b", "pi_g2", spec.pi_leak_lower)
         .resistor("pi_b", "tail", spec.pi_tail)
         .resistor("tail", "gnd", spec.pi_tail_lower)
         .capacitor("tail", "pi_g2", spec.pi_cross)
         .supply("pi_p1", spec.pi_plate_driven, spec.pi_supply)
         .supply("pi_p2", spec.pi_plate_other, spec.pi_supply)
-        .triode("pi_p1", "pi_g1", "pi_k", spec.pi_tube)
+        .triode("pi_p1", driven_grid, "pi_k", spec.pi_tube)
         .triode("pi_p2", "pi_g2", "pi_k", spec.pi_tube);
+    if spec.pi_plate_cap > 0.0 {
+        net.capacitor("pi_p1", "pi_p2", spec.pi_plate_cap);
+    }
 
     // --- the supplies ------------------------------------------------------
     // A voltage behind a resistance with a reservoir across it. Under load the
@@ -523,8 +658,21 @@ pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
         .transformer("pl_a", "ht", "sec", "gnd", each)
         .transformer("ht", "pl_b", "sec", "gnd", each)
         .core("sec", "gnd", secondary_core)
-        .inductor("sec", "spk", spec.leakage)
-        .resistor("spk", "gnd", spec.speaker);
+        .inductor("sec", "spk", spec.leakage);
+    // The load, in the same place in the part order either way: the resistive
+    // netlist has to stay exactly the one every calibration was measured on.
+    let slots = match load {
+        None => {
+            net.resistor("spk", "gnd", spec.speaker);
+            None
+        }
+        Some((values, parasitics)) => {
+            if parasitics.primary_cap > 0.0 {
+                net.capacitor("pl_a", "pl_b", parasitics.primary_cap);
+            }
+            Some(speaker::stamp(&mut net, "spk", values))
+        }
+    };
 
     // --- feedback and presence ----------------------------------------------
     // Back to the tail, where it opposes the signal. The presence control
@@ -543,5 +691,5 @@ pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
             PRESENCE,
         );
 
-    net.build(at)
+    Ok((net.build(at)?, slots))
 }

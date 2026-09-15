@@ -24,3 +24,8 @@
 # Keep the panel image; other documentation stays local.
 /docs/*
 !/docs/panel.png
+!/docs/MODEL_INVENTORY.md
+
+# Version the model research logs; original drawings remain excluded.
+!/docs/models/
+!/docs/models/**

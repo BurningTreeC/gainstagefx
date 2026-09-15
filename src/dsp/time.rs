@@ -16,7 +16,7 @@ use super::device::{
     AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper,
     Triode,
 };
-use super::netlist::{Circuit, Part, GROUND};
+use super::netlist::{Adjust, Circuit, Part, GROUND};
 use super::partition::{ReducedLinear, ReducedNonlinear};
 
 /// Enable flush-to-zero and denormals-are-zero in the MXCSR register.
@@ -783,6 +783,8 @@ pub struct Simulation {
     /// that answer. See `process`.
     at_rest: bool,
     controls: Vec<f64>,
+    /// The running value of every adjustable part, by slot.
+    values: Vec<f64>,
     /// The drive the input source injects for one volt in.
     source: Vec<f64>,
     /// What the rails inject, which does not depend on the signal.
@@ -1016,6 +1018,7 @@ impl Simulation {
         debug_assert_eq!(self.circuit.parts.len(), source.circuit.parts.len());
         debug_assert_eq!(self.rate, source.rate);
         debug_assert_eq!(self.controls, source.controls);
+        debug_assert_eq!(self.values, source.values);
         debug_assert_eq!(self.ceiling, source.ceiling);
         debug_assert_eq!(self.backtracks, source.backtracks);
         debug_assert_eq!(self.late_continuation, source.late_continuation);
@@ -1093,8 +1096,16 @@ impl Simulation {
         let mut device_count = 0usize;
         for part in &circuit.parts {
             match part {
-                Part::Capacitor { .. } => capacitor_count += 1,
-                Part::Inductor { .. } => inductor_count += 1,
+                Part::Capacitor { .. }
+                | Part::Adjustable {
+                    kind: Adjust::Capacitor,
+                    ..
+                } => capacitor_count += 1,
+                Part::Inductor { .. }
+                | Part::Adjustable {
+                    kind: Adjust::Inductor,
+                    ..
+                } => inductor_count += 1,
                 Part::Diode { .. }
                 | Part::Triode { .. }
                 | Part::Pentode { .. }
@@ -1133,7 +1144,14 @@ impl Simulation {
                         rhs_active_mask[node] = true;
                     }
                 }
-                Part::Capacitor { a, b, .. } | Part::Inductor { a, b, .. } => {
+                Part::Capacitor { a, b, .. }
+                | Part::Inductor { a, b, .. }
+                | Part::Adjustable {
+                    a,
+                    b,
+                    kind: Adjust::Capacitor | Adjust::Inductor,
+                    ..
+                } => {
                     if a != GROUND && a < n {
                         rhs_active_mask[a] = true;
                     }
@@ -1164,6 +1182,7 @@ impl Simulation {
                 controls[which] = position;
             }
         }
+        let values = circuit.adjustables.clone();
         let mut sim = Self {
             circuit,
             rate,
@@ -1202,6 +1221,7 @@ impl Simulation {
             device_rate: f64::NAN,
             at_rest: true,
             controls,
+            values,
             source: vec![0.0; n],
             bias: vec![0.0; n],
             devices: Vec::with_capacity(device_count),
@@ -1531,6 +1551,21 @@ impl Simulation {
             .map(|&(_, position)| position)
     }
 
+    /// Change an adjustable part's value. Like a control, this marks the matrix
+    /// for one rebuild on the next sample; reactive state is carried across.
+    pub fn set_value(&mut self, slot: usize, value: f64) {
+        if let Some(current) = self.values.get_mut(slot) {
+            if value.is_finite() && value > 0.0 && *current != value {
+                *current = value;
+                self.dirty = true;
+            }
+        }
+    }
+
+    pub fn value(&self, slot: usize) -> Option<f64> {
+        self.values.get(slot).copied()
+    }
+
     pub fn set_control(&mut self, which: usize, position: f64) {
         if which < self.controls.len() && (self.controls[which] - position).abs() > 1e-12 {
             self.controls[which] = position.clamp(0.0, 1.0);
@@ -1665,6 +1700,38 @@ impl Simulation {
                             history: 0.0,
                             voltage: 0.0,
                         });
+                    }
+                    Part::Adjustable { a, b, kind, slot } => {
+                        let value = self.values[slot];
+                        match kind {
+                            Adjust::Resistor => {
+                                stamp_both(&mut base, &mut base_dc, n, a, b, 1.0 / value)
+                            }
+                            // The same companions as the fixed parts below.
+                            Adjust::Capacitor => {
+                                let conductance = 2.0 * value / step;
+                                stamp_matrix(&mut base, n, a, b, conductance);
+                                self.capacitors.push(Capacitor {
+                                    a,
+                                    b,
+                                    conductance,
+                                    history: 0.0,
+                                    voltage: 0.0,
+                                });
+                            }
+                            Adjust::Inductor => {
+                                let conductance = step / (2.0 * value);
+                                stamp_matrix(&mut base, n, a, b, conductance);
+                                stamp_matrix(&mut base_dc, n, a, b, INDUCTOR_DC);
+                                self.inductors.push(Inductor {
+                                    a,
+                                    b,
+                                    conductance,
+                                    history: 0.0,
+                                    current: 0.0,
+                                });
+                            }
+                        }
                     }
                     Part::Inductor { a, b, henry } => {
                         // And at DC an inductor is a piece of wire.

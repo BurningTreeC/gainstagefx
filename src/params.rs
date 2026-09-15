@@ -56,22 +56,22 @@ pub enum Circuit {
     // topologies. Appended so the positions the shipped presets refer to do
     // not move under them.
     #[id = "ts808"]
-    #[name = "TS808"]
+    #[name = "Green 808"]
     Screamer,
     #[id = "bigmuff"]
     #[name = "Big Muff"]
     Muff,
     #[id = "markiic"]
-    #[name = "Mark IIC+"]
+    #[name = "Cali IIC+"]
     Boogie,
     #[id = "evh5150"]
-    #[name = "5150"]
+    #[name = "American 5150"]
     Peavey,
     #[id = "neve"]
-    #[name = "Neve 73P"]
+    #[name = "British 73"]
     Neve,
     #[id = "twin"]
-    #[name = "Twin Reverb"]
+    #[name = "American Twin"]
     Twin,
 }
 
@@ -86,12 +86,12 @@ impl Circuit {
             Circuit::Distortion => "Distortion",
             Circuit::Console => "Console",
             Circuit::Studio => "Studio",
-            Circuit::Screamer => "TS808",
+            Circuit::Screamer => "Green 808",
             Circuit::Muff => "Big Muff",
-            Circuit::Boogie => "Mark IIC+",
-            Circuit::Peavey => "5150",
-            Circuit::Neve => "Neve 73P",
-            Circuit::Twin => "Twin Reverb",
+            Circuit::Boogie => "Cali IIC+",
+            Circuit::Peavey => "American 5150",
+            Circuit::Neve => "British 73",
+            Circuit::Twin => "American Twin",
         }
     }
     pub const ALL: [Circuit; 13] = [
@@ -179,6 +179,291 @@ impl Circuit {
     /// indistinguishable from a fault.
     pub fn has_reverb_and_tremolo(self) -> bool {
         self.voice().has_reverb_and_tremolo()
+    }
+}
+
+/// Full output circuit, independent of the selected preamp. Append future IDs.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum PowerAmp {
+    #[id = "matched"]
+    #[name = "Matched"]
+    Matched,
+    #[id = "bypass"]
+    #[name = "Bypass"]
+    Bypass,
+    #[id = "power_mark_iic"]
+    #[name = "Cali 6L6"]
+    Cali6L6,
+    #[id = "power_twin_ab763"]
+    #[name = "American 6L6 Clean"]
+    American6L6Clean,
+    #[id = "power_5150"]
+    #[name = "American 6L6 High-Gain"]
+    American6L6HighGain,
+    #[id = "power_2203_el34"]
+    #[name = "Brit EL34"]
+    BritEL34,
+}
+
+impl PowerAmp {
+    pub const ALL: [Self; 6] = [
+        Self::Matched,
+        Self::Bypass,
+        Self::Cali6L6,
+        Self::American6L6Clean,
+        Self::American6L6HighGain,
+        Self::BritEL34,
+    ];
+
+    pub fn name(self) -> &'static str {
+        Self::variants()[self.to_index()]
+    }
+
+    pub fn voice(self) -> voice::PowerAmp {
+        match self {
+            Self::Matched => voice::PowerAmp::Matched,
+            Self::Bypass => voice::PowerAmp::Bypass,
+            Self::Cali6L6 => voice::PowerAmp::Cali6L6,
+            Self::American6L6Clean => voice::PowerAmp::American6L6Clean,
+            Self::American6L6HighGain => voice::PowerAmp::American6L6HighGain,
+            Self::BritEL34 => voice::PowerAmp::BritEL34,
+        }
+    }
+}
+
+/// The cabinet after the power stage. `Legacy` (first, and the default for every
+/// old session) is the resistor load with the old Combo/Stack filter. The rest are
+/// geometry models; see docs/models/cabinets.md. Append new ids only.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum CabModel {
+    #[id = "legacy"]
+    #[name = "Legacy"]
+    Legacy,
+    #[id = "bypass"]
+    #[name = "Bypass"]
+    Bypass,
+    #[id = "cab_marshall_1960a"]
+    #[name = "Brit 1960 4x12"]
+    Brit1960,
+    #[id = "cab_mesa_recto_standard"]
+    #[name = "Cali Oversized 4x12"]
+    CaliOversized,
+    #[id = "cab_marshall_1960b"]
+    #[name = "Brit Closed 4x12"]
+    BritClosed,
+    #[id = "cab_marshall_1960ax"]
+    #[name = "Brit Green 4x12"]
+    BritGreen,
+    #[id = "cab_marshall_1960av"]
+    #[name = "Brit V30 4x12"]
+    BritV30,
+    #[id = "cab_generic_oversized_412"]
+    #[name = "Oversized 4x12"]
+    Oversized,
+    #[id = "cab_fender_twin_open_212"]
+    #[name = "American Open 2x12"]
+    AmericanOpen212,
+    #[id = "cab_fender_deluxe_open_112"]
+    #[name = "American Open 1x12"]
+    AmericanOpen112,
+    #[id = "cab_marshall_1912"]
+    #[name = "Closed 1x12"]
+    Closed112,
+    #[id = "cab_marshall_1936"]
+    #[name = "Closed 2x12"]
+    Closed212,
+}
+
+impl CabModel {
+    pub const ALL: [Self; 12] = [
+        Self::Legacy,
+        Self::Bypass,
+        Self::Brit1960,
+        Self::CaliOversized,
+        Self::BritClosed,
+        Self::BritGreen,
+        Self::BritV30,
+        Self::Oversized,
+        Self::AmericanOpen212,
+        Self::AmericanOpen112,
+        Self::Closed112,
+        Self::Closed212,
+    ];
+
+    pub fn name(self) -> &'static str {
+        Self::variants()[self.to_index()]
+    }
+
+    pub fn voice(self) -> voice::CabinetChoice {
+        use crate::acoustics::cabinet::CabinetProfile as P;
+        match self {
+            Self::Legacy => voice::CabinetChoice::Legacy,
+            Self::Bypass => voice::CabinetChoice::Bypass,
+            Self::Brit1960 => voice::CabinetChoice::Model(&P::BRIT_1960),
+            Self::CaliOversized => voice::CabinetChoice::Model(&P::CALI_OVERSIZED),
+            Self::BritClosed => voice::CabinetChoice::Model(&P::BRIT_CLOSED),
+            Self::BritGreen => voice::CabinetChoice::Model(&P::BRIT_GREEN),
+            Self::BritV30 => voice::CabinetChoice::Model(&P::BRIT_V30),
+            Self::Oversized => voice::CabinetChoice::Model(&P::OVERSIZED),
+            Self::AmericanOpen212 => voice::CabinetChoice::Model(&P::AMERICAN_OPEN_212),
+            Self::AmericanOpen112 => voice::CabinetChoice::Model(&P::AMERICAN_OPEN_112),
+            Self::Closed112 => voice::CabinetChoice::Model(&P::CLOSED_112),
+            Self::Closed212 => voice::CabinetChoice::Model(&P::CLOSED_212),
+        }
+    }
+}
+
+/// The loudspeaker. `Matched` is the cabinet's own; `Bypass` is a resistive load and
+/// the power stage's terminal voltage. Only implemented drivers are listed.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum SpeakerModel {
+    #[id = "matched"]
+    #[name = "Matched"]
+    Matched,
+    #[id = "bypass"]
+    #[name = "Bypass"]
+    Bypass,
+    #[id = "spk_celestion_v30"]
+    #[name = "Brit V30"]
+    BritV30,
+    #[id = "spk_celestion_g12m25"]
+    #[name = "Brit Green 25"]
+    BritGreen25,
+    #[id = "spk_celestion_g12t75"]
+    #[name = "Brit T75"]
+    BritT75,
+    #[id = "spk_jensen_p12r"]
+    #[name = "American Vintage 12"]
+    AmericanVintage12,
+    #[id = "spk_jensen_p10r"]
+    #[name = "American Vintage 10"]
+    AmericanVintage10,
+    #[id = "spk_jensen_c12n"]
+    #[name = "American Ceramic"]
+    AmericanCeramic,
+    #[id = "spk_jensen_p12n"]
+    #[name = "American Alnico"]
+    AmericanAlnico,
+}
+
+impl SpeakerModel {
+    pub const ALL: [Self; 9] = [
+        Self::Matched,
+        Self::Bypass,
+        Self::BritV30,
+        Self::BritGreen25,
+        Self::BritT75,
+        Self::AmericanVintage12,
+        Self::AmericanVintage10,
+        Self::AmericanCeramic,
+        Self::AmericanAlnico,
+    ];
+
+    pub fn name(self) -> &'static str {
+        Self::variants()[self.to_index()]
+    }
+
+    pub fn voice(self) -> voice::SpeakerChoice {
+        use crate::acoustics::speaker::SpeakerProfile as P;
+        match self {
+            Self::Matched => voice::SpeakerChoice::Matched,
+            Self::Bypass => voice::SpeakerChoice::Bypass,
+            Self::BritV30 => voice::SpeakerChoice::Model(&P::BRIT_V30),
+            Self::BritGreen25 => voice::SpeakerChoice::Model(&P::BRIT_GREEN_25),
+            Self::BritT75 => voice::SpeakerChoice::Model(&P::BRIT_T75),
+            Self::AmericanVintage12 => voice::SpeakerChoice::Model(&P::AMERICAN_VINTAGE_12),
+            Self::AmericanVintage10 => voice::SpeakerChoice::Model(&P::AMERICAN_VINTAGE_10),
+            Self::AmericanCeramic => voice::SpeakerChoice::Model(&P::AMERICAN_CERAMIC),
+            Self::AmericanAlnico => voice::SpeakerChoice::Model(&P::AMERICAN_ALNICO),
+        }
+    }
+}
+
+/// A microphone. `Off` exists only for the second slot; `Bypass` is an ideal omni
+/// at the placement. See docs/models/microphones.md.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum MicModel {
+    #[id = "off"]
+    #[name = "Off"]
+    Off,
+    #[id = "ideal"]
+    #[name = "Bypass"]
+    Ideal,
+    #[id = "mic_shure_sm57"]
+    #[name = "Dynamic 57"]
+    Dynamic57,
+    #[id = "mic_sennheiser_md421"]
+    #[name = "Dynamic 421"]
+    Dynamic421,
+    #[id = "mic_sennheiser_e906"]
+    #[name = "Dynamic 906"]
+    Dynamic906,
+    #[id = "mic_sennheiser_md409"]
+    #[name = "Dynamic 409"]
+    Dynamic409,
+    #[id = "mic_royer_r121"]
+    #[name = "Ribbon 121"]
+    Ribbon121,
+    #[id = "mic_beyer_m160"]
+    #[name = "Ribbon 160"]
+    Ribbon160,
+    #[id = "mic_coles_4038"]
+    #[name = "Ribbon 38"]
+    Ribbon38,
+    #[id = "mic_neumann_u87ai"]
+    #[name = "Condenser 87"]
+    Condenser87,
+    #[id = "mic_akg_c414"]
+    #[name = "Condenser 414"]
+    Condenser414,
+    #[id = "mic_neumann_u67"]
+    #[name = "Tube Condenser 67"]
+    TubeCondenser67,
+    #[id = "mic_neumann_u47fet"]
+    #[name = "FET Condenser 47"]
+    FetCondenser47,
+}
+
+impl MicModel {
+    pub const ALL: [Self; 13] = [
+        Self::Off,
+        Self::Ideal,
+        Self::Dynamic57,
+        Self::Dynamic421,
+        Self::Dynamic906,
+        Self::Dynamic409,
+        Self::Ribbon121,
+        Self::Ribbon160,
+        Self::Ribbon38,
+        Self::Condenser87,
+        Self::Condenser414,
+        Self::TubeCondenser67,
+        Self::FetCondenser47,
+    ];
+
+    pub fn name(self) -> &'static str {
+        Self::variants()[self.to_index()]
+    }
+
+    /// The slot; `off_allowed` is false for microphone A, which falls back to Bypass.
+    pub fn voice(self, off_allowed: bool) -> crate::acoustics::stage::MicSlot {
+        use crate::acoustics::mic::MicProfile as P;
+        use crate::acoustics::stage::MicSlot;
+        match self {
+            Self::Off if off_allowed => MicSlot::Off,
+            Self::Off | Self::Ideal => MicSlot::Ideal,
+            Self::Dynamic57 => MicSlot::Profile(&P::DYNAMIC_57),
+            Self::Dynamic421 => MicSlot::Profile(&P::DYNAMIC_421),
+            Self::Dynamic906 => MicSlot::Profile(&P::DYNAMIC_906),
+            Self::Dynamic409 => MicSlot::Profile(&P::DYNAMIC_409),
+            Self::Ribbon121 => MicSlot::Profile(&P::RIBBON_121),
+            Self::Ribbon160 => MicSlot::Profile(&P::RIBBON_160),
+            Self::Ribbon38 => MicSlot::Profile(&P::RIBBON_38),
+            Self::Condenser87 => MicSlot::Profile(&P::CONDENSER_87),
+            Self::Condenser414 => MicSlot::Profile(&P::CONDENSER_414),
+            Self::TubeCondenser67 => MicSlot::Profile(&P::TUBE_CONDENSER_67),
+            Self::FetCondenser47 => MicSlot::Profile(&P::FET_CONDENSER_47),
+        }
     }
 }
 
@@ -440,6 +725,8 @@ pub struct GainStageParams {
     // --- 2 Circuit -------------------------------------------------------
     #[id = "circuit"]
     pub circuit: EnumParam<Circuit>,
+    #[id = "power_amp"]
+    pub power_amp: EnumParam<PowerAmp>,
     #[id = "diode"]
     pub diode: EnumParam<Diode>,
     #[id = "amplifier"]
@@ -535,6 +822,32 @@ pub struct GainStageParams {
     // --- 5 Cabinet -------------------------------------------------------
     #[id = "cabinet"]
     pub cabinet: EnumParam<Cabinet>,
+    #[id = "cab_model"]
+    pub cab_model: EnumParam<CabModel>,
+    #[id = "speaker"]
+    pub speaker: EnumParam<SpeakerModel>,
+    #[id = "mic_a"]
+    pub mic_a: EnumParam<MicModel>,
+    #[id = "mic_a_position"]
+    pub mic_a_position: FloatParam,
+    #[id = "mic_a_distance"]
+    pub mic_a_distance: FloatParam,
+    #[id = "mic_a_angle"]
+    pub mic_a_angle: FloatParam,
+    #[id = "mic_b"]
+    pub mic_b: EnumParam<MicModel>,
+    #[id = "mic_b_position"]
+    pub mic_b_position: FloatParam,
+    #[id = "mic_b_distance"]
+    pub mic_b_distance: FloatParam,
+    #[id = "mic_b_angle"]
+    pub mic_b_angle: FloatParam,
+    #[id = "mic_blend"]
+    pub mic_blend: FloatParam,
+    #[id = "mic_b_invert"]
+    pub mic_b_invert: BoolParam,
+    #[id = "mic_align"]
+    pub mic_align: BoolParam,
 
     // --- 6 Output --------------------------------------------------------
     /// How much of the processed signal is heard against the dry one.
@@ -548,6 +861,24 @@ pub struct GainStageParams {
     pub oversampling: EnumParam<Oversampling>,
 }
 
+impl GainStageParams {
+    /// Whether the speaker, cabinet and microphone controls are in use.
+    pub fn physical_cabinet(&self) -> bool {
+        self.cab_model.value() != CabModel::Legacy && self.speaker.value() != SpeakerModel::Bypass
+    }
+
+    pub fn master_enabled(&self) -> bool {
+        match self.power_amp.value() {
+            PowerAmp::Matched => self.circuit.value().voice().level_control().is_some(),
+            PowerAmp::Bypass => matches!(
+                self.circuit.value().voice().level_control(),
+                Some(voice::Level::Circuit(_))
+            ),
+            _ => true,
+        }
+    }
+}
+
 /// A control that runs 0 to 1 and reads as a percentage, which is what every
 /// knob on a piece of hardware like this actually is.
 fn position(name: &str, default: f32) -> FloatParam {
@@ -558,6 +889,32 @@ fn position(name: &str, default: f32) -> FloatParam {
         .with_string_to_value(Arc::new(|s| {
             s.trim().parse::<f32>().ok().map(|v| v / 100.0)
         }))
+}
+
+/// Microphone distance from the grille cloth, in metres, skewed so the close
+/// range where most of the change happens gets most of the travel.
+fn distance(name: &str, default: f32) -> FloatParam {
+    FloatParam::new(
+        name,
+        default,
+        FloatRange::Skewed {
+            min: 0.01,
+            max: 1.0,
+            factor: FloatRange::skew_factor(-2.0),
+        },
+    )
+    .with_smoother(SmoothingStyle::Linear(20.0))
+    .with_unit(" cm")
+    .with_value_to_string(Arc::new(|v| format!("{:.1}", v * 100.0)))
+    .with_string_to_value(Arc::new(|s| s.trim().parse::<f32>().ok().map(|v| v / 100.0)))
+}
+
+/// Microphone angle off the cone's axis, degrees.
+fn angle(name: &str) -> FloatParam {
+    FloatParam::new(name, 0.0, FloatRange::Linear { min: 0.0, max: 90.0 })
+        .with_smoother(SmoothingStyle::Linear(20.0))
+        .with_unit(" deg")
+        .with_step_size(0.5)
 }
 
 fn decibels(name: &str, span: f32) -> FloatParam {
@@ -583,6 +940,7 @@ impl Default for GainStageParams {
             input_trim: decibels("Input", 24.0),
 
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
+            power_amp: EnumParam::new("Power Amp", PowerAmp::Matched),
             diode: EnumParam::new("Diode", Diode::Silicon),
             amplifier: EnumParam::new("Amplifier", Amplifier::Jfet),
             iron: EnumParam::new("Iron", Iron::Off),
@@ -613,6 +971,21 @@ impl Default for GainStageParams {
             intensity: position("Intensity", 0.0),
 
             cabinet: EnumParam::new("Cabinet", Cabinet::Off),
+            // Legacy by default: an instance, like an old session, starts on the
+            // resistor-loaded path it always had. See `filter_state`.
+            cab_model: EnumParam::new("Cabinet Model", CabModel::Legacy),
+            speaker: EnumParam::new("Speaker", SpeakerModel::Matched),
+            mic_a: EnumParam::new("Mic A", MicModel::Dynamic57),
+            mic_a_position: position("Mic A Position", 0.3),
+            mic_a_distance: distance("Mic A Distance", 0.025),
+            mic_a_angle: angle("Mic A Angle"),
+            mic_b: EnumParam::new("Mic B", MicModel::Off),
+            mic_b_position: position("Mic B Position", 0.5),
+            mic_b_distance: distance("Mic B Distance", 0.05),
+            mic_b_angle: angle("Mic B Angle"),
+            mic_blend: position("Mic Blend", 0.5),
+            mic_b_invert: BoolParam::new("Mic B Polarity Invert", false),
+            mic_align: BoolParam::new("Mic Phase Align", false),
 
             mix: position("Mix", 1.0),
             output_trim: decibels("Output", 24.0),

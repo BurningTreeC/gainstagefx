@@ -22,6 +22,10 @@
 //! away from it. So the numbers are measured, and the audio thread only ever
 //! interpolates five of them.
 
+use crate::acoustics::cabinet::CabinetProfile;
+use crate::acoustics::mic::{MicPlacement, MicProfile};
+use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
+use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     bigmuff, cabinet, clipper, evh5150, iron, markiic, neve, power, preamp, studio, tone, ts808,
     twin,
@@ -453,6 +457,185 @@ pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
         at += n;
     }
     (Gain::Clean, Diode::Silicon, Amplifier::Valve)
+}
+
+/// Physical power circuit identity, independent of the preamp catalogue.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PowerModel {
+    Cali6L6,
+    American6L6Clean,
+    American6L6HighGain,
+    BritEL34,
+}
+
+impl PowerModel {
+    pub const ALL: [PowerModel; 4] = [
+        PowerModel::Cali6L6,
+        PowerModel::American6L6Clean,
+        PowerModel::American6L6HighGain,
+        PowerModel::BritEL34,
+    ];
+
+    pub fn spec(self) -> &'static power::PowerSpec {
+        match self {
+            Self::Cali6L6 => &power::PowerSpec::MARKIIC,
+            Self::American6L6Clean => &power::PowerSpec::TWIN,
+            Self::American6L6HighGain => &power::PowerSpec::EVH5150,
+            Self::BritEL34 => &power::PowerSpec::BRIT_EL34,
+        }
+    }
+
+    fn slot(self) -> usize {
+        match self {
+            Self::Cali6L6 => 0,
+            Self::American6L6Clean => 1,
+            Self::American6L6HighGain => 2,
+            Self::BritEL34 => 3,
+        }
+    }
+
+    fn index(self) -> usize {
+        match self {
+            Self::Cali6L6 => voice_index(Gain::Boogie, Diode::Silicon, Amplifier::Valve),
+            Self::American6L6Clean => voice_index(Gain::Twin, Diode::Silicon, Amplifier::Valve),
+            Self::American6L6HighGain => {
+                voice_index(Gain::Peavey, Diode::Silicon, Amplifier::Valve)
+            }
+            Self::BritEL34 => VOICES,
+        }
+    }
+}
+
+/// Independent selection of complete output circuits; see params for stable IDs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PowerAmp {
+    #[default]
+    Matched,
+    Bypass,
+    Cali6L6,
+    American6L6Clean,
+    American6L6HighGain,
+    BritEL34,
+}
+
+impl PowerAmp {
+    pub const ALL: [Self; 6] = [
+        Self::Matched,
+        Self::Bypass,
+        Self::Cali6L6,
+        Self::American6L6Clean,
+        Self::American6L6HighGain,
+        Self::BritEL34,
+    ];
+
+    pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
+        match self {
+            Self::Matched => match preamp {
+                Gain::Boogie => Some(PowerModel::Cali6L6),
+                Gain::Twin => Some(PowerModel::American6L6Clean),
+                Gain::Peavey => Some(PowerModel::American6L6HighGain),
+                _ => None,
+            },
+            Self::Bypass => None,
+            Self::Cali6L6 => Some(PowerModel::Cali6L6),
+            Self::American6L6Clean => Some(PowerModel::American6L6Clean),
+            Self::American6L6HighGain => Some(PowerModel::American6L6HighGain),
+            Self::BritEL34 => Some(PowerModel::BritEL34),
+        }
+    }
+}
+
+/// Which cabinet is after the power stage. `Legacy` is the old resistive load and
+/// baked Combo/Stack filter, exactly as before any of this existed; every old
+/// session resolves to it.
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum CabinetChoice {
+    #[default]
+    Legacy,
+    /// A driver on an infinite baffle: speaker and microphone, no box.
+    Bypass,
+    Model(&'static CabinetProfile),
+}
+
+/// Which driver. `Matched` is the cabinet's own; `Bypass` is a resistor and the
+/// terminal voltage (a DI of the power stage).
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub enum SpeakerChoice {
+    #[default]
+    Matched,
+    Bypass,
+    Model(&'static SpeakerProfile),
+}
+
+/// Everything after the power stage, as plain values.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AcousticSettings {
+    pub cabinet: CabinetChoice,
+    pub speaker: SpeakerChoice,
+    /// `Ideal` is an ideal omni at the placement ("Bypass"); it can never be `Off`.
+    pub mic_a: MicSlot,
+    pub mic_b: MicSlot,
+    pub place_a: MicPlacement,
+    pub place_b: MicPlacement,
+    pub blend: f64,
+    pub invert_b: bool,
+    pub align: bool,
+}
+
+impl Default for AcousticSettings {
+    fn default() -> Self {
+        Self {
+            cabinet: CabinetChoice::Legacy,
+            speaker: SpeakerChoice::Matched,
+            mic_a: MicSlot::Profile(&MicProfile::DYNAMIC_57),
+            mic_b: MicSlot::Off,
+            place_a: MicPlacement::default(),
+            place_b: MicPlacement::default(),
+            blend: 0.5,
+            invert_b: false,
+            align: false,
+        }
+    }
+}
+
+impl AcousticSettings {
+    /// The driver actually radiating, if the physical path is in use.
+    pub fn resolved_speaker(&self) -> Option<&'static SpeakerProfile> {
+        let cabinet = match self.cabinet {
+            CabinetChoice::Legacy => return None,
+            CabinetChoice::Bypass => None,
+            CabinetChoice::Model(cab) => Some(cab),
+        };
+        match self.speaker {
+            SpeakerChoice::Bypass => None,
+            SpeakerChoice::Model(profile) => Some(profile),
+            SpeakerChoice::Matched => Some(
+                cabinet
+                    .map(|cab| cab.default_speaker)
+                    .unwrap_or(&SpeakerProfile::BRIT_V30),
+            ),
+        }
+    }
+
+    pub fn resolved_cabinet(&self) -> Option<&'static CabinetProfile> {
+        match self.cabinet {
+            CabinetChoice::Model(cab) => Some(cab),
+            _ => None,
+        }
+    }
+
+    fn mounting(&self) -> Mounting {
+        self.resolved_cabinet()
+            .map(CabinetProfile::mounting)
+            .unwrap_or(Mounting::BAFFLE)
+    }
+}
+
+/// A speaker-loaded simulation and where to read its cone.
+struct Loaded {
+    sim: Simulation,
+    slots: LoadSlots,
+    motional: usize,
 }
 
 /// The block behind a voice's gain circuit, where it has one.
@@ -948,6 +1131,7 @@ impl SolverHealth {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SolverBreakdown {
+    pub line: SolverHealth,
     pub gain: SolverHealth,
     pub power: SolverHealth,
     pub iron: SolverHealth,
@@ -957,6 +1141,7 @@ pub struct SolverBreakdown {
 impl SolverBreakdown {
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
+            line: self.line.saturating_delta(before.line),
             gain: self.gain.saturating_delta(before.gain),
             power: self.power.saturating_delta(before.power),
             iron: self.iron.saturating_delta(before.iron),
@@ -975,6 +1160,9 @@ impl SolverBreakdown {
 /// plugin at all: the knobs simply did nothing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settings {
+    pub power_amp: PowerAmp,
+    /// Speaker, cabinet and microphones. Defaults to the legacy path.
+    pub acoustic: AcousticSettings,
     pub gain: Gain,
     pub diode: Diode,
     pub amplifier: Amplifier,
@@ -1002,6 +1190,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            power_amp: PowerAmp::Matched,
+            acoustic: AcousticSettings::default(),
             gain: Gain::Crunch,
             diode: Diode::Silicon,
             amplifier: Amplifier::Jfet,
@@ -1031,11 +1221,31 @@ impl Default for Settings {
 /// holding all of them costs less than the machinery to avoid it would.
 pub struct Chain {
     gains: Vec<Simulation>,
-    /// The power amplifier behind each voice that has one, indexed alongside
-    /// `gains`. Four of them are `Some` -- the three valve guitar amplifiers
-    /// and the 73P's own output block -- and the rest are pedals and
-    /// topologies, which have nothing behind them.
+    /// Original guitar power circuits retain their gain-catalogue indices;
+    /// independently added power circuits follow the gain catalogue.
     powers: Vec<Option<Simulation>>,
+    /// Zero is an empty catalogue slot, used for complete power bypass.
+    power: usize,
+    power_selection: PowerAmp,
+    /// The 73P output driver belongs to the preamp, never to guitar power bypass.
+    /// Allocate at construction: test trace storage makes Simulation large and
+    /// embedding another one would overflow normal test-thread stacks.
+    line: Box<Simulation>,
+    /// Each output circuit again, driving a loudspeaker instead of a resistor,
+    /// indexed by `PowerModel::slot`. See `power::build_with_speaker`.
+    loaded: Vec<Loaded>,
+    /// A loudspeaker driven straight from the preamplifier, for chains with no
+    /// power stage.
+    driven: Box<Loaded>,
+    /// The cabinet and microphones. Boxed: a delay line lives inline in it.
+    acoustic: Box<AcousticStage>,
+    acoustic_settings: AcousticSettings,
+    /// The physical path is in use: the load is a speaker and the output is the
+    /// cone's radiation through `acoustic`, not the terminal voltage.
+    radiating: bool,
+    /// `Re Mms / Bl^2`, and the motional voltage one sample ago.
+    pressure_scale: f64,
+    motional_previous: f64,
     /// The three output transformers. Nonlinear, so unlike the tone stack and
     /// the cabinet these cannot be normalised by asking the AC solver: their
     /// trim is measured and baked with the voices.
@@ -1121,6 +1331,8 @@ impl Chain {
         debug_assert_eq!(self.rate, source.rate);
         debug_assert_eq!(self.gain, source.gain);
         debug_assert_eq!(self.voice, source.voice);
+        debug_assert_eq!(self.power, source.power);
+        debug_assert_eq!(self.power_selection, source.power_selection);
         debug_assert_eq!(self.iron, source.iron);
         debug_assert_eq!(self.tone, source.tone);
         debug_assert_eq!(self.cabinet, source.cabinet);
@@ -1145,11 +1357,20 @@ impl Chain {
         self.pad.copy_runtime_state_from(&source.pad);
         self.dry.copy_runtime_state_from(&source.dry);
         self.gains[self.gain].copy_runtime_state_from(&source.gains[source.gain]);
-        if let (Some(dst), Some(src)) = (
-            self.powers[self.gain].as_mut(),
-            source.powers[source.gain].as_ref(),
-        ) {
+        debug_assert_eq!(self.radiating, source.radiating);
+        debug_assert_eq!(self.acoustic_settings, source.acoustic_settings);
+        if let (Some(dst), Some(src)) = (self.active_power_mut(), source.active_power()) {
             dst.copy_runtime_state_from(src);
+        }
+        if self.radiating {
+            if self.resolved_power_amp().is_none() {
+                self.driven.sim.copy_runtime_state_from(&source.driven.sim);
+            }
+            self.acoustic.copy_runtime_state_from(&source.acoustic);
+            self.motional_previous = source.motional_previous;
+        }
+        if self.voice == Gain::Neve {
+            self.line.copy_runtime_state_from(&source.line);
         }
         if let Some(i) = self.iron {
             self.irons[i].copy_runtime_state_from(&source.irons[i]);
@@ -1188,57 +1409,114 @@ impl Chain {
             }
             (sim, trim)
         };
-        let (gains, powers) = std::thread::scope(|scope| {
-            let gains = scope.spawn(|| {
-                (0..VOICES)
-                    .map(|i| {
-                        let (gain, diode, amplifier) = voice_at(i);
-                        Simulation::new(
-                            build_voice(gain, diode, amplifier).expect("catalogue builds"),
-                            rate,
-                        )
-                    })
-                    .collect()
-            });
-            let powers = scope.spawn(|| {
-                (0..VOICES)
-                    .map(|i| {
-                        let gain = voice_at(i).0;
-                        build_power(gain).map(|built| {
-                            let mut sim = Simulation::new(built.expect("catalogue builds"), rate);
-                            // The Twin power stage is the one measured circuit where the
-                            // shortest line-search trials can become a numerical spiral. The
-                            // 1/16 and 1/32 trials barely move an ordinary solve, then the
-                            // following Newton pass searches again. Four trials stop at 1/8 and
-                            // were reference-checked at the same -190..-205 dB error floor,
-                            // while materially reducing realtime misses.  Do not apply this
-                            // to the 5150: its solver genuinely needs the shorter steps and
-                            // the same cap was measured at about -45.7 dB from reference.
-                            if gain == Gain::Twin {
-                                sim.set_backtracks(4);
-                            }
-                            // Source continuation is deliberately Twin-only. The 5150
-                            // already settles every measured sample on the proven normal
-                            // path, and the tight rescue fired only once in 384k samples
-                            // without rescuing anything. Keeping it disabled there restores
-                            // the exact pre-continuation hot loop. The Twin, by contrast,
-                            // measurably benefits from one late midpoint steering step.
-                            if gain == Gain::Twin {
-                                sim.set_late_continuation(true);
-                            }
-                            sim
+        let (gains, mut powers): (Vec<Simulation>, Vec<Option<Simulation>>) =
+            std::thread::scope(|scope| {
+                let gains = scope.spawn(|| {
+                    (0..VOICES)
+                        .map(|i| {
+                            let (gain, diode, amplifier) = voice_at(i);
+                            Simulation::new(
+                                build_voice(gain, diode, amplifier).expect("catalogue builds"),
+                                rate,
+                            )
                         })
-                    })
-                    .collect()
+                        .collect()
+                });
+                let powers = scope.spawn(|| {
+                    (0..VOICES)
+                        .map(|i| {
+                            let gain = voice_at(i).0;
+                            // Studio line output is kept with its preamp independently.
+                            gain.power_stage()
+                                .map(|spec| power::build(spec, 10_000.0))
+                                .map(|built| {
+                                    let mut sim =
+                                        Simulation::new(built.expect("catalogue builds"), rate);
+                                    // The Twin power stage is the one measured circuit where the
+                                    // shortest line-search trials can become a numerical spiral. The
+                                    // 1/16 and 1/32 trials barely move an ordinary solve, then the
+                                    // following Newton pass searches again. Four trials stop at 1/8 and
+                                    // were reference-checked at the same -190..-205 dB error floor,
+                                    // while materially reducing realtime misses.  Do not apply this
+                                    // to the 5150: its solver genuinely needs the shorter steps and
+                                    // the same cap was measured at about -45.7 dB from reference.
+                                    if gain == Gain::Twin {
+                                        sim.set_backtracks(4);
+                                    }
+                                    // Source continuation is deliberately Twin-only. The 5150
+                                    // already settles every measured sample on the proven normal
+                                    // path, and the tight rescue fired only once in 384k samples
+                                    // without rescuing anything. Keeping it disabled there restores
+                                    // the exact pre-continuation hot loop. The Twin, by contrast,
+                                    // measurably benefits from one late midpoint steering step.
+                                    if gain == Gain::Twin {
+                                        sim.set_late_continuation(true);
+                                    }
+                                    sim
+                                })
+                        })
+                        .collect()
+                });
+                (
+                    gains.join().expect("gain catalogue builds"),
+                    powers.join().expect("power catalogue builds"),
+                )
             });
-            (
-                gains.join().expect("gain catalogue builds"),
-                powers.join().expect("power catalogue builds"),
-            )
-        });
+        powers.push(Some(Simulation::new(
+            power::build(&power::PowerSpec::BRIT_EL34, 10_000.0).expect("Brit EL34 builds"),
+            rate,
+        )));
+        let initial = LoadValues::new(&SpeakerProfile::BRIT_V30, &Mounting::BAFFLE, 1.0);
+        let loaded = PowerModel::ALL
+            .iter()
+            .map(|model| {
+                let spec = model.spec();
+                let values = LoadValues::new(
+                    &SpeakerProfile::BRIT_V30,
+                    &Mounting::BAFFLE,
+                    power::speaker_scale(spec),
+                );
+                let (circuit, slots) = power::build_with_speaker(spec, 10_000.0, &values)
+                    .expect("speaker-loaded power builds");
+                let motional = circuit
+                    .unknown_named(speaker::MOTIONAL)
+                    .expect("the driver has a motional node");
+                let mut sim = Simulation::new(circuit, rate);
+                if *model == PowerModel::American6L6Clean {
+                    // The same measured Twin solver settings as the resistive stage.
+                    sim.set_backtracks(4);
+                    sim.set_late_continuation(true);
+                }
+                Loaded {
+                    sim,
+                    slots,
+                    motional,
+                }
+            })
+            .collect();
+        let (driven_circuit, driven_slots) =
+            speaker::voltage_driven(&initial).expect("voltage-driven speaker builds");
+        let driven_motional = driven_circuit.output;
         let mut chain = Self {
             gains,
             powers,
+            loaded,
+            driven: Box::new(Loaded {
+                sim: Simulation::new(driven_circuit, rate),
+                slots: driven_slots,
+                motional: driven_motional,
+            }),
+            acoustic: Box::new(AcousticStage::new(rate)),
+            acoustic_settings: AcousticSettings::default(),
+            radiating: false,
+            pressure_scale: initial.pressure_scale(),
+            motional_previous: 0.0,
+            power: 0,
+            power_selection: PowerAmp::Matched,
+            line: Box::new(Simulation::new(
+                neve::output(LOAD, 10_000.0).expect("73P output builds"),
+                rate,
+            )),
             irons: [Iron::Nickel, Iron::Steel, Iron::Amorphous]
                 .into_iter()
                 .map(|i| Simulation::new(build_iron(i).expect("catalogue builds"), rate))
@@ -1320,8 +1598,9 @@ impl Chain {
             // leave all of it alone: switching back to an amplifier handed a
             // freshly settled preamp to a power stage still holding whatever
             // charge and flux it had when it was last switched away from.
-            if let Some(sim) = self.powers[index].as_mut() {
-                sim.reset_deferred();
+            self.update_power(true);
+            if gain == Gain::Neve {
+                self.line.reset_deferred();
             }
             // The graphic equaliser, unconditionally. See the doc comment.
             self.graphic.reset_deferred();
@@ -1348,6 +1627,111 @@ impl Chain {
             // is inaudible.
             self.fade_remaining = FADE_LEN;
         }
+    }
+
+    fn update_power(&mut self, reset: bool) {
+        let next = self
+            .power_selection
+            .resolved(self.voice)
+            .map(PowerModel::index)
+            .unwrap_or(0);
+        if next != self.power || reset {
+            self.power = next;
+            if let Some(sim) = self.powers[next].as_mut() {
+                sim.reset_deferred();
+            }
+            match self.power_selection.resolved(self.voice) {
+                Some(model) => self.loaded[model.slot()].sim.reset_deferred(),
+                None => self.driven.sim.reset_deferred(),
+            }
+            self.motional_previous = 0.0;
+            self.fade_remaining = FADE_LEN;
+        }
+    }
+
+    /// The power simulation actually in the path: the speaker-loaded one when the
+    /// physical path is in use, the resistor-loaded one otherwise.
+    fn active_power(&self) -> Option<&Simulation> {
+        if self.radiating {
+            self.resolved_power_amp()
+                .map(|model| &self.loaded[model.slot()].sim)
+        } else {
+            self.powers[self.power].as_ref()
+        }
+    }
+
+    fn active_power_mut(&mut self) -> Option<&mut Simulation> {
+        if self.radiating {
+            match self.power_selection.resolved(self.voice) {
+                Some(model) => Some(&mut self.loaded[model.slot()].sim),
+                None => None,
+            }
+        } else {
+            self.powers[self.power].as_mut()
+        }
+    }
+
+    /// The speaker driven with no power stage, when that is what is in the path.
+    fn active_driven(&self) -> bool {
+        self.radiating && self.resolved_power_amp().is_none()
+    }
+
+    /// Speaker, cabinet and microphones. A change of driver, box or path resets the
+    /// power stage's load and is covered by the switch fade; placement is ramped.
+    pub fn set_acoustic(&mut self, a: &AcousticSettings) {
+        let speaker = a.resolved_speaker();
+        let previous = self.acoustic_settings;
+        let load_changed = speaker.is_some() != self.radiating
+            || previous.cabinet != a.cabinet
+            || previous.speaker != a.speaker;
+        if load_changed {
+            self.radiating = speaker.is_some();
+            if let Some(profile) = speaker {
+                let mounting = a.mounting();
+                for (model, loaded) in PowerModel::ALL.iter().zip(self.loaded.iter_mut()) {
+                    let values = LoadValues::new(profile, &mounting, power::speaker_scale(model.spec()));
+                    loaded.slots.apply(&mut loaded.sim, &values);
+                    loaded.sim.reset_deferred();
+                }
+                let values = LoadValues::new(profile, &mounting, 1.0);
+                self.driven.slots.apply(&mut self.driven.sim, &values);
+                self.driven.sim.reset_deferred();
+                self.pressure_scale = values.pressure_scale();
+            }
+            if let Some(sim) = self.powers[self.power].as_mut() {
+                sim.reset_deferred();
+            }
+            self.motional_previous = 0.0;
+            self.fade_remaining = FADE_LEN;
+        }
+        if let Some(profile) = speaker {
+            let before = (previous.mic_a, previous.mic_b);
+            self.acoustic
+                .configure(a.resolved_cabinet(), profile, a.mic_a, a.mic_b);
+            if load_changed || before != (a.mic_a, a.mic_b) {
+                self.fade_remaining = FADE_LEN;
+            }
+            self.acoustic
+                .set_placement(a.place_a, a.place_b, a.blend, a.invert_b, a.align);
+        }
+        self.acoustic_settings = *a;
+        // The master control may now live in a different simulation.
+        self.set_master(self.master);
+    }
+
+    pub fn is_radiating(&self) -> bool {
+        self.radiating
+    }
+
+    pub fn set_power_amp(&mut self, selection: PowerAmp) {
+        if selection != self.power_selection {
+            self.power_selection = selection;
+            self.update_power(false);
+        }
+    }
+
+    pub fn resolved_power_amp(&self) -> Option<PowerModel> {
+        self.power_selection.resolved(self.voice)
     }
 
     /// Which output transformer, if any.
@@ -1465,22 +1849,33 @@ impl Chain {
     pub fn set_master(&mut self, knob: f64) {
         self.master = knob;
         let voice = voice_at(self.gain).0;
-        let Some(level) = voice.level_control() else {
-            // No control on the drawing, so the knob reaches nothing at all --
-            // not even the lift. The panel greys it for the same reason.
+        let level = if self.power_selection != PowerAmp::Matched && self.power != 0 {
+            // In a custom chain the selected output stage owns the master.
+            Some(Level::Power(power::MASTER))
+        } else {
+            voice.level_control()
+        };
+        let Some(level) = level else {
+            self.master_lift = 1.0;
+            return;
+        };
+        let resolved = self.power_selection.resolved(self.voice);
+        let (sim, which) = match level {
+            Level::Circuit(which) => (Some(&mut self.gains[self.gain]), which),
+            Level::Power(which) => (self.powers[self.power].as_mut(), which),
+        };
+        let Some(sim) = sim else {
             self.master_lift = 1.0;
             return;
         };
         self.master_lift = Self::master_lift(knob);
-        let (sim, which) = match level {
-            Level::Circuit(which) => (Some(&mut self.gains[self.gain]), which),
-            Level::Power(which) => (self.powers[self.gain].as_mut(), which),
-        };
-        let Some(sim) = sim else { return };
-        // The position the circuit itself rests this control at is the one the
-        // calibration was measured at, so it is the middle of the knob.
         let rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
-        sim.set_control(which, Self::master_position(rest, knob));
+        let position = Self::master_position(rest, knob);
+        sim.set_control(which, position);
+        // The speaker-loaded twin of that power stage carries the same control.
+        if let (Level::Power(which), Some(model)) = (level, resolved) {
+            self.loaded[model.slot()].sim.set_control(which, position);
+        }
     }
 
     pub fn set_drive(&mut self, drive: f64) {
@@ -1564,6 +1959,9 @@ impl Chain {
             .iter_mut()
             .chain(self.powers.iter_mut().flatten())
             .chain(self.irons.iter_mut())
+            .chain(std::iter::once(self.line.as_mut()))
+            .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
+            .chain(std::iter::once(&mut self.driven.sim))
         {
             sim.set_rate(inner);
         }
@@ -1640,6 +2038,7 @@ impl Chain {
         self.tail.set_rate(rate);
         self.tremolo.set_rate(rate);
         self.tank = Tank::accutronics(rate);
+        self.acoustic.set_rate(rate);
     }
 
     /// The factor actually used by the nonlinear gain path. Modelled circuits
@@ -1701,11 +2100,13 @@ impl Chain {
         }
 
         let gain = health(&self.gains[self.gain]);
-        let power = self.powers[self.gain]
-            .as_ref()
-            .map(health)
-            .unwrap_or_default();
-        let iron = self.iron
+        let power = if self.active_driven() {
+            health(&self.driven.sim)
+        } else {
+            self.active_power().map(health).unwrap_or_default()
+        };
+        let iron = self
+            .iron
             .map(|index| health(&self.irons[index]))
             .unwrap_or_default();
         let reverb_return = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
@@ -1715,6 +2116,11 @@ impl Chain {
         };
 
         SolverBreakdown {
+            line: if self.voice == Gain::Neve {
+                health(&self.line)
+            } else {
+                SolverHealth::default()
+            },
             gain,
             power,
             iron,
@@ -1724,24 +2130,21 @@ impl Chain {
 
     #[cfg(test)]
     pub fn power_solver_trace(&self) -> &[crate::dsp::time::SolverTrace] {
-        self.powers[self.gain]
-            .as_ref()
+        self.active_power()
             .map(Simulation::solver_trace)
             .unwrap_or(&[])
     }
 
     #[cfg(test)]
     pub fn unsettled_power_solver_trace(&self) -> &[crate::dsp::time::SolverTrace] {
-        self.powers[self.gain]
-            .as_ref()
+        self.active_power()
             .map(Simulation::unsettled_solver_trace)
             .unwrap_or(&[])
     }
 
     #[cfg(test)]
     pub fn power_solver_unknown_name(&self, at: usize) -> Option<&str> {
-        self.powers[self.gain]
-            .as_ref()
+        self.active_power()
             .map(|simulation| simulation.solver_unknown_name(at))
     }
 
@@ -1753,7 +2156,9 @@ impl Chain {
             None
         };
         let sims = std::iter::once(&self.gains[self.gain])
-            .chain(self.powers[self.gain].as_ref())
+            .chain(self.active_power())
+            .chain(self.active_driven().then_some(&self.driven.sim))
+            .chain((self.voice == Gain::Neve).then_some(self.line.as_ref()))
             .chain(self.iron.map(|i| &self.irons[i]))
             .chain(reverb);
         for sim in sims {
@@ -1779,7 +2184,7 @@ impl Chain {
 
     #[cfg(test)]
     pub(crate) fn test_power(&self) -> Option<&Simulation> {
-        self.powers[self.gain].as_ref()
+        self.active_power()
     }
 
     /// Puts a whole panel's worth of settings onto the chain.
@@ -1793,6 +2198,8 @@ impl Chain {
         // which circuit is selected, and before `set_drive`, because both
         // touch the same simulation and the order they dirty it in should not
         // matter but reading in signal order is how this function is checked.
+        self.set_power_amp(s.power_amp);
+        self.set_acoustic(&s.acoustic);
         self.set_master(s.master);
         self.set_graphic(s.graphic);
         self.set_iron(s.iron);
@@ -1843,7 +2250,25 @@ impl Chain {
         let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
         let mut iron = self.iron.map(|i| &mut self.irons[i]);
         let out_of = self.out_of;
-        let mut power = self.powers[self.gain].as_mut();
+        // The physical path swaps the resistor-loaded power stage for its
+        // speaker-loaded twin (or a voltage-driven speaker when there is no power
+        // stage) and hands on the cone's radiation instead of the terminal voltage.
+        let radiating = self.radiating;
+        let pressure_scale = self.pressure_scale;
+        let inner_rate = self.rate * self.over.factor() as f64;
+        let motional_previous = &mut self.motional_previous;
+        let (mut power, mut driven, motional) = if radiating {
+            match self.power_selection.resolved(self.voice) {
+                Some(model) => {
+                    let loaded = &mut self.loaded[model.slot()];
+                    (Some(&mut loaded.sim), None, loaded.motional)
+                }
+                None => (None, Some(&mut self.driven.sim), self.driven.motional),
+            }
+        } else {
+            (self.powers[self.power].as_mut(), None, 0)
+        };
+        let mut line = (self.voice == Gain::Neve).then_some(self.line.as_mut());
         let graphic = self.voice.has_graphic();
         let self_graphic = &mut self.graphic;
         // The Twin's reverb and tremolo. Neither is a netlist part and both
@@ -1867,8 +2292,7 @@ impl Chain {
         // the inverter's grid leak behind. `Tremolo::attenuation` is that
         // divider rather than a depth.
         let throb = if twin && self.intensity > 0.0 {
-            self.tremolo
-                .attenuation(self.speed, self.intensity)
+            self.tremolo.attenuation(self.speed, self.intensity)
         } else {
             1.0
         };
@@ -1902,6 +2326,33 @@ impl Chain {
                 // The network and the driver that makes up its loss. See
                 // `markiic::DRIVER_GAIN_DB`.
                 amplified = self_graphic.process(amplified) * GRAPHIC_MAKE_UP;
+            }
+            if let Some(ref mut sim) = line {
+                amplified = sim.process(amplified);
+            }
+            if radiating {
+                // A transformer after a loudspeaker has no meaning, so on the
+                // physical path the Iron control sits where an interstage
+                // transformer would: in front of the output stage. Level neutral,
+                // exactly as below.
+                if let Some(ref mut sim) = iron {
+                    let scale = iron_reference * IRON_VOLTS;
+                    amplified = sim.process(amplified * scale) * iron_trim / scale;
+                }
+                let cone = match (power.as_mut(), driven.as_mut()) {
+                    (Some(sim), _) => {
+                        sim.process(amplified);
+                        sim.voltage_at(motional)
+                    }
+                    (None, Some(sim)) => sim.process(amplified),
+                    (None, None) => 0.0,
+                };
+                // On-axis pressure is proportional to cone acceleration, and
+                // `Re Mms / Bl^2 dV(mot)/dt` is that pressure normalised to one
+                // volt at the terminals in the mass-controlled band.
+                let pressure = pressure_scale * (cone - *motional_previous) * inner_rate;
+                *motional_previous = cone;
+                return pressure * out_of;
             }
             if let Some(ref mut sim) = power {
                 amplified = sim.process(amplified);
@@ -1947,9 +2398,13 @@ impl Chain {
             let (sim, trim) = &mut self.tones[i];
             y = sim.process(y) * *trim;
         }
-        if let Some(i) = self.cabinet {
-            let (sim, trim) = &mut self.cabinets[i];
-            y = sim.process(y) * *trim;
+        if self.radiating {
+            y = self.acoustic.process(y);
+        } else if matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy) {
+            if let Some(i) = self.cabinet {
+                let (sim, trim) = &mut self.cabinets[i];
+                y = sim.process(y) * *trim;
+            }
         }
         // Crossfade from the old circuit's last output to the new one so that
         // a capacitor-reset discontinuity is inaudible.
@@ -2004,7 +2459,10 @@ impl Chain {
             .iter_mut()
             .chain(self.powers.iter_mut().flatten())
             .chain(self.irons.iter_mut())
+            .chain(std::iter::once(self.line.as_mut()))
             .chain(std::iter::once(&mut self.tail))
+            .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
+            .chain(std::iter::once(&mut self.driven.sim))
         {
             sim.set_pass_ceiling(passes);
         }
@@ -2017,7 +2475,10 @@ impl Chain {
             .iter()
             .chain(self.powers.iter().flatten())
             .chain(self.irons.iter())
+            .chain(std::iter::once(self.line.as_ref()))
             .chain(std::iter::once(&self.tail))
+            .chain(self.loaded.iter().map(|l| &l.sim))
+            .chain(std::iter::once(&self.driven.sim))
             .map(|s| s.pinched())
             .sum()
     }
@@ -2033,9 +2494,9 @@ impl Chain {
             || self
                 .iron
                 .is_some_and(|i| self.irons[i].needs_operating_point())
-            || self.powers[self.gain]
-                .as_ref()
-                .is_some_and(|s| s.needs_operating_point())
+            || (self.voice == Gain::Neve && self.line.needs_operating_point())
+            || self.active_power().is_some_and(|s| s.needs_operating_point())
+            || (self.active_driven() && self.driven.sim.needs_operating_point())
             || (self.voice.has_reverb_and_tremolo()
                 && self.reverb > 0.0
                 && self.tail.needs_operating_point())
@@ -2043,7 +2504,10 @@ impl Chain {
 
     /// The operating point of the active voice's power stage, if it has one.
     pub fn power_operating_point(&self) -> Option<&[f64]> {
-        self.powers[self.gain].as_ref().map(|s| s.operating_point())
+        if self.active_driven() {
+            return Some(self.driven.sim.operating_point());
+        }
+        self.active_power().map(|s| s.operating_point())
     }
 
     /// Apply a pre-computed operating point to the active voice's power stage.
@@ -2051,10 +2515,25 @@ impl Chain {
     /// The guard is essential: applying an operating point to a simulation
     /// that already has audio in flight replaces its capacitor/inductor state.
     pub fn share_power_operating_point_from(&mut self, op: &[f64]) {
-        if let Some(sim) = self.powers[self.gain].as_mut() {
+        let sim = if self.active_driven() {
+            Some(&mut self.driven.sim)
+        } else {
+            self.active_power_mut()
+        };
+        if let Some(sim) = sim {
             if sim.needs_operating_point() {
                 sim.apply_operating_point(op);
             }
+        }
+    }
+
+    pub fn line_operating_point(&self) -> Option<&[f64]> {
+        (self.voice == Gain::Neve).then(|| self.line.operating_point())
+    }
+
+    pub fn share_line_operating_point_from(&mut self, op: &[f64]) {
+        if self.voice == Gain::Neve && self.line.needs_operating_point() {
+            self.line.apply_operating_point(op);
         }
     }
 
@@ -2096,10 +2575,16 @@ impl Chain {
                 settled &= self.irons[i].find_operating_point();
             }
         }
-        if let Some(sim) = self.powers[self.gain].as_mut() {
+        if let Some(sim) = self.active_power_mut() {
             if sim.needs_operating_point() {
                 settled &= sim.find_operating_point();
             }
+        }
+        if self.active_driven() && self.driven.sim.needs_operating_point() {
+            settled &= self.driven.sim.find_operating_point();
+        }
+        if self.voice == Gain::Neve && self.line.needs_operating_point() {
+            settled &= self.line.find_operating_point();
         }
         if self.voice.has_reverb_and_tremolo()
             && self.reverb > 0.0
@@ -2142,10 +2627,15 @@ impl Chain {
             .gains
             .iter_mut()
             .chain(self.irons.iter_mut())
+            .chain(std::iter::once(self.line.as_mut()))
             .chain(self.powers.iter_mut().flatten())
+            .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
+            .chain(std::iter::once(&mut self.driven.sim))
         {
             sim.reset_deferred();
         }
+        self.acoustic.reset();
+        self.motional_previous = 0.0;
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.reset_deferred();
         }

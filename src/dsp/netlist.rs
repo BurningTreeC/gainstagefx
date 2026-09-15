@@ -244,6 +244,20 @@ pub enum Part {
         b: usize,
         henry: f64,
     },
+    /// A passive part whose value is set at control rate rather than fixed
+    /// when the circuit is drawn. `slot` indexes `Circuit::adjustables` for the
+    /// value the part starts with and `Simulation::set_value` for the running
+    /// one. It exists for loads that are a *choice* -- a loudspeaker's
+    /// electromechanical equivalent behind a power amplifier -- so one netlist
+    /// can stand for every speaker without a simulation per combination. A
+    /// rebuild carries capacitor voltages and inductor currents across a
+    /// value change exactly as it does across a pot moving.
+    Adjustable {
+        a: usize,
+        b: usize,
+        kind: Adjust,
+        slot: usize,
+    },
     /// A potentiometer as the two halves of its track. Tie `wiper` to `b` to
     /// use it as a rheostat.
     Pot {
@@ -340,6 +354,14 @@ pub enum Part {
         e: usize,
         spec: BipolarSpec,
     },
+}
+
+/// What an adjustable part is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Adjust {
+    Resistor,
+    Capacitor,
+    Inductor,
 }
 
 /// Saturation current and emission coefficient.
@@ -514,6 +536,7 @@ impl Part {
             Part::Resistor { a, b, .. }
             | Part::Capacitor { a, b, .. }
             | Part::Inductor { a, b, .. }
+            | Part::Adjustable { a, b, .. }
             | Part::Core { a, b, .. } => {
                 map(a);
                 map(b);
@@ -575,7 +598,8 @@ impl Part {
         match *self {
             Part::Resistor { a, b, .. }
             | Part::Capacitor { a, b, .. }
-            | Part::Inductor { a, b, .. } => vec![a, b],
+            | Part::Inductor { a, b, .. }
+            | Part::Adjustable { a, b, .. } => vec![a, b],
             Part::Pot { a, wiper, b, .. } => vec![a, wiper, b],
             Part::Pentode { p, g, k, s, .. } => vec![p, g, k, s],
             Part::Input { node, .. } | Part::Supply { node, .. } => vec![node],
@@ -628,6 +652,7 @@ impl Part {
             Part::Capacitor { .. } => "capacitor",
             Part::Inductor { .. } => "inductor",
             Part::Pot { .. } => "pot",
+            Part::Adjustable { .. } => "adjustable part",
             Part::Input { .. } => "input",
             Part::Supply { .. } => "supply",
             Part::Diode { .. } => "diode",
@@ -678,6 +703,7 @@ pub struct Netlist {
     order: Vec<String>,
     parts: Vec<Part>,
     controls: usize,
+    adjustables: Vec<f64>,
     initial_voltages: Vec<(usize, f64)>,
     resting: Vec<(usize, f64)>,
 }
@@ -690,6 +716,7 @@ impl Netlist {
             order: Vec::new(),
             parts: Vec::new(),
             controls: 0,
+            adjustables: Vec::new(),
             initial_voltages: Vec::new(),
             resting: Vec::new(),
         }
@@ -727,6 +754,16 @@ impl Netlist {
         let (a, b) = (self.pin(a), self.pin(b));
         self.parts.push(Part::Inductor { a, b, henry });
         self
+    }
+
+    /// A resistor, capacitor or inductor whose value can be changed while the
+    /// circuit runs. Returns the slot to pass to `Simulation::set_value`.
+    pub fn adjustable(&mut self, a: &str, b: &str, kind: Adjust, value: f64) -> usize {
+        let (a, b) = (self.pin(a), self.pin(b));
+        let slot = self.adjustables.len();
+        self.adjustables.push(value);
+        self.parts.push(Part::Adjustable { a, b, kind, slot });
+        slot
     }
 
     pub fn pot(
@@ -926,6 +963,9 @@ impl Netlist {
                 Part::Capacitor { farads, .. } => farads <= 0.0,
                 Part::Inductor { henry, .. } => henry <= 0.0,
                 Part::Pot { ohms, .. } => ohms <= 0.0,
+                Part::Adjustable { slot, .. } => {
+                    !(self.adjustables.get(slot).copied().unwrap_or(0.0) > 0.0)
+                }
                 Part::Input { series, .. } | Part::Supply { series, .. } => series <= 0.0,
                 Part::Diode { spec, .. } => spec.saturation <= 0.0 || spec.emission <= 0.0,
                 Part::Triode { spec, .. } => spec.mu <= 0.0 || spec.kg1 <= 0.0,
@@ -1046,6 +1086,7 @@ impl Netlist {
             parts,
             output: out,
             controls: self.controls,
+            adjustables: self.adjustables,
             initial_voltages,
             resting: self.resting,
         })
@@ -1093,6 +1134,8 @@ pub struct Circuit {
     pub parts: Vec<Part>,
     pub output: usize,
     pub controls: usize,
+    /// The starting value of every adjustable part, by slot. See `Part::Adjustable`.
+    pub adjustables: Vec<f64>,
     /// Initial node voltages for the DC solver. (node_index, voltage)
     pub initial_voltages: Vec<(usize, f64)>,
     /// Where the controls nobody turns are left. (control, position)
@@ -1122,6 +1165,12 @@ impl Circuit {
     /// AC solver can be asked about it.
     pub fn is_linear(&self) -> bool {
         self.parts.iter().all(Part::is_linear)
+    }
+
+    /// Where a named node ended up after renumbering, for reading a second
+    /// voltage out of a running simulation. See `Simulation::voltage_at`.
+    pub fn unknown_named(&self, name: &str) -> Option<usize> {
+        self.names.iter().position(|n| n == name)
     }
 
     /// What a node is called, for anything that has to report a problem.

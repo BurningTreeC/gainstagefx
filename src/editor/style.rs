@@ -24,7 +24,7 @@ pub const HEADER_H: f32 = 32.0;
 /// they can be read once.
 pub const SECTIONS: [(&str, &str, f32); 6] = [
     ("1", "INPUT", 74.0),
-    ("2", "CIRCUIT", 178.0),
+    ("2", "CIRCUIT", 296.0),
     ("3", "DRIVE", 160.0),
     // Two rows: the stack's Bass/Middle/Treble, and beneath them the three
     // the Twin Reverb adds. Below rather than beside, because beside put
