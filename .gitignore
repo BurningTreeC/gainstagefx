@@ -20,6 +20,17 @@
 # somebody else's drawings, and publishing them is not ours to do. The modules
 # quote the values and say what they mean, which is the part that is ours.
 /docs/schematics/
+/tools/speaker_fit/
+
+ARCHITECTURE.md
+CABINET_MODEL.md
+DSP.md
+IMPLEMENTATION_PROGRESS.md
+IMPLEMENTATION_RESUME.md
+MICROPHONE_MODEL.md
+MODELS.md
+PRESETS.md
+SPEAKER_MODEL.md
 
 # Keep the panel image; other documentation stays local.
 /docs/*
