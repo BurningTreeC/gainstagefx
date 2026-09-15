@@ -10,11 +10,16 @@
 //! use, because that is how somebody looking for a sound is thinking.
 
 use crate::params::{
-    Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, MicModel, Oversampling, PowerAmp,
-    SpeakerModel, ToneStack,
+    Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, MicModel, Oversampling, PedalModel,
+    PowerAmp, SpeakerModel, ToneStack,
 };
 
 pub struct Preset {
+    /// A pedal ahead of the circuit, and its three knobs.
+    pub pedal: PedalModel,
+    pub pedal_drive: f32,
+    pub pedal_tone: f32,
+    pub pedal_level: f32,
     pub power_amp: PowerAmp,
     /// Speaker, cabinet and microphones. `CabModel::Legacy` keeps the old baked
     /// `cabinet` filter; see `Chain::set_acoustic`.
@@ -85,6 +90,10 @@ pub struct Preset {
 /// preset in the file.
 const fn base(group: &'static str, name: &'static str) -> Preset {
     Preset {
+        pedal: PedalModel::None,
+        pedal_drive: 0.5,
+        pedal_tone: 0.5,
+        pedal_level: 0.5,
         power_amp: PowerAmp::Matched,
         cab_model: CabModel::Legacy,
         speaker: SpeakerModel::Matched,
@@ -612,11 +621,62 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Preamp", "Neve, Driven")
     },
+    // --- Era presets -----------------------------------------------------
+    // Configurations of the modular chain, named after the records whose
+    // guitar sound they are aimed at. Nothing here is special-cased in the DSP;
+    // what each one is built from, and how firmly its rig is documented, is in
+    // PRESETS.md.
+    //
+    // The Mark IIC+ preamplifier into a 2203 EL34 power section, into a closed
+    // British 4x12, close-miked. Gain from the preamp, no boost pedal.
+    Preset {
+        circuit: Circuit::Boogie,
+        power_amp: PowerAmp::BritEL34,
+        drive: 0.70,
+        master: 0.50,
+        // The V that the graphic is known for: bass and treble up, 750 Hz down.
+        graphic: [0.62, 0.45, 0.30, 0.48, 0.60],
+        bass: 0.35,
+        mid: 0.45,
+        treble: 0.75,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritClosed,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.02,
+        mic_a_angle: 10.0,
+        oversampling: Oversampling::Off,
+        ..base("Metal / Heavy", "Puppet Master '86")
+    },
+    // A Tube Screamer with little drive and a lot of level, into a blackface
+    // AB763 channel on the edge of breaking up, into an open-back combo.
+    Preset {
+        pedal: PedalModel::Green808,
+        pedal_drive: 0.25,
+        pedal_tone: 0.55,
+        pedal_level: 0.85,
+        circuit: Circuit::Twin,
+        drive: 0.55,
+        bass: 0.45,
+        mid: 0.60,
+        treble: 0.55,
+        reverb: 0.12,
+        tone: ToneStack::Off,
+        cab_model: CabModel::AmericanOpen112,
+        speaker: SpeakerModel::AmericanCeramic,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.25,
+        mic_a_distance: 0.03,
+        mic_a_angle: 0.0,
+        oversampling: Oversampling::Off,
+        ..base("Blues", "Texas Storm '83")
+    },
 ];
 
 /// The groups, in the order they should be shown: quietest first, so the list
 /// itself reads as a range rather than as an alphabetical accident.
-pub const GROUPS: [&str; 7] = [
+pub const GROUPS: [&str; 9] = [
     "Studio",
     "Preamp",
     "Crunch",
@@ -626,9 +686,68 @@ pub const GROUPS: [&str; 7] = [
     // Last because it is a different kind of entry: not a topology set up to
     // make a sound, but a particular amplifier modelled from its drawing.
     "Amplifier",
+    // Modular chains aimed at particular records. See PRESETS.md.
+    "Metal / Heavy",
+    "Blues",
 ];
 
 impl Preset {
+    /// What the chain is set to when this preset is loaded, as the plugin
+    /// would build it from the parameters: for measuring presets exactly as they
+    /// play, including their pedal, power stage and cabinet.
+    pub fn settings(&self) -> crate::voice::Settings {
+        use crate::acoustics::mic::MicPlacement;
+        let place = |position: f32, distance: f32, angle: f32| MicPlacement {
+            position: position as f64,
+            distance: distance as f64,
+            angle: angle as f64,
+        };
+        crate::voice::Settings {
+            pedal: crate::voice::PedalSettings {
+                pedal: self.pedal.voice(),
+                drive: self.pedal_drive as f64,
+                tone: self.pedal_tone as f64,
+                level: self.pedal_level as f64,
+            },
+            power_amp: self.power_amp.voice(),
+            acoustic: crate::voice::AcousticSettings {
+                cabinet: self.cab_model.voice(),
+                speaker: self.speaker.voice(),
+                mic_a: self.mic_a.voice(false),
+                mic_b: self.mic_b.voice(true),
+                place_a: place(self.mic_a_position, self.mic_a_distance, self.mic_a_angle),
+                place_b: place(self.mic_b_position, self.mic_b_distance, self.mic_b_angle),
+                blend: self.mic_blend as f64,
+                invert_b: self.mic_b_invert,
+                align: self.mic_align,
+            },
+            gain: self.circuit.voice(),
+            diode: if self.circuit.has_diodes() {
+                self.diode.voice()
+            } else {
+                Diode::Silicon.voice()
+            },
+            amplifier: if self.circuit.has_amplifier() {
+                self.amplifier.voice()
+            } else {
+                Amplifier::Valve.voice()
+            },
+            iron: self.iron.voice(),
+            tone: self.tone.voice(),
+            cabinet: self.cabinet.voice(),
+            drive: self.drive as f64,
+            master: self.master as f64,
+            graphic: self.graphic.map(|g| g as f64),
+            bass: self.bass as f64,
+            mid: self.mid as f64,
+            treble: self.treble as f64,
+            reverb: self.reverb as f64,
+            speed: self.speed as f64,
+            intensity: self.intensity as f64,
+            oversampling: self.oversampling.factor(),
+        }
+    }
+
     /// The preset as parameter ids and the values the panel would show, which
     /// is the form the host wants them in.
     ///
@@ -637,9 +756,13 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 37] {
+    pub fn dials(&self) -> [(&'static str, f32); 41] {
         [
             ("in_trim", self.input_trim),
+            ("pedal", index_in(&PedalModel::ALL, self.pedal)),
+            ("pedal_drive", self.pedal_drive),
+            ("pedal_tone", self.pedal_tone),
+            ("pedal_level", self.pedal_level),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
             ("power_amp", index_in(&PowerAmp::ALL, self.power_amp)),
             ("diode", index_in(&Diode::ALL, self.diode)),
@@ -848,6 +971,7 @@ fn ids(id: &str) -> Option<&'static [&'static str]> {
         "tone" => ToneStack::ids(),
         "cabinet" => Cabinet::ids(),
         "cab_model" => CabModel::ids(),
+        "pedal" => PedalModel::ids(),
         "speaker" => SpeakerModel::ids(),
         "mic_a" | "mic_b" => MicModel::ids(),
         "oversampling" => Oversampling::ids(),
@@ -875,6 +999,8 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     preset.values.entry("power_amp".into()).or_insert(0.0);
     // Legacy is the first cabinet model, so an old preset keeps its baked filter.
     preset.values.entry("cab_model".into()).or_insert(0.0);
+    // No pedal is the first pedal entry.
+    preset.values.entry("pedal".into()).or_insert(0.0);
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {
             if let Some(index) = names.iter().position(|name| *name == saved) {

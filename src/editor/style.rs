@@ -6,7 +6,9 @@
 
 use nih_plug_vizia::vizia::vg;
 
-pub const PANEL_W: f32 = 640.0;
+/// Wide enough that the longest model names (Cali Oversized 4x12, Tube
+/// Condenser 67) and the placement knobs sit without crowding.
+pub const PANEL_W: f32 = 780.0;
 pub const HEADER_H: f32 = 32.0;
 
 /// The six sections, in signal order, with the height each needs.
@@ -23,7 +25,8 @@ pub const HEADER_H: f32 = 32.0;
 /// dismissed once it has been read. The explanations are in the README, where
 /// they can be read once.
 pub const SECTIONS: [(&str, &str, f32); 6] = [
-    ("1", "INPUT", 74.0),
+    // Trim and meter, then the pedal in front of the circuit.
+    ("1", "INPUT", 124.0),
     ("2", "CIRCUIT", 296.0),
     ("3", "DRIVE", 160.0),
     // Two rows: the stack's Bass/Middle/Treble, and beneath them the three
@@ -32,7 +35,8 @@ pub const SECTIONS: [(&str, &str, f32); 6] = [
     // two things in one place, which is the layout fault that is hardest to
     // see in code and most obvious on screen.
     ("4", "TONE", 168.0),
-    ("5", "CABINET", 44.0),
+    // Cabinet, speaker and microphones: model steppers, placement knobs, dual-mic toggles.
+    ("5", "CABINET", 204.0),
     ("6", "OUTPUT", 96.0),
 ];
 

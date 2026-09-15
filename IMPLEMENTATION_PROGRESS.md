@@ -143,3 +143,89 @@ Queue item 1, speaker electrical load:
 Not yet done: Chain integration, cabinet acoustics, microphones, parameters, GUI, presets.
 Temporary `examples/zz_probe.rs` exists for measurements and must be removed before
 completion.
+
+## 2026-09-15 (session 3, continued): acoustic chain, pedal slot, fixes
+
+**Cabinets and microphones (queue items 2-3).**
+- Research checkpoints written first: [docs/models/cabinets.md](docs/models/cabinets.md),
+  [docs/models/microphones.md](docs/models/microphones.md) (manufacturer charts
+  digitised and fitted, `tools/speaker_fit/fit_mics.py`, 0.05-0.40 dB rms).
+- `acoustics::{filters, cabinet, mic, stage}`:
+  - matched second-order designs (bilinear cramping measured 3.8 dB at 12 kHz and was
+    replaced);
+  - shared fractional delay line with 3rd-order Lagrange that is exact at zero delay;
+  - per-driver paths using the nearest cone point for LF and the centre for HF directivity;
+  - first-order polar patterns with signed gradient, proximity integrator, dipole rear
+    wave for open backs, baffle step;
+  - dual mic with blend / polarity / alignment; subtle family saturation.
+- `tests/acoustics.rs`: 13 tests pass. Six failures on the first run were root-caused:
+  - the filter cramping above;
+  - a point-source cone moving the low mids 5.5 dB;
+  - an off-axis corner law ineffective at 45 degrees;
+  - an RC phase lag cancelling the dipole;
+  - two test bugs.
+
+**Chain integration (queue item 4).**
+- `AcousticSettings` in `Settings`; `CabinetChoice::Legacy` (the default) keeps the
+  resistor load and baked filter bit-for-bit.
+- Physical path: speaker-loaded twin of each power stage (adjustable load values), or a
+  voltage-driven speaker when there is no power stage; cone radiation
+  `Re Mms/Bl^2 dV(mot)/dt`; the acoustic stage runs at host rate.
+- Speaker Bypass with a cabinet model is a power-stage DI.
+- Lifecycle covered: runtime copy, DC sharing, reset, rates, pass ceiling, health.
+- New params with stable ids: `cab_model` (legacy first), `speaker`, `mic_a`/`mic_b`,
+  placement floats in m/deg, `mic_blend`, `mic_b_invert`, `mic_align`.
+- `filter_state` inserts `cab_model=legacy`, `pedal=none`. Preset migration defaults both.
+- `tests/acoustic_chain.rs`: 8 tests pass (legacy bit-identical, DI identity, driver
+  difference, all power x cabinets bounded, stereo wake, live switching with no heap,
+  rates and blocks).
+
+**Measured cost (48 kHz, one channel).**
+- Acoustic stage alone: 0.46 % (one mic), 0.77 % (two).
+- Full chain, legacy to physical: Mark 20 to 22.6 %, Twin 15 to 17 %, 5150 33 to 30 %
+  (fewer passes into the speaker load).
+- Level vs legacy Stack: -2.6 to +4.9 dB. `examples/acousticcost.rs`.
+
+**Power-override level and master (Phase 2 leftovers).**
+- Measured override level changes of up to +-20 dB. Added `POWER_TRIM_DB` (voice x
+  override, measured by `examples/powertrim.rs`, re-verified by `tests/power_trim.rs`
+  within 1 dB at the calibration drive).
+- Residual: mean 0.8 / 1.2 dB, worst ~9 dB at drive 0.15 / 0.9. Known limitation.
+- Master ownership: under an override the preamp's own level control returns to its
+  calibrated rest.
+
+**User-reported bug: American 5150 + American 6L6 Clean dropouts.**
+- Reproduced: 7.4 power passes/sample, ~2,400 fallbacks per 4 s, deadline misses at
+  128-sample blocks.
+- Cause: the Twin stage has no master (rest 1.0), so in a custom chain the 5150 preamp
+  slammed the ECC81 inverter.
+- Fix: `OVERRIDE_MASTER_REST = 0.30` for no-master stages in custom chains only (the
+  matched Twin is untouched). Measured 3.2 passes, 0 fallbacks, no misses at normal
+  settings. The trim table was re-measured.
+
+**GUI.**
+- Panel width 640 to 780 px (user request).
+- Input section gains the pedal row (stepper + drive/tone/level).
+- Cabinet section rebuilt: cabinet, legacy filter, speaker with physical summary, mic A/B
+  steppers, 7 placement knobs, polarity/time toggles.
+- New `Stepper` widget for long lists.
+- Screenshots checked with `shot.sh` (legacy default state).
+
+**Pedal slot (queue item 5) and TS808 / TS9 (item 6).**
+- Research logs: [green_808.md](docs/models/green_808.md) (three independent sources agree
+  against the legacy netlist's tone shunt, level feed and C1),
+  [green_9.md](docs/models/green_9.md), [big_muff.md](docs/models/big_muff.md).
+- `ts808::{LEGACY, TS808, TS9}`: the legacy catalogue voice is unchanged; the pedal slot's
+  Green 808 uses the verified values, and Green 9 uses the 470 ohm / 100 k output.
+- `Pedal` slot in `Chain` (guitar-level input, output volts into the circuit, own
+  drive/tone/level with calibrated-middle Level).
+- `tests/pedal_slot.rs`: 7 tests pass.
+
+**Owner decisions outstanding.**
+1. Versioned correction of the catalogue `ts808` voice to the verified values.
+2. Generic display name for Big Muff.
+
+**Next.** Factory presets needing only available components (Puppet Master '86, Texas
+Storm '83 with the pedal slot) after rig research. Then Brit 800 preamp research and
+implementation, Rodent (op-amp GBW/slew), Round Fuzz (PNP mirror), AC30/EL84, DR103,
+Rectifier, 312, 610.

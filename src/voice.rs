@@ -545,6 +545,64 @@ impl PowerAmp {
     }
 }
 
+/// A pedal in front of the preamplifier, independent of the circuit selection.
+/// Only modelled pedals are offered; see `docs/MODEL_INVENTORY.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Pedal {
+    #[default]
+    None,
+    /// The Ibanez TS-808 with the values its drawings agree on (`ts808::TS808`).
+    Green808,
+    /// The 1973 Ram's Head Big Muff Pi netlist (`Gain::Muff`).
+    BigMuff,
+    /// The Ibanez TS9 (`ts808::TS9`).
+    Green9,
+}
+
+impl Pedal {
+    pub const ALL: [Pedal; 4] = [Pedal::None, Pedal::Green808, Pedal::BigMuff, Pedal::Green9];
+    /// The catalogue voice each slot's controls and input calibration follow.
+    const CIRCUITS: [Gain; 3] = [Gain::Screamer, Gain::Muff, Gain::Screamer];
+
+    fn slot(self) -> Option<usize> {
+        match self {
+            Pedal::None => None,
+            Pedal::Green808 => Some(0),
+            Pedal::BigMuff => Some(1),
+            Pedal::Green9 => Some(2),
+        }
+    }
+
+    fn build(slot: usize) -> Result<Netlist, Fault> {
+        match slot {
+            0 => ts808::build_with(&ts808::TS808, 10_000.0, 470_000.0),
+            1 => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
+            _ => ts808::build_with(&ts808::TS9, 10_000.0, 470_000.0),
+        }
+    }
+}
+
+/// The pedal and its three knobs. Level's middle is the pedal's calibrated
+/// resting position, exactly as the Master knob's is. See `Chain::master_position`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PedalSettings {
+    pub pedal: Pedal,
+    pub drive: f64,
+    pub tone: f64,
+    pub level: f64,
+}
+
+impl Default for PedalSettings {
+    fn default() -> Self {
+        Self {
+            pedal: Pedal::None,
+            drive: 0.5,
+            tone: 0.5,
+            level: 0.5,
+        }
+    }
+}
+
 /// Which cabinet is after the power stage. `Legacy` is the old resistive load and
 /// baked Combo/Stack filter, exactly as before any of this existed; every old
 /// session resolves to it.
@@ -931,6 +989,7 @@ impl Calibration {
 }
 
 include!("calibration.rs");
+include!("power_trim.rs");
 
 /// The peak gain a linear section has anywhere in the audio band, at the
 /// control positions given.
@@ -1063,6 +1122,10 @@ const MASTER_LIFT_DB: f64 = 6.0;
 /// that forgets `Netlist::rest` is quiet rather than wrong.
 const DEFAULT_MASTER_REST: f64 = 0.7;
 
+/// Where the Master knob's middle puts a power stage that has no master of its
+/// own, when it is driven by a different preamplifier. See `Chain::set_master`.
+pub const OVERRIDE_MASTER_REST: f64 = 0.30;
+
 /// Where a circuit's output level control lives. See `Gain::level_control`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Level {
@@ -1131,6 +1194,7 @@ impl SolverHealth {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SolverBreakdown {
+    pub pedal: SolverHealth,
     pub line: SolverHealth,
     pub gain: SolverHealth,
     pub power: SolverHealth,
@@ -1141,6 +1205,7 @@ pub struct SolverBreakdown {
 impl SolverBreakdown {
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
+            pedal: self.pedal.saturating_delta(before.pedal),
             line: self.line.saturating_delta(before.line),
             gain: self.gain.saturating_delta(before.gain),
             power: self.power.saturating_delta(before.power),
@@ -1160,6 +1225,8 @@ impl SolverBreakdown {
 /// plugin at all: the knobs simply did nothing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settings {
+    /// A pedal ahead of the circuit. Defaults to none.
+    pub pedal: PedalSettings,
     pub power_amp: PowerAmp,
     /// Speaker, cabinet and microphones. Defaults to the legacy path.
     pub acoustic: AcousticSettings,
@@ -1190,6 +1257,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            pedal: PedalSettings::default(),
             power_amp: PowerAmp::Matched,
             acoustic: AcousticSettings::default(),
             gain: Gain::Crunch,
@@ -1221,6 +1289,12 @@ impl Default for Settings {
 /// holding all of them costs less than the machinery to avoid it would.
 pub struct Chain {
     gains: Vec<Simulation>,
+    /// The pedal slot's own circuits, separate from the catalogue so the same
+    /// pedal can sit in front of itself. Indexed by `Pedal::slot`.
+    pedals: Vec<Simulation>,
+    pedal: Option<usize>,
+    /// Volts per unit of digital input when a pedal takes the guitar first.
+    pedal_into: f64,
     /// Original guitar power circuits retain their gain-catalogue indices;
     /// independently added power circuits follow the gain catalogue.
     powers: Vec<Option<Simulation>>,
@@ -1356,7 +1430,11 @@ impl Chain {
         self.deferred_oversample = source.deferred_oversample;
         self.pad.copy_runtime_state_from(&source.pad);
         self.dry.copy_runtime_state_from(&source.dry);
+        debug_assert_eq!(self.pedal, source.pedal);
         self.gains[self.gain].copy_runtime_state_from(&source.gains[source.gain]);
+        if let Some(i) = self.pedal {
+            self.pedals[i].copy_runtime_state_from(&source.pedals[i]);
+        }
         debug_assert_eq!(self.radiating, source.radiating);
         debug_assert_eq!(self.acoustic_settings, source.acoustic_settings);
         if let (Some(dst), Some(src)) = (self.active_power_mut(), source.active_power()) {
@@ -1499,6 +1577,11 @@ impl Chain {
         let driven_motional = driven_circuit.output;
         let mut chain = Self {
             gains,
+            pedals: (0..Pedal::CIRCUITS.len())
+                .map(|slot| Simulation::new(Pedal::build(slot).expect("pedal builds"), rate))
+                .collect(),
+            pedal: None,
+            pedal_into: 1.0,
             powers,
             loaded,
             driven: Box::new(Loaded {
@@ -1723,11 +1806,68 @@ impl Chain {
         self.radiating
     }
 
+    /// The pedal slot. A pedal takes the guitar at guitar level and hands its
+    /// output volts straight to the circuit's input, as a cable would; with none
+    /// selected the path is exactly what it was.
+    pub fn set_pedal(&mut self, s: &PedalSettings) {
+        let next = s.pedal.slot();
+        if next != self.pedal {
+            if let Some(i) = next {
+                self.pedals[i].reset_deferred();
+            }
+            self.pedal = next;
+            self.fade_remaining = FADE_LEN;
+        }
+        if let Some(i) = self.pedal {
+            let gain = Pedal::CIRCUITS[i];
+            let sim = &mut self.pedals[i];
+            sim.set_control(gain.drive_control(), s.drive.clamp(0.0, 1.0));
+            if let Some((_, _, tone)) = gain.own_tone() {
+                if tone != usize::MAX {
+                    sim.set_control(tone, s.tone.clamp(0.0, 1.0));
+                }
+            }
+            if let Some(Level::Circuit(which)) = gain.level_control() {
+                let rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
+                sim.set_control(which, Self::master_position(rest, s.level));
+            }
+            let calibration = CALIBRATION[voice_index(gain, Diode::Silicon, Amplifier::Valve)];
+            self.pedal_into = calibration.drive_volts / 10f64.powf(NOMINAL_DBFS / 20.0);
+        }
+    }
+
     pub fn set_power_amp(&mut self, selection: PowerAmp) {
         if selection != self.power_selection {
             self.power_selection = selection;
             self.update_power(false);
+            // The make-up belongs to the path, so it changes with it rather than
+            // gliding. See `set_voice` for why a glide between paths is wrong.
+            self.set_drive(self.drive);
+            self.out_of = self.out_of_target;
         }
+    }
+
+    /// The make-up correction for a power stage other than the voice's own.
+    ///
+    /// The calibration table was measured on each voice's own path. Behind a
+    /// different output stage the level moved by up to twenty decibels,
+    /// because every stage has its own gain, master resting position and
+    /// saturation, and a hot preamplifier saturates a clean power stage into
+    /// compression. `POWER_TRIM_DB` is that difference, measured at the
+    /// calibration drive with `examples/powertrim.rs`; `tests/power_trim.rs`
+    /// re-measures it. It is make-up, like the table it corrects, and not part
+    /// of any circuit.
+    fn power_trim(&self) -> f64 {
+        let column = match self.power_selection {
+            PowerAmp::Matched => return 1.0,
+            PowerAmp::Bypass => 0,
+            PowerAmp::Cali6L6 => 1,
+            PowerAmp::American6L6Clean => 2,
+            PowerAmp::American6L6HighGain => 3,
+            PowerAmp::BritEL34 => 4,
+        };
+        let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
+        10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
     }
 
     pub fn resolved_power_amp(&self) -> Option<PowerModel> {
@@ -1849,8 +1989,17 @@ impl Chain {
     pub fn set_master(&mut self, knob: f64) {
         self.master = knob;
         let voice = voice_at(self.gain).0;
-        let level = if self.power_selection != PowerAmp::Matched && self.power != 0 {
-            // In a custom chain the selected output stage owns the master.
+        let overridden = self.power_selection != PowerAmp::Matched && self.power != 0;
+        let level = if overridden {
+            // In a custom chain the selected output stage owns the master. The
+            // preamplifier's own level control -- a pedal's Level, the 73P's
+            // trim -- goes back to the position it was calibrated at, rather
+            // than staying wherever the knob last left it before the override.
+            if let Some(Level::Circuit(which)) = voice.level_control() {
+                let sim = &mut self.gains[self.gain];
+                let rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
+                sim.set_control(which, rest);
+            }
             Some(Level::Power(power::MASTER))
         } else {
             voice.level_control()
@@ -1869,7 +2018,18 @@ impl Chain {
             return;
         };
         self.master_lift = Self::master_lift(knob);
-        let rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
+        let mut rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
+        // A power stage whose amplifier has no master (the Twin's rests wide open)
+        // cannot rest wide open behind somebody else's preamplifier. Measured with
+        // the 5150 preamplifier into it: 7.4 Newton passes a sample, 2,400
+        // fallbacks and missed deadlines, the inverter driven far into grid
+        // current. At 0.30, which is where the Mark IIC+ and 2203 stages rest, the
+        // same combination solves in 3.2 passes with no fallbacks. So in a custom
+        // chain the knob's middle puts it there -- the position of an attenuating
+        // return rather than a control that amplifier has.
+        if overridden && matches!(level, Level::Power(_)) && rest >= 0.99 {
+            rest = OVERRIDE_MASTER_REST;
+        }
         let position = Self::master_position(rest, knob);
         sim.set_control(which, position);
         // The speaker-loaded twin of that power stage carries the same control.
@@ -1888,12 +2048,14 @@ impl Chain {
         self.into = calibration.drive_volts / nominal;
         // The Master knob's lift rides with the make-up, because that is what
         // it is: the same output gain, turned by hand. See `master_lift`.
-        self.out_of_target =
-            10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into * self.master_lift;
+        let trim = self.power_trim();
+        self.out_of_target = 10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into
+            * self.master_lift
+            * trim;
         // What the make-up would be with the Drive control at its reference
         // position. See `iron_drive`.
         self.iron_reference =
-            10f64.powf(calibration.make_up_db_at(IRON_REFERENCE_DRIVE) / 20.0) / self.into;
+            10f64.powf(calibration.make_up_db_at(IRON_REFERENCE_DRIVE) / 20.0) / self.into * trim;
     }
 
     /// How much harder than usual the Drive control is pushing the iron.
@@ -1962,6 +2124,7 @@ impl Chain {
             .chain(std::iter::once(self.line.as_mut()))
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
+            .chain(self.pedals.iter_mut())
         {
             sim.set_rate(inner);
         }
@@ -2116,6 +2279,7 @@ impl Chain {
         };
 
         SolverBreakdown {
+            pedal: self.pedal.map(|i| health(&self.pedals[i])).unwrap_or_default(),
             line: if self.voice == Gain::Neve {
                 health(&self.line)
             } else {
@@ -2156,6 +2320,7 @@ impl Chain {
             None
         };
         let sims = std::iter::once(&self.gains[self.gain])
+            .chain(self.pedal.map(|i| &self.pedals[i]))
             .chain(self.active_power())
             .chain(self.active_driven().then_some(&self.driven.sim))
             .chain((self.voice == Gain::Neve).then_some(self.line.as_ref()))
@@ -2193,6 +2358,7 @@ impl Chain {
     /// go through here, so that forgetting one is a change to this function
     /// rather than a line quietly missing from a loop somewhere.
     pub fn apply(&mut self, s: &Settings) {
+        self.set_pedal(&s.pedal);
         self.set_voice(s.gain, s.diode, s.amplifier);
         // After `set_voice`, because which control this reaches depends on
         // which circuit is selected, and before `set_drive`, because both
@@ -2297,7 +2463,14 @@ impl Chain {
             1.0
         };
 
-        let mut y = self.over.process(x * self.into, &mut |v| {
+        let mut pedal = self.pedal.map(|i| &mut self.pedals[i]);
+        let input_scale = if pedal.is_some() { self.pedal_into } else { self.into };
+        let mut y = self.over.process(x * input_scale, &mut |v| {
+            // The pedal, when there is one, between the guitar and the circuit.
+            let v = match pedal {
+                Some(ref mut sim) => sim.process(v),
+                None => v,
+            };
             // The power amplifier goes here, in volts, *before* the make-up.
             //
             // Not after it, which is where the signal order would otherwise
@@ -2463,6 +2636,7 @@ impl Chain {
             .chain(std::iter::once(&mut self.tail))
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
+            .chain(self.pedals.iter_mut())
         {
             sim.set_pass_ceiling(passes);
         }
@@ -2479,6 +2653,7 @@ impl Chain {
             .chain(std::iter::once(&self.tail))
             .chain(self.loaded.iter().map(|l| &l.sim))
             .chain(std::iter::once(&self.driven.sim))
+            .chain(self.pedals.iter())
             .map(|s| s.pinched())
             .sum()
     }
@@ -2491,6 +2666,7 @@ impl Chain {
     /// operating-point hunt to perform.
     pub fn needs_operating_point(&self) -> bool {
         self.gains[self.gain].needs_operating_point()
+            || self.pedal.is_some_and(|i| self.pedals[i].needs_operating_point())
             || self
                 .iron
                 .is_some_and(|i| self.irons[i].needs_operating_point())
@@ -2523,6 +2699,18 @@ impl Chain {
         if let Some(sim) = sim {
             if sim.needs_operating_point() {
                 sim.apply_operating_point(op);
+            }
+        }
+    }
+
+    pub fn pedal_operating_point(&self) -> Option<&[f64]> {
+        self.pedal.map(|i| self.pedals[i].operating_point())
+    }
+
+    pub fn share_pedal_operating_point_from(&mut self, op: &[f64]) {
+        if let Some(i) = self.pedal {
+            if self.pedals[i].needs_operating_point() {
+                self.pedals[i].apply_operating_point(op);
             }
         }
     }
@@ -2569,6 +2757,11 @@ impl Chain {
 
         if self.gains[self.gain].needs_operating_point() {
             settled &= self.gains[self.gain].find_operating_point();
+        }
+        if let Some(i) = self.pedal {
+            if self.pedals[i].needs_operating_point() {
+                settled &= self.pedals[i].find_operating_point();
+            }
         }
         if let Some(i) = self.iron {
             if self.irons[i].needs_operating_point() {
@@ -2631,6 +2824,7 @@ impl Chain {
             .chain(self.powers.iter_mut().flatten())
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
+            .chain(self.pedals.iter_mut())
         {
             sim.reset_deferred();
         }

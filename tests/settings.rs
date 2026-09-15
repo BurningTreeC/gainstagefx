@@ -46,6 +46,7 @@ fn every_control_reaches_the_circuit() {
     let base = Settings {
         power_amp: Default::default(),
         acoustic: Default::default(),
+        pedal: Default::default(),
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,

@@ -259,28 +259,10 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
 fn the_presets_are_level_matched() {
     let mut levels = Vec::new();
     for preset in PRESETS {
+        // Exactly as it plays: pedal, power stage and cabinet included.
         let mut chain = Chain::new(RATE);
-        chain.set_voice(
-            preset.circuit.voice(),
-            preset.diode.voice(),
-            preset.amplifier.voice(),
-        );
-        chain.set_iron(preset.iron.voice());
-        chain.set_tone_section(match preset.tone {
-            ToneStack::Off => VTone::Off,
-            ToneStack::Wide => VTone::Wide,
-            ToneStack::Scooping => VTone::Scooping,
-        });
-        chain.set_cabinet(match preset.cabinet {
-            Cabinet::Off => VCabinet::Off,
-            Cabinet::Combo => VCabinet::Combo,
-            Cabinet::Stack => VCabinet::Stack,
-        });
-        chain.set_drive(preset.drive as f64);
-        chain.set_tone(gainstagefx::circuits::tone::BASS, preset.bass as f64);
-        chain.set_tone(gainstagefx::circuits::tone::MID, preset.mid as f64);
-        chain.set_tone(gainstagefx::circuits::tone::TREBLE, preset.treble as f64);
-
+        chain.apply(&preset.settings());
+        chain.settle();
         let trim = 10f64.powf(preset.output_trim as f64 / 20.0);
         let amplitude = 10f64.powf((NOMINAL_DBFS + preset.input_trim as f64) / 20.0);
         let tone = Tone::near(RATE, 16_384, 220.0, amplitude);

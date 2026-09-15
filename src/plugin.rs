@@ -456,6 +456,10 @@ impl Plugin for GainStageFx {
             .params
             .entry("cab_model".into())
             .or_insert_with(|| ParamValue::String("legacy".into()));
+        state
+            .params
+            .entry("pedal".into())
+            .or_insert_with(|| ParamValue::String("none".into()));
     }
 
     fn initialize(
@@ -595,7 +599,14 @@ impl Plugin for GainStageFx {
             invert_b: p.mic_b_invert.value(),
             align: p.mic_align.value(),
         };
+        let pedal = crate::voice::PedalSettings {
+            pedal: p.pedal.value().voice(),
+            drive: p.pedal_drive.smoothed.next_step(samples) as f64,
+            tone: p.pedal_tone.smoothed.next_step(samples) as f64,
+            level: p.pedal_level.smoothed.next_step(samples) as f64,
+        };
         let settings = Settings {
+            pedal,
             power_amp: self.params.power_amp.value().voice(),
             acoustic,
             gain: circuit.voice(),
@@ -667,6 +678,7 @@ impl Plugin for GainStageFx {
                 let iron_op = first.iron_operating_point();
                 let power_op = first.power_operating_point();
                 let line_op = first.line_operating_point();
+                let pedal_op = first.pedal_operating_point();
                 let reverb_op = first.reverb_operating_point();
                 for chain in rest.iter_mut().filter(|_| !duplicated_mono) {
                     chain.share_operating_point_from(gain_op);
@@ -675,6 +687,9 @@ impl Plugin for GainStageFx {
                     }
                     if let Some(op) = line_op {
                         chain.share_line_operating_point_from(op);
+                    }
+                    if let Some(op) = pedal_op {
+                        chain.share_pedal_operating_point_from(op);
                     }
                     if let Some(op) = power_op {
                         chain.share_power_operating_point_from(op);

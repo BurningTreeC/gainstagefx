@@ -231,6 +231,41 @@ impl PowerAmp {
     }
 }
 
+/// The pedal slot in front of the circuit. Append new ids only.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum PedalModel {
+    #[id = "none"]
+    #[name = "None"]
+    None,
+    #[id = "pedal_ts808"]
+    #[name = "Green 808"]
+    Green808,
+    /// Display name pending a generic replacement; see docs/models/big_muff.md.
+    #[id = "pedal_bigmuff_ramshead"]
+    #[name = "Big Muff"]
+    BigMuff,
+    #[id = "pedal_ts9"]
+    #[name = "Green 9"]
+    Green9,
+}
+
+impl PedalModel {
+    pub const ALL: [Self; 4] = [Self::None, Self::Green808, Self::BigMuff, Self::Green9];
+
+    pub fn name(self) -> &'static str {
+        Self::variants()[self.to_index()]
+    }
+
+    pub fn voice(self) -> voice::Pedal {
+        match self {
+            Self::None => voice::Pedal::None,
+            Self::Green808 => voice::Pedal::Green808,
+            Self::BigMuff => voice::Pedal::BigMuff,
+            Self::Green9 => voice::Pedal::Green9,
+        }
+    }
+}
+
 /// The cabinet after the power stage. `Legacy` (first, and the default for every
 /// old session) is the resistor load with the old Combo/Stack filter. The rest are
 /// geometry models; see docs/models/cabinets.md. Append new ids only.
@@ -723,6 +758,14 @@ pub struct GainStageParams {
     pub input_trim: FloatParam,
 
     // --- 2 Circuit -------------------------------------------------------
+    #[id = "pedal"]
+    pub pedal: EnumParam<PedalModel>,
+    #[id = "pedal_drive"]
+    pub pedal_drive: FloatParam,
+    #[id = "pedal_tone"]
+    pub pedal_tone: FloatParam,
+    #[id = "pedal_level"]
+    pub pedal_level: FloatParam,
     #[id = "circuit"]
     pub circuit: EnumParam<Circuit>,
     #[id = "power_amp"]
@@ -939,6 +982,10 @@ impl Default for GainStageParams {
 
             input_trim: decibels("Input", 24.0),
 
+            pedal: EnumParam::new("Pedal", PedalModel::None),
+            pedal_drive: position("Pedal Drive", 0.5),
+            pedal_tone: position("Pedal Tone", 0.5),
+            pedal_level: position("Pedal Level", 0.5),
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
             power_amp: EnumParam::new("Power Amp", PowerAmp::Matched),
             diode: EnumParam::new("Diode", Diode::Silicon),

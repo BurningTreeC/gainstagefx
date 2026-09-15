@@ -64,13 +64,73 @@ const D1N4148: DiodeSpec = DiodeSpec {
 /// what shapes its everyday sound. See `TS808.md` sections 8 and 9.
 const RAIL: f64 = 3.0;
 
+/// The values that differ between the revisions this netlist is built as.
+///
+/// See `docs/models/green_808.md` and `docs/models/green_9.md` for the sources.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Values {
+    /// C1, into the input buffer.
+    pub input_cap: f64,
+    /// The resistor under C6 in the tone control's shunt leg.
+    pub tone_shunt: f64,
+    /// From U1B's coupling capacitor to the Level pot.
+    pub level_feed: f64,
+    /// The output buffer's series resistor and the shunt after its capacitor.
+    pub out_series: f64,
+    pub out_shunt: f64,
+}
+
+/// The values this netlist has always had, kept so every existing session and
+/// preset using the `ts808` circuit sounds exactly as it did. They depart from all
+/// three drawings consulted in the tone shunt (1 k instead of 220 ohm), the level
+/// feed (220 ohm instead of 1 k) and C1 (22 nF instead of 20 nF). A versioned
+/// correction is pending an owner decision.
+pub const LEGACY: Values = Values {
+    input_cap: 22e-9,
+    tone_shunt: 1_000.0,
+    level_feed: 220.0,
+    out_series: 100.0,
+    out_shunt: 10_000.0,
+};
+
+/// The TS-808 as the three consulted sources agree it: S. Cerutti's traced
+/// drawing, ElectroSmash's analysis drawing, and R. G. Keen's "The Technology of
+/// the Tube Screamer" (220 ohm shunt with 0.22 uF, turnover near 3.2 kHz). Used by
+/// the independent pedal slot, which no older session depends on.
+pub const TS808: Values = Values {
+    input_cap: 20e-9,
+    tone_shunt: 220.0,
+    level_feed: 1_000.0,
+    out_series: 100.0,
+    out_shunt: 10_000.0,
+};
+
+/// The TS9: the same circuit with the output buffer's 470 ohm series and 100 k
+/// shunt resistors (R. G. Keen's model table, confirmed by builder comparisons).
+/// The op-amp type also varies across TS9 production; the op-amp here is ideal
+/// with a rail, so that difference is not represented.
+pub const TS9: Values = Values {
+    out_series: 470.0,
+    out_shunt: 100_000.0,
+    ..TS808
+};
+
 pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
+}
+
+/// A chosen revision. `build` is `LEGACY`.
+pub fn build_with(values: &Values, source: f64, load: f64) -> Result<Circuit, Fault> {
+    assemble(values, source, load, "out")
 }
 
 /// The same pedal, brought out at a chosen node. For measuring one stage at a
 /// time, which is the only way to find out which of them is wrong.
 pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
+    assemble(&LEGACY, source, load, at)
+}
+
+fn assemble(v: &Values, source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("TS808");
 
     // Where the player leaves the Level control.
@@ -94,7 +154,7 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
 
     // --- input buffer, Q1 -------------------------------------------------
     net.input("in", source)
-        .capacitor("in", "r1", 22e-9) // C1
+        .capacitor("in", "r1", v.input_cap) // C1
         .resistor("r1", "q1base", 1_000.0) // R1
         .resistor("q1base", "vref", 510_000.0) // R2
         .supply("v9", 100.0, 9.0)
@@ -189,21 +249,21 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
             TONE,
         )
         .capacitor("tone_w", "r8", 220e-9) // C6
-        .resistor("r8", "gnd", 1_000.0) // R8
+        .resistor("r8", "gnd", v.tone_shunt) // R8
         .opamp_biased("u1b", "tone_in", "minus_b", "vref", RAIL)
         .resistor("minus_b", "u1b", 1_000.0); // R9
 
     // --- output buffer, Q2 ------------------------------------------------
     net.capacitor("u1b", "r11", 1e-6) // C7
-        .resistor("r11", "lvl_top", 220.0) // R11
+        .resistor("r11", "lvl_top", v.level_feed) // R11
         .pot("lvl_top", "lvl", "gnd", 100_000.0, Taper::Audio, LEVEL)
         .capacitor("lvl", "q2base", 100e-9) // C8
         .resistor("q2base", "vref", 510_000.0) // R12
         .bipolar("v9", "q2base", "q2e", BC549) // Q2 BC549
         .resistor("q2e", "gnd", 10_000.0) // R13
-        .resistor("q2e", "r14", 100.0) // R14
+        .resistor("q2e", "r14", v.out_series) // R14
         .capacitor("r14", "out", 10e-6) // C9
-        .resistor("out", "gnd", 10_000.0) // R15
+        .resistor("out", "gnd", v.out_shunt) // R15
         .resistor("out", "gnd", load);
 
     net.build(at)

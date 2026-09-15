@@ -24,11 +24,12 @@ use nih_plug_vizia::{create_vizia_editor, vizia_assets, ViziaState, ViziaTheming
 use std::sync::Arc;
 
 use crate::params::{
-    Amplifier, Cabinet, Circuit, Diode, GainStageParams, Iron, Oversampling, PowerAmp, ToneStack,
+    Amplifier, CabModel, Cabinet, Circuit, Diode, GainStageParams, Iron, MicModel, Oversampling,
+    PedalModel, PowerAmp, SpeakerModel, ToneStack,
 };
 use panel::Faceplate;
 use style::*;
-use widgets::{Knob, Meter, Selector};
+use widgets::{Knob, Meter, Selector, Stepper};
 
 #[derive(Lens)]
 pub struct Panel {
@@ -372,6 +373,34 @@ fn input(cx: &mut Context) {
         9.5,
         meter_w,
         0x7e8a96,
+    );
+
+    // The pedal, between the guitar and the circuit. Its knobs are its own, so
+    // a pedal in front of an amplifier keeps both sets of controls.
+    label(cx, "pedal", body_x() + 30.0, top + 84.0, 9.5, 76.0, 0x7e8a96);
+    Stepper::new(
+        cx,
+        Panel::params,
+        |p| &p.pedal,
+        PedalModel::ALL.iter().map(|m| m.name()).collect(),
+        0,
+        true,
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 76.0))
+    .top(Pixels(top + 74.0))
+    .width(Pixels(200.0))
+    .height(Pixels(20.0));
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.pedal.value() != PedalModel::None),
+        move |cx, live| {
+            let live = live.get(cx);
+            let x0 = body_x() + 330.0;
+            placement_knob(cx, x0, top + 82.0, 11.0, "drive", |p| &p.pedal_drive, live, percent);
+            placement_knob(cx, x0 + 86.0, top + 82.0, 11.0, "tone", |p| &p.pedal_tone, live, percent);
+            placement_knob(cx, x0 + 172.0, top + 82.0, 11.0, "level", |p| &p.pedal_level, live, percent);
+        },
     );
 }
 
@@ -994,40 +1023,234 @@ fn tone(cx: &mut Context) {
 
 fn cabinet(cx: &mut Context) {
     let top = section_top(4);
+    let left = body_x() + 76.0;
+    let wide = 230.0;
+    let right = left + wide + 64.0;
+    let rest = body_x() + body_w() - right;
+    let dim = |live: bool| if live { 0x7e8a96 } else { 0x5a636b };
 
-    row(
+    // --- which cabinet, and the legacy filter it replaces -------------------
+    // Legacy is what every old session is: the resistor load and the baked
+    // Combo/Stack response. The two are never stacked, so the legacy row only
+    // applies while Legacy is chosen.
+    label(cx, "cabinet", body_x() + 30.0, top + 20.0, 9.5, 76.0, 0x7e8a96);
+    Stepper::new(
         cx,
-        top + 12.0,
-        "speaker",
-        |p| &p.cabinet,
-        Cabinet::ALL.iter().map(|c| c.name()).collect(),
+        Panel::params,
+        |p| &p.cab_model,
+        CabModel::ALL.iter().map(|c| c.name()).collect(),
+        0,
         true,
-        230.0,
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(left))
+    .top(Pixels(top + 10.0))
+    .width(Pixels(wide))
+    .height(Pixels(20.0));
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.cab_model.value() == CabModel::Legacy),
+        move |cx, legacy| {
+            let live = legacy.get(cx);
+            label(cx, "legacy", right - 30.0, top + 20.0, 9.5, 56.0, dim(live));
+            selector(
+                cx,
+                right,
+                top + 10.0,
+                rest,
+                |p| &p.cabinet,
+                Cabinet::ALL.iter().map(|c| c.name()).collect(),
+                live,
+            );
+        },
     );
 
-    // Two lines rather than one. A label wider than its box is not wrapped or
-    // clipped to it -- it spills out over whatever is beside it, which here
-    // was the selector it sits next to.
-    let x = body_x() + 76.0 + 230.0 + (body_w() - 306.0) / 2.0;
-    let w = body_w() - 306.0;
-    label(
+    // --- the driver ---------------------------------------------------------
+    Binding::new(
         cx,
-        "Most of what a distorted amplifier",
-        x,
-        top + 14.0,
-        9.5,
-        w,
-        0x86929c,
+        Panel::params.map(|p| p.cab_model.value() != CabModel::Legacy),
+        move |cx, live| {
+            let live = live.get(cx);
+            label(cx, "speaker", body_x() + 30.0, top + 48.0, 9.5, 76.0, dim(live));
+            Stepper::new(
+                cx,
+                Panel::params,
+                |p| &p.speaker,
+                SpeakerModel::ALL.iter().map(|s| s.name()).collect(),
+                0,
+                live,
+            )
+            .position_type(PositionType::SelfDirected)
+            .left(Pixels(left))
+            .top(Pixels(top + 38.0))
+            .width(Pixels(wide))
+            .height(Pixels(20.0));
+        },
     );
-    label(
+    // What the selection physically is, rather than what it is named after.
+    Label::new(cx, Panel::params.map(|p| cabinet_summary(p)))
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(right - 58.0))
+        .top(Pixels(top + 38.0))
+        .width(Pixels(rest + 58.0))
+        .height(Pixels(20.0))
+        .child_top(Stretch(1.0))
+        .child_bottom(Stretch(1.0))
+        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .font_size(9.5)
+        .color(Color::rgb(0x86, 0x92, 0x9c))
+        .hoverable(false);
+
+    // --- the microphones ----------------------------------------------------
+    Binding::new(
         cx,
-        "sounds like. A preamp wants it off.",
-        x,
-        top + 30.0,
-        9.5,
-        w,
-        0x86929c,
+        Panel::params.map(|p| p.physical_cabinet()),
+        move |cx, live| {
+            let live = live.get(cx);
+            label(cx, "mic A", body_x() + 30.0, top + 76.0, 9.5, 76.0, dim(live));
+            // Mic A always exists; Bypass is an ideal omni at the placement.
+            Stepper::new(
+                cx,
+                Panel::params,
+                |p| &p.mic_a,
+                MicModel::ALL.iter().map(|m| m.name()).collect(),
+                1,
+                live,
+            )
+            .position_type(PositionType::SelfDirected)
+            .left(Pixels(left))
+            .top(Pixels(top + 66.0))
+            .width(Pixels(wide))
+            .height(Pixels(20.0));
+            label(cx, "mic B", right - 30.0, top + 76.0, 9.5, 56.0, dim(live));
+            Stepper::new(
+                cx,
+                Panel::params,
+                |p| &p.mic_b,
+                MicModel::ALL.iter().map(|m| m.name()).collect(),
+                0,
+                live,
+            )
+            .position_type(PositionType::SelfDirected)
+            .left(Pixels(right))
+            .top(Pixels(top + 66.0))
+            .width(Pixels(rest))
+            .height(Pixels(20.0));
+        },
     );
+
+    // Placement: three for A, three for B and the blend, one row.
+    Binding::new(
+        cx,
+        Panel::params.map(|p| {
+            u8::from(p.physical_cabinet()) | (u8::from(p.mic_b.value() != MicModel::Off) << 1)
+        }),
+        move |cx, flags| {
+            let flags = flags.get(cx);
+            let a = flags & 1 != 0;
+            let b = a && flags & 2 != 0;
+            let step = body_w() / 7.0;
+            let x = |i: usize| body_x() + step * (i as f32 + 0.5);
+            let y = top + 116.0;
+            let r = 15.0;
+            placement_knob(cx, x(0), y, r, "A position", |p| &p.mic_a_position, a, percent);
+            placement_knob(cx, x(1), y, r, "A distance", |p| &p.mic_a_distance, a, centimetres);
+            placement_knob(cx, x(2), y, r, "A angle", |p| &p.mic_a_angle, a, degrees);
+            placement_knob(cx, x(3), y, r, "B position", |p| &p.mic_b_position, b, percent);
+            placement_knob(cx, x(4), y, r, "B distance", |p| &p.mic_b_distance, b, centimetres);
+            placement_knob(cx, x(5), y, r, "B angle", |p| &p.mic_b_angle, b, degrees);
+            placement_knob(cx, x(6), y, r, "blend", |p| &p.mic_blend, b, percent);
+
+            let row_y = top + 170.0;
+            label(cx, "B polarity", body_x() + 30.0, row_y + 10.0, 9.5, 76.0, dim(b));
+            selector(cx, left, row_y, 140.0, |p| &p.mic_b_invert, vec!["Normal", "Invert"], b);
+            label(cx, "time", left + 180.0, row_y + 10.0, 9.5, 56.0, dim(b));
+            selector(cx, left + 208.0, row_y, 160.0, |p| &p.mic_align, vec!["Physical", "Aligned"], b);
+        },
+    );
+}
+
+fn percent(v: f32) -> String {
+    format!("{:.0} %", v * 100.0)
+}
+
+fn centimetres(v: f32) -> String {
+    format!("{:.1} cm", v * 100.0)
+}
+
+fn degrees(v: f32) -> String {
+    format!("{:.0} deg", v)
+}
+
+/// A knob for a microphone placement, dimmed when it does not apply.
+#[allow(clippy::too_many_arguments)]
+fn placement_knob<F>(
+    cx: &mut Context,
+    x: f32,
+    y: f32,
+    radius: f32,
+    name: &str,
+    to_param: F,
+    live: bool,
+    format: fn(f32) -> String,
+) where
+    F: Fn(&Arc<GainStageParams>) -> &nih_plug::prelude::FloatParam + Copy + 'static,
+{
+    Knob::new(cx, Panel::params, to_param, radius, live)
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(x - radius))
+        .top(Pixels(y - radius));
+    label(cx, name, x, y + radius + 10.0, 9.5, 76.0, if live { 0x9aa6b0 } else { 0x5a636b });
+    Label::new(
+        cx,
+        Panel::params.map(move |p| {
+            if live {
+                format(to_param(p).value())
+            } else {
+                String::from("--")
+            }
+        }),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(x - 38.0))
+    .top(Pixels(y + radius + 21.0 - LABEL_H / 2.0))
+    .width(Pixels(76.0))
+    .height(Pixels(LABEL_H))
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .child_top(Stretch(1.0))
+    .child_bottom(Stretch(1.0))
+    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .font_size(9.5)
+    .color(Color::rgb(0xff, 0xb2, 0x6a))
+    .hoverable(false);
+}
+
+/// The selected cabinet and driver, described physically. The product names
+/// of the hardware they were researched from stay in the developer documents.
+pub fn cabinet_summary(p: &GainStageParams) -> String {
+    use crate::voice::{CabinetChoice, SpeakerChoice};
+    let cabinet = p.cab_model.value().voice();
+    let speaker = p.speaker.value();
+    match cabinet {
+        CabinetChoice::Legacy => String::from("resistor load, baked cabinet filter"),
+        CabinetChoice::Bypass if speaker == SpeakerModel::Bypass => String::from("power stage DI"),
+        CabinetChoice::Bypass => String::from("driver on an open baffle"),
+        CabinetChoice::Model(_) if speaker == SpeakerModel::Bypass => String::from("power stage DI"),
+        CabinetChoice::Model(cab) => {
+            let driver = match speaker.voice() {
+                SpeakerChoice::Model(profile) => profile.name,
+                _ => cab.default_speaker.name,
+            };
+            format!(
+                "{} back, {}x12, {:.0} L, {}",
+                if cab.is_open() { "open" } else { "closed" },
+                cab.drivers,
+                cab.volume() * 1000.0,
+                driver
+            )
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
