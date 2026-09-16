@@ -41,50 +41,41 @@ fn at(set: [f64; 5], hz: f64) -> f64 {
 
 const CENTRES: [f64; 5] = [60.0, 240.0, 750.0, 2200.0, 6600.0];
 
-/// Each slider cuts hardest at the frequency the drawing labels it, and the
-/// slider two bands away moves that frequency far less.
+/// Each slider cuts *and boosts* the band it is named for, by about the same
+/// amount either way, and the slider two bands away moves that band far less.
 ///
-/// This is what says the component values were read correctly and hung
-/// together correctly. The branch resonances alone land at 88, 372, 723, 1576
-/// and 4823 Hz -- nowhere near the labels -- because a branch is loaded by its
-/// own slider and by the four bands beside it. So the labels can only come out
-/// right if the whole network is right, which makes this a strong test of a
-/// weak-looking claim.
+/// The equaliser is a feedback network: every slider's track runs between the
+/// amplifier's two inputs, so its branch shunts the input at one end (cut) and
+/// the feedback at the other (boost). Built as a network to ground it could cut
+/// twelve decibels and boost less than three.
 #[test]
-fn every_slider_cuts_the_band_it_is_named_for() {
+fn every_slider_cuts_and_boosts_its_own_band() {
     let flat = [0.5f64; 5];
     for (band, centre) in CENTRES.into_iter().enumerate() {
+        let base = at(flat, centre);
         let mut cut = flat;
         cut[band] = 0.0;
-        let base = at(flat, centre);
-        let own = at(cut, centre) - base;
-        assert!(
-            own < -6.0,
-            "the {centre:.0} Hz slider should cut its own band: {own:.1} dB"
-        );
-        // A band two along has to be left comparatively alone. Not untouched:
-        // these are broad, deliberately, and Mesa's own figure is that the
-        // equaliser is not constant-Q.
+        let mut boost = flat;
+        boost[band] = 1.0;
+        let (down, up) = (at(cut, centre) - base, at(boost, centre) - base);
+        assert!(down < -8.0, "{centre:.0} Hz cuts only {down:.1} dB");
+        assert!(up > 8.0, "{centre:.0} Hz boosts only {up:.1} dB");
+        assert!((up + down).abs() < 2.0, "{centre:.0} Hz: {down:.1} / {up:+.1} dB");
         let far = (band + 2) % 5;
         let mut other = flat;
-        other[far] = 0.0;
+        other[far] = 1.0;
         let bleed = at(other, centre) - base;
         assert!(
-            bleed > own + 4.0,
-            "the {:.0} Hz slider moves {centre:.0} Hz by {bleed:.1} dB, nearly as \
-             much as {centre:.0} Hz's own slider does at {own:.1} dB -- the bands \
-             are not separated",
+            bleed < up - 4.0,
+            "the {:.0} Hz slider moves {centre:.0} Hz by {bleed:.1} dB against its own {up:.1}",
             CENTRES[far]
         );
     }
 }
 
-/// Sliders at their centres is the reference the rest is measured from, and it
-/// has to be the same at every frequency to within the network's own tilt --
-/// otherwise "flat" is not flat and every setting inherits a shape nobody
-/// asked for.
+/// Every slider centred is flat.
 #[test]
-fn the_centre_position_is_the_reference() {
+fn the_centre_position_is_flat() {
     let flat = [0.5f64; 5];
     let levels: Vec<f64> = [40.0, 240.0, 750.0, 2200.0, 10_000.0]
         .into_iter()
@@ -92,9 +83,19 @@ fn the_centre_position_is_the_reference() {
         .collect();
     let high = levels.iter().cloned().fold(f64::MIN, f64::max);
     let low = levels.iter().cloned().fold(f64::MAX, f64::min);
-    assert!(
-        high - low < 6.0,
-        "with every slider centred the network tilts by {:.1} dB across the band",
-        high - low
-    );
+    assert!(high - low < 1.0, "centred, the equaliser tilts by {:.1} dB", high - low);
+    assert!(high.abs() < 1.0, "centred, the equaliser is not unity: {high:.1} dB");
+}
+
+/// A quarter of the travel does a real part of the job, rather than the whole
+/// range living in the last few millimetres.
+#[test]
+fn a_quarter_of_the_travel_is_worth_decibels() {
+    let flat = [0.5f64; 5];
+    for (band, centre) in CENTRES.into_iter().enumerate() {
+        let mut quarter = flat;
+        quarter[band] = 0.75;
+        let lift = at(quarter, centre) - at(flat, centre);
+        assert!((3.0..9.0).contains(&lift), "{centre:.0} Hz at three quarters: {lift:.1} dB");
+    }
 }

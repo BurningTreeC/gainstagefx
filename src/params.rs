@@ -59,7 +59,7 @@ pub enum Circuit {
     #[name = "Green 808"]
     Screamer,
     #[id = "bigmuff"]
-    #[name = "Big Muff"]
+    #[name = "Ram Fuzz"]
     Muff,
     #[id = "markiic"]
     #[name = "Cali IIC+"]
@@ -73,7 +73,30 @@ pub enum Circuit {
     #[id = "twin"]
     #[name = "American Twin"]
     Twin,
+    // Appended, like everything above. Host state stores these ids, so sessions
+    // are unaffected; a saved preset old enough to carry no ids is migrated in
+    // `presets::migrate`. See `LEGACY_CIRCUIT_COUNT`.
+    #[id = "amp_jcm800_2203"]
+    #[name = "Brit 800"]
+    Brit800,
+    #[id = "pre_api_312"]
+    #[name = "American 312"]
+    American312,
+    #[id = "pre_ssl_4000e"]
+    #[name = "British 4K E"]
+    ConsoleE,
+    #[id = "pre_ua_610a"]
+    #[name = "Tube 610"]
+    Tube610,
+    #[id = "amp_marshall_1959"]
+    #[name = "Brit Plexi"]
+    Plexi,
 }
+
+/// How long the circuit list was before the Brit 800 was appended. A saved
+/// preset written before presets carried stable ids stores the circuit as
+/// `index / (LEGACY_CIRCUIT_COUNT - 1)`.
+pub const LEGACY_CIRCUIT_COUNT: usize = 13;
 
 impl Circuit {
     /// The name the panel puts on it, which is the same name the host shows.
@@ -87,14 +110,19 @@ impl Circuit {
             Circuit::Console => "Console",
             Circuit::Studio => "Studio",
             Circuit::Screamer => "Green 808",
-            Circuit::Muff => "Big Muff",
+            Circuit::Muff => "Ram Fuzz",
             Circuit::Boogie => "Cali IIC+",
             Circuit::Peavey => "American 5150",
             Circuit::Neve => "British 73",
             Circuit::Twin => "American Twin",
+            Circuit::Brit800 => "Brit 800",
+            Circuit::American312 => "American 312",
+            Circuit::ConsoleE => "British 4K E",
+            Circuit::Tube610 => "Tube 610",
+            Circuit::Plexi => "Brit Plexi",
         }
     }
-    pub const ALL: [Circuit; 13] = [
+    pub const ALL: [Circuit; 18] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -108,6 +136,11 @@ impl Circuit {
         Circuit::Peavey,
         Circuit::Neve,
         Circuit::Twin,
+        Circuit::Brit800,
+        Circuit::American312,
+        Circuit::ConsoleE,
+        Circuit::Tube610,
+        Circuit::Plexi,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -125,6 +158,11 @@ impl Circuit {
             Circuit::Peavey => voice::Gain::Peavey,
             Circuit::Neve => voice::Gain::Neve,
             Circuit::Twin => voice::Gain::Twin,
+            Circuit::Brit800 => voice::Gain::Brit800,
+            Circuit::American312 => voice::Gain::American312,
+            Circuit::ConsoleE => voice::Gain::ConsoleE,
+            Circuit::Tube610 => voice::Gain::Tube610,
+            Circuit::Plexi => voice::Gain::Plexi,
         }
     }
 
@@ -203,16 +241,20 @@ pub enum PowerAmp {
     #[id = "power_2203_el34"]
     #[name = "Brit EL34"]
     BritEL34,
+    #[id = "power_1959_el34"]
+    #[name = "Brit Plexi EL34"]
+    BritPlexiEL34,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
         Self::American6L6Clean,
         Self::American6L6HighGain,
         Self::BritEL34,
+        Self::BritPlexiEL34,
     ];
 
     pub fn name(self) -> &'static str {
@@ -227,6 +269,7 @@ impl PowerAmp {
             Self::American6L6Clean => voice::PowerAmp::American6L6Clean,
             Self::American6L6HighGain => voice::PowerAmp::American6L6HighGain,
             Self::BritEL34 => voice::PowerAmp::BritEL34,
+            Self::BritPlexiEL34 => voice::PowerAmp::BritPlexiEL34,
         }
     }
 }
@@ -240,17 +283,32 @@ pub enum PedalModel {
     #[id = "pedal_ts808"]
     #[name = "Green 808"]
     Green808,
-    /// Display name pending a generic replacement; see docs/models/big_muff.md.
+    /// Displayed as "Ram Fuzz", after the 1973 "Ram's Head" circuit it is built
+    /// from; the id is unchanged. See docs/models/big_muff.md.
     #[id = "pedal_bigmuff_ramshead"]
-    #[name = "Big Muff"]
+    #[name = "Ram Fuzz"]
     BigMuff,
     #[id = "pedal_ts9"]
     #[name = "Green 9"]
     Green9,
+    // Appended: saved presets carry ids, and host state stores them.
+    #[id = "pedal_rat"]
+    #[name = "Rodent"]
+    Rodent,
+    #[id = "pedal_fuzz_face"]
+    #[name = "Round Fuzz"]
+    RoundFuzz,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 4] = [Self::None, Self::Green808, Self::BigMuff, Self::Green9];
+    pub const ALL: [Self; 6] = [
+        Self::None,
+        Self::Green808,
+        Self::BigMuff,
+        Self::Green9,
+        Self::Rodent,
+        Self::RoundFuzz,
+    ];
 
     pub fn name(self) -> &'static str {
         Self::variants()[self.to_index()]
@@ -262,6 +320,8 @@ impl PedalModel {
             Self::Green808 => voice::Pedal::Green808,
             Self::BigMuff => voice::Pedal::BigMuff,
             Self::Green9 => voice::Pedal::Green9,
+            Self::Rodent => voice::Pedal::Rodent,
+            Self::RoundFuzz => voice::Pedal::RoundFuzz,
         }
     }
 }

@@ -1,10 +1,10 @@
 //! The Mesa Boogie Mark IIC+ lead-channel preamplifier, from the schematic.
 //!
-//! Four triode stages and a Fender tone stack between the first two of them.
+//! Six triode stages and a Fender tone stack between the first two of them.
 //! `INPUT` through V1A, the stack, Volume 1, V1B, then the lead drive control
-//! into V3B and V4A, ending where the drawing marks `LEAD OUTPUT`. What comes
-//! after that on the real amp is reverb, the graphic equaliser and the power
-//! stage, none of which is preamplifier.
+//! into V3B and V4A to `LEAD OUTPUT`, back through the lead return into V2B,
+//! the Lead Master, and V2A, ending where the drawing marks `TO EQ`. What comes
+//! after that on the real amp is the graphic equaliser and the power stage.
 //!
 //! One number here is not off the drawing: the supply. Only capacitor voltage
 //! ratings are printed, never the rail, so `SUPPLY` is a stated assumption
@@ -18,14 +18,21 @@ pub const BASS: usize = 1;
 pub const MIDDLE: usize = 2;
 pub const VOLUME: usize = 3;
 pub const LEAD_DRIVE: usize = 4;
+/// The Lead Master, between V2B and V2A. See `tap`.
+pub const LEAD_MASTER: usize = 5;
+
+/// Where the Lead Master rests: five on the dial. A stated playing position,
+/// like Volume 1's, not a value off the drawing.
+pub const LEAD_MASTER_REST: f64 = 0.5;
 
 /// The plate supply. Not printed on the schematic -- see the note above.
 pub const SUPPLY: f64 = 410.0;
 
 const ECC83: TriodeSpec = TriodeSpec::ECC83;
 
+/// The whole lead channel, from the input jack to `TO EQ`.
 pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
-    tap(source, load, "lead_out")
+    tap(source, load, "to_eq")
 }
 
 /// The same preamplifier brought out at a chosen node, for measuring one
@@ -81,12 +88,23 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         // *shorts them out* at the top of the travel and both controls run
         // backwards. Turned up they have to have more resistance in circuit,
         // not less.
+        //
+        // The Bass pot is an **audio** track: "250k A" on the SLOCLONE trace
+        // (Mesa_MK2C+_SLOCLONE_v2, rev 2.0, 2020), and Mesa's replacement part
+        // A250K LOG is listed for "MK II/III Bass, Treble, Master". It was
+        // built linear, which put 30 % of the track -- all but 1.5 dB of the
+        // bass there is -- in circuit at a setting of 3. That is the setting
+        // Mesa's manual gives for a high Volume 1 precisely *because* it is
+        // most of the way down an audio track. The middle is "10k B" on the
+        // same trace. The treble is marked "250k B" there against the parts
+        // listing's A; the trace, which read this amplifier's own pots, is
+        // followed. See `docs/models/cali_iic_plus.md`.
         .pot(
             "t_bot",
             "b_bot",
             "b_bot",
             250_000.0,
-            Taper::ReverseLinear,
+            Taper::ReverseAudio,
             BASS,
         )
         .pot(
@@ -128,9 +146,8 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         // than the drawing for it.
         //
         // R10 3.3 M with C10 10 pF across it also leaves this node, feeding
-        // the pre-lead signal forward to the lead *return*. That return is
-        // past where this model stops, so the network is not built; it is not
-        // an omission from the lead path.
+        // the pre-lead signal forward to the lead return at V2B's grid. It is
+        // built with the recovery stages below.
         .capacitor("v1b_p", "v1b_out", 0.1e-6) // C7
         .resistor("v1b_out", "gnd", 91_000.0) // R9, 91 k on RP10A
         .capacitor("v1b_out", "lead_in", 0.02e-6); // C21
@@ -184,13 +201,78 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .capacitor("v4a_p", "gnd", 1000e-12) // C27, across R27 to the rail
         .triode("v4a_p", "v4a_g", "v4a_k", ECC83);
 
-    // --- out ---------------------------------------------------------------
+    // --- the lead output ------------------------------------------------------
     net.capacitor("v4a_p", "c30", 0.047e-6) // C30
         .resistor("c30", "lead_out", 220_000.0) // R31
         .capacitor("c30", "lead_out", 250e-12) // C31, across R31
         .resistor("lead_out", "gnd", 100_000.0) // R32
-        .capacitor("lead_out", "gnd", 500e-12) // C32
-        .resistor("lead_out", "gnd", load);
+        .capacitor("lead_out", "gnd", 500e-12); // C32
+
+    // --- the lead return and V2B ---------------------------------------------
+    // This model used to stop at `LEAD OUTPUT` and hand that straight to the
+    // graphic equaliser, which left out two triodes. On both drawings
+    // (`RP10 IIC+ Schematic.pdf` and `Mark IIC+ Schematic FINAL.pdf`) LDR3A
+    // takes `LEAD OUTPUT` back to V2B's grid, where the rhythm signal also
+    // arrives from V1B through R10 3.3 M with C10 10 pF across it, and R11 680 k
+    // with C11 47 pF shunts the node. V2B has a 100 k plate and a 1.5 k cathode
+    // with nothing across it (the 15 uF there is marked "++ MOD"). At a
+    // guitar's level the lead output is several volts, so V2B clips: it is the
+    // fifth gain stage of the lead channel, and without it the amplifier was
+    // audibly short of the saturation it is known for.
+    //
+    // LDR3A is lit in lead mode and is modelled as a short.
+    net.resistor("v1b_out", "lead_out", 3_300_000.0) // R10
+        .capacitor("v1b_out", "lead_out", 10e-12) // C10
+        .resistor("lead_out", "gnd", 680_000.0) // R11
+        .capacitor("lead_out", "gnd", 47e-12) // C11
+        .resistor("v2b_k", "gnd", 1_500.0) // R16, unbypassed
+        .supply("v2b_p", 100_000.0, SUPPLY) // R19 on RP10, R13 on FINAL
+        .triode("v2b_p", "lead_out", "v2b_k", ECC83);
+
+    // --- the Lead Master ------------------------------------------------------
+    // R105 47 k and C9 .047 uF, then the Lead Master: a 250 k track wired as a
+    // rheostat to ground through LDR4A, so it shunts the node rather than
+    // dividing it, and turned up it takes resistance *out* of the shunt.
+    // Behind it R102 150 k into R101 4.7 k is a thirty decibel pad, which is
+    // where the reverb return joins and the effects send leaves.
+    net.resistor("v2b_p", "r105", 47_000.0) // R105
+        .capacitor("r105", "lead_master", 0.047e-6) // C9
+        .rest(LEAD_MASTER, LEAD_MASTER_REST)
+        .pot(
+            "lead_master",
+            "gnd",
+            "gnd",
+            250_000.0,
+            Taper::ReverseAudio,
+            LEAD_MASTER,
+        )
+        .resistor("lead_master", "send", 150_000.0) // R102
+        .resistor("send", "gnd", 4_700.0) // R101
+        // The RETURN jack is normalled to SEND with no cable in the loop. R103
+        // 47 k is at the return. R12 2.2 k in the send is marked "a later edition
+        // factory mod" and is left out.
+        .resistor("send", "gnd", 47_000.0); // R103
+
+    // --- V2A, the recovery stage ---------------------------------------------
+    // R104 1 k at the cathode with C16 .47 uF straight across it, so the stage
+    // is bypassed from about 340 Hz up. C15 22 uF reaches ground only through
+    // R20 68 k unless the GAIN BOOST (pull) switch shorts R20; the switch is in,
+    // which is stock. The 120 pF from grid to cathode is marked "removed after
+    // August 1984" and "don't think present on RP10A", and is not built.
+    net.resistor("v2a_k", "gnd", 1_000.0) // R104
+        .capacitor("v2a_k", "gnd", 0.47e-6) // C16
+        .capacitor("v2a_k", "boost", 22e-6) // C15
+        .resistor("boost", "gnd", 68_000.0) // R20, shorted by GAIN BOOST
+        .supply("v2a_p", 120_000.0, SUPPLY) // R13 on RP10, R19 on FINAL
+        .triode("v2a_p", "send", "v2a_k", ECC83);
+
+    // --- to the equaliser -----------------------------------------------------
+    // C12 .047 uF to `TO EQ`. The MASTER control (a 1 M rheostat here) is what
+    // the power stage's master pot stands in for: the equaliser between them is
+    // linear, so the order of the two changes loading and not the sound. R106
+    // 15 k is a later mod and is left out. `load` is the equaliser's 1 M input.
+    net.capacitor("v2a_p", "to_eq", 0.047e-6) // C12
+        .resistor("to_eq", "gnd", load);
 
     net.build(at)
 }
@@ -206,40 +288,35 @@ pub const BAND_750: usize = 2;
 pub const BAND_2200: usize = 3;
 pub const BAND_6600: usize = 4;
 
-/// The slider track. **Not on the drawing** -- neither sheet prints a value
-/// beside the five sliders -- so this is the figure the Mesa graphic is
-/// commonly built with, and it is the one number here that is an assumption
-/// rather than a reading. It sets how deep the bands go: the ratio between it
-/// and each band's series resistor is the band's range.
-const SLIDER: f64 = 100_000.0;
+/// The slider track, 50 k. **Not on either drawing**: the value is the one Mesa's
+/// replacement slide pot for the Mark I-IV equaliser is sold as (Tube Amp Doctor
+/// part Z-MB-S50K). Its law is `TAPER`.
+const SLIDER: f64 = 50_000.0;
 
-/// What the driver puts back.
+/// The equaliser's amplifier, Q2-Q4, as an op-amp with a rail it never meets.
 ///
-/// The network is five shunts across one node, so even with every slider
-/// centred it throws away **16.6 dB** at 1 kHz into the impedance this circuit
-/// is driven from. That is what the four transistors are there for: Q1 to Q4
-/// are a recovery amplifier making up the equaliser's insertion loss, and this
-/// is the one number of theirs that reaches the sound.
-///
-/// Measured at the sliders' centres, at 1 kHz, into `voice::SOURCE` and
-/// `voice::LOAD` -- the same place the chain builds it. Not flat across the
-/// band: the network tilts about two and a half decibels either side of this,
-/// because five resonant shunts in parallel do not add up to a flat load. That
-/// tilt is the network's own and is left in.
-pub const DRIVER_GAIN_DB: f64 = 16.64;
+/// On the drawings the equaliser is fed from V2A through the MASTER control, so it
+/// never sees more than a few volts. Here the power stage's master pot stands in
+/// for MASTER and sits *after* the equaliser, so the equaliser is handed the
+/// recovery stage's full swing. A realistic rail would clip it there, which the
+/// amplifier does not do; so the transistors' own limits are not modelled.
+const EQ_RAIL: f64 = 1_000.0;
 
-/// The slider's law, chosen by measurement -- see `examples/graphic.rs`.
-const TAPER: Taper = Taper::ReverseLog { span: 200.0 };
+/// The slider's law. ESTIMATED: neither the drawings nor the replacement part
+/// give it. A linear track moves each band by about 1 dB over the middle half of
+/// its travel and does everything in the last few millimetres, because a 470 ohm
+/// branch against 3.32 k only acts with the wiper close to an end. A dual-slope
+/// track with a span of 150 puts about half of each band's range at a quarter of
+/// the travel either side of a flat centre (measured: -14 to +14 dB at 60 Hz,
+/// ±6 at a quarter), which is how the sliders behave in use.
+const TAPER: Taper = Taper::Symmetric { span: 150.0 };
 
 /// One band: its series resistor, inductor and capacitor.
 ///
 /// Read off `docs/schematics/RP10 IIC+ Schematic.pdf`, which the FINAL sheet
 /// carries identically. The frequencies are the drawing's own labels for the
-/// sliders; they are **not** the series resonance of L and C, which lands at
-/// 88, 372, 723, 1576 and 4823 Hz. That is not an error in either place -- a
-/// band's branch is loaded by the slider it hangs off and by the four bands
-/// beside it, and where the assembled network peaks is not where an isolated
-/// LC would.
+/// sliders; the series resonances land at 88, 372, 723, 1576 and 4823 Hz, and
+/// where the assembled network peaks is decided by the feedback loop around it.
 const BANDS: [(f64, f64, f64); 5] = [
     (470.0, 1.0, 3.3e-6),       // R51, L1, C51 -- 60 Hz
     (470.0, 0.39, 0.47e-6),     // R52, L2, C52 -- 240 Hz
@@ -250,47 +327,47 @@ const BANDS: [(f64, f64, f64); 5] = [
 
 /// The graphic equaliser, from `EQ INPUT` to `EQ OUTPUT`.
 ///
-/// **Where it sits.** The drawing takes `EQ INPUT` from `LEAD OUTPUT`, which is
-/// exactly where `build` above stops, and returns `EQ OUTPUT` to the phase
-/// inverter. So this goes between the preamplifier and the power amplifier,
-/// which is the whole reason it matters: §9.8 -- a low band boosted here is
-/// boosted *after* four gain stages and lands on the power stage, and moving
-/// it to the end of the chain would be a different amplifier.
+/// **What it is.** A feedback equaliser, not a passive network. Q1 is an emitter
+/// follower (C41 .1 uF in, R42/R43 470 k bias, R41 1 M at the input). From its
+/// emitter R46 3.32 k feeds Q2's base; Q2 and Q3 are a long-tailed pair on R47
+/// 22.1 k, Q4 follows Q3's collector, and R48 3.32 k (with C47 10 pF) brings the
+/// output back to Q3's base. So with nothing else connected it is a unity-gain
+/// amplifier whose two inputs are fed through equal resistors.
 ///
-/// **The topology, traced.** Two rails. Each slider sits across them, and its
-/// wiper drives a series R-L-C back to the lower rail. The lower rail is
-/// **ground**, switched: it runs to the LDR5A, which is the equaliser's
-/// footswitch, with the 68 k beside it marked "EQ POP FIX. FACTORY MOD" --
-/// with the cell dark the rail floats and every branch is an open circuit,
-/// which is the equaliser out of circuit and flat.
+/// **Where the sliders go.** Every slider's track runs between those two inputs --
+/// the drawings join the bottoms to Q2's base and the tops to Q3's base -- and its
+/// wiper drives a series R-L-C to the switched ground (LDR5A lit). Toward Q2's
+/// side the branch shunts the input and cuts its band; toward Q3's side it shunts
+/// the feedback and boosts it; centred, the two cancel. That is the ±12 dB
+/// equaliser Mesa describes.
 ///
-/// So each band is a series-resonant branch shunting the signal to ground
-/// through its own slider. At the band's frequency the branch is about its
-/// series resistor -- 470 ohms against a 100 k track -- and away from it the
-/// branch is an open circuit and the track stands alone. Sliding toward the
-/// signal end brings that low impedance across the node and takes the band
-/// out; sliding the other way shorts the branch and leaves it. With the
-/// sliders at their centres as the reference, that is the boost and cut either
-/// side of flat that Mesa's own figure of +/- 12 dB describes.
-///
-/// Getting this the other way round is the mistake worth recording: read as a
-/// series network between two live rails, with the next stage's megohm across
-/// the output, the whole equaliser moved the response by **0.1 dB** at every
-/// slider and every frequency. A series impedance into a load a hundred times
-/// larger does nothing, and that is what says the lower rail is ground.
-///
+/// **The mistake this replaces.** It was built with every track from the signal
+/// to ground and a fixed 16.6 dB "driver" make-up after it: the network could
+/// cut 12 dB but boost less than 3, so every V that player's set came out as a
+/// cut in the middle with almost nothing added at the ends. Measured and
+/// recorded in `docs/models/cali_iic_plus.md`.
 pub fn graphic(source: f64, load: f64) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("Mark IIC+ graphic EQ");
-    net.input("eq", source);
+    net.input("eq", source)
+        .resistor("eq", "gnd", 1_000_000.0) // R41
+        .capacitor("eq", "q1b", 0.1e-6) // C41
+        .resistor("q1b", "gnd", 235_000.0) // R42 || R43, to AC ground
+        .opamp("q1e", "q1b", "q1e", EQ_RAIL) // Q1, the follower
+        .resistor("q1e", "cut", 3_320.0) // R46, into Q2's base
+        .opamp("q4e", "cut", "boost", EQ_RAIL) // Q2/Q3/Q4
+        .resistor("q4e", "boost", 3_320.0) // R48, into Q3's base
+        .capacitor("q4e", "boost", 10e-12); // C47
     for (band, &(r, l, c)) in BANDS.iter().enumerate() {
         let wiper = format!("w{band}");
         let after_r = format!("m{band}");
         let after_l = format!("n{band}");
-        net.pot("eq", &wiper, "gnd", SLIDER, TAPER, band)
+        // Fraction 1 puts the wiper at the boost end: a slider pushed up boosts.
+        net.pot("boost", &wiper, "cut", SLIDER, TAPER, band)
             .resistor(&wiper, &after_r, r)
             .inductor(&after_r, &after_l, l)
             .capacitor(&after_l, "gnd", c);
     }
-    net.resistor("eq", "gnd", load);
-    net.build("eq")
+    net.capacitor("q4e", "eqout", 10e-6) // C48
+        .resistor("eqout", "gnd", load);
+    net.build("eqout")
 }

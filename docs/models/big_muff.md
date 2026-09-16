@@ -3,8 +3,8 @@
 Engineering identity: **Electro-Harmonix Big Muff Pi, 1973 "violet" Ram's Head (V2
 family)**. Also defined but not selectable: 1971 Triangle (V1) and Colorsound Supa
 Tonebender voicings. Stable id `bigmuff` (existing `circuit` value) and
-`pedal_bigmuff_ramshead` (pedal slot). The display name "Big Muff" is still a trademark;
-a generic name awaits the owner's decision.
+`pedal_bigmuff_ramshead` (pedal slot). Display name: **Ram Fuzz** (owner request 2026-09-15), after
+the collector name of the 1973 circuit; the stable ids are unchanged.
 
 ## Checkpoint (2026-09-15, routing only)
 

@@ -24,11 +24,15 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 
 1. `circuit` is an `EnumParam<Circuit>` with explicit ids
    `clean, crunch, highgain, overdrive, distortion, console, studio, ts808, bigmuff,
-   markiic, evh5150, neve, twin`. **Order is also load-bearing**: legacy saved presets
-   store *normalized* values (index / (len-1)). Appending a variant changes every
-   old normalized value, so new models must **not** be appended to `Circuit` unless a
-   versioned migration for legacy normalized values is added first
-   (see `tests/modular_state.rs`).
+   markiic, evh5150, neve, twin, amp_jcm800_2203, pre_api_312, pre_ssl_4000e, pre_ua_610a`. **Order is also load-bearing**:
+   legacy saved presets store *normalized* values (index / (len-1)).
+   - `amp_jcm800_2203` was appended on 2026-09-15 together with that migration:
+     `presets::migrate` re-expresses a saved preset without stable ids against
+     `params::LEGACY_CIRCUIT_COUNT = 13`. Tested in `tests/modular_state.rs`.
+   - Host state stores enum ids as strings, so sessions are unaffected.
+   - Host automation lanes store normalized values; a lane recorded on the circuit
+     parameter before the append will map differently. This is unavoidable when an enum
+     grows.
 2. `power_amp` (added this refactor) ids: `matched, bypass, power_mark_iic,
    power_twin_ab763, power_5150, power_2203_el34`. Saved presets now also store
    `model_ids`, so this list *can* grow (ids take precedence). Host state stores
@@ -47,9 +51,10 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 
 | Internal ID | Current display | Hardware inspiration | Implementation | Status | Source status | Power-stage status | Cab/speaker dependency | Presets | Serialization concerns | Proposed display |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `neve` (proposed `pre_diyre_73p_v11`) | British 73 | DIY Recording Equipment **73P v1.1** 500-series card (Neve-1073-style); *not* a literal 1073, not 73P2 (no 73P2 material in repo) | `src/circuits/neve.rs` (`build`, `output`), `voice.rs` (`line` sim) | IMPLEMENTED (input xfmr, PRE1, PRE2, OUTPUT BC109C/TIP3055/VTB1148) | Project-local DIYRE drawings (5 PNGs, untracked); traced node by node; no online source log in `docs/models` yet | Own line driver, independent of guitar power (kept under power Bypass) | None; presets use Cabinet Off | Neve Preamp, Neve Driven | Display changed (was "Neve 73P"); id unchanged | British 73 |
-| — (proposed `pre_api_312`) | — | API **312** discrete op-amp preamp card (revision TBD: 2520 op-amp, input/output transformers) | none | PLANNED | Not researched | n/a | none | none | would need a non-`Circuit` selection or migration | American 312 |
-| — (proposed `pre_ua_610`) | — | Universal Audio **610** tube preamp (610-B / 6176 channel, revision TBD) | none | PLANNED | Not researched | n/a | none | none | as above | Tube 610 |
+| `neve` (proposed `pre_diyre_73p_v11`) | British 73 | DIY Recording Equipment **73P v1.1** 500-series card (Neve-1073-style); *not* a literal 1073, not 73P2 (no 73P2 material in repo) | `src/circuits/neve.rs` (`build`, `output`), `voice.rs` (`line` sim) | IMPLEMENTED (input xfmr, PRE1, PRE2, OUTPUT BC109C/TIP3055/VTB1148) | Project-local DIYRE drawings (5 PNGs, untracked); traced node by node; no online source log in `docs/models` yet | Own line driver, independent of guitar power (kept under power Bypass) | None; presets use Cabinet Off | British 73 Pre, British 73, Driven | Display changed (was "Neve 73P"); id unchanged | British 73 |
+| `pre_api_312` | American 312 | API **312** mic preamp card (2622 input, 2520 op-amp, 2503 output) | `american312.rs` | IMPLEMENTED 2026-09-15 (card values; 2520 as ideal op-amp; transformer internals ESTIMATED to API data) | [american_312.md](models/american_312.md): API card drawing, transformer and 2520 data sheets | none | none | American Console Pre, American Console, Pushed | appended to `circuit` | American 312 |
+| `pre_ua_610a` | Tube 610 | Universal Audio **610-A** modular console preamp (UA drawing C-10068, Hinson redraw) | `tube610.rs` | IMPLEMENTED 2026-09-15 (two feedback pairs, EQ at 0, Hi gain; B+ and transformer internals ESTIMATED) | [tube_610.md](models/tube_610.md): Hinson redraw via Internet Archive, UTC catalogue and terminal table, RCA 12AY7 | own output transformer | none | Valve Console Pre, Valve Console, Pushed | appended to `circuit` | Tube 610 |
+| `pre_ssl_4000e` | British 4K E | Solid State Logic **SL 4000 E** channel amp 82E01 mic amplifier (Jensen JE-115K-E) | `console_e.rs` | IMPLEMENTED 2026-09-15 (two 5534s around the gain pot; Jensen core ESTIMATED to data sheet) | [british_4k_e.md](models/british_4k_e.md): SSL drawings T82001-71 rev 16 and 82E01-710-8208-12, Jensen data sheets | none | none | British Desk Pre, British Desk, Driven | appended to `circuit` | British 4K E |
 | `console` | Console | GENERIC: step-up input transformer + discrete stage; amplifier row picks valve/JFET/op-amp | `studio.rs` (`CONSOLE`, `VALVE_CHANNEL`), `jfet.rs`, `valve.rs`, `iron.rs` | GENERIC | No hardware claim | none | none | 4 Studio presets | id/order fixed | Console (keep) |
 | `studio` | Studio | GENERIC: op-amp gain on studio rails + output iron | `studio.rs` (`STUDIO`) | GENERIC | No hardware claim | none | none | 6 Studio presets | id/order fixed | Studio (keep) |
 
@@ -59,9 +64,9 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 |---|---|---|---|---|---|---|---|---|---|---|
 | `ts808` (proposed `pedal_ts808`) | Green 808 | Ibanez **TS808** Tube Screamer (JRC4558D, 1N4148 pair, BC549 buffers) | `src/circuits/ts808.rs` | IMPLEMENTED (input buffer, clipper, tone, level, output buffer); **values corrected 2026-09-15** to the three-source TS-808 values (owner decision), catalogue voice and pedal slot `pedal_ts808` build the same circuit | [green_808.md](models/green_808.md): Cerutti and ElectroSmash drawings, Keen analysis; manufacturer sheet not obtained | none | Catalogue voice, or in front of any circuit via the pedal slot | Green Overdrive, Screamer Boost, Texas Storm '83 (slot) | Display changed (was "TS808"); stored `ts808` now means the corrected values | Green 808 |
 | `pedal_ts9` (pedal slot only) | Green 9 | Ibanez **TS9** Tube Screamer (TS808 with 470 ohm / 100 k output resistors) | `ts808::TS9` via `ts808::build_with` | IMPLEMENTED (op-amp type variation not represented) | [green_9.md](models/green_9.md) | none | pedal slot | none | new `pedal` parameter id | Green 9 |
-| — (proposed `pedal_rat`) | — | **ProCo RAT** (revision TBD: original/RAT2; LM308 with 30 pF compensation, 1N914 hard clip, Filter control) | none | PLANNED | Not researched. Solver gap: op-amp has rail clamp only, no GBW/slew, which the RAT's LM308 behavior depends on | none | needs pedal slot | none | new selection | Rodent |
-| — (proposed `pedal_fuzz_face`) | — | Dallas Arbiter **Fuzz Face** (germanium PNP AC128/NKT275 vs silicon BC108/BC183 NPN: must pick one and document) | none | PLANNED | Not researched. Solver gap: no PNP device (a positive-ground PNP circuit can be written as its exact negative-ground NPN mirror, which must be documented) | none | needs pedal slot | none | new selection | Round Fuzz |
-| `bigmuff` (proposed `pedal_bigmuff_ramshead`) | Big Muff | Electro-Harmonix **Big Muff Pi, 1973 Ram's Head** (4 transistors, 1N914) | `src/circuits/bigmuff.rs` (`RAMS_HEAD` selected); also `pedal_bigmuff_ramshead` in the pedal slot | IMPLEMENTED | Kit Rae's traced archive ([big_muff.md](models/big_muff.md)); value-by-value cross-check not yet done | none | same pedal-slot limitation | Sustain Fuzz | Not in the target list: **keep**. Display name is still a trademark and needs a decision | proposed "Ram Fuzz '73" (needs user approval) |
+| `pedal_rat` (pedal slot) | Rodent | **Pro Co RAT**, LM308 with 30 pF compensation, 1N914 to ground, 2N5458 follower | `rodent.rs` | IMPLEMENTED 2026-09-15 | ElectroSmash analysis + LM308 curves; op-amp as transconductor-integrator (GBW 1.1 MHz, slew 0.3 V/us). Log: `docs/models/rodent.md` | none | pedal slot | none | `pedal` id | Rodent |
+| `pedal_fuzz_face` (pedal slot) | Round Fuzz | Arbiter **Fuzz Face**, germanium PNP (1966-68), AC128 models | `round_fuzz.rs` | IMPLEMENTED 2026-09-15 | ElectroSmash analysis + fuzzboxes.org survey (C1 2.5 uF / C2 20 uF conflict recorded); native PNP device. Log: `docs/models/round_fuzz.md` | none | pedal slot | none | `pedal` id | Round Fuzz |
+| `bigmuff` (proposed `pedal_bigmuff_ramshead`) | Ram Fuzz | Electro-Harmonix **Big Muff Pi, 1973 Ram's Head** (4 transistors, 1N914) | `src/circuits/bigmuff.rs` (`RAMS_HEAD` selected); also `pedal_bigmuff_ramshead` in the pedal slot | IMPLEMENTED | Kit Rae's traced archive ([big_muff.md](models/big_muff.md)); value-by-value cross-check not yet done | none | same pedal-slot limitation | Sustain Fuzz | Not in the target list: **keep**. Display renamed to "Ram Fuzz" (owner request, 2026-09-15); ids unchanged | Ram Fuzz |
 | (voicing) `bigmuff::TRIANGLE` | — | EHX Big Muff Pi **1971 Triangle** | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (netlist voicing, tested in `tests/bigmuff.rs`, not selectable) | as above | none | — | none | would need selection | TBD |
 | (voicing) `bigmuff::SUPA` | — | **Colorsound Supa Tonebender** (Muff topology, first stage without diodes) | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (not selectable) | as above | none | — | none | would need selection | TBD |
 | — | — | **Boss HM-2** Heavy Metal | only `docs/schematics/boss-hm2.png` (untracked) | REFERENCED ONLY | Local drawing present; no code, no log | — | — | — | — | not assigned |
@@ -73,11 +78,12 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 
 | Internal ID | Current display | Hardware inspiration | Implementation | Status | Source status | Power-stage status | Cab/speaker dependency | Presets | Serialization concerns | Proposed display |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `markiic` (proposed `amp_mark_iic_plus`) | Cali IIC+ | Mesa/Boogie **Mark IIC+** lead channel, stock RP10A C+ **60 W** interpretation | `markiic.rs` (preamp + 5-band graphic), `power.rs::MARKIIC` | IMPLEMENTED preamp; graphic via scalar recovery gain | [docs/models/cali_iic_plus.md](models/cali_iic_plus.md): archival preamp scan, community RP10/FINAL redraws (local copies), discrepancies recorded (recovery/master order, PI values) | Split at `lead_out` -> graphic -> power. Matched = Cali 6L6 | legacy Combo/Stack filter only | Boutique Lead, Boutique Rhythm | display changed | Cali IIC+ |
+| `markiic` (proposed `amp_mark_iic_plus`) | Cali IIC+ | Mesa/Boogie **Mark IIC+** lead channel, stock RP10A C+ **60 W** interpretation | `markiic.rs` (preamp + 5-band graphic), `power.rs::MARKIIC` | IMPLEMENTED preamp **including lead return, V2B, Lead Master and V2A (corrected 2026-09-15)**; graphic via scalar recovery gain | [docs/models/cali_iic_plus.md](models/cali_iic_plus.md): archival preamp scan, community RP10/FINAL redraws (local copies); PI values discrepancy still recorded | Split at `TO EQ` -> graphic -> power (master pot stands in for MASTER). Matched = Cali 6L6. Panel Master = Lead Master | physical cabinets | Boutique Lead, Boutique Rhythm, Puppet Master '86 | display changed; legacy fixture blocks for this voice no longer compared | Cali IIC+ |
 | `evh5150` (proposed `amp_5150`) | American 5150 | Peavey **EVH 5150** lead channel (code labels match the **5150 II** factory drawing's ULTRA controls; revision unresolved) | `evh5150.rs`, `power.rs::EVH5150` | PARTIALLY IMPLEMENTED: six triodes built; **tone stack not modelled** (plugin tone section substitutes *after* power) | [docs/models/american_5150.md](models/american_5150.md); local `peavey-5150.jpeg` | Split at `To Tone Stack` (33 k load). Matched = American 6L6 High-Gain; no resonance control | legacy filter | Ultra Lead, Ultra Rhythm | display changed | American 5150 |
 | `twin` (proposed `amp_twin_reverb_ab763`) | American Twin | Fender **Twin Reverb AB763** (blackface) Vibrato channel | `twin.rs`, `power.rs::TWIN`, `dsp/spring.rs`, `dsp/tremolo.rs` | IMPLEMENTED channel; reverb mix network and 22 k PI tail / 450 V PI rail discrepancies documented; effects applied after power (legacy placement) | [docs/models/american_twin.md](models/american_twin.md): original schematic and layout read | Split at channel output -> synthetic open master -> power. Matched = American 6L6 Clean | legacy filter | Blackface Clean, Blackface Throb | display changed (was "Twin Reverb") | American Twin |
-| — (proposed `amp_jcm800_2203`) | — | Marshall **JCM800 2203** (100 W, 1981 export drawings) preamp | none (power only: `power.rs::BRIT_EL34`) | PLANNED (preamp); power IMPLEMENTED | [docs/models/brit_el34.md](models/brit_el34.md) covers PI/power/PSU; preamp drawing located (drtube `jcm800pr.gif`, local `jcm_800_2203.pdf`) but preamp not yet analyzed | Brit EL34 exists and is selectable | legacy filter | none | new selection (not `Circuit`) | Brit 800 |
+| `amp_jcm800_2203` | Brit 800 | Marshall **JCM800 2203** (100 W) master-volume preamp, 1981 drawing | `brit800.rs`, `power.rs::BRIT_EL34` | IMPLEMENTED 2026-09-15 (four triodes, cathode follower, stack, droppers) | [docs/models/brit_800.md](models/brit_800.md): 1981 Marshall drawing with voltage table, 1988 Marshall drawing cross-check, local redraw; middle 22k / treble 220k / bass log resolved from 1988 | Split at the treble wiper into the master pot. Matched = Brit EL34 | physical cabinets | Brit Crunch, Brit Lead, Screamer Boost | appended to `circuit`; saved presets without ids migrated (`LEGACY_CIRCUIT_COUNT`) | Brit 800 |
 | — (proposed `amp_dual_rectifier`) | — | Mesa/Boogie **Dual Rectifier** (revision TBD: Rev. C/F/G, 2-channel vs 3-channel) | none | PLANNED | Not researched | needs its own 6L6 + tube-rectifier power | — | none | new selection | Cali Rectifier |
+| `amp_marshall_1959` | Brit Plexi | Marshall **1959 Super Lead** (100 W, EL34), bright channel, Unicord drawing 70-6-11 July 1970 | `plexi.rs`, `power.rs::PLEXI_EL34` | IMPLEMENTED 2026-09-15 (three triodes, cathode follower, stack, 20k/10k/10k droppers) | [docs/models/brit_plexi.md](models/brit_plexi.md): Unicord 1970, Marshall c.1967 (voltages), Marshall 1988 1959 STD (pot laws, later changes), Robinette cross-check | Split at the treble wiper into the inverter's coupling cap (no master). Matched = Brit Plexi EL34 | physical cabinets | Plexi Crunch, Plexi Cranked, Blackout '80, Experienced '67 | appended to `circuit` | Brit Plexi |
 | — (proposed `amp_hiwatt_dr103`) | — | **Hiwatt DR103** Custom 100 (revision TBD) | none | PLANNED | Not researched | needs Brit EL34 Hi-Headroom power | — | none | new selection | Brit DR103 |
 | — (proposed `amp_vox_ac30_tb`) | — | **Vox AC30** Top Boost (generation TBD: JMI AC30/6 TB vs later) | none | PLANNED | Not researched; `PentodeSpec::EL84` exists but unused | needs cathode-biased EL84, no-NFB power: `power.rs` builder has fixed-bias only | — | none | new selection | Brit AC30 |
 | `clean` / `crunch` / `highgain` | Clean / Crunch / High Gain | GENERIC 1/2/3 cascaded ECC83 stages | `preamp.rs`, `valve.rs` | GENERIC | no hardware claim | none (can use any power override) | legacy filter | Preamp/Crunch/High Gain presets (15) | id/order fixed | keep |
@@ -91,7 +97,8 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 | `power_mark_iic` | Cali 6L6 | Mark IIC+ 60 W: ECC83 LTP, 2x 6L6GC, NFB/presence | `power.rs::MARKIIC` | IMPLEMENTED (values not fully reconciled with RP10 drawing: see research log) | cali_iic_plus.md | **8 ohm resistor** | Boutique presets (matched) | appended id |
 | `power_twin_ab763` | American 6L6 Clean | Twin Reverb AB763: ECC81 LTP, 4x 6L6GC, 820 ohm NFB | `power.rs::TWIN` | IMPLEMENTED (22 k tail / 450 V PI rail discrepancy documented) | american_twin.md | **4 ohm resistor** | Blackface presets | appended id |
 | `power_5150` | American 6L6 High-Gain | 5150: ECC83 LTP, 4x 6L6GC, 39 k NFB, presence, no resonance | `power.rs::EVH5150` | IMPLEMENTED (resonance/depth missing) | american_5150.md | **8 ohm resistor** | Ultra presets | appended id |
-| `power_2203_el34` | Brit EL34 | JCM800 2203 1981: ECC83 LTP 82k/100k, 4x EL34 -42 V, 100 k NFB from 4 ohm, 22k/.1uF presence, Hammond 1750U data | `power.rs::BRIT_EL34` | IMPLEMENTED (supply impedances/core estimated) | brit_el34.md (1981 originals + 1988 cross-check) | **4 ohm resistor** | none yet | appended id |
+| `power_2203_el34` | Brit EL34 | JCM800 2203 1981: ECC83 LTP 82k/100k, 4x EL34 -42 V, 100 k NFB from 4 ohm, 22k/.1uF presence, Hammond 1750U data | `power.rs::BRIT_EL34` | IMPLEMENTED (supply impedances/core estimated) | brit_el34.md (1981 originals + 1988 cross-check) | 4 ohm resistor, or a speaker load on the physical path | Brit Crunch, Brit Lead, Screamer Boost (matched to Brit 800) | appended id |
+| `power_1959_el34` | Brit Plexi EL34 | 1959 Super Lead 1970: 2203-family inverter and iron, no master, 47 k NFB from 16 ohm (23.5 k at 4), 5 k presence, -37 V (estimated) | `power.rs::PLEXI_EL34` | IMPLEMENTED 2026-09-15 (supply voltages from the 1967 drawing, bias and iron estimated) | brit_plexi.md | 4 ohm resistor or speaker load | matched to Brit Plexi | appended id |
 | — (proposed `power_dr103_el34`) | Brit EL34 Hi-Headroom | Hiwatt DR103 power section | none | PLANNED | not researched | — | — | new id |
 | — (proposed `power_ac30_el84`) | Brit EL84 Class-A | Vox AC30 cathode-biased 4x EL84, no NFB | none | PLANNED (needs cathode-bias builder support) | not researched | — | — | new id |
 | — (proposed `power_rectifier_6l6`) | (to name) | Dual Rectifier power, tube rectifier sag | none | PLANNED | not researched | — | — | new id |
@@ -169,8 +176,8 @@ Microphones (research: `docs/models/microphones.md`):
 | Spring reverb | Accutronics 4AB3C1B-style long tank | `dsp/spring.rs` | IMPLEMENTED; dispersive allpass approximation |
 | Optical tremolo | AB763 neon/LDR vibrato | `dsp/tremolo.rs` | IMPLEMENTED; behavioral LDR model |
 | Tubes | ECC83, ECC82, ECC81, 6L6GC, EL34, **EL84 (unused)** | `netlist.rs` | Koren-style fits |
-| Semiconductors | BC549, BC109C, TIP3055, FS36999, 2N5457, J201, J113, 2SC3378, 1N914/1N4148, Si/Ge/LED | various | Ebers-Moll NPN only (**no PNP**), Shockley diodes, square-law JFET |
-| Op-amp | JRC4558 (TS808) and generic | `netlist` `OpAmp` | ideal with rail limit; **no GBW/slew** |
+| Semiconductors | BC549, BC109C, TIP3055, FS36999, 2N5457, J201, J113, 2SC3378, 1N914/1N4148, Si/Ge/LED | various | Ebers-Moll NPN and PNP (PNP added 2026-09-15), Shockley diodes, square-law JFET, AC128 |
+| Op-amp | JRC4558 (TS808) and generic; LM308 (Rodent) | `netlist` `OpAmp`, `Transconductor`; `rodent::lm308` | ideal with rail limit; LM308 built from a saturating transconductor into an integrator for GBW and slew |
 
 ## 7. Gaps between repository and targets
 
@@ -182,17 +189,14 @@ Microphones (research: `docs/models/microphones.md`):
   (not selectable), the seven generic topologies, the Iron materials, the Twin
   spring and tremolo, and the legacy Combo/Stack cabinets.
 - **Referenced only:** Boss HM-2 and MT-2 (local schematics, no code).
-- **Missing preamps and pedals:** American 312, Tube 610, Rodent, Round Fuzz,
-  Brit 800 preamp (research checkpoint in `docs/models/brit_800.md`), Cali Rectifier,
-  Brit DR103, Brit AC30.
+- **Missing preamps:** Cali Rectifier, Brit DR103, Brit AC30 (pedals: none outstanding).
 - **Missing power stages:** EL34 Hi-Headroom, EL84 Class-A, Rectifier power.
 - **Chain stages:** pedal slot, speaker load, cabinets and microphones are implemented.
 - **Research logs still owed for implemented models:** Big Muff (value-by-value
   cross-check), 73P (online DIYRE source record).
-- **Solver capability gaps:** PNP devices (Fuzz Face), op-amp GBW/slew (RAT LM308),
-  cathode-biased no-NFB power stage (AC30), tube rectifier sag (Rectifier/AC30),
+- **Solver capability gaps:** cathode-biased no-NFB power stage (AC30), tube rectifier sag (Rectifier/AC30),
   control-rate adjustable R/L/C was added 2026-09-15 for speaker loads (`tests/speaker_load.rs`).
-- **Naming decision needed from the user:** a generic display name for Big Muff.
+- **Naming:** Big Muff is displayed as "Ram Fuzz" (2026-09-15).
 
 ## 8. Prioritized research / implementation queue
 
@@ -212,13 +216,13 @@ schematic-first checkpoint in `docs/models/<model>.md` *before* code.
    the TS808 and Big Muff research logs (schematic re-verification) before routing.
 6. DONE: **Green 9 (TS9)**: schematic research on TS808 vs TS9 differences; implement as a
    revision of the TS808 netlist only where the drawings agree.
-7. **Brit 800 preamp (2203)**: analyze the located 1981 preamp drawing; Matched = Brit EL34.
-8. **Rodent (ProCo RAT)**: revision research plus an op-amp GBW/slew device extension.
-9. **Round Fuzz (Fuzz Face)**: choose germanium or silicon revision; PNP mirror documented.
+7. DONE: **Brit 800 preamp (2203)**: analyze the located 1981 preamp drawing; Matched = Brit EL34.
+8. DONE: **Rodent (ProCo RAT)**: LM308 revision; `Part::Transconductor` for GBW/slew.
+9. DONE: **Round Fuzz (Fuzz Face)**: germanium revision; native PNP device.
 10. **Brit AC30 + EL84 Class-A** (cathode-bias/no-NFB and rectifier support in `power.rs`).
 11. **Brit DR103 + EL34 Hi-Headroom.**
 12. **Cali Rectifier + its power stage** (exact revision).
-13. **American 312, Tube 610.**
+13. DONE: **American 312, Tube 610** (plus British 4K E).
 14. **Versioned corrections** of inherited approximations: the 5150 tone stack,
     Twin PI tail/rail, Mark IIC+ recovery/master order and PI values. Each needs its
     own regression checkpoint and must never silently alter Matched legacy output.

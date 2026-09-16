@@ -185,7 +185,8 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             | Part::Pentode { .. }
             | Part::Jfet { .. }
             | Part::Core { .. }
-            | Part::Bipolar { .. } => unreachable!("checked above"),
+            | Part::Bipolar { .. }
+            | Part::Transconductor { .. } => unreachable!("checked above"),
         }
     }
 

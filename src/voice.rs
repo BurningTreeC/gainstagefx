@@ -27,8 +27,8 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    bigmuff, cabinet, clipper, evh5150, iron, markiic, neve, power, preamp, studio, tone, ts808,
-    twin,
+    american312, bigmuff, brit800, cabinet, clipper, console_e, evh5150, iron, markiic, neve,
+    plexi, power, preamp, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -79,7 +79,8 @@ pub enum Gain {
     Screamer,
     /// Electro-Harmonix Big Muff Pi, the 1973 Ram's Head.
     Muff,
-    /// Mesa Boogie Mark IIC+, the lead channel preamplifier.
+    /// Mesa Boogie Mark IIC+, the lead channel preamplifier through its
+    /// recovery stage.
     Boogie,
     /// Peavey EVH 5150, the lead channel preamplifier.
     Peavey,
@@ -88,10 +89,24 @@ pub enum Gain {
     /// Fender Twin Reverb, AB763 -- the circuit the '65 reissue reissues.
     /// Vibrato channel, with the spring tank and the tremolo.
     Twin,
+    /// Marshall JCM800 2203, the 1981 master-volume preamplifier. Its matched
+    /// power stage is the Brit EL34. See `circuits::brit800`.
+    Brit800,
+    /// API 312 microphone preamplifier card. See `circuits::american312`.
+    American312,
+    /// SSL SL 4000 E channel mic amplifier (82E01). See `circuits::console_e`.
+    ConsoleE,
+    /// Universal Audio 610-A modular console preamplifier. See `circuits::tube610`.
+    Tube610,
+    /// Marshall 1959 Super Lead (Unicord drawing, 1970), bright channel. Its
+    /// matched power stage is the Brit Plexi EL34. See `circuits::plexi`.
+    Plexi,
 }
 
 impl Gain {
-    pub const ALL: [Gain; 13] = [
+    // Appended: the calibration table and every chain's circuit slots are laid
+    // out in this order.
+    pub const ALL: [Gain; 18] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -105,6 +120,11 @@ impl Gain {
         Gain::Peavey,
         Gain::Neve,
         Gain::Twin,
+        Gain::Brit800,
+        Gain::American312,
+        Gain::ConsoleE,
+        Gain::Tube610,
+        Gain::Plexi,
     ];
 
     pub fn name(self) -> &'static str {
@@ -122,6 +142,11 @@ impl Gain {
             Gain::Boogie => "Mark IIC+",
             Gain::Peavey => "5150",
             Gain::Neve => "Neve 73P",
+            Gain::Brit800 => "JCM800 2203",
+            Gain::American312 => "API 312",
+            Gain::ConsoleE => "SSL 4000 E",
+            Gain::Tube610 => "UA 610-A",
+            Gain::Plexi => "1959 Super Lead",
         }
     }
 
@@ -139,6 +164,11 @@ impl Gain {
             Gain::Screamer => ts808::DRIVE,
             Gain::Twin => twin::VOLUME,
             Gain::Muff => bigmuff::SUSTAIN,
+            Gain::Brit800 => brit800::VOLUME,
+            Gain::American312 => american312::GAIN,
+            Gain::ConsoleE => console_e::GAIN,
+            Gain::Tube610 => tube610::LEVEL,
+            Gain::Plexi => plexi::VOLUME,
             _ => clipper::GAIN,
         }
     }
@@ -173,6 +203,10 @@ impl Gain {
             Gain::Boogie => "LEAD DRIVE",
             Gain::Peavey => "PRE GAIN",
             Gain::Neve => "GAIN",
+            Gain::Brit800 => "PREAMP",
+            Gain::American312 | Gain::ConsoleE => "GAIN",
+            Gain::Tube610 => "LEVEL",
+            Gain::Plexi => "VOLUME",
             _ => "DRIVE",
         }
     }
@@ -190,10 +224,14 @@ impl Gain {
     ///
     /// - the pedals' Level and Volume, which is what they are called;
     /// - the 73P's output trim;
-    /// - the two amplifiers with a master, at their **power stage** -- a
-    ///   Mark IIC+'s Lead Master and a 5150's post gain are after the
-    ///   preamplifier, which is the whole method of both amplifiers: gain in
-    ///   front, level at the back;
+    /// - the 5150's post gain, at its **power stage**: it is after the
+    ///   preamplifier, which is the amplifier's whole method -- gain in front,
+    ///   level at the back;
+    /// - the Mark IIC+'s **Lead Master**, in the preamplifier, because that is
+    ///   where the drawing puts it: between V2B and the V2A recovery stage, so
+    ///   it sets how hard V2A and the power stage are driven. The amplifier's
+    ///   overall MASTER sits after V2A, and the power stage's master pot stands
+    ///   in for it at its resting position;
     /// - the Mark IIC+'s Volume 1 is *not* this. It is an input volume and it
     ///   sits ahead of the lead circuit; Lead Drive is already the Drive knob.
     ///
@@ -207,7 +245,9 @@ impl Gain {
             Gain::Screamer => Some(Level::Circuit(ts808::LEVEL)),
             Gain::Muff => Some(Level::Circuit(bigmuff::VOLUME)),
             Gain::Neve => Some(Level::Circuit(neve::TRIM)),
-            Gain::Peavey | Gain::Boogie => Some(Level::Power(power::MASTER)),
+            Gain::Boogie => Some(Level::Circuit(markiic::LEAD_MASTER)),
+            // The 2203's Master Volume is the pot the Brit EL34 stage begins with.
+            Gain::Peavey | Gain::Brit800 => Some(Level::Power(power::MASTER)),
             _ => None,
         }
     }
@@ -220,6 +260,8 @@ impl Gain {
         match self {
             Gain::Boogie => Some((markiic::BASS, markiic::MIDDLE, markiic::TREBLE)),
             Gain::Twin => Some((twin::BASS, twin::MIDDLE, twin::TREBLE)),
+            Gain::Brit800 => Some((brit800::BASS, brit800::MIDDLE, brit800::TREBLE)),
+            Gain::Plexi => Some((plexi::BASS, plexi::MIDDLE, plexi::TREBLE)),
             // The TS808 and the Muff have a single tone control, which the
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
@@ -265,6 +307,8 @@ impl Gain {
             Gain::Boogie => Some(&power::PowerSpec::MARKIIC),
             Gain::Peavey => Some(&power::PowerSpec::EVH5150),
             Gain::Twin => Some(&power::PowerSpec::TWIN),
+            Gain::Brit800 => Some(&power::PowerSpec::BRIT_EL34),
+            Gain::Plexi => Some(&power::PowerSpec::PLEXI_EL34),
             _ => None,
         }
     }
@@ -275,7 +319,17 @@ impl Gain {
     pub fn is_modelled(self) -> bool {
         matches!(
             self,
-            Gain::Screamer | Gain::Muff | Gain::Boogie | Gain::Peavey | Gain::Neve | Gain::Twin
+            Gain::Screamer
+                | Gain::Muff
+                | Gain::Boogie
+                | Gain::Peavey
+                | Gain::Neve
+                | Gain::Twin
+                | Gain::Brit800
+                | Gain::American312
+                | Gain::ConsoleE
+                | Gain::Tube610
+                | Gain::Plexi
         )
     }
 
@@ -466,14 +520,16 @@ pub enum PowerModel {
     American6L6Clean,
     American6L6HighGain,
     BritEL34,
+    BritPlexiEL34,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 4] = [
+    pub const ALL: [PowerModel; 5] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
         PowerModel::BritEL34,
+        PowerModel::BritPlexiEL34,
     ];
 
     pub fn spec(self) -> &'static power::PowerSpec {
@@ -482,6 +538,7 @@ impl PowerModel {
             Self::American6L6Clean => &power::PowerSpec::TWIN,
             Self::American6L6HighGain => &power::PowerSpec::EVH5150,
             Self::BritEL34 => &power::PowerSpec::BRIT_EL34,
+            Self::BritPlexiEL34 => &power::PowerSpec::PLEXI_EL34,
         }
     }
 
@@ -491,6 +548,7 @@ impl PowerModel {
             Self::American6L6Clean => 1,
             Self::American6L6HighGain => 2,
             Self::BritEL34 => 3,
+            Self::BritPlexiEL34 => 4,
         }
     }
 
@@ -501,7 +559,8 @@ impl PowerModel {
             Self::American6L6HighGain => {
                 voice_index(Gain::Peavey, Diode::Silicon, Amplifier::Valve)
             }
-            Self::BritEL34 => VOICES,
+            Self::BritEL34 => voice_index(Gain::Brit800, Diode::Silicon, Amplifier::Valve),
+            Self::BritPlexiEL34 => voice_index(Gain::Plexi, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -516,16 +575,18 @@ pub enum PowerAmp {
     American6L6Clean,
     American6L6HighGain,
     BritEL34,
+    BritPlexiEL34,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
         Self::American6L6Clean,
         Self::American6L6HighGain,
         Self::BritEL34,
+        Self::BritPlexiEL34,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -534,6 +595,8 @@ impl PowerAmp {
                 Gain::Boogie => Some(PowerModel::Cali6L6),
                 Gain::Twin => Some(PowerModel::American6L6Clean),
                 Gain::Peavey => Some(PowerModel::American6L6HighGain),
+                Gain::Brit800 => Some(PowerModel::BritEL34),
+                Gain::Plexi => Some(PowerModel::BritPlexiEL34),
                 _ => None,
             },
             Self::Bypass => None,
@@ -541,6 +604,7 @@ impl PowerAmp {
             Self::American6L6Clean => Some(PowerModel::American6L6Clean),
             Self::American6L6HighGain => Some(PowerModel::American6L6HighGain),
             Self::BritEL34 => Some(PowerModel::BritEL34),
+            Self::BritPlexiEL34 => Some(PowerModel::BritPlexiEL34),
         }
     }
 }
@@ -557,12 +621,39 @@ pub enum Pedal {
     BigMuff,
     /// The Ibanez TS9 (`ts808::TS9`).
     Green9,
+    /// The Pro Co RAT, LM308 version (`circuits::rodent`).
+    Rodent,
+    /// The Arbiter Fuzz Face, germanium (`circuits::round_fuzz`).
+    RoundFuzz,
+}
+
+/// What a guitar puts out for a nominal digital signal: the level every circuit
+/// with a guitar in front of it is calibrated at (`examples/calibrate.rs`).
+pub const GUITAR_VOLTS: f64 = 0.122;
+
+/// Where a pedal's three knobs land in its netlist. `usize::MAX` is a knob the
+/// pedal does not have.
+#[derive(Clone, Copy, Debug)]
+struct PedalControls {
+    drive: usize,
+    tone: usize,
+    /// The pedal's control runs the other way from the panel's Tone knob: the
+    /// Rodent's FILTER darkens as it turns up.
+    tone_inverted: bool,
+    level: usize,
 }
 
 impl Pedal {
-    pub const ALL: [Pedal; 4] = [Pedal::None, Pedal::Green808, Pedal::BigMuff, Pedal::Green9];
-    /// The catalogue voice each slot's controls and input calibration follow.
-    const CIRCUITS: [Gain; 3] = [Gain::Screamer, Gain::Muff, Gain::Screamer];
+    pub const ALL: [Pedal; 6] = [
+        Pedal::None,
+        Pedal::Green808,
+        Pedal::BigMuff,
+        Pedal::Green9,
+        Pedal::Rodent,
+        Pedal::RoundFuzz,
+    ];
+    /// How many pedal circuits a chain holds.
+    const SLOTS: usize = 5;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -570,14 +661,65 @@ impl Pedal {
             Pedal::Green808 => Some(0),
             Pedal::BigMuff => Some(1),
             Pedal::Green9 => Some(2),
+            Pedal::Rodent => Some(3),
+            Pedal::RoundFuzz => Some(4),
         }
+    }
+
+    /// Whether the pedal has a tone control for the panel's Tone knob.
+    pub fn has_tone(self) -> bool {
+        self.slot()
+            .is_some_and(|slot| Self::controls(slot).tone != usize::MAX)
     }
 
     fn build(slot: usize) -> Result<Netlist, Fault> {
         match slot {
             0 => ts808::build_with(&ts808::TS808, 10_000.0, 470_000.0),
             1 => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
-            _ => ts808::build_with(&ts808::TS9, 10_000.0, 470_000.0),
+            2 => ts808::build_with(&ts808::TS9, 10_000.0, 470_000.0),
+            3 => rodent::build(10_000.0, 470_000.0),
+            _ => round_fuzz::build(10_000.0, 470_000.0),
+        }
+    }
+
+    fn controls(slot: usize) -> PedalControls {
+        match slot {
+            0 | 2 => PedalControls {
+                drive: ts808::DRIVE,
+                tone: ts808::TONE,
+                tone_inverted: false,
+                level: ts808::LEVEL,
+            },
+            1 => PedalControls {
+                drive: bigmuff::SUSTAIN,
+                tone: bigmuff::TONE,
+                tone_inverted: false,
+                level: bigmuff::VOLUME,
+            },
+            3 => PedalControls {
+                drive: rodent::DISTORTION,
+                tone: rodent::FILTER,
+                tone_inverted: true,
+                level: rodent::VOLUME,
+            },
+            _ => PedalControls {
+                drive: round_fuzz::FUZZ,
+                tone: usize::MAX,
+                tone_inverted: false,
+                level: round_fuzz::VOLUME,
+            },
+        }
+    }
+
+    /// Volts at the pedal's input for a nominal digital signal. The three older
+    /// pedals keep the calibration of the catalogue voice they share a netlist
+    /// with; the newer ones take a guitar's level directly.
+    fn input_volts(slot: usize) -> f64 {
+        let of = |gain: Gain| CALIBRATION[voice_index(gain, Diode::Silicon, Amplifier::Valve)].drive_volts;
+        match slot {
+            0 | 2 => of(Gain::Screamer),
+            1 => of(Gain::Muff),
+            _ => GUITAR_VOLTS,
         }
     }
 }
@@ -758,6 +900,15 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // twenty four decibels.
         Gain::Peavey => evh5150::build(10_000.0, evh5150::TONE_STACK_INPUT),
         Gain::Neve => neve::build(150.0, 10_000.0),
+        // Loaded by the Master Volume's 1 M, which the power stage begins with.
+        Gain::Brit800 => brit800::build(10_000.0, 1_000_000.0),
+        // A 150 ohm microphone into the card, and a modern line input after it.
+        Gain::American312 => american312::build(150.0, 10_000.0),
+        Gain::ConsoleE => console_e::build(150.0, 10_000.0),
+        // The 610-A's microphone connection is the O-1's 50 ohm winding, and its
+        // output transformer is wound for a 600 ohm line.
+        Gain::Tube610 => tube610::build(50.0, 600.0),
+        Gain::Plexi => plexi::build(10_000.0, 1_000_000.0),
     }
 }
 
@@ -1101,9 +1252,6 @@ impl Delay {
     }
 }
 
-/// The Mark IIC+ graphic equaliser's recovery amplifier, as a number. See
-/// `markiic::DRIVER_GAIN_DB`.
-const GRAPHIC_MAKE_UP: f64 = 6.7918; // 10^(16.64/20)
 
 /// The middle of the Master knob: the position each circuit was voiced at.
 pub const MASTER_MIDDLE: f64 = 0.5;
@@ -1295,8 +1443,7 @@ pub struct Chain {
     pedal: Option<usize>,
     /// Volts per unit of digital input when a pedal takes the guitar first.
     pedal_into: f64,
-    /// Original guitar power circuits retain their gain-catalogue indices;
-    /// independently added power circuits follow the gain catalogue.
+    /// Each guitar power circuit at its own amplifier's catalogue index.
     powers: Vec<Option<Simulation>>,
     /// Zero is an empty catalogue slot, used for complete power bypass.
     power: usize,
@@ -1487,7 +1634,7 @@ impl Chain {
             }
             (sim, trim)
         };
-        let (gains, mut powers): (Vec<Simulation>, Vec<Option<Simulation>>) =
+        let (gains, powers): (Vec<Simulation>, Vec<Option<Simulation>>) =
             std::thread::scope(|scope| {
                 let gains = scope.spawn(|| {
                     (0..VOICES)
@@ -1540,10 +1687,6 @@ impl Chain {
                     powers.join().expect("power catalogue builds"),
                 )
             });
-        powers.push(Some(Simulation::new(
-            power::build(&power::PowerSpec::BRIT_EL34, 10_000.0).expect("Brit EL34 builds"),
-            rate,
-        )));
         let initial = LoadValues::new(&SpeakerProfile::BRIT_V30, &Mounting::BAFFLE, 1.0);
         let loaded = PowerModel::ALL
             .iter()
@@ -1577,7 +1720,7 @@ impl Chain {
         let driven_motional = driven_circuit.output;
         let mut chain = Self {
             gains,
-            pedals: (0..Pedal::CIRCUITS.len())
+            pedals: (0..Pedal::SLOTS)
                 .map(|slot| Simulation::new(Pedal::build(slot).expect("pedal builds"), rate))
                 .collect(),
             pedal: None,
@@ -1819,20 +1962,21 @@ impl Chain {
             self.fade_remaining = FADE_LEN;
         }
         if let Some(i) = self.pedal {
-            let gain = Pedal::CIRCUITS[i];
+            let controls = Pedal::controls(i);
             let sim = &mut self.pedals[i];
-            sim.set_control(gain.drive_control(), s.drive.clamp(0.0, 1.0));
-            if let Some((_, _, tone)) = gain.own_tone() {
-                if tone != usize::MAX {
-                    sim.set_control(tone, s.tone.clamp(0.0, 1.0));
-                }
+            sim.set_control(controls.drive, s.drive.clamp(0.0, 1.0));
+            if controls.tone != usize::MAX {
+                let tone = s.tone.clamp(0.0, 1.0);
+                sim.set_control(
+                    controls.tone,
+                    if controls.tone_inverted { 1.0 - tone } else { tone },
+                );
             }
-            if let Some(Level::Circuit(which)) = gain.level_control() {
-                let rest = sim.resting_position(which).unwrap_or(DEFAULT_MASTER_REST);
-                sim.set_control(which, Self::master_position(rest, s.level));
-            }
-            let calibration = CALIBRATION[voice_index(gain, Diode::Silicon, Amplifier::Valve)];
-            self.pedal_into = calibration.drive_volts / 10f64.powf(NOMINAL_DBFS / 20.0);
+            let rest = sim
+                .resting_position(controls.level)
+                .unwrap_or(DEFAULT_MASTER_REST);
+            sim.set_control(controls.level, Self::master_position(rest, s.level));
+            self.pedal_into = Pedal::input_volts(i) / 10f64.powf(NOMINAL_DBFS / 20.0);
         }
     }
 
@@ -1865,6 +2009,7 @@ impl Chain {
             PowerAmp::American6L6Clean => 2,
             PowerAmp::American6L6HighGain => 3,
             PowerAmp::BritEL34 => 4,
+            PowerAmp::BritPlexiEL34 => 5,
         };
         let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
         10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
@@ -2509,9 +2654,9 @@ impl Chain {
             // after four gain stages, and the same equaliser at the end of the
             // chain would be a different amplifier (§9.8).
             if graphic {
-                // The network and the driver that makes up its loss. See
-                // `markiic::DRIVER_GAIN_DB`.
-                amplified = self_graphic.process(amplified) * GRAPHIC_MAKE_UP;
+                // A unity-gain feedback equaliser with its sliders centred; see
+                // `markiic::graphic`.
+                amplified = self_graphic.process(amplified);
             }
             if let Some(ref mut sim) = line {
                 amplified = sim.process(amplified);

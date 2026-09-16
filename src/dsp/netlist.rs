@@ -64,6 +64,16 @@ pub enum Taper {
     ReverseLog {
         span: f64,
     },
+    /// A dual-slope track: the geometric law of `Log` from each end toward the
+    /// middle, meeting at half the track at half the travel.
+    ///
+    /// For a slider whose effect lives at both ends -- a feedback equaliser band
+    /// cuts as the wiper nears one end and boosts as it nears the other -- a
+    /// linear track leaves the middle of the travel doing almost nothing and a
+    /// one-sided law is not flat at the centre.
+    Symmetric {
+        span: f64,
+    },
 }
 
 /// What an audio track has left in circuit at half rotation.
@@ -85,6 +95,13 @@ impl Taper {
             Taper::ReverseAudio => 1.0 - Self::audio_law(p),
             Taper::Log { span } => Self::log_law(p, span),
             Taper::ReverseLog { span } => 1.0 - Self::log_law(p, span),
+            Taper::Symmetric { span } => {
+                if p <= 0.5 {
+                    0.5 * Self::log_law(2.0 * p, span)
+                } else {
+                    1.0 - 0.5 * Self::log_law(2.0 * (1.0 - p), span)
+                }
+            }
         }
     }
 
@@ -347,12 +364,26 @@ pub enum Part {
         b: usize,
         spec: CoreSpec,
     },
-    /// A bipolar transistor: collector, base, emitter.
+    /// A bipolar transistor: collector, base, emitter. `pnp` mirrors every
+    /// junction and current, which is exactly what a PNP part is.
     Bipolar {
         c: usize,
         b: usize,
         e: usize,
         spec: BipolarSpec,
+        pnp: bool,
+    },
+    /// A voltage-controlled current source that runs out of current: into
+    /// `out` (from `reference`) flows `limit * tanh(gm * (v(plus) - v(minus)) /
+    /// limit)`. With a capacitor on `out` it is an op-amp's slow integrating
+    /// stage -- `gm / C` is its gain-bandwidth and `limit / C` its slew rate.
+    Transconductor {
+        plus: usize,
+        minus: usize,
+        out: usize,
+        reference: usize,
+        gm: f64,
+        limit: f64,
     },
 }
 
@@ -522,6 +553,21 @@ impl TriodeSpec {
         kp: 300.0,
         kvb: 300.0,
     };
+    /// 12AY7, the medium-mu triode of the 610 console preamp's second stage.
+    ///
+    /// Fitted, not copied: `tools/tube_fit/fit_12ay7.py` solves for `mu`, `ex`,
+    /// `kg1` and `kp` (with `kvb` held at 300 like the others) against RCA's
+    /// "Tentative Data" of 1 April 1953 -- 3 mA at 250 V and -4 V, 1750 micromho,
+    /// 22,800 ohm plate resistance, and 10 microamps at -11 V -- and meets all
+    /// four. `mu` here is Koren's constant, not the small-signal amplification
+    /// factor, which the fit reproduces as the sheet's 40.
+    pub const T12AY7: TriodeSpec = TriodeSpec {
+        mu: 52.907,
+        ex: 1.3328,
+        kg1: 1065.41,
+        kp: 171.87,
+        kvb: 300.0,
+    };
 }
 
 impl Part {
@@ -585,6 +631,18 @@ impl Part {
                 map(g);
                 map(s);
             }
+            Part::Transconductor {
+                plus,
+                minus,
+                out,
+                reference,
+                ..
+            } => {
+                map(plus);
+                map(minus);
+                map(out);
+                map(reference);
+            }
             Part::Bipolar { c, b, e, .. } => {
                 map(c);
                 map(b);
@@ -616,6 +674,13 @@ impl Part {
             Part::Jfet { d, g, s, .. } => vec![d, g, s],
             Part::Core { a, b, .. } => vec![a, b],
             Part::Bipolar { c, b, e, .. } => vec![c, b, e],
+            Part::Transconductor {
+                plus,
+                minus,
+                out,
+                reference,
+                ..
+            } => vec![plus, minus, out, reference],
         }
     }
 
@@ -643,6 +708,7 @@ impl Part {
                 | Part::Jfet { .. }
                 | Part::Core { .. }
                 | Part::Bipolar { .. }
+                | Part::Transconductor { .. }
         )
     }
 
@@ -661,6 +727,7 @@ impl Part {
             Part::Jfet { .. } => "JFET",
             Part::Core { .. } => "core",
             Part::Bipolar { .. } => "transistor",
+            Part::Transconductor { .. } => "transconductor",
             Part::OpAmp { .. } => "op-amp",
             Part::Transformer { .. } => "transformer",
         }
@@ -818,7 +885,55 @@ impl Netlist {
 
     pub fn bipolar(&mut self, c: &str, b: &str, e: &str, spec: BipolarSpec) -> &mut Self {
         let (c, b, e) = (self.pin(c), self.pin(b), self.pin(e));
-        self.parts.push(Part::Bipolar { c, b, e, spec });
+        self.parts.push(Part::Bipolar {
+            c,
+            b,
+            e,
+            spec,
+            pnp: false,
+        });
+        self
+    }
+
+    /// A PNP transistor: the NPN equations with every junction and current
+    /// mirrored.
+    pub fn bipolar_pnp(&mut self, c: &str, b: &str, e: &str, spec: BipolarSpec) -> &mut Self {
+        let (c, b, e) = (self.pin(c), self.pin(b), self.pin(e));
+        self.parts.push(Part::Bipolar {
+            c,
+            b,
+            e,
+            spec,
+            pnp: true,
+        });
+        self
+    }
+
+    /// A current source controlled by a voltage, saturating at `limit` amps.
+    /// See `Part::Transconductor`.
+    pub fn transconductor(
+        &mut self,
+        plus: &str,
+        minus: &str,
+        out: &str,
+        reference: &str,
+        gm: f64,
+        limit: f64,
+    ) -> &mut Self {
+        let (plus, minus, out, reference) = (
+            self.pin(plus),
+            self.pin(minus),
+            self.pin(out),
+            self.pin(reference),
+        );
+        self.parts.push(Part::Transconductor {
+            plus,
+            minus,
+            out,
+            reference,
+            gm,
+            limit,
+        });
         self
     }
 
@@ -986,6 +1101,7 @@ impl Netlist {
                         || spec.early <= 0.0
                 }
                 Part::OpAmp { rail, .. } => rail <= 0.0,
+                Part::Transconductor { gm, limit, .. } => gm <= 0.0 || limit <= 0.0,
                 Part::Transformer { ratio, .. } => ratio <= 0.0,
             };
             if bad {

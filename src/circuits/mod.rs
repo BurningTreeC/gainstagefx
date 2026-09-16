@@ -1,17 +1,24 @@
 //! The catalogue, as netlists.
 
+pub mod american312;
 pub mod bigmuff;
+pub mod brit800;
 pub mod cabinet;
 pub mod clipper;
+pub mod console_e;
 pub mod evh5150;
 pub mod iron;
 pub mod jfet;
 pub mod markiic;
 pub mod neve;
+pub mod plexi;
 pub mod power;
 pub mod preamp;
+pub mod rodent;
+pub mod round_fuzz;
 pub mod studio;
 pub mod tone;
+pub mod tube610;
 pub mod ts808;
 pub mod twin;
 pub mod valve;

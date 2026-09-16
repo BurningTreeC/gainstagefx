@@ -164,3 +164,26 @@ mod revisions {
         assert!((20.0 * (b / a).log10()).abs() < 1.5, "{a} vs {b}");
     }
 }
+
+/// Every pedal in the slot runs in front of an amplifier, at every rate, without
+/// allocating, and moves the sound.
+#[test]
+fn every_pedal_runs_in_front_of_an_amplifier() {
+    for pedal in [Pedal::Green808, Pedal::BigMuff, Pedal::Green9, Pedal::Rodent, Pedal::RoundFuzz] {
+        let base = Settings { gain: Gain::Twin, drive: 0.35, tone: Tone::Off, ..Settings::default() };
+        let with = Settings {
+            pedal: PedalSettings { pedal, drive: 0.6, tone: 0.5, level: 0.6 },
+            ..base
+        };
+        let (_, clean) = render(&base, 12_000);
+        let (mut chain, pushed) = render(&with, 12_000);
+        assert!(pushed.iter().all(|y| y.is_finite()), "{pedal:?}");
+        let difference = rms(&clean.iter().zip(&pushed).map(|(a, b)| a - b).collect::<Vec<_>>());
+        assert!(difference > 0.05 * rms(&clean), "{pedal:?}: {difference}");
+        assert_no_heap(|| {
+            for k in 0..1_024 {
+                assert!(chain.process(guitar(k)).is_finite());
+            }
+        });
+    }
+}

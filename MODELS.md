@@ -32,9 +32,18 @@ Green 808 corrected to the three-source TS-808 values; physical speakers with a
 reactive load coupled into the power stage, geometry-based cabinets, and eleven
 microphone profiles with placement and dual mic. See docs/MODEL_INVENTORY.md.
 
-Still not implemented: American 312, Tube 610, Rodent, Round Fuzz, Brit 800 preamp
-(research checkpoint only), Cali Rectifier, DR103, AC30, EL34 Hi-Headroom and EL84
-power families. Never expose an unavailable family
+Added 2026-09-15: the Brit 800 preamp (1981 2203 drawing, Matched = Brit EL34); the
+Cali IIC+ corrected to include its lead return, V2B, Lead Master and V2A.
+
+Added later on 2026-09-15: the American 312, British 4K E and Tube 610 microphone
+preamplifiers, and two pedals, the Rodent (Pro Co RAT, LM308 with its gain-bandwidth and
+slew) and the Round Fuzz (germanium Fuzz Face, PNP).
+
+Also added: the Brit Plexi (1959 Super Lead bright channel, Unicord 1970 drawing) with its
+own Brit Plexi EL34 power stage.
+
+Still not implemented: Cali Rectifier, DR103, AC30, EL34 Hi-Headroom and EL84 power
+families. Never expose an unavailable family
 under an approximate alias.
 
 Each hardware change requires a per-device log in docs/models with revision,

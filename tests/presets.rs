@@ -155,12 +155,21 @@ fn presets_only_choose_parts_their_circuit_contains() {
 #[test]
 fn the_studio_presets_have_no_speaker_on_them() {
     for preset in PRESETS.iter().filter(|p| p.group == "Studio") {
-        assert_eq!(
-            preset.cabinet,
-            Cabinet::Off,
+        assert!(
+            !has_speaker(preset),
             "'{}' is a microphone preamplifier with a guitar speaker after it",
             preset.name
         );
+    }
+}
+
+/// Whether anything after the circuit is a speaker: the legacy baked filter, or
+/// a physical cabinet whose driver is not bypassed.
+fn has_speaker(preset: &gainstagefx::presets::Preset) -> bool {
+    use gainstagefx::params::{CabModel, SpeakerModel};
+    match preset.cab_model {
+        CabModel::Legacy => preset.cabinet != Cabinet::Off,
+        _ => preset.speaker != SpeakerModel::Bypass,
     }
 }
 
@@ -198,15 +207,13 @@ fn every_combination_on_the_panel_builds() {
 fn the_cabinet_is_off_for_preamps_and_on_for_high_gain() {
     for preset in PRESETS {
         match preset.circuit {
-            Circuit::Clean => assert_eq!(
-                preset.cabinet,
-                Cabinet::Off,
+            Circuit::Clean => assert!(
+                !has_speaker(preset),
                 "'{}' is a preamplifier sound with a cabinet on it",
                 preset.name
             ),
-            Circuit::HighGain => assert_ne!(
-                preset.cabinet,
-                Cabinet::Off,
+            Circuit::HighGain => assert!(
+                has_speaker(preset),
                 "'{}' is a high gain sound with nothing to come out of",
                 preset.name
             ),
@@ -535,5 +542,28 @@ fn every_circuit_description_fits_its_row() {
             circuit.name(),
             text.len()
         );
+    }
+}
+
+/// The legacy baked cabinet filter stays for old sessions, but every shipped
+/// guitar sound now comes out of a physical cabinet, and every modelled
+/// amplifier drives it from its own power stage.
+#[test]
+fn guitar_presets_use_a_physical_cabinet() {
+    use gainstagefx::params::CabModel;
+    for preset in PRESETS {
+        if preset.cab_model == CabModel::Legacy {
+            assert_eq!(preset.cabinet, Cabinet::Off, "'{}' still uses the baked filter", preset.name);
+            continue;
+        }
+        assert!(has_speaker(preset), "{}", preset.name);
+        if preset.circuit.voice().power_stage().is_some() {
+            assert!(
+                gainstagefx::params::PowerAmp::Matched == preset.power_amp
+                    || preset.group == "Metal / Heavy",
+                "'{}' leaves its own power stage",
+                preset.name
+            );
+        }
     }
 }

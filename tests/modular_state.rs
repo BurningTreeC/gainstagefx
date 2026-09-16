@@ -46,6 +46,11 @@ fn legacy_saved_presets_resolve_matched_and_new_ones_use_stable_ids() {
             .power_amp
             .preview_normalized(PowerAmp::American6L6Clean)
     );
+    // Stored against the thirteen-entry circuit list, and still the same amplifier.
+    assert_eq!(
+        old.values["circuit"],
+        params.circuit.preview_normalized(Circuit::Boogie)
+    );
     let encoded = serde_json::to_string(&old).unwrap();
     let mut loaded: presets::Stored = serde_json::from_str(&encoded).unwrap();
     presets::migrate(&mut loaded, &params);
@@ -69,12 +74,48 @@ fn display_names_change_without_reinterpreting_legacy_enum_positions() {
             "markiic",
             "evh5150",
             "neve",
-            "twin"
+            "twin",
+            "amp_jcm800_2203",
+            "pre_api_312",
+            "pre_ssl_4000e",
+            "pre_ua_610a",
+            "amp_marshall_1959"
         ]
     );
     assert_eq!(Circuit::Boogie.name(), "Cali IIC+");
-    // Every preset from before modular power keeps Matched; era presets choose freely.
-    for preset in presets::PRESETS.iter().filter(|p| !["Metal / Heavy", "Blues"].contains(&p.group)) {
-        assert!(preset.dials().contains(&("power_amp", 0.0)), "{}", preset.name);
+    // A preset's power stage is written as its stable position in the list.
+    for preset in presets::PRESETS {
+        let index = PowerAmp::ALL.iter().position(|p| *p == preset.power_amp).unwrap();
+        assert!(preset.dials().contains(&("power_amp", index as f32)), "{}", preset.name);
     }
+}
+
+#[test]
+fn every_legacy_circuit_position_survives_the_appended_brit_800() {
+    let params = GainStageParams::default();
+    for (index, circuit) in Circuit::ALL[..gainstagefx::params::LEGACY_CIRCUIT_COUNT]
+        .iter()
+        .enumerate()
+    {
+        let legacy = index as f32 / (gainstagefx::params::LEGACY_CIRCUIT_COUNT - 1) as f32;
+        let mut old: presets::Stored = serde_json::from_str(&format!(
+            r#"{{"name":"old","values":{{"circuit":{legacy}}}}}"#
+        ))
+        .unwrap();
+        presets::migrate(&mut old, &params);
+        assert_eq!(
+            old.values["circuit"],
+            params.circuit.preview_normalized(*circuit),
+            "{}",
+            circuit.name()
+        );
+        assert_eq!(old.model_ids["circuit"], Circuit::ids().unwrap()[index]);
+    }
+    // A preset that carries its stable id is never remapped.
+    let mut new: presets::Stored = serde_json::from_str(
+        r#"{"name":"new","model_ids":{"circuit":"amp_jcm800_2203"},"values":{"circuit":0.0}}"#,
+    )
+    .unwrap();
+    presets::migrate(&mut new, &params);
+    assert_eq!(new.values["circuit"], params.circuit.preview_normalized(Circuit::Brit800));
 }

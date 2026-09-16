@@ -1392,6 +1392,8 @@ pub struct Bipolar {
     b: usize,
     e: usize,
     spec: BipolarSpec,
+    /// A PNP part: the same equations on mirrored junctions and currents.
+    pnp: bool,
     critical: f64,
     inv_early: f64,
     inv_forward_beta: f64,
@@ -1403,12 +1405,13 @@ pub struct Bipolar {
 }
 
 impl Bipolar {
-    pub fn new(c: usize, b: usize, e: usize, spec: BipolarSpec) -> Self {
+    pub fn new(c: usize, b: usize, e: usize, spec: BipolarSpec, pnp: bool) -> Self {
         Self {
             c,
             b,
             e,
             spec,
+            pnp,
             critical: VT * (VT / (std::f64::consts::SQRT_2 * spec.saturation)).ln(),
             inv_early: 1.0 / spec.early,
             inv_forward_beta: 1.0 / spec.forward_beta,
@@ -1447,10 +1450,18 @@ impl Bipolar {
 
 impl Device for Bipolar {
     fn footprint(&self, m: &mut Mark) {
-        m.transconductance(self.c, self.e, self.b, self.e);
-        m.transconductance(self.c, self.e, self.b, self.c);
-        m.transconductance(self.b, self.e, self.b, self.e);
-        m.transconductance(self.b, self.e, self.b, self.c);
+        let (c, b, e) = (self.c, self.b, self.e);
+        if self.pnp {
+            m.transconductance(e, c, e, b);
+            m.transconductance(e, c, c, b);
+            m.transconductance(e, b, e, b);
+            m.transconductance(e, b, c, b);
+        } else {
+            m.transconductance(c, e, b, e);
+            m.transconductance(c, e, b, c);
+            m.transconductance(b, e, b, e);
+            m.transconductance(b, e, b, c);
+        }
     }
 
     fn linearisation(&self) -> Linearisation {
@@ -1468,8 +1479,16 @@ impl Device for Bipolar {
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
-        let (vbe, held_e) = self.limit_junction(across(v, self.b, self.e), self.vbe);
-        let (vbc, held_c) = self.limit_junction(across(v, self.b, self.c), self.vbc);
+        // A PNP part is the NPN equations on mirrored junctions: emitter-base
+        // and collector-base, with every current reversed. `vbe` and `vbc`
+        // below are then the mirrored junction voltages.
+        let (vbe_now, vbc_now) = if self.pnp {
+            (across(v, self.e, self.b), across(v, self.c, self.b))
+        } else {
+            (across(v, self.b, self.e), across(v, self.b, self.c))
+        };
+        let (vbe, held_e) = self.limit_junction(vbe_now, self.vbe);
+        let (vbc, held_c) = self.limit_junction(vbc_now, self.vbc);
         s.junction_held |= held_e || held_c;
         self.clamped = held_e || held_c;
         self.delta = (vbe - self.vbe).abs().max((vbc - self.vbc).abs());
@@ -1500,15 +1519,27 @@ impl Device for Bipolar {
         let dib_dvbe = gf * self.inv_forward_beta;
         let dib_dvbc = gr * self.inv_reverse_beta;
 
-        // Collector current, controlled by both junctions.
-        s.transconductance(self.c, self.e, self.b, self.e, dic_dvbe);
-        s.transconductance(self.c, self.e, self.b, self.c, dic_dvbc);
-        s.current(self.c, self.e, ic - dic_dvbe * vbe - dic_dvbc * vbc);
+        let (c, b, e) = (self.c, self.b, self.e);
+        if self.pnp {
+            // Emitter to collector and emitter to base, controlled by the
+            // emitter-base and collector-base junctions.
+            s.transconductance(e, c, e, b, dic_dvbe);
+            s.transconductance(e, c, c, b, dic_dvbc);
+            s.current(e, c, ic - dic_dvbe * vbe - dic_dvbc * vbc);
+            s.transconductance(e, b, e, b, dib_dvbe);
+            s.transconductance(e, b, c, b, dib_dvbc);
+            s.current(e, b, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+        } else {
+            // Collector current, controlled by both junctions.
+            s.transconductance(c, e, b, e, dic_dvbe);
+            s.transconductance(c, e, b, c, dic_dvbc);
+            s.current(c, e, ic - dic_dvbe * vbe - dic_dvbc * vbc);
 
-        // And the base current it takes to get it.
-        s.transconductance(self.b, self.e, self.b, self.e, dib_dvbe);
-        s.transconductance(self.b, self.e, self.b, self.c, dib_dvbc);
-        s.current(self.b, self.e, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+            // And the base current it takes to get it.
+            s.transconductance(b, e, b, e, dib_dvbe);
+            s.transconductance(b, e, b, c, dib_dvbc);
+            s.current(b, e, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+        }
     }
 
     fn moved(&self) -> f64 {
@@ -1517,6 +1548,92 @@ impl Device for Bipolar {
 
     fn settled(&self, _tolerance: f64) -> bool {
         !self.clamped
+    }
+}
+
+/// A transconductance that runs out of current.
+///
+/// The slow half of a compensated op-amp. An input pair drives a current into
+/// the compensation capacitor, and that current is limited by the pair's tail:
+/// small differences give `gm` times the difference, which on the capacitor is
+/// an integrator and so a gain-bandwidth of `gm / 2 pi C`; large ones give the
+/// whole tail current, which is a slew rate of `limit / C`. `tanh` joins the
+/// two smoothly, as a long-tailed pair's transfer curve does.
+pub struct Transconductor {
+    plus: usize,
+    minus: usize,
+    out: usize,
+    reference: usize,
+    gm: f64,
+    limit: f64,
+    difference: f64,
+    delta: f64,
+}
+
+impl Transconductor {
+    pub fn new(plus: usize, minus: usize, out: usize, reference: usize, gm: f64, limit: f64) -> Self {
+        Self {
+            plus,
+            minus,
+            out,
+            reference,
+            gm,
+            limit,
+            difference: 0.0,
+            delta: 0.0,
+        }
+    }
+
+    /// The output current for an input difference.
+    pub fn current(&self, difference: f64) -> f64 {
+        self.limit * (self.gm * difference / self.limit).tanh()
+    }
+}
+
+impl Device for Transconductor {
+    fn footprint(&self, m: &mut Mark) {
+        m.transconductance(self.reference, self.out, self.plus, self.minus);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.difference, self.delta, 0.0, 0.0],
+            clamped: false,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.difference = saved.at[0];
+        self.delta = saved.at[1];
+    }
+
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        let difference = across(v, self.plus, self.minus);
+        self.delta = (difference - self.difference).abs();
+        self.difference = difference;
+        let x = self.gm * difference / self.limit;
+        let t = x.tanh();
+        let i = self.limit * t;
+        // Tangent in the linear region, chord through the origin once it
+        // saturates. The tangent of a saturated tanh is flat, so Newton reads
+        // a saturated stage as one that no input can move, asks for volts to
+        // move it, and lands saturated the other way -- and a stage inside a
+        // fast feedback loop (an op-amp at unity gain) did exactly that on
+        // every pass until the solve gave up. The chord is never flatter than
+        // `limit / difference`, so the linear solve cannot carry the input past
+        // the point where the current changes sign.
+        let g = if x.abs() < 1.0 {
+            self.gm * (1.0 - t * t)
+        } else {
+            i / difference
+        };
+        // Out of `reference` and into `out`.
+        s.transconductance(self.reference, self.out, self.plus, self.minus, g);
+        s.current(self.reference, self.out, i - g * difference);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
     }
 }
 
@@ -1551,6 +1668,7 @@ pub enum AnyDevice {
     Bipolar(Bipolar),
     OpAmp(OpAmp),
     Core(Core),
+    Transconductor(Transconductor),
 }
 
 impl AnyDevice {
@@ -1566,6 +1684,9 @@ impl AnyDevice {
             (Self::Jfet(dst), Self::Jfet(src)) => dst.relinearise(src.linearisation()),
             (Self::Bipolar(dst), Self::Bipolar(src)) => dst.relinearise(src.linearisation()),
             (Self::OpAmp(dst), Self::OpAmp(src)) => dst.relinearise(src.linearisation()),
+            (Self::Transconductor(dst), Self::Transconductor(src)) => {
+                dst.relinearise(src.linearisation())
+            }
             (Self::Core(dst), Self::Core(src)) => {
                 dst.relinearise(src.linearisation());
                 dst.last_flux = src.last_flux;
@@ -1590,6 +1711,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.stamp(s, v),
             AnyDevice::OpAmp(o) => o.stamp(s, v),
             AnyDevice::Core(c) => c.stamp(s, v),
+            AnyDevice::Transconductor(t) => t.stamp(s, v),
         }
     }
 
@@ -1603,6 +1725,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.footprint(m),
             AnyDevice::OpAmp(o) => o.footprint(m),
             AnyDevice::Core(c) => c.footprint(m),
+            AnyDevice::Transconductor(t) => t.footprint(m),
         }
     }
 
@@ -1616,6 +1739,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.moved(),
             AnyDevice::OpAmp(o) => o.moved(),
             AnyDevice::Core(c) => c.moved(),
+            AnyDevice::Transconductor(t) => t.moved(),
         }
     }
 
@@ -1629,6 +1753,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.settled(tolerance),
             AnyDevice::OpAmp(o) => o.settled(tolerance),
             AnyDevice::Core(c) => c.settled(tolerance),
+            AnyDevice::Transconductor(t) => t.settled(tolerance),
         }
     }
 
@@ -1642,6 +1767,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.linearisation(),
             AnyDevice::OpAmp(o) => o.linearisation(),
             AnyDevice::Core(c) => c.linearisation(),
+            AnyDevice::Transconductor(t) => t.linearisation(),
         }
     }
 
@@ -1655,6 +1781,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.relinearise(saved),
             AnyDevice::OpAmp(o) => o.relinearise(saved),
             AnyDevice::Core(c) => c.relinearise(saved),
+            AnyDevice::Transconductor(t) => t.relinearise(saved),
         }
     }
 
@@ -1668,6 +1795,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.advance(),
             AnyDevice::OpAmp(o) => o.advance(),
             AnyDevice::Core(c) => c.advance(),
+            AnyDevice::Transconductor(t) => t.advance(),
         }
     }
 
@@ -1681,6 +1809,7 @@ impl Device for AnyDevice {
             AnyDevice::Bipolar(b) => b.switches(),
             AnyDevice::OpAmp(o) => o.switches(),
             AnyDevice::Core(c) => c.switches(),
+            AnyDevice::Transconductor(t) => t.switches(),
         }
     }
 }

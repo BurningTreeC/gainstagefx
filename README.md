@@ -44,7 +44,7 @@ what is in it.
 |---|---|---|
 | **1 Input** | Trim, meter, pedal with drive/tone/level | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
 | **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
-| **3 Drive** | Drive, master, and the Mark IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
+| **3 Drive** | Drive, master, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs. The second row belongs to the Twin. |
 | **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
 | **6 Output** | Mix, level | The dry path is delayed to match, so mixing is a mix and not a comb filter. |
@@ -81,11 +81,16 @@ sources, where they disagree and what was approximated.
 | Circuit | Built from | Power stage when Matched |
 |---|---|---|
 | Green 808 | A 1970s green overdrive pedal: input buffer, clipping amp, tone and level, output buffer | none |
-| Big Muff | A 1973 four-transistor fuzz | none |
-| Cali IIC+ | A 1980s Californian lead channel: four triodes, its own stack and five-band graphic | Cali 6L6 |
+| Ram Fuzz | A 1973 four-transistor fuzz | none |
+| Cali IIC+ | A 1980s Californian lead channel: six triodes through its lead return and recovery stage, its own stack and five-band graphic | Cali 6L6 |
 | American 5150 | A 1990s high-gain lead channel: six triodes, one run cold | American 6L6 High-Gain |
 | British 73 | A transformer-coupled class-A microphone preamplifier and line driver | none (its line driver stays) |
+| American 312 | A console microphone preamplifier card: input transformer, one discrete op-amp, output transformer | none |
+| British 4K E | A 1980s console channel's microphone input: a 1:10 transformer into two op-amps around one gain pot | none |
+| Tube 610 | A 1960s valve console channel: four triodes in two feedback loops, a transformer at each end | none |
 | American Twin | A 1960s blackface clean channel with spring reverb and optical tremolo | American 6L6 Clean |
+| Brit 800 | An early-80s British 100 W master-volume lead preamp: four triodes, a cathode follower into its own stack | Brit EL34 |
+| Brit Plexi | A late-60s British 100 W lead amp with no master: the bright channel's three triodes into its own stack, so the Volume decides how hard the power valves work | Brit Plexi EL34 |
 
 Display names are generic on purpose. The hardware each was researched from is
 named in [`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md) and the research
@@ -132,8 +137,10 @@ overtakes it when driven hard.
 
 ## The pedal
 
-**Green 808**, **Big Muff** and **Green 9** (the 808 with the later pedal's
-output resistors), each with its own drive, tone and level knobs, in front of
+**Green 808**, **Ram Fuzz**, **Green 9** (the 808 with the later pedal's
+output resistors), **Rodent** (a hard-clipping distortion whose slow op-amp runs out
+of gain-bandwidth and slew rate, as the original's does) and **Round Fuzz** (two
+germanium transistors), each with its own drive, tone and level knobs, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
 feeds, so a pedal can also sit in front of itself.
@@ -147,7 +154,8 @@ feeds, so a pedal can also sit in front of itself.
 | Cali 6L6 | Two 6L6s, long-tailed-pair inverter, feedback and presence |
 | American 6L6 Clean | Four 6L6s with a 12AT7 inverter and light feedback — the clean one |
 | American 6L6 High-Gain | Four 6L6s, feedback and presence |
-| Brit EL34 | Four EL34s from a 1981 British 100 W master-volume drawing |
+| Brit EL34 | Four EL34s from a 1981 British 100 W master-volume drawing; the Brit 800's own |
+| Brit Plexi EL34 | Four EL34s from a 1970 drawing of the non-master head: no master, four times the 2203's feedback, a 5 k presence; the Brit Plexi's own |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
 output valves with their screen supplies, a centre-tapped transformer with a
@@ -192,12 +200,13 @@ One channel at 48 kHz, as a fraction of the time available, with each preset
 set up exactly as it ships — pedal, power stage, cabinet and microphones
 included.
 
-| Studio Preamp | Valve Colour | Blues Crunch | Scooped Metal | Green Overdrive | Neve Preamp | Boutique Lead | Blackface Clean | Puppet Master '86 | Texas Storm '83 | Ultra Rhythm |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 3.1 % | 4.4 % | 8.6 % | 12.4 % | 10.8 % | 18.1 % | 19.9 % | 20.4 % | 22.1 % | 33.3 % | 37.3 % |
+| Studio Preamp | Valve Colour | Blues Crunch | Scooped Metal | British 73 Pre | Plexi Crunch | Brit Crunch | Blackface Clean | Blackout '80 | Experienced '67 | Ultra Rhythm | Boutique Lead | Texas Storm '83 | Puppet Master '86 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 3.0 % | 4.7 % | 9.3 % | 13.7 % | 17.9 % | 20.2 % | 20.3 % | 20.8 % | 20.8 % | 22.2 % | 30.6 % | 31.5 % | 33.0 % | 37.7 % |
 
-The heaviest is Ultra Rhythm, six triodes into four output valves. Measured with
-`cargo run --release --example presetcost`.
+The heaviest is Puppet Master '86 at 38 %: the Cali IIC+'s six triodes and graphic, a
+speaker-loaded power stage and two microphones. The microphone preamplifiers are among
+the cheapest (2.8 to 11 %). Measured with `cargo run --release --example presetcost`.
 
 Swapping the Legacy cabinet for a physical one moves an amplifier's cost by a
 few points either way. On the same settings, the Cali IIC+ went from 20 to
@@ -216,16 +225,18 @@ Quality says, and the control shows it.
 
 ## Presets
 
-Forty-seven, ordered quietest first within each group so the list reads as a
+Fifty-nine, ordered quietest first within each group so the list reads as a
 range: Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier, and
-two groups of chains aimed at particular records — **Metal / Heavy** and
-**Blues**. The **Studio** group holds the console and microphone-preamplifier
+four groups of chains aimed at particular records — **Classic Rock**,
+**Psychedelic / Lead**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier
 sounds, with the cabinet off throughout — a guitar speaker in front of a
 microphone preamplifier makes no sense at all, and a test enforces it. The
 whole catalogue is level matched, and a test holds it to that.
 
 Each one is a full set of panel positions — loading one and looking at the panel
-tells you how the sound is made. The record-inspired presets are built only
+tells you how the sound is made. Every guitar sound comes out of a physical cabinet,
+speaker and microphone setup; the old baked cabinet filter is still there for older
+sessions, but no shipped preset uses it. The record-inspired presets are built only
 from parts the plugin actually has; which parts of each rig are documented and
 which are approximated is written down in [`PRESETS.md`](PRESETS.md).
 
@@ -259,7 +270,7 @@ cargo run --release --features standalone   # the panel without a DAW
 ```
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs 301 of them, at 44.1, 48,
+measures it. `cargo test --release` runs 336 of them, at 44.1, 48,
 88.2, 96 and 192 kHz where the rate matters, and the audio path is tested not
 to allocate.
 
@@ -341,6 +352,17 @@ measurement, and several times it was me:
   the output transformer's own winding capacitance, fixed it. Every power stage
   is now driven into clipping into three speakers at the lowest and highest
   rates in a test.
+- The Californian amplifier's graphic equaliser was wired as five tracks from
+  the signal to ground with a fixed make-up after it. It could cut twelve
+  decibels and boost less than three, so every V came out as a dip in the
+  middle with nothing added at the ends. Both drawings put the tracks between
+  the two inputs of a feedback amplifier; built that way it cuts and boosts by
+  the same amount, and centred it is flat.
+- The Californian lead channel stopped at its lead output and handed that
+  straight to the equaliser, which left out the two triodes both of its drawings
+  send the lead signal back through. One of them clips on every note. With them,
+  the channel measures 61 % distortion at a guitar's level instead of 39 %, and
+  a preset aimed at a famously saturated record stopped sounding clean.
 - A power stage's master stayed where another circuit had left it, so the Twin
   on its own matched power stage came out 27 dB down with only the reverb
   audible. A test now switches the Twin's power stage behind three other

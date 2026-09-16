@@ -172,7 +172,9 @@ pub struct PowerSpec {
 }
 
 impl PowerSpec {
-    /// 1981 2203 EL34 circuit with Hammond replacement-iron data.
+    /// 1981 2203 EL34 circuit with Hammond replacement-iron data. The matched
+    /// power stage of the Brit 800 preamplifier (`circuits::brit800`), whose
+    /// treble wiper feeds the master pot this begins with.
     /// See docs/models/brit_el34.md for sources, revisions and approximation boundaries.
     pub const BRIT_EL34: PowerSpec = PowerSpec {
         name: "Brit EL34 (2203 1981)",
@@ -215,6 +217,72 @@ impl PowerSpec {
         speaker: 4.0,
         feedback: 100_000.0,
         presence_pot: 22_000.0,
+        presence_cap: 0.1e-6,
+    };
+
+    /// The 1959 Super Lead's, as Unicord drew it in July 1970 (70-6-11 issue B):
+    /// the matched power stage of the Brit Plexi preamplifier
+    /// (`circuits::plexi`). See `docs/models/brit_plexi.md`.
+    ///
+    /// The same four EL34s, inverter and transformer family as the 2203's, and
+    /// three differences that are the difference between the two amplifiers:
+    ///
+    /// - **No master.** The preamplifier's treble wiper drives the inverter's
+    ///   coupling capacitor directly, so the master track is left open.
+    /// - **More feedback.** 47 k from the 16 ohm tap where the 2203 has 100 k from
+    ///   4 ohm: built from the 4 ohm secondary as 23.5 k, which passes the same
+    ///   current, about four times the 2203's feedback.
+    /// - **A 5 k presence control** at the bottom of the tail instead of 22 k
+    ///   across a 4.7 k resistor.
+    pub const PLEXI_EL34: PowerSpec = PowerSpec {
+        name: "Brit Plexi EL34 (1959, 1970)",
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 22e-9,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 470.0,
+        pi_tail: 10_000.0,
+        // The presence pot's 5 k track is what the tail returns through.
+        pi_tail_lower: 5_000.0,
+        pi_cross: 0.1e-6,
+        pi_plate_driven: 82_000.0,
+        pi_plate_other: 100_000.0,
+        // ESTIMATED: the inverter node behind Unicord's 20 k dropper, with the
+        // inverter and the preamplifier drawing from it (`plexi::INVERTER_NODE`).
+        pi_supply: crate::circuits::plexi::INVERTER_NODE,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 47e-12,
+        couple: 22e-9,
+        grid_leak: 220_000.0,
+        // 5.6 k per tube, two a side.
+        stopper: 2_800.0,
+        // 1 k per tube.
+        screen_resistor: 500.0,
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::EL34,
+        // ESTIMATED: 36 mA and 16 W a valve at idle, 64 % of an EL34's 25 W
+        // (`examples/plexi_op.rs`).
+        bias: -37.0,
+        // Marshall's c. 1967 100 W drawing: 460 V at the plates.
+        plate_supply: 460.0,
+        screen_supply: 455.0,
+        supply_resistance: 100.0,
+        reservoir: 50e-6,
+        screen_resistance: 100.0,
+        screen_reservoir: 50e-6,
+        // APPROXIMATED: the Brit EL34's 1.7 k replacement-iron data.
+        ratio: 20.615_528_128_088_304,
+        primary_resistance: 15.96,
+        primary_inductance: 8.85,
+        leakage: 7.97e-3 / 425.0,
+        saturation_volts: 28.284_271_247_461_902,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 4.0,
+        feedback: 23_500.0,
+        presence_pot: 5_000.0,
         presence_cap: 0.1e-6,
     };
 
@@ -284,10 +352,11 @@ impl PowerSpec {
     /// output stage but, as with the preamplifier, prints no rail voltage.
     pub const MARKIIC: PowerSpec = PowerSpec {
         name: "Mark IIC+ power amp",
-        // The Lead Master. Lower than the Peavey's, because the Mark IIC+'s
-        // preamplifier hands it a great deal more and because a IIC+ is played
-        // with its master well down -- that is the amplifier's whole method:
-        // gain in the preamplifier, level at the master.
+        // Stands in for the amplifier's MASTER, which on the drawing is a 1 M
+        // control after the V2A recovery stage and ahead of the equaliser; the
+        // Lead Master itself is in the preamplifier (`markiic::LEAD_MASTER`).
+        // Well down, because a IIC+ is played that way: gain in the
+        // preamplifier, level at the master.
         master: 1_000_000.0,
         master_rest: 0.30,
         pi_couple: 0.1e-6,

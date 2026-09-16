@@ -272,3 +272,166 @@ docs/MODEL_INVENTORY.md statuses brought up to date. `examples/presetcost.rs` no
 applies each preset's full `Settings` (pedal, power, cabinet, mics).
 
 **Owner decision outstanding.** Generic display name for Big Muff.
+
+## Session 5 (2026-09-15): Brit 800, Mark IIC+ correction, catalogue update
+
+**Owner requests.**
+- Generic panel descriptions ("modeled after ...").
+- Implement and wire up the Brit 800.
+- Update every existing preset.
+- Check the Puppet Master '86 facts ("way too less distortion").
+- Next: the missing microphone preamps.
+
+**Panel text.** The modelled-circuit descriptions now say "Modeled after a/an
+<generic description>". The panel no longer shows any hardware brand or model name
+(the Drive/graphic notes were fixed too). Engineering references stay in the developer
+documents.
+
+**Mark IIC+ correction (`circuits::markiic`).**
+- Both local drawings return `LEAD OUTPUT` into V2B, then the Lead Master (250 k shunt
+  rheostat), the 150 k/4.7 k pad and the V2A recovery stage before `TO EQ`. The model
+  stopped at `LEAD OUTPUT`.
+- Calibrated distortion at a guitar's level: 39.1 % → 61.1 %.
+- The panel Master is now the Lead Master (`Level::Circuit(markiic::LEAD_MASTER)`, rest
+  0.5); the power master pot stands in for MASTER at rest 0.30.
+- The Mark blocks of `tests/legacy_baseline.rs` are no longer compared (documented in
+  the test); the other voices still are.
+- Research log updated: `docs/models/cali_iic_plus.md`.
+
+**Puppet Master '86 fact check.**
+- Producer Flemming Rasmussen (29 June 2018): "It is only on some solos we use the
+  JCM 800 as poweramp. Most guitars are with the Boogie powerstage!"
+- The preset moved from Brit EL34 to Matched (Cali 6L6).
+- Mics per the producer's interview: two SM57s in the cone, AKG tube mics at 45 degrees,
+  3-4 ft.
+- Knob settings in secondary sources conflict; recorded in PRESETS.md.
+
+**Brit 800 (`circuits::brit800`, `Gain::Brit800`, `Circuit::Brit800` id `amp_jcm800_2203`).**
+- Built from the 1981 Marshall drawing. The 1988 Marshall drawing resolves middle 22 k,
+  treble 220 k and bass log.
+- Rails from the drawing's own voltage table (330 V node 10, with the 10 k droppers and
+  50 uF reservoirs). The operating point is within 4 % of the table at every plate and
+  cathode.
+- Matched = Brit EL34, now at the Brit 800's own catalogue slot (no appended power slot).
+- The circuit enum append comes with a migration for saved presets that carry no ids
+  (`params::LEGACY_CIRCUIT_COUNT`).
+- Calibration: 24.7 % at full Preamp Volume.
+- Tests: `tests/brit800.rs` (5), migration test in `tests/modular_state.rs`.
+
+**Tables.** `src/calibration.rs` and `src/power_trim.rs` were regenerated (14 voices).
+`examples/powertrim.rs` sizes the table from `Gain::ALL`.
+
+**Catalogue.**
+- Every guitar preset now uses a physical cabinet, speaker and microphones; the legacy
+  baked filter is unused.
+- Topologies drive the speaker directly (no power stage inside the oversampler).
+- Green Overdrive and Screamer Boost use the pedal slot (into the American Twin and the
+  Brit 800).
+- Mark and Twin presets were re-voiced.
+- New: Brit Crunch, Brit Lead.
+- Level span 10.1 dB at 220 Hz. Worst cost 32 % of realtime per channel
+  (Texas Storm '83).
+- New test: `tests/presets.rs::guitar_presets_use_a_physical_cabinet`.
+
+**Open.**
+- The Mark graphic model spans only about +2.7 dB of boost against Mesa's ±12 dB.
+- Generic display name for Big Muff.
+
+## Session 6 (2026-09-15): microphone preamps, graphic EQ, Ram Fuzz
+
+**Owner requests.**
+- Implement the missing mic preamps, including the SSL 4000 E.
+- Correct the Mark graphic EQ.
+- Give the Big Muff a distinctive name.
+- Look deeper for the Tube 610 schematic.
+
+**Research.**
+- American 312: API's card drawing, API transformer sheet and API 2520 data sheet
+  (waltzingbear archive).
+- British 4K E: SSL drawing T82001-71 rev 16 (ka-electronics), cross-checked with
+  82E01-710-8208-12 (gyraf.dk); Jensen JE-115K-E/JT-115K-E data sheets.
+- Tube 610: Hinson's redraw of UA C-10068, found through Gearspace and retrieved from the
+  Internet Archive (the GroupDIY copy is members-only). UTC 1963 catalogue, UTC 1952
+  terminal arrangements (the 50 ohm tap on pins 3-4), RCA 12AY7 1953 data.
+- Research logs: `docs/models/american_312.md`, `british_4k_e.md`, `tube_610.md`.
+
+**Implementation.**
+- `circuits::american312`, `circuits::console_e`, `circuits::tube610`; `Gain`/`Circuit`
+  appended with ids `pre_api_312`, `pre_ssl_4000e`, `pre_ua_610a`.
+- `TriodeSpec::T12AY7` fitted exactly to the RCA points (`tools/tube_fit/fit_12ay7.py`).
+- Transformer internals are fitted to the data-sheet figures (test-held):
+  - Jensen: 2.5 Hz/90 kHz −3 dB, 1 % at 20 Hz −2.5 dBu;
+  - UTC O-1: ±1 dB, 1 % at +8 dBm;
+  - API 2622: ±0.5 dB, 1 % at 0 dBm.
+- Gain ranges:
+
+  | Preamp | Gain |
+  |---|---|
+  | American 312 | 30-64 dB, even in dB |
+  | British 4K E | 19-69 dB |
+  | Tube 610 | to 70 dB, 2nd-harmonic led |
+
+- Presets: six in the Preamp group. The two Neve presets were renamed "British 73 Pre" /
+  "British 73, Driven".
+- Tests: `tests/american312.rs`, `tests/console_e.rs`, `tests/tube610.rs`
+  (`tests/support/micpre.rs`).
+
+**Mark IIC+ graphic EQ.** Rebuilt as the feedback equaliser both drawings show (tracks
+between the amplifier's two inputs), with the 16.6 dB make-up removed and 50 k sliders on a
+dual-slope law. Now ±10-15 dB and flat when centred. New `Taper::Symmetric`.
+
+**Ram Fuzz.** The Big Muff's display name on the circuit and pedal lists; ids unchanged.
+
+**Tables.** Calibration and power trim regenerated for 17 voices.
+
+## Session 7 (2026-09-15): pedals, a solver fix, the Mark IIC+ Bass
+
+**Pedals.**
+- Rodent (Pro Co RAT, LM308) and Round Fuzz (germanium Fuzz Face) in the pedal slot, ids
+  `pedal_rat` and `pedal_fuzz_face`.
+  - Logs: [rodent.md](docs/models/rodent.md), [round_fuzz.md](docs/models/round_fuzz.md).
+- Solver additions: `Part::Bipolar { pnp }` and `Part::Transconductor` (a saturating VCCS
+  for op-amp gain-bandwidth and slew).
+- The panel greys the Tone knob for pedals without one.
+
+**User-reported bug: Rodent in front of a distorted Cali IIC+ crackles and drops out.**
+- Cause: after Distortion came down while playing, the op-amp loop (pole near 1 MHz) drove
+  the transconductor into saturation. Its tangent linearisation is flat there, so every
+  solve failed and the reactances froze on the last good answer.
+- Fix:
+  - chord linearisation once saturated (`Transconductor::stamp`);
+  - `lm308` referenced to ground instead of the bias divider;
+  - diode swing clamps with a linear follower instead of the two-state rail switch.
+- Result: 2,943 unsettled solves and 29,095 fallbacks became 2 and 0 on the same sweep.
+  Worst block through the chain went from 394 % to 76 % of its deadline.
+- Regression test: `tests/rodent.rs::distortion_can_be_turned_down_while_playing`.
+
+**User report: Puppet Master '86 has far too much low end; Mark IIC+ schematics.**
+- Three independent drawings compared: the Mesa-labelled 1985 drawing, jrb32's FINAL, and
+  the SLOCLONE v2 trace. They agree on topology and on nearly every value.
+  Differences are recorded in [cali_iic_plus.md](docs/models/cali_iic_plus.md).
+- Correction: the Bass pot is **audio taper** (SLOCLONE "250k A"; Mesa part A250K for
+  "MK II/III Bass"). It was linear.
+- Preset re-voiced per Mesa's IIC+ manual ("As gain goes up, Bass should come down"):
+  - Bass 0.20;
+  - graphic [0.65, 0.45, 0.25, 0.65, 0.70] (was 80 Hz at 0.85, about +9 dB);
+  - 57 at 2.5 cm.
+  Low octaves are 5.5 dB lower relative to 1-4 kHz.
+
+**Brit Plexi (1959 Super Lead) and its power stage.**
+- Research log [brit_plexi.md](docs/models/brit_plexi.md). Sources: Unicord 70-6-11 (July
+  1970) for values, Marshall's c. 1967 drawing for voltages, Marshall's 1988 1959 STD
+  drawings for pot laws and the later changes.
+- `circuits::plexi` (bright channel, id `amp_marshall_1959`) and `PowerSpec::PLEXI_EL34`
+  (id `power_1959_el34`, a new `PowerModel` slot and power-amp choice).
+- The supply chain is solved self-consistently: the inverter node the preamplifier's
+  droppers settle at (319.4 V) is the one the inverter is fed from.
+- Idle 16 W per EL34 at -37 V (ESTIMATED).
+- Calibration and power-trim tables regenerated (18 voices, 6 override columns).
+- Presets: Plexi Crunch, Plexi Cranked (Amplifier); album presets Blackout '80 (Classic
+  Rock) and Experienced '67 (Psychedelic / Lead), with evidence tables in PRESETS.md.
+- Brown '78/'84 stay waiting: the documented rig ran the amplifier from a variac at
+  80-89 V, and there is no mains-voltage supply model.
+- Tests: `tests/plexi.rs`.
+
+**Tests.** 336 pass (`cargo test --release --no-fail-fast`), Plexi included.

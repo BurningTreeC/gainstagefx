@@ -258,18 +258,28 @@ pub const PRESETS: &[Preset] = &[
     },
     // --- Crunch ----------------------------------------------------------
     // Two stages, which is where the harmonics start compounding rather than
-    // adding. The cabinet comes in here: past this point there is enough
-    // going on at the top of the band that leaving it bare is audible.
+    // adding. Everything from here on comes out of a real cabinet: a physical
+    // box and driver, driven straight from the circuit (these topologies have
+    // no power stage of their own), and a microphone in front of it. The
+    // legacy baked Combo/Stack filter is no longer used by any shipped preset.
     Preset {
         drive: 0.55,
         mid: 0.6,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::AmericanOpen212,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.03,
         ..base("Crunch", "Edge of Breakup")
     },
     Preset {
         drive: 0.70,
         mid: 0.58,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::AmericanOpen112,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.025,
+        mic_b: MicModel::Ribbon121,
+        mic_b_distance: 0.15,
+        mic_blend: 0.35,
+        output_trim: 2.0,
         ..base("Crunch", "Blues Crunch")
     },
     Preset {
@@ -277,38 +287,46 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.45,
         mid: 0.55,
         treble: 0.62,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::Brit1960,
+        mic_a_position: 0.4,
+        mic_a_angle: 15.0,
         ..base("Crunch", "Classic Rock")
     },
     Preset {
         drive: 0.95,
         bass: 0.42,
         treble: 0.68,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::BritGreen,
+        mic_b: MicModel::Ribbon121,
+        mic_b_distance: 0.2,
+        mic_blend: 0.3,
         ..base("Crunch", "British Crunch")
     },
     Preset {
         drive: 0.78,
         tone: ToneStack::Scooping,
         mid: 0.35,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::Closed212,
+        mic_a_position: 0.5,
         ..base("Crunch", "Hollow Crunch")
     },
     // --- High gain -------------------------------------------------------
-    // Three stages, all of them clipping on every note.
+    // Three stages, all of them clipping on every note, into closed 4x12s --
+    // that much energy above 4 kHz wants a closed box and a close microphone.
     Preset {
         drive: 0.78,
         bass: 0.55,
         mid: 0.5,
         treble: 0.6,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::BritV30,
+        mic_a_position: 0.3,
+        mic_a_angle: 10.0,
         ..base("High Gain", "Modern Rhythm")
     },
     // The one the whole exercise was aimed at. Three cascaded stages for the
     // harmonics, the scooping voicing with the mid control right down for the
     // dip -- a resonant leg rather than a shelf at each end, which is why it
-    // is a scoop and not just less middle -- and a stack behind it, because
-    // that much energy above 4 kHz is unlistenable without a speaker.
+    // is a scoop and not just less middle.
     Preset {
         drive: 0.93,
         circuit: Circuit::HighGain,
@@ -316,8 +334,10 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.78,
         mid: 0.08,
         treble: 0.82,
-        cabinet: Cabinet::Stack,
-        output_trim: -1.5,
+        cab_model: CabModel::CaliOversized,
+        mic_a_position: 0.25,
+        mic_a_distance: 0.02,
+        output_trim: 2.5,
         ..base("High Gain", "Scooped Metal")
     },
     Preset {
@@ -327,7 +347,9 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.7,
         mid: 0.2,
         treble: 0.75,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::BritClosed,
+        mic_a_position: 0.35,
+        mic_a_angle: 20.0,
         ..base("High Gain", "Thrash Rhythm")
     },
     Preset {
@@ -336,7 +358,10 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.6,
         mid: 0.62,
         treble: 0.55,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::Brit1960,
+        mic_b: MicModel::Ribbon121,
+        mic_b_distance: 0.2,
+        mic_blend: 0.4,
         ..base("High Gain", "Lead Sustain")
     },
     Preset {
@@ -346,8 +371,9 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.85,
         mid: 0.05,
         treble: 0.7,
-        cabinet: Cabinet::Stack,
-        output_trim: -2.0,
+        cab_model: CabModel::Oversized,
+        mic_a_position: 0.2,
+        output_trim: 2.0,
         ..base("High Gain", "Everything Up")
     },
     Preset {
@@ -356,32 +382,56 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.35,
         mid: 0.45,
         treble: 0.7,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::BritV30,
+        mic_a: MicModel::Dynamic906,
+        mic_a_position: 0.25,
+        mic_a_distance: 0.015,
         ..base("High Gain", "Tight Low End")
     },
     // --- Overdrive -------------------------------------------------------
     // Diodes in the loop, which lower the gain rather than stopping the
     // output -- so these keep following what is played and clean up when the
-    // playing gets quieter. Mostly with the cabinet off, because an overdrive
-    // is usually in front of an amplifier rather than instead of one.
-    // The name was always describing a particular green box, and now it is
-    // one: the modelled TS808 rather than the generic loop clipper. Its tone
-    // control is the circuit's own, so the plugin's stack is out of the path
-    // and the Treble knob is what the pedal has.
+    // playing gets quieter.
+    //
+    // The two named after a particular green box are that box in the pedal
+    // slot, in front of an amplifier, which is where one goes. They were the
+    // pedal on its own with nothing after it; the pedal now carries the values
+    // its drawings agree on, and an overdrive's point is what it does to the
+    // amplifier behind it.
     Preset {
-        drive: 0.85,
-        circuit: Circuit::Screamer,
+        pedal: PedalModel::Green808,
+        pedal_drive: 0.7,
+        pedal_tone: 0.5,
+        pedal_level: 0.6,
+        circuit: Circuit::Twin,
+        drive: 0.45,
         tone: ToneStack::Off,
-        treble: 0.5,
+        bass: 0.5,
+        mid: 0.5,
+        treble: 0.55,
+        cab_model: CabModel::AmericanOpen212,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
         oversampling: Oversampling::Off,
+        output_trim: -5.0,
         ..base("Overdrive", "Green Overdrive")
     },
+    // Little drive and a lot of level, into a British master-volume amplifier
+    // already crunching: the boost tightens the bottom and pushes the preamp.
     Preset {
-        drive: 0.40,
-        circuit: Circuit::Screamer,
+        pedal: PedalModel::Green808,
+        pedal_drive: 0.15,
+        pedal_tone: 0.6,
+        pedal_level: 0.85,
+        circuit: Circuit::Brit800,
+        drive: 0.65,
         tone: ToneStack::Off,
+        bass: 0.45,
+        mid: 0.7,
         treble: 0.65,
-        output_trim: 1.5,
+        cab_model: CabModel::BritV30,
+        mic_a_position: 0.35,
+        mic_a_angle: 10.0,
         oversampling: Oversampling::Off,
         ..base("Overdrive", "Screamer Boost")
     },
@@ -389,6 +439,9 @@ pub const PRESETS: &[Preset] = &[
         drive: 0.70,
         circuit: Circuit::Overdrive,
         tone: ToneStack::Off,
+        cab_model: CabModel::AmericanOpen112,
+        mic_a_position: 0.4,
+        mic_a_distance: 0.04,
         oversampling: Oversampling::Four,
         ..base("Overdrive", "Transparent Boost")
     },
@@ -397,6 +450,11 @@ pub const PRESETS: &[Preset] = &[
         circuit: Circuit::Overdrive,
         diode: Diode::Germanium,
         mid: 0.6,
+        cab_model: CabModel::AmericanOpen112,
+        speaker: SpeakerModel::AmericanAlnico,
+        mic_a: MicModel::Ribbon121,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.12,
         oversampling: Oversampling::Four,
         ..base("Overdrive", "Germanium Warmth")
     },
@@ -405,14 +463,19 @@ pub const PRESETS: &[Preset] = &[
         circuit: Circuit::Overdrive,
         diode: Diode::Led,
         treble: 0.58,
+        cab_model: CabModel::Closed112,
+        mic_a_position: 0.3,
         oversampling: Oversampling::Four,
+        output_trim: 2.0,
         ..base("Overdrive", "LED Headroom")
     },
     Preset {
         drive: 0.92,
         circuit: Circuit::Overdrive,
         mid: 0.7,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::AmericanOpen212,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.05,
         oversampling: Oversampling::Four,
         ..base("Overdrive", "Overdriven Combo")
     },
@@ -423,7 +486,8 @@ pub const PRESETS: &[Preset] = &[
         drive: 0.78,
         circuit: Circuit::Distortion,
         mid: 0.45,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::Closed212,
+        mic_a_position: 0.35,
         oversampling: Oversampling::Four,
         ..base("Distortion", "Classic Distortion")
     },
@@ -434,8 +498,10 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.7,
         mid: 0.15,
         treble: 0.75,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::CaliOversized,
+        mic_a_position: 0.3,
         oversampling: Oversampling::Four,
+        output_trim: 2.0,
         ..base("Distortion", "Scooped Pedal")
     },
     Preset {
@@ -443,7 +509,9 @@ pub const PRESETS: &[Preset] = &[
         circuit: Circuit::Distortion,
         diode: Diode::Germanium,
         bass: 0.65,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.45,
+        mic_a_distance: 0.04,
         oversampling: Oversampling::Four,
         ..base("Distortion", "Woolly Fuzz")
     },
@@ -453,7 +521,8 @@ pub const PRESETS: &[Preset] = &[
         diode: Diode::Led,
         bass: 0.55,
         treble: 0.7,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::BritV30,
+        mic_a_position: 0.3,
         oversampling: Oversampling::Four,
         ..base("Distortion", "LED Wall")
     },
@@ -461,8 +530,10 @@ pub const PRESETS: &[Preset] = &[
         drive: 0.92,
         circuit: Circuit::Distortion,
         mix: 0.6,
-        cabinet: Cabinet::Combo,
+        cab_model: CabModel::Closed112,
+        mic_a_position: 0.35,
         oversampling: Oversampling::Four,
+        output_trim: 4.0,
         ..base("Distortion", "Blended Grit")
     },
     // The modelled four stage fuzz. Its tone control is a scoop rather than a
@@ -473,81 +544,67 @@ pub const PRESETS: &[Preset] = &[
         circuit: Circuit::Muff,
         tone: ToneStack::Off,
         treble: 0.35,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.35,
+        mic_b: MicModel::Ribbon121,
+        mic_b_distance: 0.25,
+        mic_blend: 0.35,
         oversampling: Oversampling::Off,
         ..base("Distortion", "Sustain Fuzz")
     },
     // --- Modelled amplifiers ---------------------------------------------
-    // Whole preamplifiers rather than pedals: the circuits in src/circuits
-    // that were built from a drawing, with the controls where the drawing
-    // puts them. The Mark IIC+ carries its own tone stack, so the stack is
-    // off and the three knobs are the amplifier's; the 5150's stack could not
-    // be traced, so it borrows the plugin's.
-    // Lead Master well down and the graphic doing the voicing, which is the
-    // amplifier's own method: gain in the preamplifier, level at the back, and
-    // the five sliders late in the chain deciding what the power stage is
-    // handed. `master` 0.35 is below the 0.30 the circuit rests its Lead
-    // Master at -- the knob's middle is that resting position, so this is a
-    // little under it.
+    // Whole preamplifiers rather than pedals, each on its own power stage, each
+    // driving a speaker in a cabinet of the kind it was sold with. Their own
+    // tone stacks carry the three knobs, so the plugin's stack is off -- except
+    // the 5150, whose stack could not be traced and which borrows the plugin's.
     //
-    // The graphic here is the gentle version: 750 backed off and the ends
-    // brought up, which is the same shape as the rhythm setting below but
-    // half as deep, so single notes keep the middle they need to carry.
+    // The Cali IIC+ now runs its lead return, V2B, Lead Master and V2A (see
+    // `circuits::markiic`), so its Master knob is the Lead Master and its
+    // Lead Drive distorts far earlier than it did. Both presets were re-voiced
+    // for that: less Lead Drive, the Lead Master at five.
     Preset {
-        drive: 0.85,
-        master: 0.35,
-        graphic: [0.62, 0.55, 0.30, 0.60, 0.58],
+        drive: 0.60,
+        master: 0.5,
+        graphic: [0.62, 0.55, 0.35, 0.60, 0.58],
         circuit: Circuit::Boogie,
         tone: ToneStack::Off,
-        bass: 0.60,
-        mid: 0.25,
+        bass: 0.55,
+        mid: 0.35,
         treble: 0.70,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::Closed112,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Boutique Lead")
     },
     // And the V everybody sets: 750 on the floor, the ends up. On this
     // amplifier that is not an equaliser curve applied to the output -- the
     // sliders are before the power stage, so scooping here changes what the
-    // 6L6s are asked to do, which is why the shape sounds like the record and
-    // not like the same curve on a mixer.
+    // 6L6s are asked to do.
     Preset {
-        drive: 0.95,
-        master: 0.30,
-        graphic: [0.75, 0.55, 0.05, 0.68, 0.70],
+        drive: 0.70,
+        master: 0.55,
+        graphic: [0.75, 0.50, 0.10, 0.68, 0.70],
         circuit: Circuit::Boogie,
         tone: ToneStack::Off,
-        bass: 0.70,
-        mid: 0.15,
+        bass: 0.60,
+        mid: 0.25,
         treble: 0.75,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::CaliOversized,
+        mic_a_position: 0.25,
+        mic_a_angle: 10.0,
         oversampling: Oversampling::Off,
+        output_trim: -4.5,
         ..base("Amplifier", "Boutique Rhythm")
     },
-    // --- Fender Twin Reverb, AB763 ---------------------------------------
-    // The clean reference, and the one thing everybody wants from it: chime,
-    // headroom, and the spring tank underneath. Its own tone stack carries the
-    // three knobs, so the plugin's stack is out of the path.
-    //
-    // Volume at 6. A Twin does not distort where other amplifiers do -- the
-    // whole point of eighty-five watts and four 6L6s is that it does not run
-    // out of room -- so this is loud and firm rather than dirty, and the
-    // calibration measures it at 1.2 per cent even wide open.
-    //
-    // Bass 6, Middle 3.5, Treble 6.5: the blackface scoop. The Twin is the
-    // amplifier that has a real Middle control where the smaller ones have a
-    // fixed resistor, and backing it off is what everybody does with it.
-    //
-    // Reverb at 3.5, which is where a blackface tank sits under a part without
-    // swallowing it. Tremolo off: it is a per-song effect rather than a
-    // default, and the preset below has it.
-    //
-    // Steel iron stays deliberately enabled as the plugin's selectable output-
-    // iron colour stage. The Twin power model now has its own physical output
-    // transformer as part of the amplifier, so this is additional user-selected
-    // transformer colour rather than a substitute for missing amplifier iron.
-    // Keeping it here also makes Blackface presets exercise the same Steel path
-    // available from the panel. A 2x12 combo is what a Twin is.
+    // --- American Twin ------------------------------------------------------
+    // The clean reference: chime, headroom, and the spring tank underneath.
+    // Volume at 6, Bass 6, Middle 3.5, Treble 6.5 -- the blackface scoop -- and
+    // Reverb at 3.5. Into an open-back 2x12 with ceramic drivers, a 57 close and
+    // a ribbon a little back. The Steel iron these carried is gone: with a real
+    // power stage and speaker the amplifier already has its own output
+    // transformer, and on the physical path the Iron control would sit in front
+    // of the power stage, which an AB763 does not have.
     Preset {
         drive: 0.60,
         circuit: Circuit::Twin,
@@ -556,8 +613,13 @@ pub const PRESETS: &[Preset] = &[
         mid: 0.35,
         treble: 0.65,
         reverb: 0.35,
-        cabinet: Cabinet::Combo,
-        iron: Iron::Steel,
+        cab_model: CabModel::AmericanOpen212,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        mic_b: MicModel::Ribbon121,
+        mic_b_position: 0.4,
+        mic_b_distance: 0.3,
+        mic_blend: 0.3,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Blackface Clean")
     },
@@ -574,8 +636,9 @@ pub const PRESETS: &[Preset] = &[
         reverb: 0.45,
         speed: 0.40,
         intensity: 0.75,
-        cabinet: Cabinet::Combo,
-        iron: Iron::Steel,
+        cab_model: CabModel::AmericanOpen212,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.04,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Blackface Throb")
     },
@@ -586,8 +649,11 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.70,
         mid: 0.15,
         treble: 0.75,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::CaliOversized,
+        mic_a_position: 0.3,
+        mic_a_angle: 15.0,
         oversampling: Oversampling::Off,
+        output_trim: 2.5,
         ..base("Amplifier", "Ultra Lead")
     },
     Preset {
@@ -597,21 +663,87 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.45,
         mid: 0.50,
         treble: 0.65,
-        cabinet: Cabinet::Stack,
+        cab_model: CabModel::Oversized,
+        mic_a_position: 0.3,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Ultra Rhythm")
     },
-    // The Neve 73P microphone preamplifier: two cascaded transistor stages
-    // with an input transformer. Clean at low drive, warming into subtle
-    // harmonic saturation as the gain increases. Cabinet off -- this is a
-    // preamplifier, not an amplifier.
+    // --- Brit 800 -------------------------------------------------------------
+    // The 1981 master-volume British lead amplifier on its own EL34 power
+    // stage. Middle up and bass back is how the stack is usually run, into a
+    // closed 4x12: T75s for the stock cabinet of the time, V30s for the lead.
+    Preset {
+        drive: 0.45,
+        circuit: Circuit::Brit800,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        mid: 0.65,
+        treble: 0.6,
+        cab_model: CabModel::Brit1960,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.025,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Brit Crunch")
+    },
+    Preset {
+        drive: 0.90,
+        circuit: Circuit::Brit800,
+        tone: ToneStack::Off,
+        bass: 0.45,
+        mid: 0.8,
+        treble: 0.7,
+        cab_model: CabModel::BritV30,
+        mic_a_position: 0.3,
+        mic_a_angle: 10.0,
+        mic_b: MicModel::Ribbon121,
+        mic_b_distance: 0.2,
+        mic_blend: 0.3,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Brit Lead")
+    },
+    // --- Brit Plexi -----------------------------------------------------------
+    // The late-60s non-master British 100 W head on its own EL34 stage. No master,
+    // so Volume is how hard the power valves work: moderate for crunch, most of
+    // the way up for the cranked sound, into a 4x12 of 25 W greenbacks.
+    Preset {
+        drive: 0.40,
+        circuit: Circuit::Plexi,
+        tone: ToneStack::Off,
+        bass: 0.45,
+        mid: 0.7,
+        treble: 0.6,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.025,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Plexi Crunch")
+    },
+    Preset {
+        drive: 0.85,
+        circuit: Circuit::Plexi,
+        tone: ToneStack::Off,
+        bass: 0.4,
+        mid: 0.75,
+        treble: 0.55,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.3,
+        mic_b: MicModel::Ribbon121,
+        mic_b_distance: 0.3,
+        mic_blend: 0.3,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Plexi Cranked")
+    },
+    // The console microphone preamplifier: two cascaded transistor stages with
+    // an input transformer. Clean at low drive, warming into subtle harmonic
+    // saturation as the gain increases. No cabinet -- this is a preamplifier,
+    // not an amplifier.
     Preset {
         drive: 0.35,
         circuit: Circuit::Neve,
         tone: ToneStack::Off,
         cabinet: Cabinet::Off,
         oversampling: Oversampling::Off,
-        ..base("Preamp", "Neve Preamp")
+        ..base("Preamp", "British 73 Pre")
     },
     Preset {
         drive: 0.55,
@@ -619,7 +751,53 @@ pub const PRESETS: &[Preset] = &[
         tone: ToneStack::Off,
         cabinet: Cabinet::Off,
         oversampling: Oversampling::Off,
-        ..base("Preamp", "Neve, Driven")
+        ..base("Preamp", "British 73, Driven")
+    },
+    // The other three console microphone preamplifiers, each modelled from its
+    // drawing: a transformer, one discrete op-amp and a transformer; a 1:10
+    // transformer into two op-amps around one pot; and a valve channel with
+    // feedback round both pairs of triodes. No cabinet on any of them.
+    Preset {
+        drive: 0.55,
+        circuit: Circuit::American312,
+        tone: ToneStack::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "American Console Pre")
+    },
+    Preset {
+        drive: 0.90,
+        circuit: Circuit::American312,
+        tone: ToneStack::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "American Console, Pushed")
+    },
+    Preset {
+        drive: 0.55,
+        circuit: Circuit::ConsoleE,
+        tone: ToneStack::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "British Desk Pre")
+    },
+    Preset {
+        drive: 0.90,
+        circuit: Circuit::ConsoleE,
+        tone: ToneStack::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "British Desk, Driven")
+    },
+    Preset {
+        drive: 0.60,
+        circuit: Circuit::Tube610,
+        tone: ToneStack::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "Valve Console Pre")
+    },
+    Preset {
+        drive: 0.92,
+        circuit: Circuit::Tube610,
+        tone: ToneStack::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "Valve Console, Pushed")
     },
     // --- Era presets -----------------------------------------------------
     // Configurations of the modular chain, named after the records whose
@@ -627,27 +805,99 @@ pub const PRESETS: &[Preset] = &[
     // what each one is built from, and how firmly its rig is documented, is in
     // PRESETS.md.
     //
-    // The Mark IIC+ preamplifier into a 2203 EL34 power section, into a closed
-    // British 4x12, close-miked. Gain from the preamp, no boost pedal.
+    // The Cali IIC+ on its own 6L6 power stage. The producer stated in 2018 that
+    // most of the album's guitars used the Boogie power stage and the JCM800 only
+    // served as a power amplifier on some solos, so the "IIC+ slaved into a
+    // Marshall" story does not describe the rhythm tracks. Lead Drive and Volume
+    // high, treble high, middle low; two 4x12s, a 57 in the cone and a valve
+    // condenser about a metre out at 45 degrees.
+    //
+    // Bass low and the low end from the graphic, which is Mesa's own rule for
+    // this amplifier: "As gain goes up, Bass should come down", with BASS "at 3.0
+    // or well below" at a high Volume 1, and extra low end taken from the two
+    // lowest graphic bands, which sit after the gain stages. This preset shipped
+    // with Bass at 6.5 and the 80 Hz slider most of the way up, on a Bass pot
+    // that was then modelled linear, and it was far too heavy. The V is a
+    // moderate one: the manual warns against scooping 750 Hz until nothing is
+    // left.
     Preset {
         circuit: Circuit::Boogie,
-        power_amp: PowerAmp::BritEL34,
-        drive: 0.70,
-        master: 0.50,
-        // The V that the graphic is known for: bass and treble up, 750 Hz down.
-        graphic: [0.62, 0.45, 0.30, 0.48, 0.60],
-        bass: 0.35,
-        mid: 0.45,
+        power_amp: PowerAmp::Matched,
+        drive: 0.80,
+        master: 0.55,
+        graphic: [0.65, 0.45, 0.25, 0.65, 0.70],
+        bass: 0.20,
+        mid: 0.35,
         treble: 0.75,
         tone: ToneStack::Off,
         cab_model: CabModel::BritClosed,
         speaker: SpeakerModel::Matched,
         mic_a: MicModel::Dynamic57,
-        mic_a_position: 0.35,
-        mic_a_distance: 0.02,
-        mic_a_angle: 10.0,
+        mic_a_position: 0.2,
+        mic_a_distance: 0.025,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::TubeCondenser67,
+        mic_b_position: 0.5,
+        mic_b_distance: 1.0,
+        mic_b_angle: 45.0,
+        mic_blend: 0.25,
+        // A hot passive humbucker rather than the nominal guitar.
+        input_trim: 3.0,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Puppet Master '86")
+    },
+    // A 100 W non-master British head turned up only as far as the song needed,
+    // into a Marshall 4x12, each guitar on two large-diaphragm valve/FET
+    // condensers placed on different speakers. See PRESETS.md.
+    Preset {
+        circuit: Circuit::Plexi,
+        power_amp: PowerAmp::Matched,
+        drive: 0.55,
+        bass: 0.40,
+        mid: 0.70,
+        treble: 0.60,
+        tone: ToneStack::Off,
+        cab_model: CabModel::Brit1960,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::TubeCondenser67,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.10,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::Condenser87,
+        mic_b_position: 0.6,
+        mic_b_distance: 0.15,
+        mic_b_angle: 0.0,
+        mic_blend: 0.5,
+        oversampling: Oversampling::Off,
+        ..base("Classic Rock", "Blackout '80")
+    },
+    // A germanium fuzz in front of a British 100 W head played loud, into a 4x12
+    // of greenbacks; a ribbon straight at the cone and a valve condenser. See
+    // PRESETS.md.
+    Preset {
+        pedal: PedalModel::RoundFuzz,
+        pedal_drive: 0.85,
+        pedal_level: 0.6,
+        circuit: Circuit::Plexi,
+        power_amp: PowerAmp::Matched,
+        drive: 0.70,
+        bass: 0.50,
+        mid: 0.60,
+        treble: 0.60,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritGreen,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Ribbon160,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.05,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::TubeCondenser67,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.5,
+        mic_b_angle: 0.0,
+        mic_blend: 0.35,
+        oversampling: Oversampling::Off,
+        ..base("Psychedelic / Lead", "Experienced '67")
     },
     // A Tube Screamer with little drive and a lot of level, into a blackface
     // AB763 channel on the edge of breaking up, into an open-back combo.
@@ -676,7 +926,7 @@ pub const PRESETS: &[Preset] = &[
 
 /// The groups, in the order they should be shown: quietest first, so the list
 /// itself reads as a range rather than as an alphabetical accident.
-pub const GROUPS: [&str; 9] = [
+pub const GROUPS: [&str; 11] = [
     "Studio",
     "Preamp",
     "Crunch",
@@ -687,6 +937,8 @@ pub const GROUPS: [&str; 9] = [
     // make a sound, but a particular amplifier modelled from its drawing.
     "Amplifier",
     // Modular chains aimed at particular records. See PRESETS.md.
+    "Classic Rock",
+    "Psychedelic / Lead",
     "Metal / Heavy",
     "Blues",
 ];
@@ -996,6 +1248,16 @@ fn model_ids(values: &BTreeMap<String, f32>, params: &impl Params) -> BTreeMap<S
 /// Upgrade routing defaults and resolve saved stable IDs on the UI/state thread.
 /// Older enum lists remain unchanged, so their normalized legacy values still load.
 pub fn migrate(preset: &mut Stored, params: &impl Params) {
+    // A saved preset from before stable ids stored its circuit against the
+    // thirteen-entry list. Re-express that position against the current list.
+    // Shipped presets are converted from plain indices and never need this.
+    if !preset.built_in && !preset.model_ids.contains_key("circuit") {
+        if let Some(value) = preset.values.get_mut("circuit") {
+            let last = (crate::params::LEGACY_CIRCUIT_COUNT - 1) as f32;
+            let index = (value.clamp(0.0, 1.0) * last).round();
+            *value = index / (Circuit::ALL.len() - 1) as f32;
+        }
+    }
     preset.values.entry("power_amp".into()).or_insert(0.0);
     // Legacy is the first cabinet model, so an old preset keeps its baked filter.
     preset.values.entry("cab_model".into()).or_insert(0.0);

@@ -1,13 +1,24 @@
 //! Frozen outputs captured before modular routing; never regenerate to hide a regression.
+//!
+//! One deliberate exception, recorded here rather than by regenerating the file:
+//! the Mark IIC+ voice was corrected on 2026-09-15 to include the lead return,
+//! V2B, the Lead Master and V2A, which both of its drawings have and the frozen
+//! model left out (`docs/models/cali_iic_plus.md`). Its blocks are no longer
+//! compared; the 5150, Twin and 73P blocks still are, sample for sample.
 use gainstagefx::voice::{Chain, Gain, Settings, Tone};
 use std::f64::consts::TAU;
+
+/// Samples per voice block in `render`: four amplitudes, five signals, 2048 each.
+const BLOCK: usize = 4 * 5 * 2048;
+/// The voices `render` walks, in order, at each rate.
+const VOICES: [Gain; 4] = [Gain::Boogie, Gain::Peavey, Gain::Twin, Gain::Neve];
 
 fn render() -> Vec<f32> {
     gainstagefx::dsp::time::enable_ftz_daz();
     let mut samples = Vec::new();
     for rate in [44100.0, 48000.0, 88200.0, 96000.0, 192000.0] {
         let mut chain = Chain::new(rate);
-        for gain in [Gain::Boogie, Gain::Peavey, Gain::Twin, Gain::Neve] {
+        for gain in VOICES {
             chain.apply(&Settings {
                 gain,
                 tone: Tone::Off,
@@ -69,7 +80,10 @@ fn legacy_matched_output_is_preserved() {
     assert_eq!(bytes.len(), actual.len() * 4);
     let mut error = 0.0_f64;
     let mut energy = 0.0_f64;
-    for (&actual, bytes) in actual.iter().zip(bytes.chunks_exact(4)) {
+    for (index, (&actual, bytes)) in actual.iter().zip(bytes.chunks_exact(4)).enumerate() {
+        if VOICES[(index / BLOCK) % VOICES.len()] == Gain::Boogie {
+            continue;
+        }
         let expected = f32::from_le_bytes(bytes.try_into().unwrap());
         error += f64::from(actual - expected).powi(2);
         energy += f64::from(expected).powi(2);

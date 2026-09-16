@@ -390,12 +390,19 @@ fn input(cx: &mut Context) {
     .height(Pixels(20.0));
     Binding::new(
         cx,
-        Panel::params.map(|p| p.pedal.value() != PedalModel::None),
-        move |cx, live| {
-            let live = live.get(cx);
+        Panel::params.map(|p| {
+            let pedal = p.pedal.value();
+            u8::from(pedal != PedalModel::None) | (u8::from(pedal.voice().has_tone()) << 1)
+        }),
+        move |cx, flags| {
+            let flags = flags.get(cx);
+            let live = flags & 1 != 0;
+            // A fuzz with no tone control greys its Tone knob rather than
+            // leaving one that turns nothing.
+            let tone = flags & 2 != 0;
             let x0 = body_x() + 330.0;
             placement_knob(cx, x0, top + 82.0, 11.0, "drive", |p| &p.pedal_drive, live, percent);
-            placement_knob(cx, x0 + 86.0, top + 82.0, 11.0, "tone", |p| &p.pedal_tone, live, percent);
+            placement_knob(cx, x0 + 86.0, top + 82.0, 11.0, "tone", |p| &p.pedal_tone, tone, percent);
             placement_knob(cx, x0 + 172.0, top + 82.0, 11.0, "level", |p| &p.pedal_level, live, percent);
         },
     );
@@ -598,29 +605,52 @@ pub fn describe(circuit: Circuit) -> String {
             "An op-amp on a studio rail: nothing of its own \
                             anywhere in the band. Add iron to give it some."
         }
+        // The modelled circuits say what they were modelled after in generic
+        // terms. The hardware each was researched from is named in the
+        // developer documents (docs/MODEL_INVENTORY.md), not on the panel.
         Circuit::Screamer => {
-            "Ibanez TS808. Its gain leg leaves the bottom end \
-                              alone, which is why one goes in front of an amp."
+            "Modeled after a late-70s green overdrive pedal. It leaves the bass \
+                              alone, so it sits in front of an amp."
         }
         Circuit::Muff => {
-            "Big Muff Pi, 1973 Ram's Head. Four stages, and the \
-                          tone control is the mid scoop."
+            "Modeled after a 1973 four-transistor fuzz: two clipping stages, \
+                          and the tone control is a mid scoop."
         }
         Circuit::Boogie => {
-            "Mesa Mark IIC+ lead channel: four triodes, and its \
-                            own tone stack on the tone knobs."
+            "Modeled after an early-80s Californian lead channel: six triodes, \
+                            its own stack and a five-band graphic."
         }
         Circuit::Peavey => {
-            "Peavey EVH 5150 lead channel: six triodes, one of \
-                            them run cold to square off the bottom."
+            "Modeled after a 90s American high-gain lead channel: six triodes, \
+                            one run cold to square off the bottom."
         }
         Circuit::Neve => {
-            "Neve 73P microphone preamplifier: two cascaded \
-                          transistor stages with a step-up transformer."
+            "Modeled after a British class-A console mic preamp: two transistor \
+                          stages and a step-up transformer."
         }
         Circuit::Twin => {
-            "Fender Twin Reverb AB763: the clean one, with its own \
-                          tone stack, a spring tank and a tremolo."
+            "Modeled after a 60s American blackface clean amp, with its own \
+                          stack, spring reverb and tremolo."
+        }
+        Circuit::Brit800 => {
+            "Modeled after an early-80s British 100 W master-volume lead amp: \
+                             four triodes into its own stack."
+        }
+        Circuit::American312 => {
+            "Modeled after an American console mic preamp card: input iron, one \
+                                 discrete op-amp, output iron."
+        }
+        Circuit::ConsoleE => {
+            "Modeled after a British 80s console's mic input: a 1:10 transformer \
+                              and two op-amps around one pot."
+        }
+        Circuit::Tube610 => {
+            "Modeled after a 60s American valve console channel: four triodes in \
+                              two feedback loops, iron each end."
+        }
+        Circuit::Plexi => {
+            "Modeled after a late-60s British 100 W lead amp with no master: \
+                            three triodes, then the power valves."
         }
     }
     .to_string()
@@ -789,7 +819,7 @@ fn drive(cx: &mut Context) {
             let note = if live {
                 "Five sliders, late in the preamp and before the power stage."
             } else {
-                "Only the Mark IIC+ has one."
+                "Only the Cali IIC+ has one."
             };
             label(
                 cx,
@@ -966,7 +996,7 @@ fn tone(cx: &mut Context) {
         );
     }
     for (i, line) in [
-        "Below: the Twin Reverb's spring tank",
+        "Below: the American Twin's spring tank",
         "and its optical tremolo. Reverb is the",
         "recovery stage's own mix control;",
         "Speed and Intensity drive the bulb.",

@@ -174,7 +174,9 @@ fn it_distorts_and_leads_with_second_harmonic() {
 /// 410 V rail is not guaranteed to do.
 #[test]
 fn every_stage_reaches_an_operating_point() {
-    for node in ["v1a_p", "ts_out", "v1b_p", "v3b_p", "v4a_p", "lead_out"] {
+    for node in [
+        "v1a_p", "ts_out", "v1b_p", "v3b_p", "v4a_p", "lead_out", "v2b_p", "v2a_p", "to_eq",
+    ] {
         let c = markiic::tap(10_000.0, 1_000_000.0, node).expect("builds");
         let mut sim = Simulation::new(c, RATE);
         assert!(
@@ -187,11 +189,51 @@ fn every_stage_reaches_an_operating_point() {
     // on a plate is a probe inside the amplifier, and a plate sits some
     // hundreds of volts above ground by design; there is a coupling capacitor
     // between the last one and the jack and that is what sheds it.
-    let c = markiic::tap(10_000.0, 1_000_000.0, "lead_out").expect("builds");
+    let c = markiic::build(10_000.0, 1_000_000.0).expect("builds");
     let mut sim = Simulation::new(c, RATE);
     let mut worst: f64 = 0.0;
     for _ in 0..(RATE as usize / 4) {
         worst = worst.max(sim.process(0.0).abs());
     }
     assert!(worst < 0.05, "the output put out {worst:.4} on silence");
+}
+
+/// The lead output goes back into V2B, which clips, and through the Lead Master
+/// into V2A before it reaches the equaliser (both drawings). A model that stopped
+/// at `LEAD OUTPUT` left out the lead channel's fifth gain stage.
+#[test]
+fn the_recovery_stages_add_the_saturation_the_lead_channel_is_known_for() {
+    let hard = Panel {
+        drive: 0.7,
+        volume: 0.8,
+        ..NOON
+    };
+    let lead = at("lead_out", 220.0, 0.122, &hard);
+    let recovered = at("to_eq", 220.0, 0.122, &hard);
+    println!(
+        "lead output {:.1} %, after V2A {:.1} %",
+        lead.thd_percent(),
+        recovered.thd_percent()
+    );
+    assert!(recovered.thd_percent() > lead.thd_percent() + 10.0);
+    assert!(recovered.thd_percent() > 50.0);
+}
+
+/// The Lead Master is a shunt rheostat: turned up it is louder.
+#[test]
+fn the_lead_master_turns_the_lead_channel_up() {
+    let level = |lead_master: f64| {
+        let c = markiic::build(10_000.0, 1_000_000.0).expect("builds");
+        let mut sim = Simulation::new(c, RATE);
+        sim.set_control(TREBLE, 0.5);
+        sim.set_control(BASS, 0.5);
+        sim.set_control(MIDDLE, 0.5);
+        sim.set_control(VOLUME, 0.8);
+        sim.set_control(LEAD_DRIVE, 0.1);
+        sim.set_control(markiic::LEAD_MASTER, lead_master);
+        let t = Tone::near(RATE, 16_384, 1_000.0, 1e-4);
+        measure::run(t, (RATE / 2.0) as usize, |x| sim.process(x)).gain_db()
+    };
+    let (low, rest, high) = (level(0.1), level(markiic::LEAD_MASTER_REST), level(1.0));
+    assert!(low < rest - 6.0 && rest < high, "{low:.1} {rest:.1} {high:.1}");
 }

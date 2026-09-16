@@ -93,6 +93,11 @@ fn intent(gain: Gain) -> f64 {
         // The Neve 73P is a microphone preamplifier built not to run out of
         // room. Like Console, it should be barely working at nominal.
         Gain::Neve => 3.0,
+        // States its level like the other amplifiers; see `stated_level`.
+        Gain::Brit800 | Gain::Plexi => 25.0,
+        // Microphone preamplifiers, like the Console and the 73P: barely working
+        // at nominal with the gain all the way up.
+        Gain::American312 | Gain::ConsoleE | Gain::Tube610 => 3.0,
     }
 }
 
@@ -195,6 +200,10 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // 5150 above. Noted as a remaining discrepancy in what the figure can
         // see, not tuned out by starving the circuit.
         Gain::HighGain => Some(GUITAR_VOLTS),
+        // A guitar into the HIGH input of a master-volume British lead amp.
+        Gain::Brit800 => Some(GUITAR_VOLTS),
+        // A guitar into the bright channel's HIGH input of a non-master British amp.
+        Gain::Plexi => Some(GUITAR_VOLTS),
         _ => None,
     }
 }
@@ -381,6 +390,9 @@ fn main() {
             String::from(match gain {
                 Gain::Screamer => "an op-amp",
                 Gain::Muff | Gain::Neve => "transistors",
+                Gain::American312 => "an op-amp",
+                Gain::ConsoleE => "op-amps",
+                Gain::Tube610 => "valves",
                 _ => "a valve",
             })
         };

@@ -14,7 +14,7 @@
 
 use super::device::{
     AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper,
-    Triode,
+    Transconductor, Triode,
 };
 use super::netlist::{Adjust, Circuit, Part, GROUND};
 use super::partition::{ReducedLinear, ReducedNonlinear};
@@ -1111,6 +1111,7 @@ impl Simulation {
                 | Part::Pentode { .. }
                 | Part::Jfet { .. }
                 | Part::Bipolar { .. }
+                | Part::Transconductor { .. }
                 | Part::Core { .. }
                 | Part::OpAmp { .. } => device_count += 1,
                 _ => {}
@@ -1805,10 +1806,24 @@ impl Simulation {
                                 .push(AnyDevice::Jfet(Jfet::new(d, g, source_pin, spec)));
                         }
                     }
-                    Part::Bipolar { c, b, e, spec } => {
+                    Part::Bipolar { c, b, e, spec, pnp } => {
                         if !keep_devices {
                             self.devices
-                                .push(AnyDevice::Bipolar(Bipolar::new(c, b, e, spec)));
+                                .push(AnyDevice::Bipolar(Bipolar::new(c, b, e, spec, pnp)));
+                        }
+                    }
+                    Part::Transconductor {
+                        plus,
+                        minus,
+                        out,
+                        reference,
+                        gm,
+                        limit,
+                    } => {
+                        if !keep_devices {
+                            self.devices.push(AnyDevice::Transconductor(Transconductor::new(
+                                plus, minus, out, reference, gm, limit,
+                            )));
                         }
                     }
                     Part::Core { a, b, spec } => {

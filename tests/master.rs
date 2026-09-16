@@ -137,12 +137,13 @@ fn a_circuit_without_one_does_not_pretend() {
     );
 }
 
-/// The two amplifiers with a master have it in the power stage, and the pedals
+/// The 5150 has its master in the power stage, the Mark IIC+ its Lead Master in
+/// the preamplifier (where the drawing puts it), and the pedals
 /// have theirs in the circuit. Which one a voice uses is a judgement about the
 /// hardware, so it is written down and checked rather than inferred.
 #[test]
 fn each_level_control_is_where_the_drawing_puts_it() {
-    use gainstagefx::circuits::{bigmuff, neve, power, ts808};
+    use gainstagefx::circuits::{bigmuff, markiic, neve, power, ts808};
     assert_eq!(
         Gain::Screamer.level_control(),
         Some(Level::Circuit(ts808::LEVEL))
@@ -152,10 +153,11 @@ fn each_level_control_is_where_the_drawing_puts_it() {
         Some(Level::Circuit(bigmuff::VOLUME))
     );
     assert_eq!(Gain::Neve.level_control(), Some(Level::Circuit(neve::TRIM)));
-    // A Lead Master and a post gain are both after the preamplifier.
+    // The Mark IIC+'s Lead Master is inside the preamplifier, ahead of its V2A
+    // recovery stage; the 5150's post gain is after the preamplifier.
     assert_eq!(
         Gain::Boogie.level_control(),
-        Some(Level::Power(power::MASTER))
+        Some(Level::Circuit(markiic::LEAD_MASTER))
     );
     assert_eq!(
         Gain::Peavey.level_control(),
