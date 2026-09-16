@@ -523,6 +523,39 @@ pub fn voice_index(gain: Gain, diode: Diode, amplifier: Amplifier) -> usize {
 
 /// The combination at an index, which is the inverse of the above and exists
 /// so a table can be built by walking the list.
+/// How far the modelled circuits follow the Oversampling control.
+///
+/// A nonlinear stage makes harmonics, and the ones above half the sample rate
+/// fold back down onto frequencies that have nothing to do with the note. That
+/// fold-back is the hash a high-gain amplifier adds at 48 kHz, and the only
+/// real cure is to solve the circuit faster than the host.
+///
+/// These circuits are big nonlinear solves and the cure is priced by the
+/// factor. Measured at full drive on a 1760 Hz note, as inharmonic energy
+/// against the fundamental, alongside what one channel costs of its real-time
+/// budget (`examples/oversampling.rs`):
+///
+/// | | 1x | 2x | 4x | 8x |
+/// |---|---|---|---|---|
+/// | American 5150 | 18.6 % / 34 % | 6.5 % / 67 % | 3.4 % / 114 % | 1.7 % / 193 % |
+/// | Brit 800 | 12.1 % / 21 % | 2.7 % / 40 % | 1.3 % / 71 % | 1.2 % / 142 % |
+/// | Cali Rectifier | 7.2 % / 25 % | 2.9 % / 45 % | 0.8 % / 85 % | 0.2 % / 162 % |
+/// | Cali IIC+ | 5.1 % / 32 % | 1.0 % / 57 % | 0.3 % / 109 % | 0.2 % / 212 % |
+///
+/// Two is where the trade sits. It takes about two thirds of the fold-back
+/// away for about double the work, and it is the last factor that fits: past
+/// it every one of these circuits costs more than the time there is, which is
+/// a DAW missing its deadline -- crackle, stuttering live input, playback
+/// falling behind. That was what pinning them to 1x was avoiding when the
+/// control was first made to skip them; the pin also meant the control did
+/// nothing at all for exactly the circuits that alias most, which is this cap
+/// instead.
+///
+/// Every shipped preset on a modelled circuit asks for 1x, so none of them
+/// costs any more than it did; this is what the control does when a player
+/// turns it up.
+pub const MODELLED_MAX_OVERSAMPLING: usize = 2;
+
 pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
     let mut at = 0;
     for gain in Gain::ALL {
@@ -2429,11 +2462,13 @@ impl Chain {
     /// frequency too high. The factor change itself also resets the halfband
     /// FIR histories, so it is installed on the first sample of a fresh
     /// crossfade instead of in the middle of otherwise continuous audio.
+    /// The modelled circuits are capped at `MODELLED_MAX_OVERSAMPLING` rather
+    /// than following the control all the way up. See that constant.
     pub fn set_oversampling(&mut self, factor: usize) {
         let requested_changed = factor != self.requested_oversampling;
         self.requested_oversampling = factor;
         let factor = if voice_at(self.gain).0.is_modelled() {
-            1
+            factor.min(MODELLED_MAX_OVERSAMPLING)
         } else {
             factor
         };
@@ -2493,9 +2528,9 @@ impl Chain {
         self.acoustic.set_rate(rate);
     }
 
-    /// The factor actually used by the nonlinear gain path. Modelled circuits
-    /// deliberately report one: they are kept at the host rate so they remain
-    /// safe to use live even when the global control is set higher.
+    /// The factor actually used by the nonlinear gain path. A modelled circuit
+    /// reports at most `MODELLED_MAX_OVERSAMPLING`, however high the control is
+    /// set, so that it stays safe to play live.
     pub fn effective_oversampling(&self) -> usize {
         self.over.factor()
     }

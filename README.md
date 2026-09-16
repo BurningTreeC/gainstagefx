@@ -200,6 +200,11 @@ dimensions and driver layouts: Brit 1960 4x12, Cali Oversized 4x12, Brit Closed
 4x12, Brit Green 4x12, Brit V30 4x12, Oversized 4x12, American Open 2x12,
 American Open 1x12, Closed 1x12, Closed 2x12.
 
+Bypass there means *no box*, not no speaker: the driver still radiates, on an
+open baffle, and a microphone still picks it up, which is why it does not sound
+like Legacy with its filter off. The way past the acoustic path is the speaker
+row's own Bypass, and that is bit-identical to Legacy/Off (a test says so).
+
 **Speaker:** Matched (the cabinet's own driver), Bypass (the power stage's
 output, a DI), or Brit V30, Brit Green 25, Brit T75, American Vintage 12,
 American Vintage 10, American Ceramic, American Alnico. Each is a Thiele–Small
@@ -339,8 +344,17 @@ presets set it. Measured against an eight times reference at 3 kHz, a diode
 clipper to ground aliases 31 dB down at two times and 71 at four, so the
 clipper presets ask for four; a three stage valve cascade is already 55 dB down
 at two, and it is the cascade that costs anything, so paying for four there
-buys nothing audible. The modelled circuits run at the host rate whatever
-Quality says, and the control shows it.
+buys nothing audible.
+
+The modelled circuits are the ones that alias most -- a cold-clipped high-gain
+channel at 48 kHz puts 18.6 % of its fundamental back as hash that is not the
+note -- and they are also the most expensive to solve. They follow the control
+as far as **2x**, which takes about two thirds of that away for about double
+the work, and stop there: at four times every one of them costs more than the
+time there is, which is a DAW missing its deadline rather than a cleaner sound.
+The row shows the factors it can deliver and lights the one in use. Every
+shipped preset on a modelled circuit asks for host rate, so none of them costs
+more than it did. Measured with `cargo run --release --example oversampling`.
 
 ## Presets
 

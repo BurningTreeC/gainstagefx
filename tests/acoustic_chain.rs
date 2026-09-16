@@ -9,6 +9,7 @@ use gainstagefx::acoustics::speaker::SpeakerProfile;
 use gainstagefx::acoustics::stage::MicSlot;
 use gainstagefx::voice::{
     AcousticSettings, CabinetChoice, Cabinet, Chain, Gain, PowerAmp, Settings, SpeakerChoice, Tone,
+    NOMINAL_DBFS,
 };
 
 fn signal(k: usize) -> f64 {
@@ -294,4 +295,67 @@ fn physical_path_survives_rates_resets_and_block_partitions() {
         }
         assert_eq!(chain.latency(), 66);
     }
+}
+
+/// What the cabinet row's **Bypass** is, and what it is not.
+///
+/// Bypass there means *no box*: the driver still radiates, on an open baffle,
+/// and a microphone still picks it up. It is not a way past the acoustic path
+/// -- that is the **speaker** row's own Bypass, which is the power stage's
+/// terminal voltage into a resistor, a DI.
+///
+/// Reported as the two sounding different when they were expected to be the
+/// same thing. They are not the same thing, and the way to say so precisely is
+/// that the DI *is* bit-identical to the legacy resistor load with its filter
+/// off, while the open baffle is a different sound entirely.
+#[test]
+fn cabinet_bypass_is_no_box_and_speaker_bypass_is_the_di() {
+    let render = |cabinet, speaker| {
+        let mut chain = Chain::new(48_000.0);
+        chain.apply(&Settings {
+            gain: Gain::Brit800,
+            drive: 0.6,
+            tone: Tone::Off,
+            cabinet: Cabinet::Off,
+            acoustic: AcousticSettings {
+                cabinet,
+                speaker,
+                mic_a: MicSlot::Profile(&MicProfile::DYNAMIC_57),
+                ..AcousticSettings::default()
+            },
+            ..Settings::default()
+        });
+        chain.settle();
+        chain.find_operating_point();
+        let amplitude = 10f64.powf(NOMINAL_DBFS / 20.0);
+        let out: Vec<f64> = (0..12_000)
+            .map(|k| {
+                let t = k as f64 / 48_000.0;
+                chain.process(
+                    amplitude
+                        * ((std::f64::consts::TAU * 110.0 * t).sin() * 0.7
+                            + (std::f64::consts::TAU * 330.0 * t).sin() * 0.3),
+                )
+            })
+            .collect();
+        (out, chain.is_radiating())
+    };
+
+    let (legacy, legacy_radiating) = render(CabinetChoice::Legacy, SpeakerChoice::Matched);
+    let (di, di_radiating) = render(CabinetChoice::Bypass, SpeakerChoice::Bypass);
+    let (baffle, baffle_radiating) = render(CabinetChoice::Bypass, SpeakerChoice::Matched);
+
+    assert!(!legacy_radiating && !di_radiating, "neither drives a speaker");
+    assert_eq!(legacy, di, "the speaker row's Bypass is the legacy resistor load exactly");
+
+    assert!(baffle_radiating, "cabinet Bypass still radiates: it is a driver with no box");
+    let rms = |x: &[f64]| (x.iter().map(|v| v * v).sum::<f64>() / x.len() as f64).sqrt();
+    let difference = rms(
+        &legacy
+            .iter()
+            .zip(&baffle)
+            .map(|(a, b)| a - b)
+            .collect::<Vec<_>>(),
+    );
+    assert!(difference > 0.2 * rms(&legacy), "an open baffle is a sound, not a bypass: {difference}");
 }

@@ -79,5 +79,5 @@ fn main() {
         );
     }
     println!("\nThe last column adds the oversampling control at 4x. A circuit");
-    println!("modelled voice is pinned to 1x, so it should change nothing.");
+    println!("modelled voice caps at 2x, so it shows that rather than four.");
 }

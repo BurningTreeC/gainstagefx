@@ -8,9 +8,9 @@
 //!
 //! It matters most for whichever circuit makes the most harmonics highest up,
 //! which here is the 5150: six triodes, one run cold, squaring the wave off
-//! completely. And the modelled circuits are pinned to the host rate however
-//! the oversampling control is set, so unlike the topologies they have no way
-//! to be given more room.
+//! completely. The modelled circuits follow the oversampling control only as
+//! far as `voice::MODELLED_MAX_OVERSAMPLING`, so their rows stop there;
+//! `examples/oversampling.rs` is what that cap was measured from.
 //!
 //! Run at 48 kHz, which is the rate a session is actually in.
 //!
@@ -68,10 +68,10 @@ fn main() {
                 );
             }
             println!();
-            if actual == 1 && over > 1 {
-                // Every row would be identical; say so once and move on.
+            if actual < over {
+                // Every row above the cap would be identical; say so and move on.
                 println!(
-                    "  {:<12}{:>10}  -- pinned to the host rate, so 4x and 8x are the same row",
+                    "  {:<12}{:>10}  -- capped at {actual}x, so the rows above it repeat",
                     "", ""
                 );
                 break;

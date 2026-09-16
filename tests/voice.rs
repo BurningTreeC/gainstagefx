@@ -49,16 +49,18 @@ fn the_whole_catalogue_builds() {
     }
 }
 
-/// The full schematic models are intentionally kept at the host rate. They
-/// are large nonlinear solves, and applying the global 4x default to them can
-/// make a DAW miss its real-time deadline.
+/// The full schematic models follow the Oversampling control only as far as
+/// `MODELLED_MAX_OVERSAMPLING`. They are large nonlinear solves, and past that
+/// factor they cost more than the time there is, which is a DAW missing its
+/// real-time deadline. Below it the control works, because these are also the
+/// circuits that alias most. See that constant for the measurements.
 ///
 /// Oversampling-factor changes are deliberately installed on the first sample
 /// of a switch fade so resetting the halfband histories cannot click. The test
 /// therefore has to advance the chain once before asking which factor is
 /// actually active.
 #[test]
-fn modelled_circuits_stay_at_host_rate() {
+fn modelled_circuits_are_capped_not_pinned() {
     for gain in [
         Gain::Screamer,
         Gain::Muff,
@@ -73,10 +75,17 @@ fn modelled_circuits_stay_at_host_rate() {
         chain.process(0.0);
         assert_eq!(
             chain.effective_oversampling(),
-            1,
-            "{} must not inherit the global oversampling factor",
+            voice::MODELLED_MAX_OVERSAMPLING,
+            "{} must not follow the control past the cap",
             gain.name(),
         );
+        // ...and it is a cap rather than a pin: below it the control works,
+        // which is what takes the fold-back out of a high-gain amplifier.
+        for asked in [1, 2] {
+            chain.set_oversampling(asked);
+            chain.process(0.0);
+            assert_eq!(chain.effective_oversampling(), asked, "{}", gain.name());
+        }
     }
 
     let mut generic = Chain::new(RATE);

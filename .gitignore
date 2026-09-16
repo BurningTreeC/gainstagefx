@@ -22,16 +22,6 @@
 /docs/schematics/
 /tools/speaker_fit/
 
-ARCHITECTURE.md
-CABINET_MODEL.md
-DSP.md
-IMPLEMENTATION_PROGRESS.md
-IMPLEMENTATION_RESUME.md
-MICROPHONE_MODEL.md
-MODELS.md
-PRESETS.md
-SPEAKER_MODEL.md
-
 # Keep the panel image; other documentation stays local.
 /docs/*
 !/docs/panel.png

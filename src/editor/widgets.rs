@@ -551,6 +551,16 @@ pub struct Selector {
     /// not change shape when a control stops applying -- it just stops
     /// claiming to mean anything.
     enabled: bool,
+    /// The highest segment this row can actually deliver, in whole-list terms.
+    ///
+    /// Not the same thing as `forced`, which shows a value the parameter does
+    /// not hold. A ceiling means the parameter's own value is *clamped* on the
+    /// way to the display: the oversampling row uses it, because a modelled
+    /// circuit follows the control only as far as
+    /// `voice::MODELLED_MAX_OVERSAMPLING` and the row should light what is
+    /// being used rather than what was asked for. The row stays live, because
+    /// everything up to the ceiling still works.
+    ceiling: Option<usize>,
 }
 
 impl Selector {
@@ -571,14 +581,15 @@ impl Selector {
         Self::window(cx, params, params_to_param, labels, enabled, 0, span, None)
     }
 
-    /// A row whose lit segment is `forced` rather than the parameter's, and
-    /// which cannot be clicked. See `Selector::forced`.
-    pub fn pinned<'a, L, Params, P, FMap>(
+    /// A live row whose lit segment is clamped to `ceiling`. See
+    /// `Selector::ceiling`.
+    pub fn capped<'a, L, Params, P, FMap>(
         cx: &'a mut Context,
         params: L,
         params_to_param: FMap,
         labels: Vec<&'static str>,
-        at: usize,
+        total: usize,
+        ceiling: usize,
     ) -> Handle<'a, Self>
     where
         L: Lens<Target = Params> + Clone,
@@ -586,17 +597,7 @@ impl Selector {
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
-        let span = labels.len().max(1);
-        Self::window(
-            cx,
-            params,
-            params_to_param,
-            labels,
-            false,
-            0,
-            span,
-            Some(at),
-        )
+        Self::build_row(cx, params, params_to_param, labels, true, 0, total, None, Some(ceiling))
     }
 
     /// A row showing `labels` starting at `offset` of a `total`-long list.
@@ -617,6 +618,27 @@ impl Selector {
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
+        Self::build_row(cx, params, params_to_param, labels, enabled, offset, total, forced, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_row<'a, L, Params, P, FMap>(
+        cx: &'a mut Context,
+        params: L,
+        params_to_param: FMap,
+        labels: Vec<&'static str>,
+        enabled: bool,
+        offset: usize,
+        total: usize,
+        forced: Option<usize>,
+        ceiling: Option<usize>,
+    ) -> Handle<'a, Self>
+    where
+        L: Lens<Target = Params> + Clone,
+        Params: 'static,
+        P: Param + 'static,
+        FMap: Fn(&Params) -> &P + Copy + 'static,
+    {
         let captions = labels.clone();
         let (start, span) = (offset, total.max(1));
         Self {
@@ -626,6 +648,7 @@ impl Selector {
             total,
             enabled,
             forced,
+            ceiling,
         }
         .build(
             cx,
@@ -648,7 +671,13 @@ impl Selector {
                             .color(value.map(move |v| {
                                 let selected = match forced {
                                     Some(at) => at,
-                                    None => (v * (span - 1) as f32).round() as usize,
+                                    None => {
+                                        let at = (v * (span - 1) as f32).round() as usize;
+                                        match ceiling {
+                                            Some(cap) => at.min(cap),
+                                            None => at,
+                                        }
+                                    }
                                 };
                                 match (enabled, forced, selected == start + index) {
                                     // Pinned: the lit segment is what the
@@ -688,7 +717,10 @@ impl Selector {
         }
         let total = self.total.max(1);
         let v = self.param.unmodulated_normalized_value();
-        let absolute = ((v * (total - 1) as f32).round() as usize).min(total - 1);
+        let mut absolute = ((v * (total - 1) as f32).round() as usize).min(total - 1);
+        if let Some(cap) = self.ceiling {
+            absolute = absolute.min(cap);
+        }
         absolute.wrapping_sub(self.offset)
     }
 

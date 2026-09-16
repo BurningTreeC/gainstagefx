@@ -591,3 +591,45 @@ each one carries, which is how the output trims are chosen. One of them was stal
 this change -- The Great Wall '79 had been trimmed 5 dB down against the old resting level
 and had become the quietest entry in the list -- and is now -1. Seven presets carry a
 pedal and they average half a decibel below the rest of the catalogue, which spans 10.8 dB.
+
+## Session 11 (2026-09-16): the hash at high gain, and what Bypass means
+
+**The distortion settings added noise, and the control that would have fixed it was
+switched off for exactly the circuits that needed it.** A nonlinear stage makes harmonics,
+and the ones above half the sample rate fold back onto frequencies that have nothing to do
+with the note. At 48 kHz the American 5150 at full drive puts **18.6 %** of its fundamental
+back as inharmonic hash. `Chain::set_oversampling` was pinning every modelled circuit to 1x
+whatever the panel said (commit 73adad0, "modelled circuits: always run at host rate"),
+because at 4x they miss a DAW's deadline -- true, and measured again here -- but the pin
+also meant the Oversampling control did nothing at all for the circuits that alias most.
+
+Measured at full drive on a 1760 Hz note, inharmonic energy against the fundamental, with
+what one channel costs of its real-time budget (`examples/oversampling.rs`, new):
+
+| | 1x | 2x | 4x | 8x |
+|---|---|---|---|---|
+| American 5150 | 18.6 % / 34 % | 6.5 % / 67 % | 3.4 % / 114 % | 1.7 % / 193 % |
+| Brit 800 | 12.1 % / 21 % | 2.7 % / 40 % | 1.3 % / 71 % | 1.2 % / 142 % |
+| Cali Rectifier | 7.2 % / 25 % | 2.9 % / 45 % | 0.8 % / 85 % | 0.2 % / 162 % |
+| Cali IIC+ | 5.1 % / 32 % | 1.0 % / 57 % | 0.3 % / 109 % | 0.2 % / 212 % |
+
+So the pin became a **cap**: `voice::MODELLED_MAX_OVERSAMPLING = 2`. Two thirds of the
+fold-back goes away for about double the work, and it is the last factor that fits -- past
+it every one of these circuits costs more than the time there is. Every shipped preset on a
+modelled circuit already asks for host rate, so **no preset costs any more than it did**;
+this is what the control does when a player turns it up. The panel row now offers the
+factors it can deliver, live, and lights the one in use rather than being greyed at Off
+(`Selector::capped`, which clamps the lit segment instead of `Selector::pinned`, now gone).
+Test: `modelled_circuits_are_capped_not_pinned`.
+
+**Why Legacy/Off and cabinet Bypass sound different.** They are not the same control.
+Cabinet **Bypass** means *no box*: `CabinetChoice::Bypass` still resolves a driver, so the
+speaker radiates on an open baffle, a microphone picks it up, and the power stage sees the
+speaker's reactive impedance instead of a resistor. The way past the acoustic path is the
+**speaker** row's Bypass, which is the terminal voltage into a resistor -- and that is
+**bit-identical** to Legacy with its filter off (measured: difference 0.000e0, and the
+vectors compare equal). Locked as
+`cabinet_bypass_is_no_box_and_speaker_bypass_is_the_di` in `tests/acoustic_chain.rs`.
+
+**README:** a new "What each name is" section, one table per panel section, mapping every
+display name to the hardware it was built from with its research log.

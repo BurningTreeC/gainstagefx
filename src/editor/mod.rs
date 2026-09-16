@@ -303,21 +303,29 @@ fn strip(cx: &mut Context) {
 
     let width = 112.0;
     let left = PANEL_W - 14.0 - width;
-    // A circuit-modelled voice runs at the host rate whatever this is set to
-    // -- `Chain::set_oversampling` pins it, because those circuits cannot yet
-    // afford a higher one (§59.5). The row said otherwise, which is a control
-    // claiming to do something it does not.
+    // A circuit-modelled voice follows this control only as far as
+    // `voice::MODELLED_MAX_OVERSAMPLING`: past that those circuits cost more
+    // than the time there is. So the row offers what it can deliver -- the
+    // factors up to the cap, live, because they are what takes the fold-back
+    // out of a high-gain amplifier -- and lights the one in use when a stored
+    // setting is higher than the cap.
     //
-    // Pinned to Off and dimmed rather than written to Off: the parameter is
-    // left alone, so choosing a pedal again brings the setting back instead of
-    // silently discarding it, and nothing here fights the host's automation.
+    // The parameter itself is left alone rather than written down to the cap,
+    // so choosing a pedal again brings the setting back instead of silently
+    // discarding it, and nothing here fights the host's automation.
     Binding::new(
         cx,
         Panel::params.map(|p| p.circuit.value().voice().is_modelled()),
         move |cx, modelled| {
             let labels: Vec<&'static str> = Oversampling::ALL.iter().map(|o| o.name()).collect();
             let handle = if modelled.get(cx) {
-                Selector::pinned(cx, Panel::params, |p| &p.oversampling, labels, 0)
+                let total = labels.len();
+                let cap = Oversampling::ALL
+                    .iter()
+                    .position(|o| o.factor() >= crate::voice::MODELLED_MAX_OVERSAMPLING)
+                    .unwrap_or(0);
+                let offered = labels[..=cap].to_vec();
+                Selector::capped(cx, Panel::params, |p| &p.oversampling, offered, total, cap)
             } else {
                 Selector::new(cx, Panel::params, |p| &p.oversampling, labels, true)
             };
