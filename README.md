@@ -95,9 +95,9 @@ sources, where they disagree and what was approximated.
 | Brit DR103 | A British 100 W head built for headroom: five triodes, a master volume, and an inverter the driver holds still so it cannot shift its bias | DR103 EL34 |
 | Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off | Recto 6L6 (or Recto 6L6 Tube) |
 
-Display names are generic on purpose. The hardware each was researched from is
-named in [`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md) and the research
-logs, alongside the stable ids saved sessions use.
+Display names are generic on purpose. Which hardware each one was built from is
+in [What each name is](#what-each-name-is) below, and in the research logs
+alongside the stable ids saved sessions use.
 
 ### Preamplifiers, and the iron
 
@@ -222,6 +222,96 @@ set to Aligned. **B polarity** inverts mic B, and **blend** mixes the two.
 The models, the equations and what each number is based on are in
 [`SPEAKER_MODEL.md`](SPEAKER_MODEL.md), [`CABINET_MODEL.md`](CABINET_MODEL.md)
 and [`MICROPHONE_MODEL.md`](MICROPHONE_MODEL.md).
+
+## What each name is
+
+The panel's names are generic; the hardware behind them is not. This is the
+whole mapping, with the research log for each — the log is where the revision,
+the sources, the places they disagree and everything approximated are written
+down. Every model is built from published drawings and data sheets, part by
+part; a name in the right-hand column is a statement about *what was measured
+against*, not a claim of any connection with the manufacturer. All trademarks
+belong to their owners, who have neither endorsed nor been involved in this.
+
+**Circuits** — the ones marked *generic* are designed topologies with no
+hardware behind them at all.
+
+| Panel | Modelled from | Log |
+|---|---|---|
+| Clean / Crunch / High Gain | *generic*: one, two and three cascaded ECC83 stages | — |
+| Overdrive / Distortion | *generic*: diodes in the feedback loop, and diodes to ground | — |
+| Console / Studio | *generic*: a step-up transformer into a discrete stage; an op-amp on studio rails | — |
+| Green 808 | Ibanez TS808 Tube Screamer (JRC4558D, 1N4148 pair, BC549 buffers) | [green_808.md](docs/models/green_808.md) |
+| Ram Fuzz | Electro-Harmonix Big Muff Pi, 1973 Ram's Head | [big_muff.md](docs/models/big_muff.md) |
+| Cali IIC+ | Mesa/Boogie Mark IIC+ lead channel, 60 W | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
+| American 5150 | Peavey EVH 5150 lead channel | [american_5150.md](docs/models/american_5150.md) |
+| American Twin | Fender Twin Reverb AB763 (blackface), vibrato channel | [american_twin.md](docs/models/american_twin.md) |
+| Brit 800 | Marshall JCM800 2203 100 W, 1981 drawing | [brit_800.md](docs/models/brit_800.md) |
+| Brit Plexi | Marshall 1959 Super Lead 100 W, bright channel, 1970 drawing | [brit_plexi.md](docs/models/brit_plexi.md) |
+| Brit AC30 | Vox AC30/6 Top Boost, brilliant channel | [brit_ac30.md](docs/models/brit_ac30.md) |
+| Brit DR103 | Hiwatt DR103 Custom 100, brilliant channel, Issue 4 | [brit_dr103.md](docs/models/brit_dr103.md) |
+| Cali Rectifier | Mesa/Boogie Dual Rectifier, two-channel Rev F, red channel modern | [cali_rectifier.md](docs/models/cali_rectifier.md) |
+| British 73 | DIY Recording Equipment 73P v1.1 (a 1073-style 500-series card) | project-local drawings |
+| American 312 | API 312 microphone preamplifier card (2622, 2520, 2503) | [american_312.md](docs/models/american_312.md) |
+| British 4K E | SSL SL 4000 E channel amp, 82E01 microphone amplifier | [british_4k_e.md](docs/models/british_4k_e.md) |
+| Tube 610 | Universal Audio 610-A modular console preamplifier | [tube_610.md](docs/models/tube_610.md) |
+
+**Pedals** (the slot in front of whatever is selected)
+
+| Panel | Modelled from | Log |
+|---|---|---|
+| Green 808 | Ibanez TS808 Tube Screamer | [green_808.md](docs/models/green_808.md) |
+| Green 9 | Ibanez TS9 — the 808 with its output resistors | [green_9.md](docs/models/green_9.md) |
+| Ram Fuzz | Electro-Harmonix Big Muff Pi, 1973 Ram's Head | [big_muff.md](docs/models/big_muff.md) |
+| Rodent | Pro Co RAT, the LM308 revision | [rodent.md](docs/models/rodent.md) |
+| Yellow Dist | MXR Distortion+, the 741 version | [yellow_dist.md](docs/models/yellow_dist.md) |
+| Round Fuzz | Arbiter Fuzz Face, germanium (1966–68) | [round_fuzz.md](docs/models/round_fuzz.md) |
+
+**Power stages**
+
+| Panel | Modelled from | Log |
+|---|---|---|
+| Cali 6L6 | Mark IIC+ 60 W: ECC83 inverter, two 6L6GC, feedback and presence | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
+| American 6L6 Clean | Twin Reverb AB763: ECC81 inverter, four 6L6GC, 820 Ω feedback | [american_twin.md](docs/models/american_twin.md) |
+| American 6L6 High-Gain | 5150: ECC83 inverter, four 6L6GC, 39 k feedback | [american_5150.md](docs/models/american_5150.md) |
+| Brit EL34 | JCM800 2203: four EL34 at −42 V, feedback from the 4 Ω tap | [brit_el34.md](docs/models/brit_el34.md) |
+| Brit Plexi EL34 | 1959 Super Lead: the same iron with no master, 47 k feedback | [brit_plexi.md](docs/models/brit_plexi.md) |
+| AC30 EL84 | AC30 Top Boost: four cathode-biased EL84, no feedback loop, cut control, GZ34 rectifier | [brit_ac30.md](docs/models/brit_ac30.md) |
+| DR103 EL34 | Hiwatt DR103: four EL34, inverter direct-coupled to its driver | [brit_dr103.md](docs/models/brit_dr103.md) |
+| Recto 6L6 / Recto 6L6 Tube | Dual Rectifier: four 6L6 on the silicon setting, or two 5U4GB valve rectifiers | [cali_rectifier.md](docs/models/cali_rectifier.md) |
+
+**Cabinets, speakers and microphones** — dimensions from the manufacturers,
+Thiele–Small parameters and response curves from data sheets where they are
+published and estimated where they are not ([cabinets.md](docs/models/cabinets.md),
+[speakers.md](docs/models/speakers.md), [microphones.md](docs/models/microphones.md)).
+
+| Cabinet | Modelled from | Speaker | Modelled from |
+|---|---|---|---|
+| Brit 1960 4x12 | Marshall 1960A, angled | Brit V30 | Celestion Vintage 30 |
+| Brit Closed 4x12 | Marshall 1960B, straight | Brit Green 25 | Celestion G12M-25 Greenback |
+| Brit Green 4x12 | Marshall 1960AX | Brit T75 | Celestion G12T-75 |
+| Brit V30 4x12 | Marshall 1960AV | American Vintage 12 | Jensen P12R |
+| Cali Oversized 4x12 | Mesa/Boogie Rectifier Standard | American Vintage 10 | Jensen P10R |
+| American Open 2x12 | Fender Twin Reverb combo | American Ceramic | Jensen C12N |
+| American Open 1x12 | Fender '65 Deluxe Reverb | American Alnico | Jensen P12N |
+| Closed 1x12 | Marshall 1912 | | |
+| Closed 2x12 | Marshall 1936 | | |
+| Oversized 4x12 | *generic* | | |
+| Combo / Stack (Legacy) | *generic* filters, kept for old sessions | | |
+
+| Microphone | Modelled from | Microphone | Modelled from |
+|---|---|---|---|
+| Dynamic 57 | Shure SM57 | Ribbon 38 | Coles 4038 |
+| Dynamic 421 | Sennheiser MD 421 II | Condenser 87 | Neumann U 87 Ai |
+| Dynamic 906 | Sennheiser e 906 | Condenser 414 | AKG C414 |
+| Dynamic 409 | Sennheiser MD 409 U3 | Tube Condenser 67 | Neumann U 67 |
+| Ribbon 121 | Royer R-121 | FET Condenser 47 | Neumann U 47 fet |
+| Ribbon 160 | beyerdynamic M 160 | | |
+
+Everything else on the panel — Diode, Amplifier, Iron, Tone, Mains — is generic:
+a material or a device type rather than a particular product.
+[`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md) carries the same mapping
+with the stable ids saved sessions use, and what is approximated in each.
 
 ## What it costs
 
