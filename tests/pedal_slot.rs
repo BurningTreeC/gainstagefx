@@ -26,7 +26,7 @@ fn rms(x: &[f64]) -> f64 {
 fn no_pedal_is_exactly_the_old_path() {
     let base = Settings { gain: Gain::Twin, tone: Tone::Off, ..Settings::default() };
     let explicit = Settings {
-        pedal: PedalSettings { pedal: Pedal::None, drive: 0.9, tone: 0.1, level: 0.9 },
+        pedal: PedalSettings { pedal: Pedal::None, drive: 0.9, tone: [0.1; 4], level: 0.9 },
         ..base
     };
     let (_, a) = render(&base, 8_000);
@@ -38,7 +38,7 @@ fn no_pedal_is_exactly_the_old_path() {
 fn a_pedal_is_really_in_front_of_the_amplifier() {
     let base = Settings { gain: Gain::Twin, drive: 0.35, tone: Tone::Off, ..Settings::default() };
     let boosted = Settings {
-        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.2, tone: 0.5, level: 0.9 },
+        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.2, tone: [0.5; 4], level: 0.9 },
         ..base
     };
     let (_, clean) = render(&base, 24_000);
@@ -59,7 +59,7 @@ fn the_same_circuit_can_be_both_pedal_and_voice() {
     let s = Settings {
         gain: Gain::Screamer,
         tone: Tone::Off,
-        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.7, tone: 0.4, level: 0.6 },
+        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.7, tone: [0.4; 4], level: 0.6 },
         ..Settings::default()
     };
     let (chain, out) = render(&s, 12_000);
@@ -75,7 +75,7 @@ fn pedal_level_turns_the_pedal_up_and_down() {
             gain: Gain::Clean,
             tone: Tone::Off,
             drive: 0.1,
-            pedal: PedalSettings { pedal: Pedal::BigMuff, drive: 0.5, tone: 0.5, level },
+            pedal: PedalSettings { pedal: Pedal::BigMuff, drive: 0.5, tone: [0.5; 4], level },
             ..Settings::default()
         };
         rms(&render(&s, 24_000).1[12_000..])
@@ -88,7 +88,7 @@ fn pedal_level_turns_the_pedal_up_and_down() {
 fn a_pedal_survives_rates_blocks_and_a_stereo_wake() {
     let s = Settings {
         gain: Gain::Boogie,
-        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.5, tone: 0.6, level: 0.7 },
+        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.5, tone: [0.6; 4], level: 0.7 },
         ..Settings::default()
     };
     let mut chain = Chain::new(44_100.0);
@@ -172,7 +172,7 @@ fn every_pedal_runs_in_front_of_an_amplifier() {
     for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
         let base = Settings { gain: Gain::Twin, drive: 0.35, tone: Tone::Off, ..Settings::default() };
         let with = Settings {
-            pedal: PedalSettings { pedal, drive: 0.6, tone: 0.5, level: 0.6 },
+            pedal: PedalSettings { pedal, drive: 0.6, tone: [0.5; 4], level: 0.6 },
             ..base
         };
         let (_, clean) = render(&base, 12_000);
@@ -209,7 +209,7 @@ fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
             gain,
             tone: Tone::Off,
             drive: 0.5,
-            pedal: PedalSettings { pedal, drive: 0.5, tone: 0.5, level: 0.5 },
+            pedal: PedalSettings { pedal, drive: 0.5, tone: [0.5; 4], level: 0.5 },
             ..Settings::default()
         };
         20.0 * rms(&render(&s, 24_000).1[12_000..]).max(1e-12).log10()
@@ -222,11 +222,63 @@ fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
             assert!(departure.abs() < 6.0, "{gain:?} {pedal:?}: {departure:+.1} dB");
         }
     }
-    // The same pedal departs by the same amount whichever of the two it is in
-    // front of: that is the hand-off doing its job rather than a coincidence.
+    // The same pedal departs by about the same amount whichever of the two it is
+    // in front of: that is the hand-off doing its job rather than a coincidence.
+    //
+    // About, not exactly. The hand-off hands the clean circuit nine times the
+    // volts it hands the crunch one, because that is what each was calibrated
+    // at, and the hottest pedals then push the clean circuit further into its
+    // own valve than they push the other. That difference is the circuits
+    // rather than the hand-off, and it is a decibel or so; a hand-off that was
+    // actually missing shows up as nineteen.
     for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
         let guitar = at(Gain::Crunch, pedal) - at(Gain::Crunch, Pedal::None);
         let line = at(Gain::Clean, pedal) - at(Gain::Clean, Pedal::None);
-        assert!((guitar - line).abs() < 1.0, "{pedal:?}: {guitar:+.1} vs {line:+.1} dB");
+        assert!((guitar - line).abs() < 2.0, "{pedal:?}: {guitar:+.1} vs {line:+.1} dB");
     }
+}
+
+/// A chain with a large pedal in it stays at the host rate, whatever the
+/// Oversampling control asks for.
+///
+/// The pedal runs inside the oversampler along with the circuit, so a
+/// fifty-unknown pedal is paid for at the same multiple. Measured, the Heavy
+/// Metal in front of the Cali IIC+ costs 75 % of one channel's realtime budget
+/// at the host rate and **132 %** at twice it -- and a chain that does not fit
+/// is the crackling and dropouts this cap exists to prevent. See
+/// `Pedal::is_expensive` and `examples/pedalcost.rs`.
+#[test]
+fn an_expensive_pedal_holds_the_chain_at_the_host_rate() {
+    for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
+        let mut chain = Chain::new(48_000.0);
+        chain.apply(&Settings {
+            gain: Gain::Boogie,
+            pedal: PedalSettings { pedal, ..PedalSettings::default() },
+            ..Settings::default()
+        });
+        chain.process(0.0);
+        let effective = chain.effective_oversampling();
+        if pedal.is_expensive() {
+            assert_eq!(effective, 1, "{pedal:?} must hold the chain at the host rate");
+        } else {
+            assert_eq!(
+                effective,
+                gainstagefx::voice::MODELLED_MAX_OVERSAMPLING,
+                "{pedal:?} should not have cost the circuit its oversampling",
+            );
+        }
+    }
+    // And taking the pedal back out gives the oversampling back.
+    let mut chain = Chain::new(48_000.0);
+    let heavy = Settings {
+        gain: Gain::Boogie,
+        pedal: PedalSettings { pedal: Pedal::HeavyMetal, ..PedalSettings::default() },
+        ..Settings::default()
+    };
+    chain.apply(&heavy);
+    chain.process(0.0);
+    assert_eq!(chain.effective_oversampling(), 1);
+    chain.apply(&Settings { pedal: PedalSettings::default(), ..heavy });
+    chain.process(0.0);
+    assert_eq!(chain.effective_oversampling(), gainstagefx::voice::MODELLED_MAX_OVERSAMPLING);
 }

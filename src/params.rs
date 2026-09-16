@@ -100,12 +100,55 @@ pub enum Circuit {
     #[id = "amp_dual_rectifier"]
     #[name = "Cali Rectifier"]
     Recto,
+    // The rest of the pedals, as circuits in their own right. The Green 808 and
+    // the Ram Fuzz have been here since before the pedal slot existed; these
+    // are appended, because a saved automation lane stores a normalised value
+    // and inserting one mid-list would move every other selection.
+    #[id = "pedal_ts9_circuit"]
+    #[name = "Green 9"]
+    Green9,
+    #[id = "pedal_rat_circuit"]
+    #[name = "Rodent"]
+    Rat,
+    #[id = "pedal_fuzz_face_circuit"]
+    #[name = "Round Fuzz"]
+    FuzzFace,
+    #[id = "pedal_mxr_dist_plus_circuit"]
+    #[name = "Yellow Dist"]
+    DistPlus,
+    #[id = "pedal_boss_hm2_circuit"]
+    #[name = "Heavy Metal"]
+    Hm2,
+    #[id = "pedal_boss_mt2_circuit"]
+    #[name = "Metal Zone"]
+    Mt2,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
 /// preset written before presets carried stable ids stores the circuit as
 /// `index / (LEGACY_CIRCUIT_COUNT - 1)`.
 pub const LEGACY_CIRCUIT_COUNT: usize = 13;
+
+/// What a modelled circuit is, for the heading it is listed under.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    Pedal,
+    Amplifier,
+    MicPre,
+}
+
+impl Kind {
+    /// In the order the signal meets them.
+    pub const ALL: [Kind; 3] = [Kind::Pedal, Kind::Amplifier, Kind::MicPre];
+
+    pub fn heading(self) -> &'static str {
+        match self {
+            Kind::Pedal => "PEDALS",
+            Kind::Amplifier => "AMPLIFIERS",
+            Kind::MicPre => "MICROPHONE PREAMPS",
+        }
+    }
+}
 
 impl Circuit {
     /// The name the panel puts on it, which is the same name the host shows.
@@ -132,9 +175,15 @@ impl Circuit {
             Circuit::AC30 => "Brit AC30",
             Circuit::DR103 => "Brit DR103",
             Circuit::Recto => "Cali Rectifier",
+            Circuit::Green9 => "Green 9",
+            Circuit::Rat => "Rodent",
+            Circuit::FuzzFace => "Round Fuzz",
+            Circuit::DistPlus => "Yellow Dist",
+            Circuit::Hm2 => "Heavy Metal",
+            Circuit::Mt2 => "Metal Zone",
         }
     }
-    pub const ALL: [Circuit; 21] = [
+    pub const ALL: [Circuit; 27] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -156,6 +205,12 @@ impl Circuit {
         Circuit::AC30,
         Circuit::DR103,
         Circuit::Recto,
+        Circuit::Green9,
+        Circuit::Rat,
+        Circuit::FuzzFace,
+        Circuit::DistPlus,
+        Circuit::Hm2,
+        Circuit::Mt2,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -181,6 +236,12 @@ impl Circuit {
             Circuit::AC30 => voice::Gain::AC30,
             Circuit::DR103 => voice::Gain::DR103,
             Circuit::Recto => voice::Gain::Recto,
+            Circuit::Green9 => voice::Gain::Green9,
+            Circuit::Rat => voice::Gain::Rat,
+            Circuit::FuzzFace => voice::Gain::FuzzFace,
+            Circuit::DistPlus => voice::Gain::DistPlus,
+            Circuit::Hm2 => voice::Gain::Hm2,
+            Circuit::Mt2 => voice::Gain::Mt2,
         }
     }
 
@@ -194,6 +255,33 @@ impl Circuit {
     /// overdrive" and "a TS808" are different kinds of claim.
     pub fn is_modelled(self) -> bool {
         self.voice().is_modelled()
+    }
+
+    /// Which kind of thing a modelled circuit is, for the heading it sits
+    /// under in the list.
+    ///
+    /// The modelled list is long enough now that it needs them, and the three
+    /// kinds want different things of a player: a pedal goes in front of
+    /// something, an amplifier is the something, and a microphone preamplifier
+    /// is not a guitar circuit at all. The order of the parameter cannot change
+    /// -- a saved automation lane is a normalised number against it -- so the
+    /// menu groups what it draws and leaves the list where it is.
+    pub fn kind(self) -> Kind {
+        match self.voice() {
+            voice::Gain::Screamer
+            | voice::Gain::Muff
+            | voice::Gain::Green9
+            | voice::Gain::Rat
+            | voice::Gain::FuzzFace
+            | voice::Gain::DistPlus
+            | voice::Gain::Hm2
+            | voice::Gain::Mt2 => Kind::Pedal,
+            voice::Gain::Neve
+            | voice::Gain::American312
+            | voice::Gain::ConsoleE
+            | voice::Gain::Tube610 => Kind::MicPre,
+            _ => Kind::Amplifier,
+        }
     }
 
     /// Whether the diode choice reaches this circuit. A valve stage has no
@@ -378,10 +466,18 @@ pub enum PedalModel {
     #[id = "pedal_fuzz_face"]
     #[name = "Round Fuzz"]
     RoundFuzz,
+    // Appended, like the ones above it: the declaration order is what a host
+    // automation lane recorded against, so a new pedal goes on the end.
+    #[id = "pedal_boss_hm2"]
+    #[name = "Heavy Metal"]
+    HeavyMetal,
+    #[id = "pedal_boss_mt2"]
+    #[name = "Metal Zone"]
+    MetalZone,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 9] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
@@ -389,6 +485,8 @@ impl PedalModel {
         Self::Rodent,
         Self::RoundFuzz,
         Self::YellowDist,
+        Self::HeavyMetal,
+        Self::MetalZone,
     ];
 
     pub fn name(self) -> &'static str {
@@ -404,6 +502,8 @@ impl PedalModel {
             Self::Rodent => voice::Pedal::Rodent,
             Self::RoundFuzz => voice::Pedal::RoundFuzz,
             Self::YellowDist => voice::Pedal::YellowDist,
+            Self::HeavyMetal => voice::Pedal::HeavyMetal,
+            Self::MetalZone => voice::Pedal::MetalZone,
         }
     }
 }
@@ -906,8 +1006,24 @@ pub struct GainStageParams {
     pub pedal_drive: FloatParam,
     #[id = "pedal_tone"]
     pub pedal_tone: FloatParam,
+    /// A pedal's second, third and fourth tone controls, for the ones that have
+    /// them. Appended after `pedal_tone`, which stays the first: ids are never
+    /// renamed, and a session saved before these existed simply leaves them at
+    /// their middles. See `voice::PEDAL_TONES`.
+    #[id = "pedal_tone_b"]
+    pub pedal_tone_b: FloatParam,
+    #[id = "pedal_tone_c"]
+    pub pedal_tone_c: FloatParam,
+    #[id = "pedal_tone_d"]
+    pub pedal_tone_d: FloatParam,
     #[id = "pedal_level"]
     pub pedal_level: FloatParam,
+    /// A fourth control for a circuit that has one of its own past bass, middle
+    /// and treble. Only the Metal Zone does: its Mid Freq, which moves where
+    /// its middle band works. Appended, and it rests at noon for every circuit
+    /// that has no such control. See `voice::Gain::own_sweep`.
+    #[id = "tone_sweep"]
+    pub tone_sweep: FloatParam,
     #[id = "circuit"]
     pub circuit: EnumParam<Circuit>,
     #[id = "power_amp"]
@@ -1129,7 +1245,11 @@ impl Default for GainStageParams {
             pedal: EnumParam::new("Pedal", PedalModel::None),
             pedal_drive: position("Pedal Drive", 0.5),
             pedal_tone: position("Pedal Tone", 0.5),
+            pedal_tone_b: position("Pedal Tone 2", 0.5),
+            pedal_tone_c: position("Pedal Tone 3", 0.5),
+            pedal_tone_d: position("Pedal Tone 4", 0.5),
             pedal_level: position("Pedal Level", 0.5),
+            tone_sweep: position("Mid Freq", 0.5),
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
             power_amp: EnumParam::new("Power Amp", PowerAmp::Matched),
             mains: EnumParam::new("Mains", Mains::Nominal),

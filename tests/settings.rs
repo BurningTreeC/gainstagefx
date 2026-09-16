@@ -45,6 +45,7 @@ fn every_control_reaches_the_circuit() {
     // A voice with a tone stack and diodes, so that every control applies.
     let base = Settings {
         mains: 1.0,
+        tone_sweep: 0.5,
         power_amp: Default::default(),
         acoustic: Default::default(),
         pedal: Default::default(),

@@ -57,7 +57,10 @@ fn stamped_netlist_equals_the_analytic_impedance() {
 /// Points read from Jensen's published 8 ohm impedance charts (jensentone.com).
 #[test]
 fn free_air_impedance_tracks_the_manufacturer_curves() {
-    let cases: [(&SpeakerProfile, [(f64, f64); 4], (f64, f64)); 3] = [
+    /// A driver, four (hertz, ohms) points off its published curve, and the
+    /// resonance (hertz, ohms) it should show.
+    type Case = (&'static SpeakerProfile, [(f64, f64); 4], (f64, f64));
+    let cases: [Case; 3] = [
         (
             &SpeakerProfile::AMERICAN_VINTAGE_12,
             [(1_000.0, 8.9), (5_000.0, 15.9), (10_000.0, 22.8), (300.0, 7.0)],

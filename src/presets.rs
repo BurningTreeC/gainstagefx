@@ -19,11 +19,19 @@ pub struct Preset {
     /// What the amplifier is plugged into. `Mains::Nominal` is the wall, which
     /// is what every preset but a variac one wants.
     pub mains: Mains,
-    /// A pedal ahead of the circuit, and its three knobs.
+    /// A pedal ahead of the circuit, and its knobs. `pedal_tone` is the first
+    /// tone control; the three after it are for the pedals that have more than
+    /// one, and sit at their middles otherwise. See `voice::PEDAL_TONES`.
     pub pedal: PedalModel,
     pub pedal_drive: f32,
     pub pedal_tone: f32,
+    pub pedal_tone_b: f32,
+    pub pedal_tone_c: f32,
+    pub pedal_tone_d: f32,
     pub pedal_level: f32,
+    /// A circuit's own fourth control, where it has one; noon otherwise.
+    /// See `voice::Gain::own_sweep`.
+    pub tone_sweep: f32,
     pub power_amp: PowerAmp,
     /// Speaker, cabinet and microphones. `CabModel::Legacy` keeps the old baked
     /// `cabinet` filter; see `Chain::set_acoustic`.
@@ -98,7 +106,11 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         pedal: PedalModel::None,
         pedal_drive: 0.5,
         pedal_tone: 0.5,
+        pedal_tone_b: 0.5,
+        pedal_tone_c: 0.5,
+        pedal_tone_d: 0.5,
         pedal_level: 0.5,
+        tone_sweep: 0.5,
         power_amp: PowerAmp::Matched,
         cab_model: CabModel::Legacy,
         speaker: SpeakerModel::Matched,
@@ -955,8 +967,108 @@ pub const PRESETS: &[Preset] = &[
         mic_blend: 0.25,
         // A hot passive humbucker rather than the nominal guitar.
         input_trim: 3.0,
+        // A green overdrive in front, low drive and high output: the setting a
+        // player uses to tighten an amplifier rather than to distort it.
+        //
+        // **This departs from the evidence on purpose.** The producer says the
+        // rhythm tracks went straight in -- "a lot of the distortion would come
+        // from the amp itself" -- and no source puts a pedal on this record.
+        // The owner asked for one; it is here as a sound rather than as a
+        // claim, and PRESETS.md says so in the same words.
+        //
+        // It does less than it looks like it should, and the reason is the
+        // reason the producer gave: with Drive at 0.80 and a hot humbucker the
+        // Boogie is already saturated, so the boost has little left to push.
+        // Measured on a low E and its fifth through the whole chain: total
+        // distortion 18.9 % -> 19.3 %, and the low-to-high balance 7.2 -> 6.8
+        // dB, which is the tightening. The lever for a bigger change is the
+        // amplifier's Drive or the graphic, not this.
+        pedal: PedalModel::Green808,
+        pedal_drive: 0.15,
+        pedal_tone: 0.5,
+        pedal_level: 0.85,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Puppet Master '86")
+    },
+    // Two guitars in B standard through a Boss HM-2 with **every knob at ten**,
+    // into a small solid-state combo. The pedal is the whole sound here: the
+    // amplifier is clean and the chainsaw is entirely the HM-2's three gyrators
+    // and its coring gate. See PRESETS.md.
+    Preset {
+        pedal: PedalModel::HeavyMetal,
+        // All four dialled hard right, which is the documented setting and the
+        // one the record is named for in every retelling.
+        pedal_drive: 1.0,
+        pedal_tone: 1.0,
+        pedal_tone_b: 1.0,
+        pedal_level: 1.0,
+        // A solid-state Peavey Studio Pro 40 is not modelled. The nearest
+        // thing the plugin has to "a clean amplifier that only makes it
+        // louder" is the blackface channel with its power stage bypassed --
+        // a guitar circuit at a guitar's level, which the Clean voice is not:
+        // that one is a line-level preamplifier and putting a cabinet on it is
+        // a different mistake. APPROXIMATED.
+        circuit: Circuit::Twin,
+        power_amp: PowerAmp::Bypass,
+        drive: 0.30,
+        bass: 0.45,
+        mid: 0.50,
+        treble: 0.55,
+        tone: ToneStack::Off,
+        // A 1x12 combo, closed.
+        cab_model: CabModel::Closed112,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.25,
+        mic_a_distance: 0.03,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::Off,
+        mic_blend: 0.0,
+        // Tuned to B, so the source is lower and hotter than nominal.
+        input_trim: 2.0,
+        // An HM-2 with everything at ten into a clean amplifier is the loudest
+        // thing in the catalogue; this is the trim that keeps it level with the
+        // rest. Measured with `examples/presetlevel.rs`.
+        output_trim: -10.0,
+        oversampling: Oversampling::Off,
+        ..base("Metal / Heavy", "Swedish Death '90")
+    },
+    // The documented chain is a Boss HM-2 **into** a Boss MT-2 -- the first for
+    // the buzz, the second to tighten it -- which is a thing this plugin can
+    // only express now that the pedals are also circuits: the HM-2 in the pedal
+    // slot, the MT-2 as the circuit behind it. See PRESETS.md.
+    Preset {
+        pedal: PedalModel::HeavyMetal,
+        pedal_drive: 0.85,
+        pedal_tone: 0.75,
+        pedal_tone_b: 0.80,
+        pedal_level: 0.55,
+        circuit: Circuit::Mt2,
+        power_amp: PowerAmp::Bypass,
+        // The Metal Zone's own Dist, and its equaliser doing the tightening:
+        // the middle up and swept into the low mids, which is what that control
+        // is for.
+        drive: 0.55,
+        bass: 0.45,
+        mid: 0.60,
+        treble: 0.65,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritClosed,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::Dynamic421,
+        mic_b_position: 0.45,
+        mic_b_distance: 0.08,
+        mic_b_angle: 0.0,
+        mic_blend: 0.3,
+        // Two pedals in series, each attenuating after it clips, so the chain
+        // arrives quiet. Measured with `examples/presetlevel.rs`.
+        output_trim: 16.0,
+        oversampling: Oversampling::Off,
+        ..base("Metal / Heavy", "Slaughter '95")
     },
     // A 100 W non-master British head turned up only as far as the song needed,
     // into a Marshall 4x12, each guitar on two large-diaphragm valve/FET
@@ -1245,7 +1357,12 @@ impl Preset {
             pedal: crate::voice::PedalSettings {
                 pedal: self.pedal.voice(),
                 drive: self.pedal_drive as f64,
-                tone: self.pedal_tone as f64,
+                tone: [
+                    self.pedal_tone as f64,
+                    self.pedal_tone_b as f64,
+                    self.pedal_tone_c as f64,
+                    self.pedal_tone_d as f64,
+                ],
                 level: self.pedal_level as f64,
             },
             power_amp: self.power_amp.voice(),
@@ -1280,6 +1397,7 @@ impl Preset {
             bass: self.bass as f64,
             mid: self.mid as f64,
             treble: self.treble as f64,
+            tone_sweep: self.tone_sweep as f64,
             reverb: self.reverb as f64,
             speed: self.speed as f64,
             intensity: self.intensity as f64,
@@ -1295,13 +1413,17 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 42] {
+    pub fn dials(&self) -> [(&'static str, f32); 46] {
         [
             ("in_trim", self.input_trim),
             ("pedal", index_in(&PedalModel::ALL, self.pedal)),
             ("pedal_drive", self.pedal_drive),
             ("pedal_tone", self.pedal_tone),
+            ("pedal_tone_b", self.pedal_tone_b),
+            ("pedal_tone_c", self.pedal_tone_c),
+            ("pedal_tone_d", self.pedal_tone_d),
             ("pedal_level", self.pedal_level),
+            ("tone_sweep", self.tone_sweep),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
             ("power_amp", index_in(&PowerAmp::ALL, self.power_amp)),
             ("mains", index_in(&Mains::ALL, self.mains)),
@@ -1554,6 +1676,12 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     // And the wall is the first mains entry, which is what an amplifier that
     // has never heard of a variac is plugged into.
     preset.values.entry("mains".into()).or_insert(0.0);
+    // A pedal's second, third and fourth tone controls arrived with the pedals
+    // that have them. A preset saved before that leaves them where a knob
+    // nobody has touched belongs, which is the middle.
+    for id in ["pedal_tone_b", "pedal_tone_c", "pedal_tone_d", "tone_sweep"] {
+        preset.values.entry(id.into()).or_insert(0.5);
+    }
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {
             if let Some(index) = names.iter().position(|name| *name == saved) {

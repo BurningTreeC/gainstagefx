@@ -396,22 +396,46 @@ fn input(cx: &mut Context) {
     .top(Pixels(top + 74.0))
     .width(Pixels(200.0))
     .height(Pixels(20.0));
+    // A pedal's knobs are the ones that pedal has. Most have three; the Heavy
+    // Metal has four and the Metal Zone six, and a Metal Zone with three of its
+    // controls missing is not that pedal. Each tone knob is labelled with what
+    // the box calls it -- tone, filter, colour, middle -- rather than all of
+    // them being flattened to "tone". See `voice::PEDAL_TONES`.
     Binding::new(
         cx,
-        Panel::params.map(|p| {
-            let pedal = p.pedal.value();
-            u8::from(pedal != PedalModel::None) | (u8::from(pedal.voice().has_tone()) << 1)
-        }),
-        move |cx, flags| {
-            let flags = flags.get(cx);
-            let live = flags & 1 != 0;
-            // A fuzz with no tone control greys its Tone knob rather than
-            // leaving one that turns nothing.
-            let tone = flags & 2 != 0;
+        Panel::params.map(|p| p.pedal.value()),
+        move |cx, pedal| {
+            let pedal = pedal.get(cx);
+            let live = pedal != PedalModel::None;
+            let labels = pedal.voice().tone_labels();
+            let shown: Vec<(usize, &'static str)> = labels
+                .iter()
+                .enumerate()
+                .filter_map(|(index, label)| label.map(|label| (index, label)))
+                .collect();
             let x0 = body_x() + 330.0;
-            placement_knob(cx, x0, top + 82.0, 11.0, "drive", |p| &p.pedal_drive, live, percent);
-            placement_knob(cx, x0 + 86.0, top + 82.0, 11.0, "tone", |p| &p.pedal_tone, tone, percent);
-            placement_knob(cx, x0 + 172.0, top + 82.0, 11.0, "level", |p| &p.pedal_level, live, percent);
+            let y = top + 82.0;
+            // Three knobs keep the spacing they have always had; a wider row
+            // closes up to stay inside the panel.
+            let count = shown.len().max(1) + 2;
+            let step = if count <= 3 { 86.0 } else { 370.0 / (count - 1) as f32 };
+            placement_knob(cx, x0, y, 11.0, "drive", |p| &p.pedal_drive, live, percent);
+            if shown.is_empty() {
+                // A fuzz with no tone control greys its Tone knob rather than
+                // leaving one that turns nothing.
+                placement_knob(cx, x0 + step, y, 11.0, "tone", |p| &p.pedal_tone, false, percent);
+            }
+            for (slot, &(index, label)) in shown.iter().enumerate() {
+                let x = x0 + step * (slot + 1) as f32;
+                match index {
+                    0 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone, live, percent),
+                    1 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_b, live, percent),
+                    2 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_c, live, percent),
+                    _ => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_d, live, percent),
+                }
+            }
+            let last = x0 + step * (count - 1) as f32;
+            placement_knob(cx, last, y, 11.0, "level", |p| &p.pedal_level, live, percent);
         },
     );
 }
@@ -678,6 +702,30 @@ pub fn describe(circuit: Circuit) -> String {
             "Modeled after a 90s American two-channel head: five triodes, one \
                           run cold, and a choice of rectifier."
         }
+        Circuit::Green9 => {
+            "The green overdrive with the later pedal's output \
+                          resistors: the same circuit, a little quieter."
+        }
+        Circuit::Rat => {
+            "A hard-clipping distortion whose slow op-amp runs out of \
+                          gain-bandwidth before it runs out of gain."
+        }
+        Circuit::FuzzFace => {
+            "Two germanium transistors and a feedback resistor, which \
+                          is the whole pedal."
+        }
+        Circuit::DistPlus => {
+            "One slow op-amp and a pair of germanium diodes to ground: \
+                          the simplest distortion here."
+        }
+        Circuit::Hm2 => {
+            "A gated distortion: two germanium diodes in series with \
+                          the signal hold quiet playing back entirely."
+        }
+        Circuit::Mt2 => {
+            "Two gain stages and seven filters, with a three band \
+                          equaliser whose middle sweeps."
+        }
     }
     .to_string()
 }
@@ -878,6 +926,9 @@ pub struct ToneKnobs {
     pub names: [&'static str; 3],
     /// Whether the Twin's reverb and tremolo knobs reach anything.
     pub extras: bool,
+    /// A fourth tone knob, for a circuit with a control of its own past bass,
+    /// middle and treble, and what it is called. Only the Metal Zone has one.
+    pub sweep: Option<&'static str>,
 }
 
 // Written out rather than derived: vizia's derive asks every field to be
@@ -910,6 +961,7 @@ impl ToneKnobs {
             ],
             names: ["BASS", "MID", if sole { "TONE" } else { "TREBLE" }],
             extras: circuit.has_reverb_and_tremolo(),
+            sweep: circuit.voice().own_sweep().map(|(_, name)| name),
         }
     }
 }
@@ -955,6 +1007,17 @@ fn tone(cx: &mut Context) {
     Binding::new(cx, Panel::params.map(ToneKnobs::of), move |cx, state| {
         let state = state.get(cx);
         let top = section_top(3);
+        // The fourth knob, where the circuit has a control of its own past the
+        // three. It draws in the row's fourth column, which is clear of the
+        // paragraph beside it, and only for the circuit that has one.
+        if let Some(name) = state.sweep {
+            let x = body_x() + 46.0 + 3.0 * 84.0;
+            Knob::new(cx, Panel::params, |p| &p.tone_sweep, 18.0, true)
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(x - 18.0))
+                .top(Pixels(top + 40.0));
+            label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
+        }
         for (i, to_param) in knobs.into_iter().enumerate() {
             let live = state.live[i];
             let x = body_x() + 46.0 + i as f32 * 84.0;

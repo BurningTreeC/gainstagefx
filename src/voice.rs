@@ -28,7 +28,7 @@ use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerPr
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, distortion_plus, dr103,
-    evh5150, iron, markiic, neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    evh5150, heavy_metal, iron, markiic, metal_zone, neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -107,6 +107,24 @@ pub enum Gain {
     /// Hiwatt Custom 100 DR103, brilliant channel through its master volume.
     /// See `circuits::dr103`.
     DR103,
+    // --- the pedals, as circuits in their own right ----------------------
+    // Every pedal in the slot is also a circuit you can select on its own,
+    // with no amplifier behind it. The Green 808 and the Ram Fuzz were here
+    // first -- they were catalogue voices before the pedal slot existed -- and
+    // these are the rest of them, appended so the voice indices above do not
+    // move and `CALIBRATION` keeps its meaning.
+    /// Ibanez TS9 (`ts808::TS9`).
+    Green9,
+    /// Pro Co RAT (`circuits::rodent`).
+    Rat,
+    /// Arbiter Fuzz Face (`circuits::round_fuzz`).
+    FuzzFace,
+    /// MXR Distortion+ (`circuits::distortion_plus`).
+    DistPlus,
+    /// Boss HM-2 (`circuits::heavy_metal`).
+    Hm2,
+    /// Boss MT-2 (`circuits::metal_zone`).
+    Mt2,
     /// Mesa/Boogie Dual Rectifier, Rev F, the red channel in its modern setting.
     /// See `circuits::rectifier`.
     Recto,
@@ -115,7 +133,7 @@ pub enum Gain {
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 21] = [
+    pub const ALL: [Gain; 27] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -137,6 +155,12 @@ impl Gain {
         Gain::AC30,
         Gain::DR103,
         Gain::Recto,
+        Gain::Green9,
+        Gain::Rat,
+        Gain::FuzzFace,
+        Gain::DistPlus,
+        Gain::Hm2,
+        Gain::Mt2,
     ];
 
     pub fn name(self) -> &'static str {
@@ -162,6 +186,12 @@ impl Gain {
             Gain::AC30 => "AC30 Top Boost",
             Gain::DR103 => "Hiwatt DR103",
             Gain::Recto => "Dual Rectifier",
+            Gain::Green9 => "TS9",
+            Gain::Rat => "ProCo RAT",
+            Gain::FuzzFace => "Fuzz Face",
+            Gain::DistPlus => "MXR Distortion+",
+            Gain::Hm2 => "Boss HM-2",
+            Gain::Mt2 => "Boss MT-2",
         }
     }
 
@@ -187,6 +217,12 @@ impl Gain {
             Gain::AC30 => ac30::VOLUME,
             Gain::DR103 => dr103::VOLUME,
             Gain::Recto => rectifier::GAIN,
+            Gain::Green9 => ts808::DRIVE,
+            Gain::Rat => rodent::DISTORTION,
+            Gain::FuzzFace => round_fuzz::FUZZ,
+            Gain::DistPlus => distortion_plus::DISTORTION,
+            Gain::Hm2 => heavy_metal::DIST,
+            Gain::Mt2 => metal_zone::DIST,
             _ => clipper::GAIN,
         }
     }
@@ -272,6 +308,12 @@ impl Gain {
             Gain::DR103 => Some(Level::Circuit(dr103::MASTER)),
             // The red channel's master, in the preamplifier as the sheet has it.
             Gain::Recto => Some(Level::Circuit(rectifier::MASTER)),
+            Gain::Green9 => Some(Level::Circuit(ts808::LEVEL)),
+            Gain::Rat => Some(Level::Circuit(rodent::VOLUME)),
+            Gain::FuzzFace => Some(Level::Circuit(round_fuzz::VOLUME)),
+            Gain::DistPlus => Some(Level::Circuit(distortion_plus::VOLUME)),
+            Gain::Hm2 => Some(Level::Circuit(heavy_metal::LEVEL)),
+            Gain::Mt2 => Some(Level::Circuit(metal_zone::LEVEL)),
             _ => None,
         }
     }
@@ -295,6 +337,17 @@ impl Gain {
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
             Gain::Muff => Some((usize::MAX, usize::MAX, bigmuff::TONE)),
+            Gain::Green9 => Some((usize::MAX, usize::MAX, ts808::TONE)),
+            // The Rodent's is a **filter**: it runs the other way, and
+            // `tone_runs_backwards` is how the knob is made to agree with it.
+            Gain::Rat => Some((usize::MAX, usize::MAX, rodent::FILTER)),
+            // The Heavy Metal's Colour Mix is a pair, and the Metal Zone has a
+            // three band equaliser with a sweep. The panel has bass, middle and
+            // treble, so they take the ones that map: the Colour Mix low and
+            // high on bass and treble, and the Metal Zone's three bands on all
+            // three. Its Mid Freq is reachable only from the pedal slot.
+            Gain::Hm2 => Some((heavy_metal::LOW, usize::MAX, heavy_metal::HIGH)),
+            Gain::Mt2 => Some((metal_zone::LOW, metal_zone::MIDDLE, metal_zone::HIGH)),
             Gain::Neve => None,
             _ => None,
         }
@@ -306,6 +359,28 @@ impl Gain {
     /// The panel needs this and `own_tone` will not do, because a control that
     /// is not there is written `usize::MAX` and a caller that forgets to check
     /// sets control number eighteen quintillion.
+    /// A control this circuit has of its own beyond bass, middle and treble,
+    /// and what the panel calls it.
+    ///
+    /// Only the Metal Zone has one: its **Mid Freq**, which moves where the
+    /// middle band works rather than how much it does. Selected as a pedal it
+    /// gets a knob in the slot's own row; selected as a circuit it needs one
+    /// here, or the control would be reachable from one half of the plugin and
+    /// not the other.
+    pub fn own_sweep(self) -> Option<(usize, &'static str)> {
+        match self {
+            Gain::Mt2 => Some((metal_zone::MID_FREQ, "MID FREQ")),
+            _ => None,
+        }
+    }
+
+    /// Whether this circuit's own tone control runs the other way from the
+    /// knob. Only the Rodent's, whose FILTER darkens as it turns up -- the same
+    /// inversion the pedal slot carries for it.
+    pub fn tone_runs_backwards(self) -> bool {
+        matches!(self, Gain::Rat)
+    }
+
     pub fn own_tone_knobs(self) -> [bool; 3] {
         match self.own_tone() {
             Some((b, m, t)) => [b != usize::MAX, m != usize::MAX, t != usize::MAX],
@@ -351,7 +426,13 @@ impl Gain {
     pub fn is_modelled(self) -> bool {
         matches!(
             self,
-            Gain::Screamer
+            Gain::Green9
+                | Gain::Rat
+                | Gain::FuzzFace
+                | Gain::DistPlus
+                | Gain::Hm2
+                | Gain::Mt2
+                | Gain::Screamer
                 | Gain::Muff
                 | Gain::Boogie
                 | Gain::Peavey
@@ -490,6 +571,12 @@ impl Diode {
 /// Twin made it wrong: the calibration table is `[Calibration; VOICES]`, so a
 /// stale count is a table with a missing row and every voice after the new one
 /// reading its neighbour's make-up.
+/// How many entries the circuit list has, which is what `POWER_TRIM_DB` is
+/// indexed by. Tied to the list so that adding a circuit fails to compile
+/// rather than indexing past the end of the table at runtime, which is what it
+/// did when six were appended.
+pub const GAINS: usize = Gain::ALL.len();
+
 pub const VOICES: usize = {
     let mut total = 0;
     let mut i = 0;
@@ -740,26 +827,57 @@ pub enum Pedal {
     RoundFuzz,
     /// The MXR Distortion+ (`circuits::distortion_plus`).
     YellowDist,
+    /// The Boss HM-2 (`circuits::heavy_metal`). Four knobs: the first pedal
+    /// here with more than one tone control.
+    HeavyMetal,
+    /// The Boss MT-2 (`circuits::metal_zone`). Five, and three of them tone.
+    MetalZone,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
 /// with a guitar in front of it is calibrated at (`examples/calibrate.rs`).
 pub const GUITAR_VOLTS: f64 = 0.122;
 
-/// Where a pedal's three knobs land in its netlist. `usize::MAX` is a knob the
-/// pedal does not have.
+/// The most tone controls any pedal in the list has: the Metal Zone's four.
+///
+/// The slot used to carry one, which was fine while every pedal in it had one
+/// tone knob or none. It is not fine for a pedal whose entire point is its
+/// equaliser -- a Metal Zone with three of its six controls missing is not that
+/// pedal -- so the slot carries what the boxes carry.
+pub const PEDAL_TONES: usize = 4;
+
+/// One of a pedal's tone controls.
+#[derive(Clone, Copy, Debug)]
+struct ToneKnob {
+    /// Where it is in the pedal's netlist.
+    control: usize,
+    /// What the panel prints under it. The pedals do not agree on a name --
+    /// tone, filter, colour, middle -- and the knob should say what the box
+    /// says rather than flattening them all to "tone".
+    label: &'static str,
+    /// The pedal's control runs the other way from the knob: the Rodent's
+    /// FILTER darkens as it turns up.
+    inverted: bool,
+}
+
+/// Where a pedal's knobs land in its netlist. `None` is a knob it does not have.
 #[derive(Clone, Copy, Debug)]
 struct PedalControls {
     drive: usize,
-    tone: usize,
-    /// The pedal's control runs the other way from the panel's Tone knob: the
-    /// Rodent's FILTER darkens as it turns up.
-    tone_inverted: bool,
+    tones: [Option<ToneKnob>; PEDAL_TONES],
     level: usize,
 }
 
+/// A pedal with one tone control, which is most of them.
+const fn one_tone(control: usize, label: &'static str, inverted: bool) -> [Option<ToneKnob>; PEDAL_TONES] {
+    [Some(ToneKnob { control, label, inverted }), None, None, None]
+}
+
+/// A pedal with none.
+const NO_TONES: [Option<ToneKnob>; PEDAL_TONES] = [None, None, None, None];
+
 impl Pedal {
-    pub const ALL: [Pedal; 7] = [
+    pub const ALL: [Pedal; 9] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
@@ -767,9 +885,11 @@ impl Pedal {
         Pedal::Rodent,
         Pedal::RoundFuzz,
         Pedal::YellowDist,
+        Pedal::HeavyMetal,
+        Pedal::MetalZone,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 6;
+    const SLOTS: usize = 8;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -780,13 +900,52 @@ impl Pedal {
             Pedal::Rodent => Some(3),
             Pedal::RoundFuzz => Some(4),
             Pedal::YellowDist => Some(5),
+            Pedal::HeavyMetal => Some(6),
+            Pedal::MetalZone => Some(7),
         }
     }
 
-    /// Whether the pedal has a tone control for the panel's Tone knob.
+    /// Whether this pedal is large enough that the chain cannot afford to
+    /// oversample it.
+    ///
+    /// Measured with `examples/pedalcost.rs`, as a percentage of one channel's
+    /// realtime budget at 48 kHz, in front of the Cali IIC+:
+    ///
+    /// | | alone | with the amplifier, 1x | at 2x |
+    /// |---|---|---|---|
+    /// | Green 808 | 11.6 | 40.8 | 74.5 |
+    /// | Rodent | 10.5 | 39.6 | 74.6 |
+    /// | Metal Zone | 22.4 | 55.5 | **100.7** |
+    /// | Heavy Metal | 41.6 | 75.1 | **132.6** |
+    ///
+    /// The last two do not fit at twice the host rate, and a chain that does not
+    /// fit is a DAW missing its deadline: crackle, stuttering, dropouts. They
+    /// are fifty-unknown circuits with a nonlinear device on almost every node,
+    /// which is two to four times what the older pedals are, and no amount of
+    /// tidying changes that -- it is what those two boxes are.
+    ///
+    /// So the chain keeps them at the host rate, exactly as it keeps the
+    /// modelled amplifiers under `MODELLED_MAX_OVERSAMPLING`, and for the same
+    /// reason. See `Chain::set_oversampling`.
+    pub fn is_expensive(self) -> bool {
+        matches!(self, Pedal::HeavyMetal | Pedal::MetalZone)
+    }
+
+    /// Whether the pedal has any tone control at all.
     pub fn has_tone(self) -> bool {
-        self.slot()
-            .is_some_and(|slot| Self::controls(slot).tone != usize::MAX)
+        self.tone_labels()[0].is_some()
+    }
+
+    /// What this pedal's tone controls are called, in panel order. The editor
+    /// draws a knob for each one that is there and nothing for the rest.
+    pub fn tone_labels(self) -> [Option<&'static str>; PEDAL_TONES] {
+        let mut labels = [None; PEDAL_TONES];
+        if let Some(slot) = self.slot() {
+            for (label, knob) in labels.iter_mut().zip(Self::controls(slot).tones) {
+                *label = knob.map(|k| k.label);
+            }
+        }
+        labels
     }
 
     fn build(slot: usize) -> Result<Netlist, Fault> {
@@ -796,7 +955,9 @@ impl Pedal {
             2 => ts808::build_with(&ts808::TS9, 10_000.0, 470_000.0),
             3 => rodent::build(10_000.0, 470_000.0),
             4 => round_fuzz::build(10_000.0, 470_000.0),
-            _ => distortion_plus::build(10_000.0, 470_000.0),
+            5 => distortion_plus::build(10_000.0, 470_000.0),
+            6 => heavy_metal::build(10_000.0, 470_000.0),
+            _ => metal_zone::build(10_000.0, 470_000.0),
         }
     }
 
@@ -804,33 +965,53 @@ impl Pedal {
         match slot {
             0 | 2 => PedalControls {
                 drive: ts808::DRIVE,
-                tone: ts808::TONE,
-                tone_inverted: false,
+                tones: one_tone(ts808::TONE, "tone", false),
                 level: ts808::LEVEL,
             },
             1 => PedalControls {
                 drive: bigmuff::SUSTAIN,
-                tone: bigmuff::TONE,
-                tone_inverted: false,
+                tones: one_tone(bigmuff::TONE, "tone", false),
                 level: bigmuff::VOLUME,
             },
             3 => PedalControls {
                 drive: rodent::DISTORTION,
-                tone: rodent::FILTER,
-                tone_inverted: true,
+                tones: one_tone(rodent::FILTER, "filter", true),
                 level: rodent::VOLUME,
             },
             4 => PedalControls {
                 drive: round_fuzz::FUZZ,
-                tone: usize::MAX,
-                tone_inverted: false,
+                tones: NO_TONES,
                 level: round_fuzz::VOLUME,
             },
-            _ => PedalControls {
+            5 => PedalControls {
                 drive: distortion_plus::DISTORTION,
-                tone: usize::MAX,
-                tone_inverted: false,
+                tones: NO_TONES,
                 level: distortion_plus::VOLUME,
+            },
+            // The first pedal here with two tone controls, and they are a
+            // boost-and-cut pair rather than a passive tone: "colour mix" is
+            // what the box calls them.
+            6 => PedalControls {
+                drive: heavy_metal::DIST,
+                tones: [
+                    Some(ToneKnob { control: heavy_metal::LOW, label: "colour lo", inverted: false }),
+                    Some(ToneKnob { control: heavy_metal::HIGH, label: "colour hi", inverted: false }),
+                    None,
+                    None,
+                ],
+                level: heavy_metal::LEVEL,
+            },
+            // Four tone controls, which is what the slot was widened to carry:
+            // three bands and the sweep that moves the middle one.
+            _ => PedalControls {
+                drive: metal_zone::DIST,
+                tones: [
+                    Some(ToneKnob { control: metal_zone::LOW, label: "low", inverted: false }),
+                    Some(ToneKnob { control: metal_zone::MIDDLE, label: "middle", inverted: false }),
+                    Some(ToneKnob { control: metal_zone::MID_FREQ, label: "mid freq", inverted: false }),
+                    Some(ToneKnob { control: metal_zone::HIGH, label: "high", inverted: false }),
+                ],
+                level: metal_zone::LEVEL,
             },
         }
     }
@@ -848,14 +1029,25 @@ impl Pedal {
     }
 }
 
-/// The pedal and its three knobs. Level's middle is the pedal's calibrated
-/// resting position, exactly as the Master knob's is. See `Chain::master_position`.
+/// The pedal and its knobs. Level's middle is the pedal's calibrated resting
+/// position, exactly as the Master knob's is. See `Chain::master_position`.
+///
+/// `tone` carries as many as the pedal has, in the order its panel has them;
+/// entries past that are ignored. See `PEDAL_TONES`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PedalSettings {
     pub pedal: Pedal,
     pub drive: f64,
-    pub tone: f64,
+    pub tone: [f64; PEDAL_TONES],
     pub level: f64,
+}
+
+impl PedalSettings {
+    /// A pedal with every tone control in the middle, which is what a knob the
+    /// caller does not care about should be.
+    pub fn centred(pedal: Pedal, drive: f64, level: f64) -> Self {
+        Self { pedal, drive, level, ..Self::default() }
+    }
 }
 
 impl Default for PedalSettings {
@@ -863,7 +1055,7 @@ impl Default for PedalSettings {
         Self {
             pedal: Pedal::None,
             drive: 0.5,
-            tone: 0.5,
+            tone: [0.5; PEDAL_TONES],
             level: 0.5,
         }
     }
@@ -1036,6 +1228,14 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::AC30 => ac30::build(10_000.0, 1_000_000.0),
         Gain::DR103 => dr103::build(10_000.0, 1_000_000.0),
         Gain::Recto => rectifier::build(10_000.0, 1_000_000.0),
+        // The pedals as circuits: the same netlists the slot builds, on the
+        // same source and load their drawings specify.
+        Gain::Green9 => ts808::build_with(&ts808::TS9, 10_000.0, 470_000.0),
+        Gain::Rat => rodent::build(10_000.0, 470_000.0),
+        Gain::FuzzFace => round_fuzz::build(10_000.0, 470_000.0),
+        Gain::DistPlus => distortion_plus::build(10_000.0, 470_000.0),
+        Gain::Hm2 => heavy_metal::build(10_000.0, 470_000.0),
+        Gain::Mt2 => metal_zone::build(10_000.0, 470_000.0),
     }
 }
 
@@ -1530,6 +1730,8 @@ pub struct Settings {
     /// What the amplifier is plugged into, as a fraction of its own mains. One
     /// is the wall; less is a variac. See `Chain::set_mains`.
     pub mains: f64,
+    /// A circuit's own fourth control, where it has one. See `Gain::own_sweep`.
+    pub tone_sweep: f64,
 }
 
 impl Default for Settings {
@@ -1555,6 +1757,7 @@ impl Default for Settings {
             treble: 0.5,
             oversampling: 2,
             mains: 1.0,
+            tone_sweep: 0.5,
         }
     }
 }
@@ -1572,6 +1775,9 @@ pub struct Chain {
     /// pedal can sit in front of itself. Indexed by `Pedal::slot`.
     pedals: Vec<Simulation>,
     pedal: Option<usize>,
+    /// Which pedal that slot holds, for the policies that need to know what it
+    /// is rather than merely that there is one. See `Pedal::is_expensive`.
+    selected_pedal: Pedal,
     /// Volts per unit of digital input when a pedal takes the guitar first.
     pedal_into: f64,
     /// What the pedal's output is multiplied by on the way into the circuit:
@@ -1879,6 +2085,7 @@ impl Chain {
                 .map(|slot| Simulation::new(Pedal::build(slot).expect("pedal builds"), rate))
                 .collect(),
             pedal: None,
+            selected_pedal: Pedal::None,
             pedal_into: 1.0,
             pedal_hand_off: 1.0,
             powers,
@@ -2110,23 +2317,23 @@ impl Chain {
     /// selected the path is exactly what it was.
     pub fn set_pedal(&mut self, s: &PedalSettings) {
         let next = s.pedal.slot();
-        if next != self.pedal {
+        let changed = next != self.pedal;
+        if changed {
             if let Some(i) = next {
                 self.pedals[i].reset_deferred();
             }
             self.pedal = next;
+            self.selected_pedal = s.pedal;
             self.fade_remaining = FADE_LEN;
         }
         if let Some(i) = self.pedal {
             let controls = Pedal::controls(i);
             let sim = &mut self.pedals[i];
             sim.set_control(controls.drive, s.drive.clamp(0.0, 1.0));
-            if controls.tone != usize::MAX {
-                let tone = s.tone.clamp(0.0, 1.0);
-                sim.set_control(
-                    controls.tone,
-                    if controls.tone_inverted { 1.0 - tone } else { tone },
-                );
+            for (knob, &value) in controls.tones.iter().zip(s.tone.iter()) {
+                let Some(knob) = knob else { continue };
+                let value = value.clamp(0.0, 1.0);
+                sim.set_control(knob.control, if knob.inverted { 1.0 - value } else { value });
             }
             let rest = sim
                 .resting_position(controls.level)
@@ -2134,6 +2341,11 @@ impl Chain {
             sim.set_control(controls.level, Self::master_position(rest, s.level));
             self.pedal_into = Pedal::input_volts(i) / 10f64.powf(NOMINAL_DBFS / 20.0);
             self.pedal_hand_off = self.into / self.pedal_into;
+        }
+        if changed {
+            // A pedal arriving or leaving can change what the chain can afford
+            // to oversample. See `Pedal::is_expensive`.
+            self.set_oversampling(self.requested_oversampling);
         }
     }
 
@@ -2415,14 +2627,19 @@ impl Chain {
 
     /// The three tone knobs, sent to whichever stack is actually in the path:
     /// the circuit's own where it has one, the plugin's otherwise.
-    fn set_tone_knobs(&mut self, bass: f64, mid: f64, treble: f64) {
-        if let Some((b, m, t)) = voice_at(self.gain).0.own_tone() {
+    fn set_tone_knobs(&mut self, bass: f64, mid: f64, treble: f64, sweep: f64) {
+        let voice = voice_at(self.gain).0;
+        if let Some((b, m, t)) = voice.own_tone() {
+            let backwards = voice.tone_runs_backwards();
             let sim = &mut self.gains[self.gain];
             for (which, value) in [(b, bass), (m, mid), (t, treble)] {
                 if which != usize::MAX {
-                    sim.set_control(which, value);
+                    sim.set_control(which, if backwards { 1.0 - value } else { value });
                 }
             }
+        }
+        if let Some((which, _)) = voice.own_sweep() {
+            self.gains[self.gain].set_control(which, sweep.clamp(0.0, 1.0));
         }
         self.set_tone(crate::circuits::tone::BASS, bass);
         self.set_tone(crate::circuits::tone::MID, mid);
@@ -2467,11 +2684,17 @@ impl Chain {
     pub fn set_oversampling(&mut self, factor: usize) {
         let requested_changed = factor != self.requested_oversampling;
         self.requested_oversampling = factor;
-        let factor = if voice_at(self.gain).0.is_modelled() {
+        let mut factor = if voice_at(self.gain).0.is_modelled() {
             factor.min(MODELLED_MAX_OVERSAMPLING)
         } else {
             factor
         };
+        // ...and the pedal slot counts too. The circuit is not the only thing
+        // inside the oversampler: the pedal runs there as well, so a large one
+        // is paid for at the same multiple. See `Pedal::is_expensive`.
+        if self.pedal.is_some() && self.selected_pedal.is_expensive() {
+            factor = 1;
+        }
 
         if !requested_changed && factor == self.over.factor() && self.deferred_oversample.is_none()
         {
@@ -2698,7 +2921,7 @@ impl Chain {
         self.set_cabinet(s.cabinet);
         self.set_oversampling(s.oversampling);
         self.set_drive(s.drive);
-        self.set_tone_knobs(s.bass, s.mid, s.treble);
+        self.set_tone_knobs(s.bass, s.mid, s.treble, s.tone_sweep);
         self.set_reverb_and_tremolo(s);
     }
 

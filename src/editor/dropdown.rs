@@ -26,6 +26,8 @@ use crate::params::{
 };
 
 const ROW_H: f32 = 21.0;
+/// A group heading is shorter than a row: it is a label, not a target.
+const HEADING_H: f32 = 16.0;
 /// Taller than any list today; a longer one scrolls rather than leaving the
 /// window.
 const MENU_MAX_H: f32 = 360.0;
@@ -89,6 +91,48 @@ impl Window {
     fn name(&self, index: usize) -> Option<&'static str> {
         self.range().contains(&index).then(|| self.names[index - self.offset])
     }
+}
+
+impl Choice {
+    /// What the open menu draws, in order.
+    ///
+    /// Every list but the modelled one is what it always was: its entries, in
+    /// the parameter's own order. The modelled list is grouped under headings,
+    /// because it now holds three different kinds of thing -- see
+    /// `params::Circuit::kind`. Grouping is done here, in what is drawn, and
+    /// never in the parameter: its order is what a saved automation lane was
+    /// recorded against.
+    fn lines(self) -> Vec<Line> {
+        let window = self.window();
+        if self != Choice::Modelled {
+            return window
+                .range()
+                .map(|i| Line::Item(i, window.names[i - window.offset]))
+                .collect();
+        }
+        let mut lines = Vec::new();
+        for kind in crate::params::Kind::ALL {
+            let mut any = false;
+            for i in window.range() {
+                if Circuit::ALL[i].kind() != kind {
+                    continue;
+                }
+                if !any {
+                    lines.push(Line::Heading(kind.heading()));
+                    any = true;
+                }
+                lines.push(Line::Item(i, window.names[i - window.offset]));
+            }
+        }
+        lines
+    }
+}
+
+/// One line of an open menu: a heading, or something that can be chosen.
+#[derive(Clone, Copy)]
+pub enum Line {
+    Heading(&'static str),
+    Item(usize, &'static str),
 }
 
 fn topologies() -> usize {
@@ -361,11 +405,18 @@ pub fn menu(cx: &mut Context) {
         };
         Catch::build_into(cx);
 
-        let window = opened.choice.window();
-        let rows: Vec<(usize, &'static str)> =
-            window.range().map(|i| (i, window.names[i - window.offset])).collect();
-        // Padding above and below, and the border.
-        let natural = rows.len() as f32 * ROW_H + 2.0 * MENU_PAD + 2.0;
+        let rows = opened.choice.lines();
+        // Padding above and below, and the border. Headings are shorter than
+        // rows, so the list is measured line by line rather than by counting.
+        let natural: f32 = rows
+            .iter()
+            .map(|line| match line {
+                Line::Heading(_) => HEADING_H,
+                Line::Item(..) => ROW_H,
+            })
+            .sum::<f32>()
+            + 2.0 * MENU_PAD
+            + 2.0;
         let scrolls = natural > MENU_MAX_H;
         let height = natural.min(MENU_MAX_H);
         let width = opened.width.max(MENU_MIN_W);
@@ -383,8 +434,11 @@ pub fn menu(cx: &mut Context) {
 
         let list = move |cx: &mut Context| {
             VStack::new(cx, move |cx| {
-                for (index, name) in rows {
-                    Row::build_into(cx, choice, index, name);
+                for line in rows {
+                    match line {
+                        Line::Heading(text) => Heading::build_into(cx, text),
+                        Line::Item(index, name) => Row::build_into(cx, choice, index, name),
+                    }
                 }
             })
             .width(Stretch(1.0))
@@ -415,6 +469,36 @@ pub fn menu(cx: &mut Context) {
 }
 
 /// One entry in the open list.
+/// A group heading in an open menu. It draws and it does nothing else: no
+/// hover, no click, and `DropEvent::Pick` can never carry its position.
+struct Heading;
+
+impl Heading {
+    fn build_into(cx: &mut Context, text: &'static str) {
+        Self.build(cx, move |cx| {
+            Label::new(cx, text)
+                .width(Stretch(1.0))
+                .height(Stretch(1.0))
+                .child_left(Pixels(10.0))
+                .child_top(Stretch(1.0))
+                .child_bottom(Pixels(2.0))
+                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                .font_size(8.5)
+                .color(Color::rgb(0x7a, 0x86, 0x90))
+                .hoverable(false);
+        })
+        .width(Stretch(1.0))
+        .height(Pixels(HEADING_H))
+        .hoverable(false);
+    }
+}
+
+impl View for Heading {
+    fn element(&self) -> Option<&'static str> {
+        Some("drop-heading")
+    }
+}
+
 struct Row {
     index: usize,
     hovered: bool,

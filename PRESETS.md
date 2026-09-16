@@ -34,7 +34,7 @@ Target inspiration: Metallica, *Master of Puppets* (1986) rhythm tone. Re-resear
 | Stage | Rig | Evidence | Preset |
 |---|---|---|---|
 | Guitar | Jackson King V with Seymour Duncan Invader pickups (a hot passive set) | WIDELY REPORTED | input trim +3 dB - PLAUSIBLE |
-| Pedal | none on the rhythm tone; "a lot of the distortion would come from the amp itself" | DOCUMENTED (Rasmussen interview) | none |
+| Pedal | none on the rhythm tone; "a lot of the distortion would come from the amp itself" | DOCUMENTED (Rasmussen interview). Hetfield used a ProCo RAT and a Tube Screamer *before* this album, and no source puts either on this recording | **Green 808, drive 0.15, tone 0.5, level 0.85 — a deliberate departure from the evidence**, added at the owner's request as a sound rather than a claim. It tightens rather than distorts: measured through the whole chain, distortion 18.9 % → 19.3 % and the low-to-high balance 7.2 → 6.8 dB. It does little, for the reason the producer gave — at Drive 0.80 with a hot humbucker the amplifier is already saturated |
 | Preamp | Mesa/Boogie Mark IIC+ lead channel, five-band EQ used | DOCUMENTED (Rasmussen) | Cali IIC+ (now with its V2B/V2A recovery stages), Lead Drive 0.80, Lead Master 0.55 |
 | Knob settings | "Gain 9-10, Vol 8, Bass 8, Mid 3-4, Treble 8, Presence 7" / "Gain 7-8, Bass 6-7, Mid 3-4, Treble 6-7, Lead Drive 7-8, Lead Master 4-5"; graphic V (80 up, 240 down, 750 most down, 2.2k and 6.6k up) | CONFLICTING secondary sources, both attributed to the producer's session notes, which were not located. Mesa's IIC+ owner's manual: "As gain goes up, Bass should come down", BASS "at 3.0 or well below" with a high Volume 1, low end from the 80/240 Hz bands | Bass 0.20, Middle 0.35, Treble 0.75; graphic [0.65, 0.45, 0.25, 0.65, 0.70] (slider travel) - PLAUSIBLE, following the manual rather than the unlocated notes |
 | Power | **the Boogie power stage**: "It is only on some solos we use the JCM 800 as poweramp. Most guitars are with the Boogie powerstage!" | DOCUMENTED (Flemming Rasmussen, 29 June 2018, quoted on Marshall Amp Forum) | Matched (Cali 6L6). *The earlier "IIC+ slaved into a JCM800" choice followed a widely repeated story the producer contradicts.* |
@@ -205,6 +205,39 @@ released 1983).
 Sources: [Jas Obrecht: SRV's Texas Flood sessions (Line 6 blog)](https://blog.line6.com/2023/05/19/jas-obrecht-stevie-ray-vaughans-texas-flood-sessions/),
 [Texas Flood (Wikipedia)](https://en.wikipedia.org/wiki/Texas_Flood).
 
+### Swedish Death '90 (group Metal / Heavy)
+
+Target inspiration: Entombed, *Left Hand Path* (1990, Sunlight Studio, Stockholm).
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | Detuned to **B standard** | DOCUMENTED | input trim +2 dB |
+| Pedal | **Boss HM-2 with all four knobs at ten** -- "high EQ, low EQ, distortion and level, dialled hard right" | DOCUMENTED, and the single most-retold fact about this record | Heavy Metal, every control at 1.0 |
+| Amplifier | A small **solid-state Peavey Studio Pro 40** combo | WIDELY REPORTED | American Twin with the power stage bypassed, Drive 0.30 - **APPROXIMATED**: no solid-state amplifier is modelled, and the nearest thing to "a clean amplifier that only makes it louder" is the blackface channel with nothing behind it |
+| Cabinet / mic | The combo's own 1x12 | PLAUSIBLE | Closed 1x12, Dynamic 57 close in |
+| Studio | Rackmount compression at the desk | DOCUMENTED | not modeled (outside the chain) |
+
+The pedal is the whole sound: the amplifier is clean and the buzzsaw is entirely the HM-2's
+three gyrators and its coring gate.
+
+Sources: [Guitar World: how Entombed and Sunlight Studios gave birth to death metal guitar
+tone](https://www.guitarworld.com/features/how-entombed-and-sunlight-studios-gave-birth-to-death-metal-guitar-tone),
+[CVLT Nation: an oral history of the HM-2](https://cvltnation.com/buzzsaw-an-oral-history-of-the-hm-2-pedal/),
+[riffology: the making of Left Hand Path](https://riffology.co/posts/the-making-of-left-hand-path-by-entombed/).
+
+### Slaughter '95 (group Metal / Heavy)
+
+Target inspiration: At the Gates, *Slaughter of the Soul* (1995).
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Pedal + circuit | **An HM-2 fed into an MT-2** -- the first for the buzz, the second "to tighten up the sound" | DOCUMENTED | Heavy Metal in the pedal slot, **Metal Zone as the circuit**. This is a chain the plugin could not express until the pedals became selectable as circuits in their own right |
+| Amplifier | Not established in the sources located | - | power stage bypassed - APPROXIMATED |
+| Cabinet / mic | A 4x12 | PLAUSIBLE | Brit Closed 4x12, a 57 and a 421 |
+
+Sources: [Guitar World: how the MT-2 conquered the world](https://www.guitarworld.com/features/boss-mt-2-metal-zone-legacy),
+[MusicRadar: the greatest Metal Zone moments](https://www.musicradar.com/news/greatest-boss-metal-zone-moments).
+
 ## Era presets: waiting for components
 
 These are not added under approximate aliases. Each needs the listed model first,
@@ -216,7 +249,8 @@ plus its own rig research at that time.
 | Dirty Chains '92 | Three amplifiers at once, none of them modeled: "Lows: Bogner Fish preamp/VHT amp ... mids: Bogner Ecstasy; highs: Rockman Pocket amp direct" (Dave Jerden), split three ways and recombined |
 | Unknown Garden '94 | A Sunn Model T for much of it, which is not modeled |
 | Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the Super Bass is not modeled and the record is the two together |
-| Never Mind '91, Seattle Ten '91, Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research; the documented amplifiers (a Mesa Studio .22 preamp, a Marshall Major, an Ampeg VT) are not modeled |
+| Never Mind '91, Seattle Ten '91 | The **Mesa/Boogie Studio Preamp** -- a rackmount preamplifier into a solid-state power amp (a Crown Power Base 2) into 4x12s -- which is not modeled. Research: [studio_pre.md](docs/models/studio_pre.md), which is blocked on a legible drawing. Earlier revisions of this table called it a "Studio .22 preamp"; there is no such product, and the Studio .22 is a different amplifier (an EL84 combo). The **Boss DS-1** those sessions also used is researched in [orange_dist.md](docs/models/orange_dist.md) |
+| Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research; the documented amplifiers (a Marshall Major, an Ampeg VT) are not modeled |
 | Lead Airship II '69 | Rig research (the amplifier used on the record is disputed) |
 | Paranoia '70 | A Laney Supergroup preamp and a treble booster |
 

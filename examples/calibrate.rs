@@ -101,6 +101,16 @@ fn intent(gain: Gain) -> f64 {
         // Microphone preamplifiers, like the Console and the 73P: barely working
         // at nominal with the gain all the way up.
         Gain::American312 | Gain::ConsoleE | Gain::Tube610 => 3.0,
+        // The pedals as circuits. Like the Screamer and the Ram Fuzz above
+        // them, every one states its level instead -- a guitar goes into a
+        // pedal, whichever pedal it is -- so these figures are never searched
+        // for. They are here because the match has to be whole.
+        Gain::Green9 => 21.0,
+        Gain::Rat => 40.0,
+        Gain::FuzzFace => 45.0,
+        Gain::DistPlus => 38.0,
+        Gain::Hm2 => 45.0,
+        Gain::Mt2 => 45.0,
     }
 }
 
@@ -147,6 +157,14 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // nothing at all: 0.0 % at a quarter turn, 0.1 % at half, 0.7 % at
         // three quarters.
         Gain::Screamer => Some(GUITAR_VOLTS),
+        // And every other pedal, for the same reason: what goes into a pedal
+        // is a guitar.
+        Gain::Green9
+        | Gain::Rat
+        | Gain::FuzzFace
+        | Gain::DistPlus
+        | Gain::Hm2
+        | Gain::Mt2 => Some(GUITAR_VOLTS),
         Gain::Twin => Some(GUITAR_VOLTS),
         // A guitar into the front of an amplifier. The same guitar.
         //

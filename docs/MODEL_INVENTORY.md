@@ -70,10 +70,20 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 | `bigmuff` (proposed `pedal_bigmuff_ramshead`) | Ram Fuzz | Electro-Harmonix **Big Muff Pi, 1973 Ram's Head** (4 transistors, 1N914) | `src/circuits/bigmuff.rs` (`RAMS_HEAD` selected); also `pedal_bigmuff_ramshead` in the pedal slot | IMPLEMENTED | Kit Rae's traced archive ([big_muff.md](models/big_muff.md)); value-by-value cross-check not yet done | none | same pedal-slot limitation | Sustain Fuzz | Not in the target list: **keep**. Display renamed to "Ram Fuzz" (owner request, 2026-09-15); ids unchanged | Ram Fuzz |
 | (voicing) `bigmuff::TRIANGLE` | — | EHX Big Muff Pi **1971 Triangle** | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (netlist voicing, tested in `tests/bigmuff.rs`, not selectable) | as above | none | — | none | would need selection | TBD |
 | (voicing) `bigmuff::SUPA` | — | **Colorsound Supa Tonebender** (Muff topology, first stage without diodes) | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (not selectable) | as above | none | — | none | would need selection | TBD |
-| — | — | **Boss HM-2** Heavy Metal | only `docs/schematics/boss-hm2.png` (untracked) | REFERENCED ONLY | Local drawing present; no code, no log | — | — | — | — | not assigned |
-| — | — | **Boss MT-2** Metal Zone | only `docs/schematics/boss-mt2.png` (untracked) | REFERENCED ONLY | Local drawing present; no code, no log | — | — | — | — | not assigned |
+| `pedal_boss_hm2` (pedal slot) | Heavy Metal | **Boss HM-2** Heavy Metal, the Japanese original | `heavy_metal.rs` | IMPLEMENTED 2026-09-16 | Boss's own service-notes drawing (`docs/schematics/boss-hm2.png`, untracked), read part by part; gyrator centres derived from it (87/958/1278 Hz) match the published analyses' 80 Hz and 900 Hz-1.3 kHz. Log: `docs/models/heavy_metal.md` | none | pedal slot | none | `pedal` id, appended | Heavy Metal |
+| `pedal_boss_mt2` (pedal slot) | Metal Zone | **Boss MT-2** Metal Zone | `metal_zone.rs` | IMPLEMENTED 2026-09-16; **Mid Freq not modelled** (Wien-bridge parametric; the Middle band is fixed at the centre its knob's middle gives) | Boss's own drawing (`docs/schematics/boss-mt2.png`, untracked) plus Electric Druid's analysis, which agree part for part; post-distortion gyrators derived from the sheet (4894/105 Hz) match its published 4,898/105 Hz. Log: `docs/models/metal_zone.md` | none | pedal slot | none | new `pedal` id | Metal Zone |
+| (proposed `pedal_boss_ds1`) | Orange Dist | **Boss DS-1**, the 1978 TA7136AP version | none yet | RESEARCHED 2026-09-16 | ElectroSmash's value-by-value analysis. Open question: no TA7136AP data sheet located, so either that part is modelled from one or the later BA728N revision is built instead. Log: `docs/models/orange_dist.md` | none | pedal slot | none | new `pedal` id | Orange Dist |
+| (proposed `pre_boogie_studio`) | Cali Studio Pre | **Mesa/Boogie Studio Preamp** (rackmount; *not* the Studio .22 combo) | none yet | RESEARCHED 2026-09-16, **NOT cleared**: no legible drawing | Mesa's own manual gives the control set; the only Studio Preamp sheet located is hand-drawn and cannot be read value-by-value, and the legible sheet in the same file is a different product (Studio Caliber). Log: `docs/models/studio_pre.md` | its own; the documented rig is a solid-state power amp behind it | physical cabinets | blocks *Never Mind '91*, *Seattle Ten '91* | new `circuit` id | Cali Studio Pre |
 | `overdrive` | Overdrive | GENERIC op-amp with diodes in feedback (Si/Ge/LED) | `clipper.rs` (`OVERDRIVE`) | GENERIC | no hardware claim (MODELS.md: "not TS9/RAT") | none | none | 4 Overdrive presets | id/order fixed | Overdrive (keep) |
 | `distortion` | Distortion | GENERIC diodes to ground (Si/Ge/LED) | `clipper.rs` (`DISTORTION`) | GENERIC | no hardware claim | none | none | 5 Distortion presets | id/order fixed | Distortion (keep) |
+
+**Every pedal is also a `circuit`.** Appended to that enum on 2026-09-16 with ids
+`pedal_ts9_circuit`, `pedal_rat_circuit`, `pedal_fuzz_face_circuit`,
+`pedal_mxr_dist_plus_circuit`, `pedal_boss_hm2_circuit` and `pedal_boss_mt2_circuit` --
+appended, because a saved automation lane stores a normalised value against the list's
+order. The Green 808 and the Ram Fuzz were already there, from before the pedal slot
+existed. `CALIBRATION` was regenerated for the six new voices; measured at a guitar's level
+with the drive up, the RAT makes 43.8 % distortion, the MT-2 61.5 % and the HM-2 **88.0 %**.
 
 ## 3. Guitar amplifiers (preamp sections)
 
@@ -191,7 +201,8 @@ Microphones (research: `docs/models/microphones.md`):
   Big Muff Ram's Head (selectable), the Triangle and Supa Tonebender voicings
   (not selectable), the seven generic topologies, the Iron materials, the Twin
   spring and tremolo, and the legacy Combo/Stack cabinets.
-- **Referenced only:** Boss HM-2 and MT-2 (local schematics, no code).
+- **Referenced only:** none. The Boss HM-2 is implemented and the MT-2 is researched and
+  cleared for code.
 - **Missing preamps:** none. Every model on the target list is implemented.
 - **Missing power stages:** none.
 - **Chain stages:** pedal slot, speaker load, cabinets and microphones are implemented.

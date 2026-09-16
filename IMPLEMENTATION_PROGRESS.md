@@ -633,3 +633,106 @@ vectors compare equal). Locked as
 
 **README:** a new "What each name is" section, one table per panel section, mapping every
 display name to the hardware it was built from with its research log.
+
+## Session 12 (2026-09-16): four research logs, a wider pedal slot, and the Heavy Metal
+
+**A name in this repository was wrong, and it mattered.** *Never Mind '91* was listed as
+blocked on "a Mesa Studio .22 preamp". There is no such product: the **Studio .22** is a
+20 W EL84 combo, and the record used the rackmount **Studio Preamp** into a Crown Power
+Base 2 and 4x12s. Modelling the .22 would have produced the wrong sound under the right
+name. PRESETS.md is corrected, and the rig turns out to be a shape the plugin has never
+had: a valve preamplifier into a **solid-state** power amplifier.
+
+**Four research logs**, each with the eight-question checkpoint:
+
+| Model | Source | Verdict |
+|---|---|---|
+| [heavy_metal.md](docs/models/heavy_metal.md) | Boss's own drawing | cleared, and **built** |
+| [metal_zone.md](docs/models/metal_zone.md) | Boss's drawing + Electric Druid | cleared for code |
+| [orange_dist.md](docs/models/orange_dist.md) | ElectroSmash, value by value | cleared but for the op-amp |
+| [studio_pre.md](docs/models/studio_pre.md) | Mesa's manual; drawing illegible | **not cleared** |
+
+The Studio Preamp is honestly blocked: the only sheet located is hand-drawn and cannot be
+read value-by-value, and the legible sheet in the same file is a different product. It was
+not built from the near relative, because that is the "approximate alias" PRESETS.md
+refuses.
+
+**The pedal slot carries four tone controls** (`voice::PEDAL_TONES`). It used to carry one,
+which was fine while every pedal in it had one tone knob or none; it is not fine for a
+Metal Zone, whose entire point is its equaliser. Each pedal now declares its controls with
+their own labels -- tone, filter, colour lo/hi -- and the panel draws the knobs that pedal
+has and names them the way the box does. Three parameters appended (`pedal_tone_b/c/d`),
+`pedal_tone` untouched, and presets saved before this leave them at their middles.
+
+**The Heavy Metal (Boss HM-2)** is the first pedal with two of them. Three numbers derived
+from the drawing -- gyrator resonances at **87, 958 and 1278 Hz** -- land on what the
+published analyses hear from outside ("around 80Hz", "between about 900Hz and 1.3kHz"),
+which is the cross-check the model rests on. What the build cost, all recorded in the log:
+both gain stages are shunt-feedback stages; the drawing's R10/C5 decoupling matters (a
+-40 dB floor without it); the equaliser has to be ground-referenced, as the Rodent's op-amp
+did; and **the Dist control sits before the clipper**, coupled in, with its cold end on the
+4.5 V bias -- built after the clipper it is a volume control, and taken to ground it drives
+the clipping amplifier into its rail and leaves it there.
+
+Its coring gate is the only circuit in the catalogue whose **gain rises with level**:
++18.5 dB at 1 uV, +53.2 dB at 1 mV, then falling into the clipping. Unity is at level
+0.719. In the slot it is the hottest pedal, +5.3 dB against no pedal, and with Dist shut it
+falls to -81 dB because the gate closes.
+
+**The CI failure.** The oversampling cap shipped without the fixture change that belongs
+with it: the four baseline voices are all modelled circuits, so they had been ignoring
+`Settings::default()`'s request for 2x and now honour it, the oversampler's latency differs
+between factors, and the render shifts in time. `tests/legacy_baseline.rs` renders at 1x
+explicitly, with a note saying why that is not cheating: at 1x the code path through those
+circuits is unchanged, so the comparison stays sample-for-sample honest, and the cap has
+its own test.
+
+**Still open.** The Metal Zone netlist; the DS-1's op-amp question; a legible Studio Preamp
+drawing.
+
+## Session 13 (2026-09-16): the Metal Zone's sweep, a CPU policy, and the pedals as circuits
+
+**The Heavy Metal crackled, and it was not the solver.** No unsettled solves and no
+non-finite samples anywhere; the pedal simply costs **41.6 %** of one channel's realtime
+budget on its own -- four times any older pedal -- and in front of a Cali IIC+ at twice the
+host rate it was **132 %**, which is a DAW missing its deadline. Session 12's oversampling
+cap caused it: it looked at the voice, and the pedal runs inside the same oversampler.
+`Pedal::is_expensive` now holds the chain at host rate when one of the two fifty-unknown
+pedals is in the slot (75 % instead of 132 %, tested). Along the way the HM-2's Q10 turned
+out to be one of the two JFETs that make its bypass -- it sits in the switching corner with
+D12 -- and had been built as a bipolar gain stage.
+
+**The Metal Zone's Mid Freq control works.** Three arrangements were built and measured:
+a gyrator with one swept resistance (centre goes as `1/sqrt(R)`, a fifth of the span, and
+the Q slides with it); the Wien network bootstrapped by its buffer (faithful, but the depth
+goes as `1/(1 - G/3)` and it oscillates at `G = 3`, so a usable margin left a band a decibel
+deep); and the one that ships, **both gang sections sweeping one gyrator**. That gives
+`L = R^2 C`, so the centre goes as `1/R` -- the Wien bridge's own law -- and
+`Q = sqrt(C_gyr / Cs)`, a constant. Measured 4877 Hz to 206 Hz against a published 4.7 kHz
+to 240 Hz. What it does not hold is the depth, which is recorded in the log.
+
+**Every pedal is now also a circuit** (`Circuit::Green9`, `Rat`, `FuzzFace`, `DistPlus`,
+`Hm2`, `Mt2`), appended so no saved automation lane moves, with `CALIBRATION` regenerated
+for 35 voices. This found a **latent crash**: `POWER_TRIM_DB` was declared `[[f64; 10]; 21]`
+but indexed by position in `Gain::ALL`, so selecting a power override on any new circuit
+would have indexed past the end of the table. Its length is now tied to `voice::GAINS`, and
+adding a circuit fails to compile rather than panicking.
+
+**The modelled list is grouped** under PEDALS, AMPLIFIERS and MICROPHONE PREAMPS. The
+grouping is done in what the menu draws; the parameter's order is untouched, because that
+is what a saved automation lane was recorded against.
+
+**Two album presets**, both documented:
+- *Swedish Death '90* (Entombed, **Left Hand Path**): a Boss HM-2 with all four knobs at
+  ten into a clean solid-state combo. The pedal is the whole sound.
+- *Slaughter '95* (At the Gates): an HM-2 fed **into** an MT-2, which is a chain the plugin
+  could not express until the pedals became circuits -- one in the slot, the other behind
+  it.
+
+**Puppet Master '86** gained a Green 808 at the owner's request, marked in PRESETS.md as a
+deliberate departure from the evidence: the producer says the rhythm tracks went straight
+in. Measured, it tightens rather than distorts -- 18.9 % to 19.3 % distortion and the
+low-to-high balance 7.2 to 6.8 dB -- for the reason he gave, that the amplifier is already
+saturated.
+
+Seventy-three presets.

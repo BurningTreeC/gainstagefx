@@ -94,6 +94,19 @@ sources, where they disagree and what was approximated.
 | Brit AC30 | A 60s British 30 W combo: a top-boost valve into a stack with no middle control, then self-biased power valves with no feedback loop at all | AC30 EL84 |
 | Brit DR103 | A British 100 W head built for headroom: five triodes, a master volume, and an inverter the driver holds still so it cannot shift its bias | DR103 EL34 |
 | Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off | Recto 6L6 (or Recto 6L6 Tube) |
+| Green 9 | The green overdrive with the later pedal's output resistors | none |
+| Rodent | A hard-clipping distortion whose slow op-amp runs out of gain-bandwidth before it runs out of gain | none |
+| Round Fuzz | Two germanium transistors and a feedback resistor | none |
+| Yellow Dist | One slow op-amp and a pair of germanium diodes to ground | none |
+| Heavy Metal | A gated distortion: two germanium diodes in series with the signal, and three gyrators | none |
+| Metal Zone | Two gain stages and seven filters, with a three-band equaliser whose middle sweeps | none |
+
+**Every pedal is also a circuit.** The eight in the pedal slot can each be
+selected on their own, with nothing behind them — which is how a pedal into a
+desk was always recorded, and how an HM-2 into an MT-2 becomes expressible: one
+in the slot, the other as the circuit. The list is grouped under **PEDALS**,
+**AMPLIFIERS** and **MICROPHONE PREAMPS**, because it now holds three different
+kinds of thing.
 
 Display names are generic on purpose. Which hardware each one was built from is
 in [What each name is](#what-each-name-is) below, and in the research logs
@@ -143,11 +156,22 @@ overtakes it when driven hard.
 **Green 808**, **Ram Fuzz**, **Green 9** (the 808 with the later pedal's
 output resistors), **Rodent** (a hard-clipping distortion whose slow op-amp runs out
 of gain-bandwidth and slew rate, as the original's does), **Round Fuzz** (two
-germanium transistors) and **Yellow Dist** (one slow op-amp and a pair of germanium
-diodes to ground), each with its own drive, tone and level knobs, in front of
+germanium transistors), **Yellow Dist** (one slow op-amp and a pair of germanium
+diodes to ground), **Heavy Metal** (a gated distortion with two tone controls) and
+**Metal Zone** (two gain stages and seven filters, with a three-band equaliser
+whose middle sweeps),
+each with the knobs that pedal actually has, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
 feeds, so a pedal can also sit in front of itself.
+
+A pedal's knobs are the ones that pedal has, named the way its box names them:
+most have drive, tone and level, the Heavy Metal has two tone controls (its
+Colour Mix pair), the Metal Zone has four including a swept mid, and the panel
+grows a knob for each. The Heavy Metal is also
+the only **gated** distortion here -- two germanium diodes sit in series with
+the signal rather than across it, so quiet playing is held back entirely and
+the pedal cuts off rather than fading.
 
 The slot is level matched the way the circuit list is. Each pedal's **Level**
 knob at noon is *unity through that pedal* — its own measured position, a little
@@ -260,6 +284,7 @@ hardware behind them at all.
 | American 312 | API 312 microphone preamplifier card (2622, 2520, 2503) | [american_312.md](docs/models/american_312.md) |
 | British 4K E | SSL SL 4000 E channel amp, 82E01 microphone amplifier | [british_4k_e.md](docs/models/british_4k_e.md) |
 | Tube 610 | Universal Audio 610-A modular console preamplifier | [tube_610.md](docs/models/tube_610.md) |
+| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
 **Pedals** (the slot in front of whatever is selected)
 
@@ -271,6 +296,8 @@ hardware behind them at all.
 | Rodent | Pro Co RAT, the LM308 revision | [rodent.md](docs/models/rodent.md) |
 | Yellow Dist | MXR Distortion+, the 741 version | [yellow_dist.md](docs/models/yellow_dist.md) |
 | Round Fuzz | Arbiter Fuzz Face, germanium (1966–68) | [round_fuzz.md](docs/models/round_fuzz.md) |
+| Heavy Metal | Boss HM-2 Heavy Metal, the Japanese original | [heavy_metal.md](docs/models/heavy_metal.md) |
+| Metal Zone | Boss MT-2 Metal Zone | [metal_zone.md](docs/models/metal_zone.md) |
 
 **Power stages**
 
@@ -358,7 +385,7 @@ more than it did. Measured with `cargo run --release --example oversampling`.
 
 ## Presets
 
-Seventy-one, ordered quietest first within each group so the list reads as a
+Seventy-three, ordered quietest first within each group so the list reads as a
 range: Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier, and
 five groups of chains aimed at particular records — **Classic Rock**,
 **Psychedelic / Lead**, **Alternative**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier

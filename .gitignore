@@ -30,3 +30,6 @@
 # Version the model research logs; original drawings remain excluded.
 !/docs/models/
 !/docs/models/**
+
+CLAUDE.md
+AGENTS.md

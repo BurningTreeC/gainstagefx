@@ -15,7 +15,7 @@ fn level(pedal: Pedal, drive: f64, level: f64, gain: Gain) -> f64 {
     let mut chain = Chain::new(RATE);
     chain.apply(&Settings {
         gain,
-        pedal: PedalSettings { pedal, drive, tone: 0.5, level },
+        pedal: PedalSettings { pedal, drive, tone: [0.5; 4], level },
         tone: Tone::Off,
         drive: 0.5,
         oversampling: 1,

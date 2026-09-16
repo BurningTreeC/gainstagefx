@@ -602,11 +602,17 @@ impl Plugin for GainStageFx {
         let pedal = crate::voice::PedalSettings {
             pedal: p.pedal.value().voice(),
             drive: p.pedal_drive.smoothed.next_step(samples) as f64,
-            tone: p.pedal_tone.smoothed.next_step(samples) as f64,
+            tone: [
+                p.pedal_tone.smoothed.next_step(samples) as f64,
+                p.pedal_tone_b.smoothed.next_step(samples) as f64,
+                p.pedal_tone_c.smoothed.next_step(samples) as f64,
+                p.pedal_tone_d.smoothed.next_step(samples) as f64,
+            ],
             level: p.pedal_level.smoothed.next_step(samples) as f64,
         };
         let settings = Settings {
             pedal,
+            tone_sweep: self.params.tone_sweep.smoothed.next_step(samples) as f64,
             power_amp: self.params.power_amp.value().voice(),
             mains: self.params.mains.value().fraction(),
             acoustic,

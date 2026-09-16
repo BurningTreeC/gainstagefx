@@ -1,5 +1,16 @@
 //! Frozen outputs captured before modular routing; never regenerate to hide a regression.
 //!
+//! Rendered at **1x** deliberately. Every voice here is a modelled circuit, and
+//! when this fixture was captured those were forced to the host rate whatever
+//! the oversampling control said. They now follow it as far as
+//! `voice::MODELLED_MAX_OVERSAMPLING`, so `Settings::default()` -- which asks
+//! for 2x -- would render a different, cleaner signal and this file would stop
+//! matching. Asking for 1x reproduces the condition the fixture was taken under,
+//! which keeps the comparison sample-for-sample honest: at 1x the code path
+//! through these circuits is unchanged. The cap has its own test
+//! (`modelled_circuits_are_capped_not_pinned`), and what it means for a saved
+//! session is in the README.
+//!
 //! One deliberate exception, recorded here rather than by regenerating the file:
 //! the Mark IIC+ voice was corrected on 2026-09-15 to include the lead return,
 //! V2B, the Lead Master and V2A, which both of its drawings have and the frozen
@@ -23,6 +34,8 @@ fn render() -> Vec<f32> {
                 gain,
                 tone: Tone::Off,
                 drive: 0.75,
+                // See the note at the top of this file.
+                oversampling: 1,
                 ..Settings::default()
             });
             chain.settle();
@@ -80,11 +93,13 @@ fn legacy_matched_output_is_preserved() {
     assert_eq!(bytes.len(), actual.len() * 4);
     let mut error = 0.0_f64;
     let mut energy = 0.0_f64;
-    for (index, (&actual, bytes)) in actual.iter().zip(bytes.chunks_exact(4)).enumerate() {
+    let (expected_samples, rest) = bytes.as_chunks::<4>();
+    assert!(rest.is_empty(), "the fixture is not a whole number of samples");
+    for (index, (&actual, bytes)) in actual.iter().zip(expected_samples).enumerate() {
         if VOICES[(index / BLOCK) % VOICES.len()] == Gain::Boogie {
             continue;
         }
-        let expected = f32::from_le_bytes(bytes.try_into().unwrap());
+        let expected = f32::from_le_bytes(*bytes);
         error += f64::from(actual - expected).powi(2);
         energy += f64::from(expected).powi(2);
         assert!(

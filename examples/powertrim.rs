@@ -63,7 +63,10 @@ fn main() {
     println!("/// by `Gain::ALL` row; columns Bypass, Cali 6L6, American 6L6 Clean,");
     println!("/// American 6L6 High-Gain, Brit EL34, Brit Plexi EL34, AC30 EL84, DR103 EL34,");
     println!("/// Recto 6L6, Recto 6L6 Tube. See `Chain::power_trim`.");
-    println!("pub const POWER_TRIM_DB: [[f64; 10]; {}] = [", Gain::ALL.len());
+    // Tied to the gain list rather than written as a number, so that appending
+    // a circuit fails to compile instead of indexing past the end of this table
+    // at runtime -- which is what it did when six were appended at once.
+    println!("pub const POWER_TRIM_DB: [[f64; 10]; crate::voice::GAINS] = [");
     for gain in Gain::ALL {
         let reference = level(gain, PowerAmp::Matched);
         let row: Vec<String> = overrides
