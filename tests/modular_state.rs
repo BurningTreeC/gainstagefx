@@ -79,7 +79,10 @@ fn display_names_change_without_reinterpreting_legacy_enum_positions() {
             "pre_api_312",
             "pre_ssl_4000e",
             "pre_ua_610a",
-            "amp_marshall_1959"
+            "amp_marshall_1959",
+            "amp_vox_ac30_tb",
+            "amp_hiwatt_dr103",
+            "amp_dual_rectifier"
         ]
     );
     assert_eq!(Circuit::Boogie.name(), "Cali IIC+");

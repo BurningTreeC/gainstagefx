@@ -39,6 +39,9 @@ fn every_power_override_holds_the_voice_level_at_the_calibration_drive() {
         PowerAmp::American6L6HighGain,
         PowerAmp::BritEL34,
         PowerAmp::BritPlexiEL34,
+        PowerAmp::AC30EL84,
+        PowerAmp::DR103EL34,
+        PowerAmp::Recto6L6,
     ];
     let mut worst = (0.0f64, String::new());
     for gain in Gain::ALL {

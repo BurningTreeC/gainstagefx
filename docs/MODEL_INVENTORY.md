@@ -82,9 +82,10 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 | `evh5150` (proposed `amp_5150`) | American 5150 | Peavey **EVH 5150** lead channel (code labels match the **5150 II** factory drawing's ULTRA controls; revision unresolved) | `evh5150.rs`, `power.rs::EVH5150` | PARTIALLY IMPLEMENTED: six triodes built; **tone stack not modelled** (plugin tone section substitutes *after* power) | [docs/models/american_5150.md](models/american_5150.md); local `peavey-5150.jpeg` | Split at `To Tone Stack` (33 k load). Matched = American 6L6 High-Gain; no resonance control | legacy filter | Ultra Lead, Ultra Rhythm | display changed | American 5150 |
 | `twin` (proposed `amp_twin_reverb_ab763`) | American Twin | Fender **Twin Reverb AB763** (blackface) Vibrato channel | `twin.rs`, `power.rs::TWIN`, `dsp/spring.rs`, `dsp/tremolo.rs` | IMPLEMENTED channel; reverb mix network and 22 k PI tail / 450 V PI rail discrepancies documented; effects applied after power (legacy placement) | [docs/models/american_twin.md](models/american_twin.md): original schematic and layout read | Split at channel output -> synthetic open master -> power. Matched = American 6L6 Clean | legacy filter | Blackface Clean, Blackface Throb | display changed (was "Twin Reverb") | American Twin |
 | `amp_jcm800_2203` | Brit 800 | Marshall **JCM800 2203** (100 W) master-volume preamp, 1981 drawing | `brit800.rs`, `power.rs::BRIT_EL34` | IMPLEMENTED 2026-09-15 (four triodes, cathode follower, stack, droppers) | [docs/models/brit_800.md](models/brit_800.md): 1981 Marshall drawing with voltage table, 1988 Marshall drawing cross-check, local redraw; middle 22k / treble 220k / bass log resolved from 1988 | Split at the treble wiper into the master pot. Matched = Brit EL34 | physical cabinets | Brit Crunch, Brit Lead, Screamer Boost | appended to `circuit`; saved presets without ids migrated (`LEGACY_CIRCUIT_COUNT`) | Brit 800 |
-| — (proposed `amp_dual_rectifier`) | — | Mesa/Boogie **Dual Rectifier** (revision TBD: Rev. C/F/G, 2-channel vs 3-channel) | none | PLANNED | Not researched | needs its own 6L6 + tube-rectifier power | — | none | new selection | Cali Rectifier |
+| `amp_dual_rectifier` | Cali Rectifier | Mesa/Boogie **Dual Rectifier**, two-channel Rev F (RF-1F board), red channel modern | `rectifier.rs`, `power.rs::RECTO_6L6` | IMPLEMENTED 2026-09-16 (five triodes incl. the 39 k cold stage, follower, stack, master) | [docs/models/cali_rectifier.md](models/cali_rectifier.md): Mesa's own RF-1F preamp and power-amp sheets, with the Rectifier Guide for revisions | Split at the red master. Matched = Recto 6L6. **The valve rectifier is not modelled**: the supply is its silicon setting | physical cabinets | Recto Rhythm, Recto Lead | appended to `circuit` | Cali Rectifier |
 | `amp_marshall_1959` | Brit Plexi | Marshall **1959 Super Lead** (100 W, EL34), bright channel, Unicord drawing 70-6-11 July 1970 | `plexi.rs`, `power.rs::PLEXI_EL34` | IMPLEMENTED 2026-09-15 (three triodes, cathode follower, stack, 20k/10k/10k droppers) | [docs/models/brit_plexi.md](models/brit_plexi.md): Unicord 1970, Marshall c.1967 (voltages), Marshall 1988 1959 STD (pot laws, later changes), Robinette cross-check | Split at the treble wiper into the inverter's coupling cap (no master). Matched = Brit Plexi EL34 | physical cabinets | Plexi Crunch, Plexi Cranked, Blackout '80, Experienced '67 | appended to `circuit` | Brit Plexi |
-| — (proposed `amp_hiwatt_dr103`) | — | **Hiwatt DR103** Custom 100 (revision TBD) | none | PLANNED | Not researched | needs Brit EL34 Hi-Headroom power | — | none | new selection | Brit DR103 |
+| `amp_hiwatt_dr103` | Brit DR103 | **Hiwatt DR103** Custom 100, brilliant channel, Issue 4 factory sheets | `dr103.rs`, `power.rs::DR103_EL34` | IMPLEMENTED 2026-09-16 (five triodes, master volume, direct-coupled inverter) | [docs/models/brit_dr103.md](models/brit_dr103.md): Hiwatt's own 1994-95 sheets, Circuit Codex redraw of a late-60s amp, Ampbooks' inverter analysis | Split at the driver's cathode, with its direct voltage carried across. Matched = DR103 EL34 | physical cabinets | Hi-Headroom Clean/Pushed, The Great Wall '79 | appended to `circuit` | Brit DR103 |
+| `amp_vox_ac30_tb` | Brit AC30 | **Vox AC30/6 Top Boost**, brilliant channel | `ac30.rs`, `power.rs::AC30_EL84` | IMPLEMENTED 2026-09-16 (three triodes, two-knob stack, cathode-biased EL84s, no loop) | [docs/models/brit_ac30.md](models/brit_ac30.md): Dallas 1974 and VSL 1971 factory sheets, voxac30.org.uk archive, Ampbooks | Split at the treble wiper into the 220 k mixers. Matched = AC30 EL84 | physical cabinets | Chime Clean, Chime Edge | appended to `circuit` | Brit AC30 |
 | — (proposed `amp_vox_ac30_tb`) | — | **Vox AC30** Top Boost (generation TBD: JMI AC30/6 TB vs later) | none | PLANNED | Not researched; `PentodeSpec::EL84` exists but unused | needs cathode-biased EL84, no-NFB power: `power.rs` builder has fixed-bias only | — | none | new selection | Brit AC30 |
 | `clean` / `crunch` / `highgain` | Clean / Crunch / High Gain | GENERIC 1/2/3 cascaded ECC83 stages | `preamp.rs`, `valve.rs` | GENERIC | no hardware claim | none (can use any power override) | legacy filter | Preamp/Crunch/High Gain presets (15) | id/order fixed | keep |
 
@@ -99,7 +100,8 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 | `power_5150` | American 6L6 High-Gain | 5150: ECC83 LTP, 4x 6L6GC, 39 k NFB, presence, no resonance | `power.rs::EVH5150` | IMPLEMENTED (resonance/depth missing) | american_5150.md | **8 ohm resistor** | Ultra presets | appended id |
 | `power_2203_el34` | Brit EL34 | JCM800 2203 1981: ECC83 LTP 82k/100k, 4x EL34 -42 V, 100 k NFB from 4 ohm, 22k/.1uF presence, Hammond 1750U data | `power.rs::BRIT_EL34` | IMPLEMENTED (supply impedances/core estimated) | brit_el34.md (1981 originals + 1988 cross-check) | 4 ohm resistor, or a speaker load on the physical path | Brit Crunch, Brit Lead, Screamer Boost (matched to Brit 800) | appended id |
 | `power_1959_el34` | Brit Plexi EL34 | 1959 Super Lead 1970: 2203-family inverter and iron, no master, 47 k NFB from 16 ohm (23.5 k at 4), 5 k presence, -37 V (estimated) | `power.rs::PLEXI_EL34` | IMPLEMENTED 2026-09-15 (supply voltages from the 1967 drawing, bias and iron estimated) | brit_plexi.md | 4 ohm resistor or speaker load | matched to Brit Plexi | appended id |
-| — (proposed `power_dr103_el34`) | Brit EL34 Hi-Headroom | Hiwatt DR103 power section | none | PLANNED | not researched | — | — | new id |
+| `power_dr103_el34` | DR103 EL34 | Hiwatt DR103: 82k/91k inverter direct-coupled to the driver, 22k/2k2 tail, 22 k stoppers, 4x EL34 -38 V, 10 k feedback from 16 ohm | `power.rs::DR103_EL34` | IMPLEMENTED 2026-09-16 (supplies and iron estimated; presence omitted) | brit_dr103.md | 8 ohm resistor or a speaker load | matched to Brit DR103 | appended id |
+| `power_ac30_el84` | AC30 EL84 | AC30 Top Boost: cathode-biased 4x EL84 on 50 ohm/250 uF, no feedback, 250 k cut control, 4 k a-a | `power.rs::AC30_EL84` | IMPLEMENTED 2026-09-16 (supplies and iron estimated; valve rectifier as a resistance) | brit_ac30.md | 8 ohm resistor or a speaker load | matched to Brit AC30 | appended id |
 | — (proposed `power_ac30_el84`) | Brit EL84 Class-A | Vox AC30 cathode-biased 4x EL84, no NFB | none | PLANNED (needs cathode-bias builder support) | not researched | — | — | new id |
 | — (proposed `power_rectifier_6l6`) | (to name) | Dual Rectifier power, tube rectifier sag | none | PLANNED | not researched | — | — | new id |
 
@@ -189,12 +191,12 @@ Microphones (research: `docs/models/microphones.md`):
   (not selectable), the seven generic topologies, the Iron materials, the Twin
   spring and tremolo, and the legacy Combo/Stack cabinets.
 - **Referenced only:** Boss HM-2 and MT-2 (local schematics, no code).
-- **Missing preamps:** Cali Rectifier, Brit DR103, Brit AC30 (pedals: none outstanding).
-- **Missing power stages:** EL34 Hi-Headroom, EL84 Class-A, Rectifier power.
+- **Missing preamps:** none. Every model on the target list is implemented.
+- **Missing power stages:** none.
 - **Chain stages:** pedal slot, speaker load, cabinets and microphones are implemented.
 - **Research logs still owed for implemented models:** Big Muff (value-by-value
   cross-check), 73P (online DIYRE source record).
-- **Solver capability gaps:** cathode-biased no-NFB power stage (AC30), tube rectifier sag (Rectifier/AC30),
+- **Solver capability gaps (remaining):** cathode-biased no-NFB power stage (AC30), tube rectifier sag (Rectifier/AC30),
   control-rate adjustable R/L/C was added 2026-09-15 for speaker loads (`tests/speaker_load.rs`).
 - **Naming:** Big Muff is displayed as "Ram Fuzz" (2026-09-15).
 
@@ -219,9 +221,12 @@ schematic-first checkpoint in `docs/models/<model>.md` *before* code.
 7. DONE: **Brit 800 preamp (2203)**: analyze the located 1981 preamp drawing; Matched = Brit EL34.
 8. DONE: **Rodent (ProCo RAT)**: LM308 revision; `Part::Transconductor` for GBW/slew.
 9. DONE: **Round Fuzz (Fuzz Face)**: germanium revision; native PNP device.
-10. **Brit AC30 + EL84 Class-A** (cathode-bias/no-NFB and rectifier support in `power.rs`).
-11. **Brit DR103 + EL34 Hi-Headroom.**
-12. **Cali Rectifier + its power stage** (exact revision).
+10. DONE: **Brit AC30 + EL84 Class-A**: cathode bias, no feedback loop and a cut control
+    added to `power.rs`; the valve rectifier is a series resistance.
+11. DONE: **Brit DR103**: direct-coupled inverter, which needed a biased input in the
+    netlist so one block can hand the next its direct voltage.
+12. DONE: **Cali Rectifier + its power stage** (two-channel Rev F, from Mesa's own
+    sheets; the switchable valve rectifier is not modelled).
 13. DONE: **American 312, Tube 610** (plus British 4K E).
 14. **Versioned corrections** of inherited approximations: the 5150 tone stack,
     Twin PI tail/rail, Mark IIC+ recovery/master order and PI values. Each needs its

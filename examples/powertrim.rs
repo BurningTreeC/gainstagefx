@@ -53,12 +53,16 @@ fn main() {
         PowerAmp::American6L6HighGain,
         PowerAmp::BritEL34,
         PowerAmp::BritPlexiEL34,
+        PowerAmp::AC30EL84,
+        PowerAmp::DR103EL34,
+        PowerAmp::Recto6L6,
     ];
     println!("// Measured by `examples/powertrim.rs`. Do not edit by hand.");
     println!("/// Level change, dB, of each power override relative to the voice's own path,");
     println!("/// by `Gain::ALL` row; columns Bypass, Cali 6L6, American 6L6 Clean,");
-    println!("/// American 6L6 High-Gain, Brit EL34, Brit Plexi EL34. See `Chain::power_trim`.");
-    println!("pub const POWER_TRIM_DB: [[f64; 6]; {}] = [", Gain::ALL.len());
+    println!("/// American 6L6 High-Gain, Brit EL34, Brit Plexi EL34, AC30 EL84, DR103 EL34,");
+    println!("/// Recto 6L6. See `Chain::power_trim`.");
+    println!("pub const POWER_TRIM_DB: [[f64; 9]; {}] = [", Gain::ALL.len());
     for gain in Gain::ALL {
         let reference = level(gain, PowerAmp::Matched);
         let row: Vec<String> = overrides

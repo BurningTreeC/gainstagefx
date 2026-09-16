@@ -42,8 +42,13 @@ slew) and the Round Fuzz (germanium Fuzz Face, PNP).
 Also added: the Brit Plexi (1959 Super Lead bright channel, Unicord 1970 drawing) with its
 own Brit Plexi EL34 power stage.
 
-Still not implemented: Cali Rectifier, DR103, AC30, EL34 Hi-Headroom and EL84 power
-families. Never expose an unavailable family
+Added 2026-09-16: the Brit AC30 (Vox AC30/6 Top Boost, cathode-biased EL84s with no
+feedback loop) and the Brit DR103 (Hiwatt Custom 100, direct-coupled inverter), each with
+its own power stage.
+
+Added 2026-09-16: the Cali Rectifier (Dual Rectifier Rev F, red channel) and its 6L6
+power stage. Every amplifier on the target list now exists; what is still missing is a
+valve-rectifier device and a mains-voltage (variac) supply. Never expose an unavailable family
 under an approximate alias.
 
 Each hardware change requires a per-device log in docs/models with revision,

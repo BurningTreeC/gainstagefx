@@ -29,14 +29,27 @@ fn settings(gain: Gain, master: f64) -> Settings {
 }
 
 fn render(gain: Gain, master: f64) -> Vec<f64> {
+    render_at(gain, master, 0.7, 0.3)
+}
+
+/// The same at a chosen drive and input level. A level control can only be
+/// measured where the circuit is not already flat out: a master that sits
+/// *ahead* of another gain stage and a whole power amplifier -- the DR103's and
+/// the Rectifier's both do -- moves the level hardly at all once everything
+/// behind it is saturated, which is true of the amplifier as well as of the
+/// model.
+fn render_at(gain: Gain, master: f64, drive: f64, amplitude: f64) -> Vec<f64> {
     let mut c = Chain::new(RATE);
-    c.apply(&settings(gain, master));
+    c.apply(&Settings {
+        drive,
+        ..settings(gain, master)
+    });
     c.settle();
     c.find_operating_point();
     (0..4_000)
         .map(|k| {
             let t = k as f64 / RATE;
-            c.process(0.3 * (std::f64::consts::TAU * 220.0 * t).sin())
+            c.process(amplitude * (std::f64::consts::TAU * 220.0 * t).sin())
         })
         .collect()
 }
@@ -92,9 +105,11 @@ fn a_circuit_with_a_level_control_answers_to_it() {
         let Some(_) = gain.level_control() else {
             continue;
         };
-        let quiet = render(gain, 0.15);
-        let middle = render(gain, MASTER_MIDDLE);
-        let loud = render(gain, 1.0);
+        // At a playing level and a drive short of the stop, where a level
+        // control is a level control.
+        let quiet = render_at(gain, 0.15, 0.35, 0.126);
+        let middle = render_at(gain, MASTER_MIDDLE, 0.35, 0.126);
+        let loud = render_at(gain, 1.0, 0.35, 0.126);
         let down = db(&quiet, &middle);
         let up = db(&loud, &middle);
         println!("{}: {down:+.1} dB down, {up:+.1} dB up", gain.name());

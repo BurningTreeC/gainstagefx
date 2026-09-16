@@ -285,10 +285,20 @@ pub enum Part {
         taper: Taper,
         control: usize,
     },
-    /// Where the signal arrives, through the impedance driving it.
+    /// Where the signal arrives, through the impedance driving it, and the
+    /// direct voltage whatever is driving it sits at.
+    ///
+    /// That voltage is zero almost everywhere: one block hands the next an
+    /// alternating signal through a coupling capacitor. It is not zero when a
+    /// block is *direct* coupled to the one in front of it -- a Hiwatt's phase
+    /// inverter hangs on resistors off the driver's cathode follower, with no
+    /// capacitor anywhere -- and then the direct voltage is not an incidental
+    /// detail but the whole point: it is what holds the grids still when the
+    /// amplifier is driven hard. See `circuits::power` and `circuits::dr103`.
     Input {
         node: usize,
         series: f64,
+        bias: f64,
     },
     /// A supply rail behind its series resistance, as a Norton source.
     Supply {
@@ -857,7 +867,18 @@ impl Netlist {
 
     pub fn input(&mut self, node: &str, series: f64) -> &mut Self {
         let node = self.pin(node);
-        self.parts.push(Part::Input { node, series });
+        self.parts.push(Part::Input {
+            node,
+            series,
+            bias: 0.0,
+        });
+        self
+    }
+
+    /// The same, from something sitting at a direct voltage of its own.
+    pub fn input_at(&mut self, node: &str, series: f64, bias: f64) -> &mut Self {
+        let node = self.pin(node);
+        self.parts.push(Part::Input { node, series, bias });
         self
     }
 

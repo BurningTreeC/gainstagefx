@@ -91,6 +91,9 @@ sources, where they disagree and what was approximated.
 | American Twin | A 1960s blackface clean channel with spring reverb and optical tremolo | American 6L6 Clean |
 | Brit 800 | An early-80s British 100 W master-volume lead preamp: four triodes, a cathode follower into its own stack | Brit EL34 |
 | Brit Plexi | A late-60s British 100 W lead amp with no master: the bright channel's three triodes into its own stack, so the Volume decides how hard the power valves work | Brit Plexi EL34 |
+| Brit AC30 | A 60s British 30 W combo: a top-boost valve into a stack with no middle control, then self-biased power valves with no feedback loop at all | AC30 EL84 |
+| Brit DR103 | A British 100 W head built for headroom: five triodes, a master volume, and an inverter the driver holds still so it cannot shift its bias | DR103 EL34 |
+| Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off. Silicon rectifier only | Recto 6L6 |
 
 Display names are generic on purpose. The hardware each was researched from is
 named in [`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md) and the research
@@ -156,6 +159,9 @@ feeds, so a pedal can also sit in front of itself.
 | American 6L6 High-Gain | Four 6L6s, feedback and presence |
 | Brit EL34 | Four EL34s from a 1981 British 100 W master-volume drawing; the Brit 800's own |
 | Brit Plexi EL34 | Four EL34s from a 1970 drawing of the non-master head: no master, four times the 2203's feedback, a 5 k presence; the Brit Plexi's own |
+| AC30 EL84 | Four EL84s sharing a 50 ohm cathode resistor, no feedback loop, and a cut control across the inverter; the Brit AC30's own |
+| DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop, with the inverter direct-coupled to the preamplifier; the Brit DR103's own |
+| Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing; the Cali Rectifier's own |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
 output valves with their screen supplies, a centre-tapped transformer with a
@@ -225,10 +231,10 @@ Quality says, and the control shows it.
 
 ## Presets
 
-Fifty-nine, ordered quietest first within each group so the list reads as a
+Sixty-seven, ordered quietest first within each group so the list reads as a
 range: Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier, and
-four groups of chains aimed at particular records — **Classic Rock**,
-**Psychedelic / Lead**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier
+five groups of chains aimed at particular records — **Classic Rock**,
+**Psychedelic / Lead**, **Alternative**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier
 sounds, with the cabinet off throughout — a guitar speaker in front of a
 microphone preamplifier makes no sense at all, and a test enforces it. The
 whole catalogue is level matched, and a test holds it to that.
@@ -270,7 +276,7 @@ cargo run --release --features standalone   # the panel without a DAW
 ```
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs 336 of them, at 44.1, 48,
+measures it. `cargo test --release` runs 355 of them, at 44.1, 48,
 88.2, 96 and 192 kHz where the rate matters, and the audio path is tested not
 to allocate.
 

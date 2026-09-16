@@ -434,4 +434,66 @@ dual-slope law. Now ±10-15 dB and flat when centred. New `Taper::Symmetric`.
   80-89 V, and there is no mains-voltage supply model.
 - Tests: `tests/plexi.rs`.
 
-**Tests.** 336 pass (`cargo test --release --no-fail-fast`), Plexi included.
+**Tests.** 355 pass (`cargo test --release --no-fail-fast`).
+
+## Session 8 (2026-09-16): two more amplifiers, and what they needed from the solver
+
+**Brit AC30 (Vox AC30/6 Top Boost).**
+- Research log [brit_ac30.md](docs/models/brit_ac30.md). Sources: the Dallas 1974 factory
+  sheet Sc/V/1313 and the Vox Sound Limited 1971 sheet, both from voxac30.org.uk's archive
+  of original documents, with Ampbooks as the cross-check.
+- `circuits::ac30` (id `amp_vox_ac30_tb`) and `PowerSpec::AC30_EL84` (id
+  `power_ac30_el84`).
+- Two tone knobs, not three: the stack has a 10 k resistor where a Fender stack has its
+  Middle pot, so the panel greys that knob out.
+- The output valves idle at 10.7 V of cathode bias against the factory sheet's 10 V,
+  which is 16 W a valve -- an AC30 runs EL84s past their rating, and that is the
+  amplifier.
+- Tests: `tests/ac30.rs`.
+
+**Brit DR103 (Hiwatt Custom 100).**
+- Research log [brit_dr103.md](docs/models/brit_dr103.md). Sources: Hiwatt's own 1994-95
+  factory sheets, with Circuit Codex (a redraw of a late-60s amp) and Ampbooks' analysis
+  of this inverter as cross-checks.
+- `circuits::dr103` (id `amp_hiwatt_dr103`) and `PowerSpec::DR103_EL34` (id
+  `power_dr103_el34`). The master volume is in the preamplifier, where the drawing has it.
+- The inverter is **direct-coupled** to the driver's cathode follower, which is where this
+  amplifier's headroom comes from: no capacitor to charge up and shift the bias.
+- It lands on the published operating point: bias -2.15 V (published -2.1 V), 286 V
+  plate-to-cathode (285 V), 1.40 mA a triode (1.56 mA), and V2a's plate at 140.2 V against
+  the sheet's own 140 V.
+- Tests: `tests/dr103.rs`.
+
+**Solver and builder work.**
+- `power.rs` grew four ways of being a different amplifier, each keyed off a zero:
+  - `cathode_bias` / `cathode_bypass`: a shared cathode resistor instead of a fixed bias
+    supply, with the grid leaks returning to ground;
+  - `feedback: 0.0`: no loop and no presence network;
+  - `pi_tail_lower: 0.0`: the tail returns to ground; `pi_tail: 0.0`: the leaks, the
+    cathode resistor and the feedback meet at one node;
+  - `pi_couple: 0.0` with `driver_volts`: a direct-coupled inverter.
+  - `cut_pot` / `cut_cap`: a cut control across the inverter's outputs.
+- `Netlist::input_at`: an input carrying a direct voltage as well as a signal, so one
+  block can be direct-coupled to the next across the model's preamp/power boundary.
+
+**Presets.**
+- Amplifier group: Chime Clean, Chime Edge, Hi-Headroom Clean, Hi-Headroom Pushed.
+- Album presets: The Great Wall '79 (Psychedelic / Lead) and Pumpkin Dream '93
+  (Alternative), each with its evidence table in PRESETS.md.
+
+**Cali Rectifier (Mesa/Boogie Dual Rectifier, Rev F).**
+- Research log [cali_rectifier.md](docs/models/cali_rectifier.md). Sources: Mesa's own
+  "DUAL RECTIFIER PREAMP RF-1F" (6-93) and "DUAL RECTIFIER POWER AMP" sheets, with the
+  Rectifier Guide for which revision is which.
+- `circuits::rectifier` (id `amp_dual_rectifier`) and `PowerSpec::RECTO_6L6` (id
+  `power_recto_6l6`). The red channel's master is in the preamplifier.
+- Every node voltage the two sheets mark is matched within 6 %, including the inverter's
+  own plates and cathodes.
+- The stage that makes this amplifier: V2B on a 39 k unbypassed cathode resistor, biased
+  at 4.9 V and clipping one side of the wave at a guitar's level.
+- **The switchable valve rectifier is not modelled**; the supply is the silicon setting,
+  and the panel description says so.
+- Presets: Recto Rhythm, Recto Lead. Tests: `tests/rectifier.rs`.
+
+**Still open.** A valve-rectifier device and a mains-voltage (variac) supply, which the
+Brown '78/'84 presets wait on; rig research for the remaining album titles.

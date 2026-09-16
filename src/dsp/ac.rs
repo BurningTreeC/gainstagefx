@@ -126,7 +126,7 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                 stamp(&mut y, wiper, b, C::real(1.0 / (ohms * f)));
                 stamp(&mut y, a, wiper, C::real(1.0 / (ohms * (1.0 - f))));
             }
-            Part::Input { node, series } => {
+            Part::Input { node, series, .. } => {
                 // A Norton source: one volt behind the source impedance.
                 let g = 1.0 / series;
                 stamp(&mut y, node, GROUND, C::real(g));

@@ -15,8 +15,8 @@
 ## Groups
 
 Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier (the original
-catalogue); Classic Rock, Psychedelic / Lead, Metal / Heavy and Blues (era presets).
-Further groups (Alternative) are added when a preset exists for them. The panel
+catalogue); Classic Rock, Psychedelic / Lead, Alternative, Metal / Heavy and Blues
+(era presets). Further groups are added when a preset exists for them. The panel
 lists every group that has one.
 
 ## Era presets: what exists
@@ -105,6 +105,39 @@ Sources: [The gear used on Are You Experienced (Guitar.com)](https://guitar.com/
 [Eddie Kramer on the M160 (his Facebook page)](https://m.facebook.com/EddieKramerProducer/photos/a.304749109593232/609331622468311/),
 [Are You Experienced (Wikipedia)](https://en.wikipedia.org/wiki/Are_You_Experienced).
 
+### The Great Wall '79 (group Psychedelic / Lead)
+
+Target inspiration: Pink Floyd, *The Wall* (1979), David Gilmour's lead sound.
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | the black Stratocaster, "a 1969 black alder body ... Fender single coils and a DiMarzio FS-1 bridge pickup"; a Les Paul Goldtop on one solo | WIDELY REPORTED (Guitar.com rig feature) | nominal input |
+| Pedal | a Pete Cornish board with an Electro-Harmonix Big Muff, a Fuzz Face, an Electric Mistress and a Dynacomp; the Big Muff used "with sustain considerably lower than most users expect" | WIDELY REPORTED | Ram Fuzz, Sustain 0.35, Tone 0.55, Level 0.75. The Mistress and the Dynacomp are not modeled |
+| Preamp / power | "an Alembic F-2B tube preamp and a 100-watt Hiwatt DR103, equipped with four Mullard EL34 power tubes" | WIDELY REPORTED | Brit DR103, Volume 0.45, Master 0.5, Matched EL34. **The Alembic preamp in front of it is not modeled**, and the 1970s DR103 differs from the Issue 4 drawing the model follows (see [brit_dr103.md](docs/models/brit_dr103.md)) |
+| Cabinet / speaker | "WEM Super Starfinder 200s with Fane Crescendo speakers", plus a Yamaha RA-200 rotary cabinet | WIDELY REPORTED | Brit Closed 4x12, Matched - APPROXIMATED (no WEM cabinet or Fane profile; the rotary cabinet is not modeled) |
+| Mics | not documented in the sources located | - | Dynamic 421 close and Condenser 87 at half a metre, blend 0.3 - PLAUSIBLE |
+
+Sources: [The guitar gear used by David Gilmour to record The Wall (Guitar.com)](https://guitar.com/features/artist-rigs/the-gear-used-by-david-gilmour-pink-floyd-the-wall/),
+[gilmourish.com, The Wall 1979-81](https://www.gilmourish.com/?page_id=20).
+
+### Pumpkin Dream '93 (group Alternative)
+
+Target inspiration: The Smashing Pumpkins, *Siamese Dream* (recorded December 1992 -
+March 1993, Triclops Studios; produced by Butch Vig and Billy Corgan).
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | the "Bat Strat", a Stratocaster with Lace Sensors | WIDELY REPORTED | nominal input |
+| Pedal | an Electro-Harmonix Big Muff Pi, "the late 70s V4 'Op Amp' version" | WIDELY REPORTED | Ram Fuzz - **APPROXIMATED**: the model is the 1973 Ram's Head, four transistors; the op-amp Muff is a different circuit and is not modeled |
+| Preamp / power | "All of the Siamese Dream rhythm sound was done by plugging an EHX Big Muff Pi into the low gain input of a 1984 JCM800 (2203) head set with the master volume all the way, and used the preamp gain to make adjustments"; the amp was retubed with KT88s | WIDELY REPORTED, consistent across rig features | Brit 800, Preamp 0.35, Master 1.0, Matched EL34 - APPROXIMATED: the model has the drawing's EL34s and its HIGH input, not the low one, so the pedal's Level stands in for that 6 dB |
+| Cabinet / speaker | a Marshall 4x12 ("Mars") | WIDELY REPORTED | Brit 1960 4x12, Matched |
+| Other effects | Mu-Tron Bi-Phase, Electro-Harmonix Electric Mistress | WIDELY REPORTED | not modeled |
+| Studio | many layered guitar takes ("we wanted to go way, way over the top", Butch Vig) | DOCUMENTED (Vig, Tape Op via Rolling Stone) | one track; the layering is the player's to do |
+
+Sources: [The gear of the Smashing Pumpkins (Reverb)](https://reverb.com/news/the-gear-of-the-smashing-pumpkins),
+[Billy Corgan's gear (GuitarGangsters)](https://guitargangsters.net/billy-corgan-guitars-gear/),
+[Smashing Pumpkins recorded with Butch Vig again (Rolling Stone)](https://www.rollingstone.com/music/music-news/smashing-pumpkins-butch-vig-first-time-siamese-dream-1235566401/).
+
 ### Texas Storm '83 (`blues_1983_texas_storm`, group Blues)
 
 Target inspiration: Stevie Ray Vaughan, *Texas Flood* (recorded November 1982,
@@ -132,8 +165,7 @@ plus its own rig research at that time.
 | Brown '78, Brown '84 | The Brit Plexi now exists, but the documented rig ran it from a variac at 80-89 V ("he was using the Variac to run his Marshall at 85 volts instead of 120", Donn Landee, Tape Op), which needs a mains-voltage supply model; a dummy-load box is also reported |
 | Lead Airship II '69 | Rig research (the amplifier used on the record is disputed) |
 | Paranoia '70 | A Laney Supergroup preamp and a treble booster |
-| The Great Wall '79 | Brit DR103 preamp and EL34 Hi-Headroom power |
-| Never Mind '91, Pumpkin Dream '93, Dirty Chains '92, Seattle Ten '91, Unknown Garden '94, Spiral '96, Machine Rage '92, Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research, plus models such as Cali Rectifier and Brit AC30 (the Rodent now exists) depending on the documented rig |
+| Never Mind '91, Dirty Chains '92, Seattle Ten '91, Unknown Garden '94, Spiral '96, Machine Rage '92, Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research, plus models such as the Cali Rectifier depending on the documented rig |
 
 ## Catalogue update (2026-09-15)
 

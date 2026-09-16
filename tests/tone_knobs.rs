@@ -23,10 +23,13 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 6] = [
+const OWN: [(Circuit, [bool; 3]); 9] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     (Circuit::Plexi, [true, true, true]),
+    (Circuit::AC30, [true, false, true]),
+    (Circuit::DR103, [true, true, true]),
+    (Circuit::Recto, [true, true, true]),
     (Circuit::Twin, [true, true, true]),
     (Circuit::Screamer, [false, false, true]),
     (Circuit::Muff, [false, false, true]),

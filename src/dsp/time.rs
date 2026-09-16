@@ -1681,11 +1681,12 @@ impl Simulation {
                             1.0 / (ohms * (1.0 - f)),
                         );
                     }
-                    Part::Input { node, series } => {
+                    Part::Input { node, series, bias: at } => {
                         let g = 1.0 / series;
                         stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
                             source[node] += g;
+                            bias[node] += g * at;
                         }
                     }
                     Part::Capacitor { a, b, farads } => {

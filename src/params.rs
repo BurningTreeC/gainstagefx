@@ -91,6 +91,15 @@ pub enum Circuit {
     #[id = "amp_marshall_1959"]
     #[name = "Brit Plexi"]
     Plexi,
+    #[id = "amp_vox_ac30_tb"]
+    #[name = "Brit AC30"]
+    AC30,
+    #[id = "amp_hiwatt_dr103"]
+    #[name = "Brit DR103"]
+    DR103,
+    #[id = "amp_dual_rectifier"]
+    #[name = "Cali Rectifier"]
+    Recto,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -120,9 +129,12 @@ impl Circuit {
             Circuit::ConsoleE => "British 4K E",
             Circuit::Tube610 => "Tube 610",
             Circuit::Plexi => "Brit Plexi",
+            Circuit::AC30 => "Brit AC30",
+            Circuit::DR103 => "Brit DR103",
+            Circuit::Recto => "Cali Rectifier",
         }
     }
-    pub const ALL: [Circuit; 18] = [
+    pub const ALL: [Circuit; 21] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -141,6 +153,9 @@ impl Circuit {
         Circuit::ConsoleE,
         Circuit::Tube610,
         Circuit::Plexi,
+        Circuit::AC30,
+        Circuit::DR103,
+        Circuit::Recto,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -163,6 +178,9 @@ impl Circuit {
             Circuit::ConsoleE => voice::Gain::ConsoleE,
             Circuit::Tube610 => voice::Gain::Tube610,
             Circuit::Plexi => voice::Gain::Plexi,
+            Circuit::AC30 => voice::Gain::AC30,
+            Circuit::DR103 => voice::Gain::DR103,
+            Circuit::Recto => voice::Gain::Recto,
         }
     }
 
@@ -244,10 +262,19 @@ pub enum PowerAmp {
     #[id = "power_1959_el34"]
     #[name = "Brit Plexi EL34"]
     BritPlexiEL34,
+    #[id = "power_ac30_el84"]
+    #[name = "AC30 EL84"]
+    AC30EL84,
+    #[id = "power_dr103_el34"]
+    #[name = "DR103 EL34"]
+    DR103EL34,
+    #[id = "power_recto_6l6"]
+    #[name = "Recto 6L6"]
+    Recto6L6,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 10] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -255,6 +282,9 @@ impl PowerAmp {
         Self::American6L6HighGain,
         Self::BritEL34,
         Self::BritPlexiEL34,
+        Self::AC30EL84,
+        Self::DR103EL34,
+        Self::Recto6L6,
     ];
 
     pub fn name(self) -> &'static str {
@@ -270,6 +300,9 @@ impl PowerAmp {
             Self::American6L6HighGain => voice::PowerAmp::American6L6HighGain,
             Self::BritEL34 => voice::PowerAmp::BritEL34,
             Self::BritPlexiEL34 => voice::PowerAmp::BritPlexiEL34,
+            Self::AC30EL84 => voice::PowerAmp::AC30EL84,
+            Self::DR103EL34 => voice::PowerAmp::DR103EL34,
+            Self::Recto6L6 => voice::PowerAmp::Recto6L6,
         }
     }
 }

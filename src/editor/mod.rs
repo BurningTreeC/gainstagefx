@@ -652,6 +652,18 @@ pub fn describe(circuit: Circuit) -> String {
             "Modeled after a late-60s British 100 W lead amp with no master: \
                             three triodes, then the power valves."
         }
+        Circuit::AC30 => {
+            "Modeled after a 60s British 30 W combo: a top-boost valve, no \
+                          middle knob, and self-biased power valves."
+        }
+        Circuit::DR103 => {
+            "Modeled after a British 100 W head built for headroom: five \
+                           triodes, a master volume and a tight loop."
+        }
+        Circuit::Recto => {
+            "Modeled after a 90s American two-channel head: five triodes, one \
+                          run cold. Silicon rectifier only."
+        }
     }
     .to_string()
 }

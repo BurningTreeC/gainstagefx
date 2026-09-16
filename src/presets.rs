@@ -733,6 +733,113 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Plexi Cranked")
     },
+    // --- Brit AC30 -------------------------------------------------------------
+    // The 30 W British combo: a cathode-biased EL84 stage with no feedback loop,
+    // so it compresses rather than tightens as it is pushed. Treble and Bass
+    // only; the Middle knob is greyed out because the amplifier has no such
+    // control. Into its own 2x12 of alnico-voiced speakers, taken here as an
+    // open-backed 2x12.
+    Preset {
+        drive: 0.35,
+        circuit: Circuit::AC30,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        treble: 0.6,
+        cab_model: CabModel::AmericanOpen212,
+        speaker: SpeakerModel::AmericanAlnico,
+        mic_a_position: 0.4,
+        mic_a_distance: 0.04,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Chime Clean")
+    },
+    Preset {
+        drive: 0.85,
+        circuit: Circuit::AC30,
+        tone: ToneStack::Off,
+        bass: 0.45,
+        treble: 0.55,
+        cab_model: CabModel::AmericanOpen212,
+        speaker: SpeakerModel::AmericanAlnico,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        mic_b: MicModel::Ribbon160,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.25,
+        mic_blend: 0.3,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Chime Edge")
+    },
+    // --- Brit DR103 -------------------------------------------------------------
+    // The 100 W head built for headroom: a master volume, 22 k grid stoppers and
+    // an inverter that cannot shift its own bias. Clean at settings where the
+    // others are breaking up, and it takes a pedal in front of it without
+    // falling apart.
+    Preset {
+        drive: 0.45,
+        master: 0.45,
+        circuit: Circuit::DR103,
+        tone: ToneStack::Off,
+        bass: 0.6,
+        mid: 0.55,
+        treble: 0.6,
+        cab_model: CabModel::BritClosed,
+        mic_a_position: 0.4,
+        mic_a_distance: 0.03,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Hi-Headroom Clean")
+    },
+    Preset {
+        drive: 0.8,
+        master: 0.6,
+        circuit: Circuit::DR103,
+        tone: ToneStack::Off,
+        bass: 0.55,
+        mid: 0.6,
+        treble: 0.65,
+        cab_model: CabModel::BritClosed,
+        mic_a_position: 0.3,
+        mic_b: MicModel::Condenser87,
+        mic_b_distance: 0.4,
+        mic_blend: 0.25,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Hi-Headroom Pushed")
+    },
+    // --- Cali Rectifier ----------------------------------------------------------
+    // The red channel of the two-channel American head, in its modern setting:
+    // five triodes with the third run cold on 39 k, into an oversized 4x12. The
+    // gain control is what the knob turns; the red channel's own master is the
+    // Master knob.
+    Preset {
+        drive: 0.55,
+        master: 0.5,
+        circuit: Circuit::Recto,
+        tone: ToneStack::Off,
+        bass: 0.55,
+        mid: 0.35,
+        treble: 0.6,
+        cab_model: CabModel::CaliOversized,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.02,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Recto Rhythm")
+    },
+    Preset {
+        drive: 0.85,
+        master: 0.55,
+        circuit: Circuit::Recto,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        mid: 0.45,
+        treble: 0.65,
+        cab_model: CabModel::CaliOversized,
+        mic_a_position: 0.25,
+        mic_b: MicModel::Dynamic421,
+        mic_b_position: 0.45,
+        mic_b_distance: 0.03,
+        mic_blend: 0.4,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Recto Lead")
+    },
     // The console microphone preamplifier: two cascaded transistor stages with
     // an input transformer. Clean at low drive, warming into subtle harmonic
     // saturation as the gain increases. No cabinet -- this is a preamplifier,
@@ -899,6 +1006,69 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Psychedelic / Lead", "Experienced '67")
     },
+    // A four-transistor fuzz with its sustain well down, into a 100 W head with
+    // headroom to spare and a 4x12. The amplifier does not distort; the pedal
+    // does, and the power stage only compresses it. See PRESETS.md.
+    Preset {
+        pedal: PedalModel::BigMuff,
+        pedal_drive: 0.35,
+        pedal_tone: 0.55,
+        pedal_level: 0.75,
+        circuit: Circuit::DR103,
+        power_amp: PowerAmp::Matched,
+        drive: 0.45,
+        master: 0.5,
+        bass: 0.6,
+        mid: 0.55,
+        treble: 0.6,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritClosed,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic421,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.04,
+        mic_b: MicModel::Condenser87,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.5,
+        mic_blend: 0.3,
+        // A fuzz into a hundred watts of headroom is the loudest thing in the
+        // catalogue; this is the trim that keeps it level with the rest.
+        output_trim: -5.0,
+        oversampling: Oversampling::Off,
+        ..base("Psychedelic / Lead", "The Great Wall '79")
+    },
+    // A four-transistor fuzz into the low input of an early-80s British
+    // master-volume head with its master wide open, the preamp volume doing the
+    // adjusting. Two 4x12s' worth of the same take, layered on the record; here
+    // it is one. See PRESETS.md.
+    Preset {
+        pedal: PedalModel::BigMuff,
+        pedal_drive: 0.7,
+        pedal_tone: 0.45,
+        pedal_level: 0.55,
+        circuit: Circuit::Brit800,
+        power_amp: PowerAmp::Matched,
+        drive: 0.35,
+        master: 1.0,
+        bass: 0.5,
+        mid: 0.6,
+        treble: 0.6,
+        tone: ToneStack::Off,
+        cab_model: CabModel::Brit1960,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.02,
+        mic_b: MicModel::Ribbon121,
+        mic_b_position: 0.45,
+        mic_b_distance: 0.15,
+        mic_blend: 0.35,
+        // A fuzz into a master-volume head with the master wide open is the
+        // loudest thing here by a distance; this is what levels it.
+        output_trim: -12.0,
+        oversampling: Oversampling::Off,
+        ..base("Alternative", "Pumpkin Dream '93")
+    },
     // A Tube Screamer with little drive and a lot of level, into a blackface
     // AB763 channel on the edge of breaking up, into an open-back combo.
     Preset {
@@ -926,7 +1096,7 @@ pub const PRESETS: &[Preset] = &[
 
 /// The groups, in the order they should be shown: quietest first, so the list
 /// itself reads as a range rather than as an alphabetical accident.
-pub const GROUPS: [&str; 11] = [
+pub const GROUPS: [&str; 12] = [
     "Studio",
     "Preamp",
     "Crunch",
@@ -939,6 +1109,7 @@ pub const GROUPS: [&str; 11] = [
     // Modular chains aimed at particular records. See PRESETS.md.
     "Classic Rock",
     "Psychedelic / Lead",
+    "Alternative",
     "Metal / Heavy",
     "Blues",
 ];

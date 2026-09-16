@@ -89,12 +89,15 @@ fn intent(gain: Gain) -> f64 {
         // from a guitar in one direction and twenty-five in the other. See
         // `docs/experiments/high-gain-calibration-targets.md`.
         Gain::Boogie => 40.0,
+        Gain::Recto => 45.0,
         Gain::Peavey => 45.0,
         // The Neve 73P is a microphone preamplifier built not to run out of
         // room. Like Console, it should be barely working at nominal.
         Gain::Neve => 3.0,
         // States its level like the other amplifiers; see `stated_level`.
-        Gain::Brit800 | Gain::Plexi => 25.0,
+        Gain::Brit800 | Gain::Plexi | Gain::AC30 => 25.0,
+        // Built not to distort: a lower intent, like the studio preamplifiers.
+        Gain::DR103 => 10.0,
         // Microphone preamplifiers, like the Console and the 73P: barely working
         // at nominal with the gain all the way up.
         Gain::American312 | Gain::ConsoleE | Gain::Tube610 => 3.0,
@@ -204,6 +207,12 @@ fn stated_level(gain: Gain) -> Option<f64> {
         Gain::Brit800 => Some(GUITAR_VOLTS),
         // A guitar into the bright channel's HIGH input of a non-master British amp.
         Gain::Plexi => Some(GUITAR_VOLTS),
+        // And into the brilliant channel of a 30 W combo.
+        Gain::AC30 => Some(GUITAR_VOLTS),
+        // And of a 100 W head.
+        Gain::DR103 => Some(GUITAR_VOLTS),
+        // And into the red channel of a two-channel American head.
+        Gain::Recto => Some(GUITAR_VOLTS),
         _ => None,
     }
 }

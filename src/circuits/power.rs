@@ -82,8 +82,15 @@ pub struct PowerSpec {
     /// The master volume's track, and where it rests. See `MASTER`.
     pub master: f64,
     pub master_rest: f64,
-    /// Coupling into the inverter's grid.
+    /// Coupling into the inverter's grid. Zero is a *direct* coupling: the
+    /// grids hang on `pi_leak_upper` and `pi_leak_lower` straight off whatever
+    /// drives them, which then also has to state its direct voltage in
+    /// `driver_volts`.
     pub pi_couple: f64,
+    /// The direct voltage the preamplifier's output sits at, for a directly
+    /// coupled inverter. Zero everywhere else, where a coupling capacitor
+    /// stands between the two.
+    pub driver_volts: f64,
     /// Grid stopper on the driven side.
     pub pi_stopper: f64,
     /// The two halves of the grid-leak chain. Their junction is where the
@@ -118,8 +125,18 @@ pub struct PowerSpec {
     /// How many tubes on each side.
     pub tubes_per_side: f64,
     pub tube: PentodeSpec,
-    /// The fixed negative bias.
+    /// The fixed negative bias. Ignored when `cathode_bias` is set.
     pub bias: f64,
+    /// A shared cathode resistor instead of a fixed bias supply, with its
+    /// bypass capacitor. Zero is fixed bias.
+    ///
+    /// This is the other way to bias an output stage and it is a different
+    /// amplifier: the valves set their own bias, so driving them harder pushes
+    /// the cathode up and takes the bias with it. That is the compression a
+    /// cathode-biased amplifier has and a fixed-bias one does not. The grid
+    /// leaks return to ground rather than to a bias supply.
+    pub cathode_bias: f64,
+    pub cathode_bypass: f64,
 
     // --- the supplies -----------------------------------------------------
     pub plate_supply: f64,
@@ -164,11 +181,27 @@ pub struct PowerSpec {
     // --- feedback ---------------------------------------------------------
     /// From the secondary back to the tail. A larger resistor is less
     /// feedback and a louder, looser amplifier.
+    /// Zero is an amplifier with no loop at all, which is a different kind of
+    /// amplifier: nothing corrects the output stage, so the transformer's own
+    /// response and the valves' distortion reach the speaker as they are.
     pub feedback: f64,
     /// The presence control shunts the feedback at the top of the band, so
     /// turning it up takes treble *out of the loop* rather than boosting it.
     pub presence_pot: f64,
     pub presence_cap: f64,
+    /// A cut control: a rheostat in series with a capacitor, straight across
+    /// the inverter's two outputs. Nothing to do with feedback -- it shorts the
+    /// top of the band between the two sides before the output valves see it,
+    /// which is how an amplifier with no loop gets a treble control at the
+    /// back. Zero is not fitted.
+    ///
+    /// The control runs the way the knob on the amplifier does: up is more cut
+    /// and a darker sound, because it is the amplifier's own control and not a
+    /// presence.
+    pub cut_pot: f64,
+    pub cut_cap: f64,
+    /// Where the cut control rests, since the panel has no knob for it.
+    pub cut_rest: f64,
 }
 
 impl PowerSpec {
@@ -181,6 +214,7 @@ impl PowerSpec {
         master: 1_000_000.0,
         master_rest: 0.30,
         pi_couple: 22e-9,
+        driver_volts: 0.0,
         pi_stopper: 0.0,
         pi_leak_upper: 1_000_000.0,
         pi_leak_lower: 1_000_000.0,
@@ -201,6 +235,8 @@ impl PowerSpec {
         tubes_per_side: 2.0,
         tube: PentodeSpec::EL34,
         bias: -42.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
         plate_supply: 470.0,
         screen_supply: 468.0,
         supply_resistance: 100.0,
@@ -218,6 +254,9 @@ impl PowerSpec {
         feedback: 100_000.0,
         presence_pot: 22_000.0,
         presence_cap: 0.1e-6,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
     };
 
     /// The 1959 Super Lead's, as Unicord drew it in July 1970 (70-6-11 issue B):
@@ -239,6 +278,7 @@ impl PowerSpec {
         master: 1_000_000.0,
         master_rest: 1.0,
         pi_couple: 22e-9,
+        driver_volts: 0.0,
         pi_stopper: 0.0,
         pi_leak_upper: 1_000_000.0,
         pi_leak_lower: 1_000_000.0,
@@ -265,6 +305,8 @@ impl PowerSpec {
         // ESTIMATED: 36 mA and 16 W a valve at idle, 64 % of an EL34's 25 W
         // (`examples/plexi_op.rs`).
         bias: -37.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
         // Marshall's c. 1967 100 W drawing: 460 V at the plates.
         plate_supply: 460.0,
         screen_supply: 455.0,
@@ -284,6 +326,236 @@ impl PowerSpec {
         feedback: 23_500.0,
         presence_pot: 5_000.0,
         presence_cap: 0.1e-6,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+    };
+
+    /// The AC30/6 Top Boost's, from the 1974 Dallas drawing Sc/V/1313, checked
+    /// against the 1971 Vox Sound Limited sheet. The matched power stage of the
+    /// Brit AC30 preamplifier (`circuits::ac30`). See `docs/models/brit_ac30.md`.
+    ///
+    /// The one in the catalogue that is a different kind of amplifier:
+    ///
+    /// - **Cathode bias.** Four EL84s share a 50 ohm resistor with 250 uF across
+    ///   it, so the valves set their own bias and give it back as compression
+    ///   when they are driven.
+    /// - **No feedback at all.** Nothing corrects the output stage, so the
+    ///   transformer and the valves are what reaches the speaker.
+    /// - **No master volume**, and a CUT control across the inverter's outputs
+    ///   instead of a presence control in a loop it does not have.
+    pub const AC30_EL84: PowerSpec = PowerSpec {
+        name: "AC30 EL84 (Top Boost, 1974)",
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.047e-6, // C5
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0, // R8
+        pi_leak_lower: 1_000_000.0, // R17
+        pi_cathode: 1_200.0,        // R16
+        pi_tail: 47_000.0,          // R15
+        // The tail returns to ground: there is no loop to bring back to it.
+        pi_tail_lower: 0.0,
+        // C7 to the third channel's volume, which is at zero: the undriven grid's
+        // AC ground.
+        pi_cross: 0.047e-6,
+        pi_plate_driven: 100_000.0, // R18
+        pi_plate_other: 100_000.0,  // R19
+        pi_supply: crate::circuits::ac30::INVERTER_NODE,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 0.0,
+        couple: 0.15e-6,      // C6, C9
+        grid_leak: 220_000.0, // R20, R21
+        // 1k5 per valve, two a side.
+        stopper: 750.0,
+        // 100 ohm per valve.
+        screen_resistor: 50.0,
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::EL84,
+        // Not used: the valves bias themselves.
+        bias: 0.0,
+        cathode_bias: 50.0,     // R24
+        cathode_bypass: 250e-6, // C11
+        // ESTIMATED. The drawings carry no voltages; this is the node behind the
+        // rectifier and the choke, and the rectifier's own drop and the choke's
+        // copper are the series resistance.
+        plate_supply: 362.0,
+        screen_supply: 362.0,
+        supply_resistance: 250.0,
+        reservoir: 32e-6,
+        // The screens come through the choke, so they sag further and sooner.
+        screen_resistance: 700.0,
+        screen_reservoir: 32e-6,
+        // 4 k plate to plate into 8 ohm.
+        ratio: 22.360_679_774_997_896,
+        // ESTIMATED: a 30 W transformer's copper, magnetising inductance and
+        // core. No winding data for this transformer was found.
+        primary_resistance: 80.0,
+        primary_inductance: 9.0,
+        leakage: 60e-6,
+        // 30 W into 8 ohm is 21.9 V peak.
+        saturation_volts: 21.908_902_300_206_645,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 8.0,
+        // No loop.
+        feedback: 0.0,
+        presence_pot: 0.0,
+        presence_cap: 0.0,
+        cut_pot: 250_000.0, // VR4
+        cut_cap: 0.0047e-6, // C10
+        // A little cut, which is where an AC30 usually sits. The panel has no
+        // knob for it yet.
+        cut_rest: 0.2,
+    };
+
+    /// The DR103's, from Hiwatt's own output-stage (Issue 1, 1994) and power
+    /// supply (Issue 3, 1994) sheets. The matched power stage of the Brit DR103
+    /// preamplifier (`circuits::dr103`). See `docs/models/brit_dr103.md`.
+    ///
+    /// Built for headroom, and every value says so: a supply near 480 V, 22 k
+    /// grid stoppers where a Marshall has 5k6, and a feedback resistor small
+    /// enough to hold the whole thing down. Its inverter brings the grid returns,
+    /// the cathode resistor, the tail and the feedback to one node.
+    pub const DR103_EL34: PowerSpec = PowerSpec {
+        name: "DR103 EL34 (Hiwatt, Issue 1)",
+        // The master volume is in the preamplifier, where the drawing has it.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        // No coupling capacitor: the driver's cathode follower holds the grids.
+        pi_couple: 0.0,
+        // Where that follower's cathode sits (`circuits::dr103`, measured in
+        // `tests/dr103.rs`). Ampbooks reads about 73 V on the real amplifier.
+        driver_volts: crate::circuits::dr103::DRIVER_VOLTS,
+        pi_stopper: 0.0,
+        // 100 k and 1 M in series from the driven grid to the junction.
+        pi_leak_upper: 1_100_000.0,
+        pi_leak_lower: 1_000_000.0,
+        // The grid leaks return to the cathodes themselves.
+        pi_cathode: 0.0,
+        // 22 k from there to the tail node, 2k2 from the tail to ground, and the
+        // feedback lands across that 2k2.
+        pi_tail: 22_000.0,
+        pi_tail_lower: 2_200.0,
+        pi_cross: 100e-9,
+        pi_plate_driven: 82_000.0,
+        pi_plate_other: 91_000.0,
+        // H.T. SUPPLY 3. ESTIMATED: behind the supply sheet's 100 R and 1 k from
+        // the 480 V reservoir. The preamplifier's own rail is further down the
+        // chain; see `circuits::dr103::RAIL`.
+        pi_supply: 465.0,
+        // Issue 4 labels every preamp valve ECC83; the late-60s amplifier had an
+        // ECC81 here. See the research log.
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 0.0,
+        couple: 47e-9,
+        grid_leak: 100_000.0,
+        // 22 k per valve, two a side. This is the Hiwatt signature.
+        stopper: 11_000.0,
+        // 100 ohm per valve.
+        screen_resistor: 50.0,
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::EL34,
+        bias: -38.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // ESTIMATED: the sheets give no voltages. 480 V at the plates is what the
+        // published reading of the supply sheet gives; the screens come through
+        // the 470 R 10 W dropper.
+        plate_supply: 490.0,
+        screen_supply: 490.0,
+        supply_resistance: 100.0,
+        reservoir: 220e-6,
+        screen_resistance: 570.0,
+        screen_reservoir: 50e-6,
+        // APPROXIMATED: 1.7 k plate to plate into 8 ohm; no Hiwatt winding data
+        // was found.
+        ratio: 14.577_379_737_113_25,
+        primary_resistance: 20.0,
+        primary_inductance: 12.0,
+        leakage: 20e-6,
+        // 100 W into 8 ohm is 40 V peak, and this transformer is oversized.
+        saturation_volts: 40.0,
+        saturation_hz: 60.0,
+        core_sharpness: 6.0,
+        speaker: 8.0,
+        // 10 k from the 16 ohm tap, which is 7.07 k from the 8 ohm one.
+        feedback: 7_071.0,
+        // The presence control is in the preamplifier's feedback path and is not
+        // built; see the research log.
+        presence_pot: 0.0,
+        presence_cap: 0.0,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+    };
+
+    /// The Dual Rectifier's, from Mesa's own "DUAL RECTIFIER POWER AMP" sheet.
+    /// The matched power stage of the Cali Rectifier preamplifier
+    /// (`circuits::rectifier`). See `docs/models/cali_rectifier.md`.
+    ///
+    /// Four 6L6 on a -51 V fixed bias, the drawing's own inverter with its 120 pF
+    /// plate capacitors, and the presence control in the feedback loop. The
+    /// amplifier's switchable valve rectifier is **not** modelled: this supply is
+    /// a voltage behind a resistance, which is its silicon setting.
+    pub const RECTO_6L6: PowerSpec = PowerSpec {
+        name: "Recto 6L6 (Dual Rectifier, Rev F)",
+        // The red channel's master is in the preamplifier, where the sheet has it.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.1e-6,
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0, // R214
+        pi_leak_lower: 1_000_000.0, // R213
+        pi_cathode: 470.0,          // R341
+        pi_tail: 10_000.0,          // R353
+        pi_tail_lower: 4_700.0,     // R372
+        pi_cross: 0.1e-6,           // C40
+        pi_plate_driven: 82_000.0,  // R281
+        pi_plate_other: 90_000.0,   // R104
+        // The sheet reads 280 V at both inverter plates.
+        pi_supply: 415.0,
+        pi_tube: TriodeSpec::ECC83,
+        // C1 and C2, 120 pF from each plate. The sheet has one per plate to
+        // ground; plate to plate is the same shape at half the value.
+        pi_plate_cap: 60e-12,
+        couple: 0.047e-6,     // C31, C32
+        grid_leak: 220_000.0, // R222, R223
+        stopper: 750.0,       // 1k5 per valve, two a side
+        screen_resistor: 500.0, // 1k per valve
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::T6L6GC,
+        // The sheet's own figure: "-51v 6L6".
+        bias: -51.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // ESTIMATED: the sheet gives no rail voltage, and a Rectifier's runs high.
+        plate_supply: 490.0,
+        screen_supply: 485.0,
+        supply_resistance: 120.0,
+        reservoir: 220e-6,
+        screen_resistance: 470.0,
+        screen_reservoir: 100e-6,
+        // APPROXIMATED: no data for transformer #562105 was found. 2.2 k plate to
+        // plate into 8 ohm, which is what four 6L6 on this supply are matched to
+        // -- the Mark IIC+'s 3.6 k is a pair, not two pairs.
+        ratio: 16.583_123_951_777,
+        primary_resistance: 35.0,
+        primary_inductance: 40.0,
+        leakage: 25e-6,
+        saturation_volts: 40.0,
+        saturation_hz: 60.0,
+        core_sharpness: 6.0,
+        speaker: 8.0,
+        // From the 8-16 ohm tap, through the presence network.
+        feedback: 100_000.0,
+        presence_pot: 25_000.0, // the sheet's 25 k
+        presence_cap: 0.1e-6,   // C52
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
     };
 
     /// The Peavey EVH 5150's, read off page 5 of Peavey's drawing at 200 dpi.
@@ -296,6 +568,7 @@ impl PowerSpec {
         master: 1_000_000.0,
         master_rest: 0.66,
         pi_couple: 0.022e-6,        // C49
+        driver_volts: 0.0,
         pi_stopper: 100_000.0,      // R48
         pi_leak_upper: 1_000_000.0, // R50
         pi_leak_lower: 1_000_000.0, // R53
@@ -316,6 +589,8 @@ impl PowerSpec {
         tubes_per_side: 2.0,    // V5+V7 and V6+V8
         tube: PentodeSpec::T6L6GC,
         bias: -46.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
 
         plate_supply: 470.0,
         screen_supply: 465.0,
@@ -337,6 +612,9 @@ impl PowerSpec {
         feedback: 39_000.0,     // R56
         presence_pot: 10_000.0, // VR9
         presence_cap: 0.033e-6, // C62
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
     };
 
     /// The Mesa Boogie Mark IIC+'s.
@@ -360,6 +638,7 @@ impl PowerSpec {
         master: 1_000_000.0,
         master_rest: 0.30,
         pi_couple: 0.1e-6,
+        driver_volts: 0.0,
         pi_stopper: 100_000.0,
         pi_leak_upper: 1_000_000.0,
         pi_leak_lower: 1_000_000.0,
@@ -380,6 +659,8 @@ impl PowerSpec {
         tubes_per_side: 1.0, // a pair, not two pairs -- the 60 W C+
         tube: PentodeSpec::T6L6GC,
         bias: -44.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
 
         plate_supply: 440.0,
         screen_supply: 435.0,
@@ -405,6 +686,9 @@ impl PowerSpec {
         feedback: 100_000.0,
         presence_pot: 5_000.0,
         presence_cap: 0.1e-6,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
     };
 
     /// The Fender Twin Reverb AB763's, off the manufacturer's schematic.
@@ -443,6 +727,7 @@ impl PowerSpec {
         master: 1_000_000.0,
         master_rest: 1.0,
         pi_couple: 0.001e-6,
+        driver_volts: 0.0,
         pi_stopper: 22_000.0,
         pi_leak_upper: 1_000_000.0,
         pi_leak_lower: 1_000_000.0,
@@ -466,6 +751,8 @@ impl PowerSpec {
         tubes_per_side: 2.0, // four 6L6GC
         tube: PentodeSpec::T6L6GC,
         bias: -52.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
 
         plate_supply: 460.0,
         screen_supply: 458.0,
@@ -498,6 +785,9 @@ impl PowerSpec {
         // No presence control. One femtofarad is an open circuit.
         presence_pot: 5_000.0,
         presence_cap: 1e-15,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
     };
 }
 
@@ -593,26 +883,78 @@ fn assemble(
     // the tail hangs off it. That is what makes this a pair rather than two
     // stages sharing a socket -- the current one half stops drawing, the other
     // half takes, and the tail voltage is what tells it to.
-    net.input("in", source)
+    // A direct-coupled inverter is handed the driver's direct voltage as well as
+    // its signal; a capacitor-coupled one is handed the signal alone.
+    net.input_at("in", source, spec.driver_volts)
         .rest(MASTER, spec.master_rest)
-        .pot("in", "master", "gnd", spec.master, Taper::Audio, MASTER)
-        .capacitor("master", "pi_a", spec.pi_couple)
-        .resistor("pi_a", "pi_b", spec.pi_leak_upper);
+        .pot("in", "master", "gnd", spec.master, Taper::Audio, MASTER);
+    // How the inverter's grids get their direct voltage, which is most of what
+    // decides whether an amplifier stays clean when it is driven hard.
+    //
+    // Nearly all of them couple in through a capacitor and return the grids to a
+    // junction of their own: `pi_couple` into `pi_a`, then the leaks to `pi_b`.
+    // A capacitor there charges when the grid draws current on a peak and takes a
+    // moment to give it back, which is the bias shift that makes a Marshall break
+    // up the way it does.
+    //
+    // A Hiwatt does not have one. Its inverter's grids hang on resistors straight
+    // off the driver's cathode follower, which holds them at about 75 V however
+    // hard it is played. `pi_couple` of zero says so, and then `pi_leak_upper`
+    // and `pi_leak_lower` are those two resistors rather than a leak chain.
+    let direct = spec.pi_couple <= 0.0;
+    if direct {
+        net.resistor("master", "pi_a", spec.pi_leak_upper);
+    } else {
+        net.capacitor("master", "pi_a", spec.pi_couple)
+            .resistor("pi_a", "pi_b", spec.pi_leak_upper);
+    }
     let driven_grid = if spec.pi_stopper > 0.0 {
         net.resistor("pi_a", "pi_g1", spec.pi_stopper);
         "pi_g1"
     } else {
         "pi_a"
     };
-    net.resistor("pi_b", "pi_k", spec.pi_cathode)
-        .resistor("pi_b", "pi_g2", spec.pi_leak_lower)
-        .resistor("pi_b", "tail", spec.pi_tail)
-        .resistor("tail", "gnd", spec.pi_tail_lower)
-        .capacitor("tail", "pi_g2", spec.pi_cross)
-        .supply("pi_p1", spec.pi_plate_driven, spec.pi_supply)
+    // The tail. With a feedback loop it lands on a node of its own, because
+    // that node is where the loop comes back; with no loop the tail resistor
+    // simply goes to ground and `pi_tail_lower` is zero.
+    // The cathodes, and the tail below them. With a leak junction the cathodes
+    // hang off it through `pi_cathode` and the tail leaves that junction; with a
+    // driver holding the grids there is no junction, and the tail simply leaves
+    // the cathodes.
+    //
+    // The order the parts are added in is the order it was in before any of
+    // these variations existed, because the nodes are numbered in that order and
+    // the frozen fixture in `tests/legacy_baseline.rs` is compared sample for
+    // sample.
+    let cathode_top = if direct {
+        "pi_k"
+    } else {
+        net.resistor("pi_b", "pi_k", spec.pi_cathode);
+        "pi_b"
+    };
+    // The second grid comes off the same place the first one does: the leak
+    // junction when there is one, the driver when there is not.
+    net.resistor(if direct { "master" } else { "pi_b" }, "pi_g2", spec.pi_leak_lower);
+    // Where the tail lands: a node of its own when a feedback loop comes back to
+    // it, ground when there is no loop to bring back.
+    let tail = if spec.pi_tail_lower > 0.0 { "tail" } else { "gnd" };
+    if spec.pi_tail > 0.0 {
+        net.resistor(cathode_top, tail, spec.pi_tail);
+    }
+    if spec.pi_tail_lower > 0.0 {
+        net.resistor(tail, "gnd", spec.pi_tail_lower);
+    }
+    // And what the undriven grid is tied to, which is that node when there is a
+    // tail resistor and the cathodes themselves when there is not.
+    let tail = if spec.pi_tail > 0.0 { tail } else { cathode_top };
+    let cathode = "pi_k";
+    if spec.pi_cross > 0.0 {
+        net.capacitor(tail, "pi_g2", spec.pi_cross);
+    }
+    net.supply("pi_p1", spec.pi_plate_driven, spec.pi_supply)
         .supply("pi_p2", spec.pi_plate_other, spec.pi_supply)
-        .triode("pi_p1", driven_grid, "pi_k", spec.pi_tube)
-        .triode("pi_p2", "pi_g2", "pi_k", spec.pi_tube);
+        .triode("pi_p1", driven_grid, cathode, spec.pi_tube)
+        .triode("pi_p2", "pi_g2", cathode, spec.pi_tube);
     if spec.pi_plate_cap > 0.0 {
         net.capacitor("pi_p1", "pi_p2", spec.pi_plate_cap);
     }
@@ -626,10 +968,20 @@ fn assemble(
     net.supply("ht", spec.supply_resistance, spec.plate_supply)
         .capacitor("ht", "gnd", spec.reservoir)
         .supply("scr", spec.screen_resistance, spec.screen_supply)
-        .capacitor("scr", "gnd", spec.screen_reservoir)
-        // The bias supply. Stiff: it feeds two grid leaks and nothing else
-        // until the grids start drawing, and what happens then is the point.
-        .supply("bias", 22_000.0, spec.bias);
+        .capacitor("scr", "gnd", spec.screen_reservoir);
+    // Where the grid leaks return to, and where the valves' cathodes sit.
+    // Fixed bias: a stiff negative supply behind the leaks, cathodes on ground.
+    // Cathode bias: leaks on ground, cathodes on their own shared resistor.
+    let (leak_return, cathode) = if spec.cathode_bias > 0.0 {
+        net.resistor("ok", "gnd", spec.cathode_bias)
+            .capacitor("ok", "gnd", spec.cathode_bypass);
+        ("gnd", "ok")
+    } else {
+        // Stiff: it feeds two grid leaks and nothing else until the grids
+        // start drawing, and what happens then is the point.
+        net.supply("bias", 22_000.0, spec.bias);
+        ("bias", "gnd")
+    };
 
     // --- the output tubes ---------------------------------------------------
     for (side, plate, from) in [(1usize, "pl_a", "pi_p1"), (2, "pl_b", "pi_p2")] {
@@ -637,10 +989,16 @@ fn assemble(
         let node = format!("on{side}");
         let screen = format!("os{side}");
         net.capacitor(from, &node, spec.couple)
-            .resistor(&node, "bias", spec.grid_leak)
+            .resistor(&node, leak_return, spec.grid_leak)
             .resistor(&node, &grid, spec.stopper)
             .resistor("scr", &screen, spec.screen_resistor)
-            .pentode(plate, &grid, "gnd", &screen, spec.tubes_per_side, spec.tube);
+            .pentode(plate, &grid, cathode, &screen, spec.tubes_per_side, spec.tube);
+    }
+    // The cut control, across the two grids it has just built.
+    if spec.cut_pot > 0.0 {
+        net.rest(PRESENCE, spec.cut_rest)
+            .pot("on1", "cut", "cut", spec.cut_pot, Taper::Audio, PRESENCE)
+            .capacitor("cut", "on2", spec.cut_cap);
     }
 
     // --- the output transformer ---------------------------------------------
@@ -749,16 +1107,21 @@ fn assemble(
     // removes treble *from the loop* -- which puts treble back in the output.
     // A presence control is the only tone control that works by taking
     // something away from the amplifier's own correction.
-    net.resistor("spk", "tail", spec.feedback)
-        .capacitor("tail", "pres", spec.presence_cap)
-        .pot(
-            "pres",
-            "gnd",
-            "gnd",
-            spec.presence_pot,
-            Taper::Audio,
-            PRESENCE,
-        );
+    if spec.feedback > 0.0 {
+        net.resistor("spk", tail, spec.feedback);
+        // Not every amplifier with a loop puts a presence control in it. The
+        // Hiwatt's is in its preamplifier and is not built; see `circuits::dr103`.
+        if spec.presence_pot > 0.0 {
+            net.capacitor(tail, "pres", spec.presence_cap).pot(
+                "pres",
+                "gnd",
+                "gnd",
+                spec.presence_pot,
+                Taper::Audio,
+                PRESENCE,
+            );
+        }
+    }
 
     Ok((net.build(at)?, slots))
 }

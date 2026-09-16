@@ -27,8 +27,8 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    american312, bigmuff, brit800, cabinet, clipper, console_e, evh5150, iron, markiic, neve,
-    plexi, power, preamp, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, dr103, evh5150, iron,
+    markiic, neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -101,12 +101,21 @@ pub enum Gain {
     /// Marshall 1959 Super Lead (Unicord drawing, 1970), bright channel. Its
     /// matched power stage is the Brit Plexi EL34. See `circuits::plexi`.
     Plexi,
+    /// Vox AC30/6 Top Boost, brilliant channel. Cathode-biased EL84s with no
+    /// feedback loop behind it. See `circuits::ac30`.
+    AC30,
+    /// Hiwatt Custom 100 DR103, brilliant channel through its master volume.
+    /// See `circuits::dr103`.
+    DR103,
+    /// Mesa/Boogie Dual Rectifier, Rev F, the red channel in its modern setting.
+    /// See `circuits::rectifier`.
+    Recto,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 18] = [
+    pub const ALL: [Gain; 21] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -125,6 +134,9 @@ impl Gain {
         Gain::ConsoleE,
         Gain::Tube610,
         Gain::Plexi,
+        Gain::AC30,
+        Gain::DR103,
+        Gain::Recto,
     ];
 
     pub fn name(self) -> &'static str {
@@ -147,6 +159,9 @@ impl Gain {
             Gain::ConsoleE => "SSL 4000 E",
             Gain::Tube610 => "UA 610-A",
             Gain::Plexi => "1959 Super Lead",
+            Gain::AC30 => "AC30 Top Boost",
+            Gain::DR103 => "Hiwatt DR103",
+            Gain::Recto => "Dual Rectifier",
         }
     }
 
@@ -169,6 +184,9 @@ impl Gain {
             Gain::ConsoleE => console_e::GAIN,
             Gain::Tube610 => tube610::LEVEL,
             Gain::Plexi => plexi::VOLUME,
+            Gain::AC30 => ac30::VOLUME,
+            Gain::DR103 => dr103::VOLUME,
+            Gain::Recto => rectifier::GAIN,
             _ => clipper::GAIN,
         }
     }
@@ -206,7 +224,8 @@ impl Gain {
             Gain::Brit800 => "PREAMP",
             Gain::American312 | Gain::ConsoleE => "GAIN",
             Gain::Tube610 => "LEVEL",
-            Gain::Plexi => "VOLUME",
+            Gain::Plexi | Gain::AC30 | Gain::DR103 => "VOLUME",
+            Gain::Recto => "GAIN",
             _ => "DRIVE",
         }
     }
@@ -248,6 +267,11 @@ impl Gain {
             Gain::Boogie => Some(Level::Circuit(markiic::LEAD_MASTER)),
             // The 2203's Master Volume is the pot the Brit EL34 stage begins with.
             Gain::Peavey | Gain::Brit800 => Some(Level::Power(power::MASTER)),
+            // The DR103's master volume is in the preamplifier, between the
+            // stack and the last two triodes, which is where the drawing has it.
+            Gain::DR103 => Some(Level::Circuit(dr103::MASTER)),
+            // The red channel's master, in the preamplifier as the sheet has it.
+            Gain::Recto => Some(Level::Circuit(rectifier::MASTER)),
             _ => None,
         }
     }
@@ -262,6 +286,11 @@ impl Gain {
             Gain::Twin => Some((twin::BASS, twin::MIDDLE, twin::TREBLE)),
             Gain::Brit800 => Some((brit800::BASS, brit800::MIDDLE, brit800::TREBLE)),
             Gain::Plexi => Some((plexi::BASS, plexi::MIDDLE, plexi::TREBLE)),
+            // No middle control: the stack has a 10 k resistor where a Fender
+            // stack has that pot, so the panel's Middle knob is greyed out.
+            Gain::AC30 => Some((ac30::BASS, usize::MAX, ac30::TREBLE)),
+            Gain::DR103 => Some((dr103::BASS, dr103::MIDDLE, dr103::TREBLE)),
+            Gain::Recto => Some((rectifier::BASS, rectifier::MIDDLE, rectifier::TREBLE)),
             // The TS808 and the Muff have a single tone control, which the
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
@@ -309,6 +338,9 @@ impl Gain {
             Gain::Twin => Some(&power::PowerSpec::TWIN),
             Gain::Brit800 => Some(&power::PowerSpec::BRIT_EL34),
             Gain::Plexi => Some(&power::PowerSpec::PLEXI_EL34),
+            Gain::AC30 => Some(&power::PowerSpec::AC30_EL84),
+            Gain::DR103 => Some(&power::PowerSpec::DR103_EL34),
+            Gain::Recto => Some(&power::PowerSpec::RECTO_6L6),
             _ => None,
         }
     }
@@ -330,6 +362,9 @@ impl Gain {
                 | Gain::ConsoleE
                 | Gain::Tube610
                 | Gain::Plexi
+                | Gain::AC30
+                | Gain::DR103
+                | Gain::Recto
         )
     }
 
@@ -521,15 +556,21 @@ pub enum PowerModel {
     American6L6HighGain,
     BritEL34,
     BritPlexiEL34,
+    AC30EL84,
+    DR103EL34,
+    Recto6L6,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 5] = [
+    pub const ALL: [PowerModel; 8] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
         PowerModel::BritEL34,
         PowerModel::BritPlexiEL34,
+        PowerModel::AC30EL84,
+        PowerModel::DR103EL34,
+        PowerModel::Recto6L6,
     ];
 
     pub fn spec(self) -> &'static power::PowerSpec {
@@ -539,6 +580,9 @@ impl PowerModel {
             Self::American6L6HighGain => &power::PowerSpec::EVH5150,
             Self::BritEL34 => &power::PowerSpec::BRIT_EL34,
             Self::BritPlexiEL34 => &power::PowerSpec::PLEXI_EL34,
+            Self::AC30EL84 => &power::PowerSpec::AC30_EL84,
+            Self::DR103EL34 => &power::PowerSpec::DR103_EL34,
+            Self::Recto6L6 => &power::PowerSpec::RECTO_6L6,
         }
     }
 
@@ -549,6 +593,9 @@ impl PowerModel {
             Self::American6L6HighGain => 2,
             Self::BritEL34 => 3,
             Self::BritPlexiEL34 => 4,
+            Self::AC30EL84 => 5,
+            Self::DR103EL34 => 6,
+            Self::Recto6L6 => 7,
         }
     }
 
@@ -561,6 +608,9 @@ impl PowerModel {
             }
             Self::BritEL34 => voice_index(Gain::Brit800, Diode::Silicon, Amplifier::Valve),
             Self::BritPlexiEL34 => voice_index(Gain::Plexi, Diode::Silicon, Amplifier::Valve),
+            Self::AC30EL84 => voice_index(Gain::AC30, Diode::Silicon, Amplifier::Valve),
+            Self::DR103EL34 => voice_index(Gain::DR103, Diode::Silicon, Amplifier::Valve),
+            Self::Recto6L6 => voice_index(Gain::Recto, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -576,10 +626,13 @@ pub enum PowerAmp {
     American6L6HighGain,
     BritEL34,
     BritPlexiEL34,
+    AC30EL84,
+    DR103EL34,
+    Recto6L6,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 10] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -587,6 +640,9 @@ impl PowerAmp {
         Self::American6L6HighGain,
         Self::BritEL34,
         Self::BritPlexiEL34,
+        Self::AC30EL84,
+        Self::DR103EL34,
+        Self::Recto6L6,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -597,6 +653,9 @@ impl PowerAmp {
                 Gain::Peavey => Some(PowerModel::American6L6HighGain),
                 Gain::Brit800 => Some(PowerModel::BritEL34),
                 Gain::Plexi => Some(PowerModel::BritPlexiEL34),
+                Gain::AC30 => Some(PowerModel::AC30EL84),
+                Gain::DR103 => Some(PowerModel::DR103EL34),
+                Gain::Recto => Some(PowerModel::Recto6L6),
                 _ => None,
             },
             Self::Bypass => None,
@@ -605,6 +664,9 @@ impl PowerAmp {
             Self::American6L6HighGain => Some(PowerModel::American6L6HighGain),
             Self::BritEL34 => Some(PowerModel::BritEL34),
             Self::BritPlexiEL34 => Some(PowerModel::BritPlexiEL34),
+            Self::AC30EL84 => Some(PowerModel::AC30EL84),
+            Self::DR103EL34 => Some(PowerModel::DR103EL34),
+            Self::Recto6L6 => Some(PowerModel::Recto6L6),
         }
     }
 }
@@ -909,6 +971,9 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // output transformer is wound for a 600 ohm line.
         Gain::Tube610 => tube610::build(50.0, 600.0),
         Gain::Plexi => plexi::build(10_000.0, 1_000_000.0),
+        Gain::AC30 => ac30::build(10_000.0, 1_000_000.0),
+        Gain::DR103 => dr103::build(10_000.0, 1_000_000.0),
+        Gain::Recto => rectifier::build(10_000.0, 1_000_000.0),
     }
 }
 
@@ -2010,6 +2075,9 @@ impl Chain {
             PowerAmp::American6L6HighGain => 3,
             PowerAmp::BritEL34 => 4,
             PowerAmp::BritPlexiEL34 => 5,
+            PowerAmp::AC30EL84 => 6,
+            PowerAmp::DR103EL34 => 7,
+            PowerAmp::Recto6L6 => 8,
         };
         let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
         10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
