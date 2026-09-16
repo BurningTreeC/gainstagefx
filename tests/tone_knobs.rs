@@ -14,8 +14,8 @@ use gainstagefx::params::{Circuit, ToneStack};
 use gainstagefx::presets::PRESETS;
 
 /// The circuits whose drawings carry tone controls, and what each one has:
-/// the Mark IIC+ and the Twin a three-knob stack, the two pedals a single
-/// knob.
+/// the Mark IIC+ and the Twin a three-knob stack, most of the pedals a single
+/// knob, and the two Boss pedals more than one.
 ///
 /// This table is the panel's claim and `Gain::own_tone` is the circuit's, and
 /// the first test below is what keeps them the same sentence. It caught the
@@ -23,7 +23,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 9] = [
+const OWN: [(Circuit, [bool; 3]); 13] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     (Circuit::Plexi, [true, true, true]),
@@ -33,6 +33,15 @@ const OWN: [(Circuit, [bool; 3]); 9] = [
     (Circuit::Twin, [true, true, true]),
     (Circuit::Screamer, [false, false, true]),
     (Circuit::Muff, [false, false, true]),
+    (Circuit::Green9, [false, false, true]),
+    // The Rodent's is a filter and it runs backwards; the knob is made to
+    // agree with it by `Gain::tone_runs_backwards`.
+    (Circuit::Rat, [false, false, true]),
+    // The Heavy Metal's Colour Mix is a pair -- low and high, with nothing in
+    // the middle -- and the Metal Zone has a three band equaliser. Its fourth
+    // control, the sweep, is a knob of its own; see `Gain::own_sweep`.
+    (Circuit::Hm2, [true, false, true]),
+    (Circuit::Mt2, [true, true, true]),
 ];
 
 #[test]
@@ -112,7 +121,11 @@ fn the_pedals_single_control_is_called_tone() {
         );
     }
     for circuit in Circuit::ALL {
-        if circuit == Circuit::Screamer || circuit == Circuit::Muff {
+        // The pedals with one tone control, which is the case this names.
+        if matches!(
+            circuit,
+            Circuit::Screamer | Circuit::Muff | Circuit::Green9 | Circuit::Rat
+        ) {
             continue;
         }
         assert_eq!(

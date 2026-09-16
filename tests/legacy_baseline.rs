@@ -38,12 +38,29 @@ use std::f64::consts::TAU;
 
 /// Samples per voice block in `render`: four amplitudes, five signals, 2048 each.
 const BLOCK: usize = 4 * 5 * 2048;
+/// One run: a reset, an operating point, and 2048 samples of one signal.
+const RUN: usize = 2048;
+/// How many of the 400 runs are allowed to reach the solver's fallback.
+///
+/// Not zero, and that is the finding this test carries. Measured with a
+/// perturbation the size of a different libm's rounding, the 5150 settles every
+/// sample at every amplitude and every rate; the **Twin** reaches its fallback
+/// on a handful of samples at 0.03 and 0.7, and the **73P** on twenty-five to
+/// fifty samples per run at 0.126 and 0.7 -- the last of those even with no
+/// perturbation at all. A run that falls back is not reproducible across
+/// machines, because *which* samples fail depends on the last bit of
+/// arithmetic, and a different glibc's `exp` and `sin` differ there. So those
+/// runs are not compared, and this budget fails if more of them appear.
+const FALLBACK_BUDGET: usize = 40;
 /// The voices `render` walks, in order, at each rate.
 const VOICES: [Gain; 4] = [Gain::Boogie, Gain::Peavey, Gain::Twin, Gain::Neve];
 
-fn render() -> Vec<f32> {
+/// The rendered samples, and for each 2048-sample run whether the solver
+/// settled every sample of it.
+fn render() -> (Vec<f32>, Vec<bool>) {
     gainstagefx::dsp::time::enable_ftz_daz();
     let mut samples = Vec::new();
+    let mut settled = Vec::new();
     for rate in [44100.0, 48000.0, 88200.0, 96000.0, 192000.0] {
         let mut chain = Chain::new(rate);
         for gain in VOICES {
@@ -60,6 +77,7 @@ fn render() -> Vec<f32> {
                 for signal in 0..5 {
                     chain.reset();
                     chain.find_operating_point();
+                    let before = chain.solver_breakdown();
                     let mut seed = 0x12345678u32;
                     let mut pink = 0.0;
                     let mut phase = 0.0;
@@ -92,16 +110,18 @@ fn render() -> Vec<f32> {
                         assert!(y.is_finite(), "{gain:?} at {rate}");
                         samples.push(y as f32);
                     }
+                    let work = chain.solver_breakdown().saturating_delta(before);
+                    settled.push(work.gain.unsettled + work.power.unsettled == 0);
                 }
             }
         }
     }
-    samples
+    (samples, settled)
 }
 
 #[test]
 fn legacy_matched_output_is_preserved() {
-    let actual = render();
+    let (actual, settled) = render();
     let bytes = std::fs::read(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/fixtures/legacy-matched.f32le"
@@ -112,10 +132,42 @@ fn legacy_matched_output_is_preserved() {
     let mut energy = 0.0_f64;
     let (expected_samples, rest) = bytes.as_chunks::<4>();
     assert!(rest.is_empty(), "the fixture is not a whole number of samples");
+    // Which runs settled when the fixture was captured. A run is compared only
+    // if it settled *both* then and now: if it fell back at capture the stored
+    // samples came from the fallback and no other machine will reproduce them,
+    // and if it falls back now this machine will not reproduce the stored ones.
+    let captured_settled = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/legacy-matched.settled"
+    ))
+    .expect("the settled mask is captured beside the samples");
+    assert_eq!(captured_settled.len(), settled.len(), "the settled mask is the wrong length");
+
+    let fell_back = settled
+        .iter()
+        .zip(&captured_settled)
+        .filter(|(now, then)| !**now || **then == 0)
+        .count();
+    assert!(
+        fell_back <= FALLBACK_BUDGET,
+        "{fell_back} of {} runs reached the solver's fallback, which is more than the \
+         {FALLBACK_BUDGET} this test records. Those runs are not comparable across \
+         machines; if the number has grown, something has made the solve less stable.",
+        settled.len(),
+    );
+
+    let mut compared = 0usize;
     for (index, (&actual, bytes)) in actual.iter().zip(expected_samples).enumerate() {
         if VOICES[(index / BLOCK) % VOICES.len()] == Gain::Boogie {
             continue;
         }
+        // A run the solver did not settle is not reproducible on another
+        // machine: which samples reached the fallback depends on the last bit
+        // of arithmetic, and libm differs there between one glibc and another.
+        if !settled[index / RUN] || captured_settled[index / RUN] == 0 {
+            continue;
+        }
+        compared += 1;
         let expected = f32::from_le_bytes(*bytes);
         error += f64::from(actual - expected).powi(2);
         energy += f64::from(expected).powi(2);
@@ -125,21 +177,39 @@ fn legacy_matched_output_is_preserved() {
         );
     }
     eprintln!(
-        "legacy relative RMS error: {}",
-        (error / energy.max(1e-30)).sqrt()
+        "legacy relative RMS error: {} over {compared} samples; {fell_back} of {} runs \
+         reached the fallback and were skipped",
+        (error / energy.max(1e-30)).sqrt(),
+        settled.len(),
+    );
+    assert!(
+        compared > actual.len() / 2,
+        "only {compared} samples were comparable, which is too few to be a guard",
     );
 }
 
 #[test]
 #[ignore = "Run only against the pre-refactor source; overwrites the reference"]
 fn capture_pre_refactor_baseline() {
-    let bytes: Vec<u8> = render().iter().flat_map(|v| v.to_le_bytes()).collect();
+    let (samples, settled) = render();
+    let bytes: Vec<u8> = samples.iter().flat_map(|v| v.to_le_bytes()).collect();
     std::fs::write(
         concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/legacy-matched.f32le"
         ),
         bytes,
+    )
+    .unwrap();
+    // Which runs the solver settled, so the comparison can tell the
+    // reproducible part of this capture from the part that came from a
+    // fallback. See `FALLBACK_BUDGET`.
+    std::fs::write(
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/legacy-matched.settled"
+        ),
+        settled.iter().map(|ok| u8::from(*ok)).collect::<Vec<u8>>(),
     )
     .unwrap();
 }

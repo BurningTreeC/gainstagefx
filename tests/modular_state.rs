@@ -59,9 +59,14 @@ fn legacy_saved_presets_resolve_matched_and_new_ones_use_stable_ids() {
 
 #[test]
 fn display_names_change_without_reinterpreting_legacy_enum_positions() {
-    assert_eq!(
-        Circuit::ids().unwrap(),
-        &[
+    // These are the ids in the order a saved session's normalised value is
+    // measured against, and they are checked as a **prefix**: the list may grow
+    // at the end, and appending is how a circuit is added. What must never
+    // happen is one of these being renamed, reordered, or something being
+    // inserted among them -- any of which silently moves every automation lane
+    // recorded against the parameter. A prefix check fails on all three and
+    // passes an append, which is the rule this test exists to state.
+    let legacy: &[&str] = &[
             "clean",
             "crunch",
             "highgain",
@@ -82,9 +87,16 @@ fn display_names_change_without_reinterpreting_legacy_enum_positions() {
             "amp_marshall_1959",
             "amp_vox_ac30_tb",
             "amp_hiwatt_dr103",
-            "amp_dual_rectifier"
-        ]
+            "amp_dual_rectifier",
+    ];
+    let ids = Circuit::ids().unwrap();
+    assert!(
+        ids.len() >= legacy.len(),
+        "the circuit list has shrunk: {} ids against {} legacy ones",
+        ids.len(),
+        legacy.len(),
     );
+    assert_eq!(&ids[..legacy.len()], legacy, "a legacy circuit id moved or was renamed");
     assert_eq!(Circuit::Boogie.name(), "Cali IIC+");
     // A preset's power stage is written as its stable position in the list.
     for preset in presets::PRESETS {
