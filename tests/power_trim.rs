@@ -19,9 +19,13 @@ fn level(gain: Gain, power_amp: PowerAmp, drive: f64) -> f64 {
     let mut sum = 0.0;
     for i in 0..n {
         let t = i as f64 / rate;
+        // The same low chord `examples/powertrim.rs` measures the table with.
+        // A trim measured on one signal does not null on another, and when the
+        // two drifted apart this test failed by a decibel with nothing wrong.
         let x = amplitude
-            * ((std::f64::consts::TAU * 110.0 * t).sin() * 0.7
-                + (std::f64::consts::TAU * 330.0 * t).sin() * 0.3);
+            * ((std::f64::consts::TAU * 82.4 * t).sin() * 0.5
+                + (std::f64::consts::TAU * 123.5 * t).sin() * 0.3
+                + (std::f64::consts::TAU * 246.9 * t).sin() * 0.2);
         let y = chain.process(x);
         if i >= n / 2 {
             sum += y * y;

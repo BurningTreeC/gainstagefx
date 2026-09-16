@@ -27,9 +27,18 @@ fn level(gain: Gain, drive: f64) -> (f64, f64) {
     let mut peak = 0.0f64;
     let mut sum = 0.0f64;
     let n = RATE as usize / 2;
+    // A low chord, not one tone. The make-up normalises the level of the whole
+    // output, so measuring it with a single sine reads a shaped circuit
+    // wherever that one frequency happens to fall -- which for the Boss HM-2
+    // was in the trough between its two bands, twenty decibels from the truth.
+    let partials = [(82.4, 0.5), (123.5, 0.3), (246.9, 0.2)];
     for k in 0..(n + 4096) {
         let t = k as f64 / RATE;
-        let y = c.process(amp * (std::f64::consts::TAU * 220.0 * t).sin());
+        let x: f64 = partials
+            .iter()
+            .map(|(hz, a)| a * (std::f64::consts::TAU * hz * t).sin())
+            .sum();
+        let y = c.process(amp * x);
         if k >= 4096 {
             peak = peak.max(y.abs());
             sum += y * y;
@@ -39,25 +48,15 @@ fn level(gain: Gain, drive: f64) -> (f64, f64) {
 }
 
 fn main() {
-    println!("220 Hz at nominal (-18 dBFS RMS) in, tone + cabinet + iron on, 4x.");
+    println!("A low chord at nominal (-18 dBFS RMS) in, tone + cabinet + iron on, 4x.");
     println!("Output RMS in dBFS. A working make-up holds this roughly level.\n");
     print!("  {:<12}", "voice");
     for d in [0.0, 0.1, 0.25, 0.5, 0.75, 1.0] {
         print!("{d:>10.2}");
     }
     println!("{:>12}", "spread");
-    for gain in [
-        Gain::Clean,
-        Gain::Crunch,
-        Gain::HighGain,
-        Gain::Overdrive,
-        Gain::Distortion,
-        Gain::Screamer,
-        Gain::Muff,
-        Gain::Boogie,
-        Gain::Peavey,
-        Gain::Neve,
-    ] {
+    // The whole list, so a voice cannot be added without its level being seen.
+    for gain in Gain::ALL {
         print!("  {:<12}", gain.name());
         let mut db = Vec::new();
         for d in [0.0, 0.1, 0.25, 0.5, 0.75, 1.0] {

@@ -12,14 +12,38 @@ fn nominal() -> f64 {
 }
 
 /// Peak level in dBFS of a settled tone at a chain's output.
+/// The low chord every level measurement in this project is made on: a root, a
+/// fifth and an octave. The make-up normalises the level of the **whole**
+/// output, so it has to be checked the same way it is built -- with one sine it
+/// reads a shaped circuit wherever that frequency happens to fall. See
+/// `examples/calibrate.rs`.
+const PARTIALS: [(f64, f64); 3] = [(82.4, 0.5), (123.5, 0.3), (246.9, 0.2)];
+
+fn chord(amplitude: f64, rate: f64, k: usize) -> f64 {
+    let t = k as f64 / rate;
+    amplitude
+        * PARTIALS
+            .iter()
+            .map(|(hz, a)| a * (std::f64::consts::TAU * hz * t).sin())
+            .sum::<f64>()
+}
+
+/// Level of the whole output, in decibels, settled first.
+fn broadband(amplitude: f64, mut step: impl FnMut(f64) -> f64) -> f64 {
+    let n = (RATE / 4.0) as usize;
+    for k in 0..n {
+        step(chord(amplitude, RATE, k));
+    }
+    let mut sum = 0.0;
+    for k in n..2 * n {
+        let y = step(chord(amplitude, RATE, k));
+        sum += y * y;
+    }
+    20.0 * (sum / n as f64).sqrt().max(1e-12).log10()
+}
+
 fn level_through(chain: &mut Chain, amplitude: f64) -> f64 {
-    let tone = Tone::near(RATE, 16_384, 220.0, amplitude);
-    measure::run(tone, (RATE / 2.0) as usize, |x| chain.process(x))
-        .fundamental()
-        .magnitude()
-        .max(1e-12)
-        .log10()
-        * 20.0
+    broadband(amplitude, |x| chain.process(x))
 }
 
 /// Everything the plugin can select has to build. A `Fault` at this point is
@@ -204,15 +228,16 @@ fn the_calibration_table_still_describes_the_circuits() {
             let mut power = behind.clone().map(|netlist| Simulation::new(netlist, RATE));
             // The knots are not evenly spaced -- see `voice::knot_position`.
             sim.set_control(gain.drive_control(), voice::knot_position(i));
-            let tone = Tone::near(RATE, 16_384, 220.0, c.drive_volts);
-            let got = -measure::run(tone, (RATE / 10.0) as usize, |x| {
-                let y = sim.process(x);
-                match power {
-                    Some(ref mut p) => p.process(y),
-                    None => y,
-                }
-            })
-            .gain_db();
+            // Against the input's own level, which is what a gain is.
+            let reference = broadband(c.drive_volts, |x| x);
+            let got = reference
+                - broadband(c.drive_volts, |x| {
+                    let y = sim.process(x);
+                    match power {
+                        Some(ref mut p) => p.process(y),
+                        None => y,
+                    }
+                });
             assert!(
                 (got - expected).abs() < 0.5,
                 "{} / {} / {} at drive {}/{}: the table says {expected:.2} dB \
@@ -244,9 +269,14 @@ fn the_make_up_holds_the_level_between_the_measured_points() {
             let mut chain = Chain::new(RATE);
             chain.set_voice(gain, diode, amplifier);
             chain.set_drive(drive);
-            let out = level_through(&mut chain, nominal());
-            if (out - NOMINAL_DBFS).abs() > worst {
-                worst = (out - NOMINAL_DBFS).abs();
+            // Against the input chord's own level. Comparing an output RMS
+            // with `NOMINAL_DBFS` -- the chord's *peak* constant -- reads every
+            // voice seven decibels low, which is the chord's crest and nothing
+            // to do with the make-up.
+            let reference = broadband(nominal(), |x| x);
+            let out = level_through(&mut chain, nominal()) - reference;
+            if out.abs() > worst {
+                worst = out.abs();
                 worst_at = drive;
             }
         }

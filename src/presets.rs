@@ -550,7 +550,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::Closed112,
         mic_a_position: 0.35,
         oversampling: Oversampling::Four,
-        output_trim: 4.0,
+        output_trim: 15.0,
         ..base("Distortion", "Blended Grit")
     },
     // The modelled four stage fuzz. Its tone control is a scoop rather than a
@@ -1029,7 +1029,7 @@ pub const PRESETS: &[Preset] = &[
         // An HM-2 with everything at ten into a clean amplifier is the loudest
         // thing in the catalogue; this is the trim that keeps it level with the
         // rest. Measured with `examples/presetlevel.rs`.
-        output_trim: -10.0,
+        output_trim: -24.0,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Swedish Death '90")
     },
@@ -1066,7 +1066,7 @@ pub const PRESETS: &[Preset] = &[
         mic_blend: 0.3,
         // Two pedals in series, each attenuating after it clips, so the chain
         // arrives quiet. Measured with `examples/presetlevel.rs`.
-        output_trim: 16.0,
+        output_trim: 0.0,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Slaughter '95")
     },
@@ -1260,7 +1260,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_position: 0.4,
         mic_b_distance: 0.03,
         mic_blend: 0.35,
-        output_trim: -3.0,
+        output_trim: -11.0,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Machine Rage '92")
     },
@@ -1292,7 +1292,7 @@ pub const PRESETS: &[Preset] = &[
         mic_blend: 0.35,
         // A fuzz into a master-volume head with the master wide open is the
         // loudest thing here by a distance; this is what levels it.
-        output_trim: -12.0,
+        output_trim: -24.0,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Pumpkin Dream '93")
     },

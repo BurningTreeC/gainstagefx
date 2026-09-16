@@ -192,6 +192,41 @@ Microphones (research: `docs/models/microphones.md`):
 | Semiconductors | BC549, BC109C, TIP3055, FS36999, 2N5457, J201, J113, 2SC3378, 1N914/1N4148, Si/Ge/LED | various | Ebers-Moll NPN and PNP (PNP added 2026-09-15), Shockley diodes, square-law JFET, AC128 |
 | Op-amp | JRC4558 (TS808) and generic; LM308 (Rodent) | `netlist` `OpAmp`, `Transconductor`; `rodent::lm308` | ideal with rail limit; LM308 built from a saturating transconductor into an integrator for GBW and slew |
 
+## 6b. Planned: the modern high-gain chain and bass
+
+Requested 2026-09-16 as two addenda. **None is implemented**, and none may be until its
+schematic-first checkpoint is done; the requirements, the research each one needs and the
+cross-combination tests are written up in [ROADMAP.md](ROADMAP.md).
+
+Modern high-gain chain:
+
+| Proposed ID | Display | Hardware inspiration | Status |
+|---|---|---|---|
+| `pedal_revv_g3` | Modern Purple | **Revv G3 / G3 V2** (revision to be chosen) | PLANNED, not researched. A distortion/preamp, not a boost; the Aggression switch must be established from the circuit |
+| `pedal_fortin_33` | Modern 33 | **Fortin 33** | PLANNED, not researched. A frequency-shaping boost for an already-distorted amplifier -- a different device from Modern Purple, not a re-EQ of it |
+| `amp_revv_generator` | Modern Generator | **Revv Generator 120** (MK3 / current revision) | PLANNED, not researched. Purple channel primarily, Red channel researched before deciding on multiple channels. Its own topology, not the Cali IIC+ with new constants |
+| `power_revv_generator_6l6` | Modern 6L6 | the Generator-family power stage | PLANNED, not researched. Phase inverter, 6L6 configuration, bias, feedback, Presence, **Depth in the feedback loop where the circuit puts it**, transformer, supply, load interaction |
+| `cab_modern_oversized_4x12` | Modern Oversized 4x12 | modern oversized sealed high-gain 4x12 designs | PLANNED, not researched. A GainStageFx design informed by documented real geometry; **not** the Cali Oversized profile renamed. Pairs with the existing `spk_celestion_v30`, reused |
+
+Bass -- amplifiers, their power stages, and drives:
+
+| Proposed ID | Display | Hardware inspiration | Status |
+|---|---|---|---|
+| `amp_ampeg_svt` | American SVT | **Ampeg SVT** (revision to be chosen; the name covers several amplifiers) | PLANNED, not researched |
+| `power_svt_6550` | American 6550 | the SVT-family power stage | PLANNED. A large part of the model, not an afterthought |
+| `amp_gk_800rb` | American 800RB | **Gallien-Krueger 800RB** | PLANNED. A different architecture, not a cleaner SVT |
+| `power_gk_800rb` | American SS 800 | the 800RB solid-state power stage | PLANNED. Solid-state; no invented tube sag |
+| `amp_darkglass_microtubes_900` | Modern Micro 900 | **Darkglass Microtubes 900** (generation to be chosen) | PLANNED. Model the electronics, not valve equations |
+| `power_modern_bass_900` | Modern Bass Power | the Microtubes 900 power stage | PLANNED. If Class-D, a justified audio-band reduction rather than switching simulation |
+| `pedal_sansamp_bass_driver` | Bass Driver | **Tech 21 SansAmp Bass Driver DI** (generation to be chosen) | PLANNED. Check Blend's real topology for phase; its speaker emulation stacks with the plugin's cabinet |
+| `pedal_darkglass_b3k` | Modern Micro B3 | **Darkglass Microtubes B3K** | PLANNED. Derive the parallel architecture from the circuit rather than assuming it |
+| `pedal_bass_big_muff` | Bass Fuzz Pi | **EHX Bass Big Muff Pi** | PLANNED. Researched separately from the Ram Fuzz; reuse `circuits::bigmuff` where topology is genuinely shared |
+| (none) | Bass Rodent | ProCo RAT, already modelled | **Reuse, do not duplicate**: a bass-oriented configuration of the existing `pedal_rat`, unless research shows the hardware differs |
+
+Bass cabinets (8x10 sealed, 4x10, 1x15) and the DI tap are architectural work rather than
+a single model; see the roadmap. `spk_celestion_v30` and the existing microphones are
+reused throughout rather than duplicated.
+
 ## 7. Gaps between repository and targets
 
 - **Implemented and already renamed:** Green 808, Cali IIC+, American 5150,

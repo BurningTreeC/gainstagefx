@@ -241,7 +241,8 @@ Sources: [Guitar World: how the MT-2 conquered the world](https://www.guitarworl
 ## Era presets: waiting for components
 
 These are not added under approximate aliases. Each needs the listed model first,
-plus its own rig research at that time.
+plus its own rig research at that time. The same blockers are collected alongside the
+planned modern-high-gain and bass work in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 | Preset | Blocked on |
 |---|---|

@@ -5,13 +5,13 @@
 //! pedal each preset carries, which is what a level decision needs: whether one
 //! preset is out on its own, and whether the pedal presets sit with the rest.
 //!
-//! One tone at 220 Hz rather than loudness, the same as the test: a scooping
-//! voicing really is ten decibels down *there* while being no quieter overall,
-//! so read a few decibels as nothing and a dozen as something.
+//! Measured **broadband**, on a low chord, the same as the test. It was one
+//! 220 Hz tone, which is not loudness: a preset with a heavily shaped pedal in
+//! front read at the mean on that sine while sitting nineteen decibels above it
+//! in the room, because 220 Hz fell in the trough between the pedal's bands.
 //!
 //! `cargo run --release --example presetlevel`
 
-use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::params::PedalModel;
 use gainstagefx::presets::PRESETS;
 use gainstagefx::voice::{Chain, NOMINAL_DBFS};
@@ -26,12 +26,25 @@ fn main() {
         chain.settle();
         let trim = 10f64.powf(preset.output_trim as f64 / 20.0);
         let amplitude = 10f64.powf((NOMINAL_DBFS + preset.input_trim as f64) / 20.0);
-        let tone = Tone::near(RATE, 16_384, 220.0, amplitude);
-        let out = measure::run(tone, (RATE / 2.0) as usize, |x| chain.process(x))
-            .fundamental()
-            .magnitude()
-            * trim
-            * preset.mix as f64;
+        let n = (RATE / 2.0) as usize;
+        let partials = [(82.4, 0.5), (123.5, 0.3), (246.9, 0.2)];
+        let at = |k: usize| -> f64 {
+            let t = k as f64 / RATE;
+            amplitude
+                * partials
+                    .iter()
+                    .map(|(hz, a)| a * (std::f64::consts::TAU * hz * t).sin())
+                    .sum::<f64>()
+        };
+        for k in 0..n {
+            chain.process(at(k));
+        }
+        let mut sum = 0.0;
+        for k in n..2 * n {
+            let y = chain.process(at(k));
+            sum += y * y;
+        }
+        let out = (sum / n as f64).sqrt() * trim * preset.mix as f64;
         let db = 20.0 * out.max(1e-9).log10() - NOMINAL_DBFS;
         levels.push((db, preset.name, preset.pedal, preset.output_trim));
     }

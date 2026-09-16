@@ -11,7 +11,24 @@
 //! (`modelled_circuits_are_capped_not_pinned`), and what it means for a saved
 //! session is in the README.
 //!
-//! One deliberate exception, recorded here rather than by regenerating the file:
+//! **Re-baselined once, on 2026-09-16, and this is the reason.** The make-up that
+//! level matches the circuit list was built from the gain of the *fundamental*
+//! of a single 220 Hz sine. That is not loudness, and the error grows with
+//! distortion: measured broadband the catalogue spanned 14.2 dB while being
+//! nominally matched, with the most distorted circuits ten decibels above the
+//! cleanest. The make-up now normalises the whole output, which changes every
+//! voice's level -- including all four of the ones this file holds -- so the
+//! old capture could not survive the correction. The table is anchored so the
+//! catalogue's *average* loudness is unchanged (+0.48 dB), and this fixture was
+//! captured again against the corrected make-up. It guards these voices from
+//! here on exactly as before.
+//!
+//! This is a deliberate, documented change of the measurement, not a
+//! regeneration to make a failing test pass. The rule stands: if this file stops
+//! matching and you did not mean to change what the plugin does, the plugin is
+//! what is wrong.
+//!
+//! One earlier exception, recorded the same way rather than by regenerating:
 //! the Mark IIC+ voice was corrected on 2026-09-15 to include the lead return,
 //! V2B, the Lead Master and V2A, which both of its drawings have and the frozen
 //! model left out (`docs/models/cali_iic_plus.md`). Its blocks are no longer

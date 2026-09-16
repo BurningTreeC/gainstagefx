@@ -736,3 +736,75 @@ low-to-high balance 7.2 to 6.8 dB -- for the reason he gave, that the amplifier 
 saturated.
 
 Seventy-three presets.
+
+## Next: two addenda, written up rather than started
+
+Requested 2026-09-16: a **modern high-gain chain** (Revv G3 as Modern Purple, Fortin 33 as
+Modern 33, Revv Generator 120 as Modern Generator with its own Modern 6L6 power stage, and
+a Modern Oversized 4x12 reusing the Brit V30) and **bass** (Ampeg SVT, GK 800RB and
+Darkglass Microtubes 900 with a power stage each; SansAmp Bass Driver DI, Darkglass B3K and
+the Bass Big Muff; bass cabinets including an 8x10 array; and a DI tap).
+
+Eleven models, every one of which needs its schematic-first checkpoint before any code, so
+what exists today is the write-up: **[docs/ROADMAP.md](docs/ROADMAP.md)**, with the
+requirements, the research each needs, the traps named in the requests (the Aggression
+switch, Depth belonging in the feedback loop, Blend's phase, an 8x10 not being one speaker
+times eight, "Microtubes" not meaning valve equations), the cross-combination tests, and
+the eight devices the album presets are still waiting on. `docs/MODEL_INVENTORY.md`
+carries them as PLANNED rows with their stable ids.
+
+Two overlaps worth taking together: the **Ampeg VT** that *Desert Deaf '02* and
+*Californicated '99* want is a close relation of the SVT work, and the **Sunn Model T**
+that *Unknown Garden '94* wants is a large valve amplifier of the same era.
+
+## Session 14 (2026-09-16): the level matching was measured on one tone
+
+Reported as "everything using the HM-2 is way too loud", and it was -- but the HM-2 was
+only the sharpest instance of a fault in the whole catalogue.
+
+**The make-up was built from `gain_db()`: the gain of the *fundamental* of a single 220 Hz
+sine.** That is not loudness, and the two part company as distortion rises -- at the HM-2's
+88 % the fundamental is a minority of what comes out, so normalising it left the output far
+too loud. Measured broadband, a catalogue that was nominally level matched spanned
+**14.2 dB**, with the most distorted circuits ten decibels above the cleanest:
+
+| | before | after |
+|---|---|---|
+| Boss MT-2 | +3.1 | -28.8 |
+| Boss HM-2 | +1.0 | -29.5 |
+| Twin Reverb | -1.6 | -26.9 |
+| JCM800 2203 | -11.1 | -27.1 |
+| **spread** | **14.2 dB** | **~4 dB** |
+
+The make-up now normalises the **whole output**, measured on a low chord -- a root, a fifth
+and an octave -- rather than one sine.
+
+**Anchored, deliberately.** Correcting the metric fixes how the circuits sit against each
+other, which is what level matching is for; on its own it would also move the catalogue's
+absolute loudness and every session saved with it. One constant offset keeps the average
+where it was: **+0.48 dB**, computed in the generator from the table compiled in at the
+time, so it is exact and running the generator twice changes nothing the second time.
+
+**Everything that measures level now measures the same thing**, which is how the fault hid
+for so long: `examples/calibrate.rs`, `examples/powertrim.rs`, `examples/presetlevel.rs`,
+`examples/loudness.rs` (now walking `Gain::ALL`, so a new voice cannot be added without its
+level being seen), `tests/presets.rs`, `tests/power_trim.rs` and `tests/voice.rs` all use
+the one chord. Two of those had been measuring against a different signal than the table
+they were checking, which is why `power_trim` failed by a decibel with nothing wrong.
+
+**Preset trims re-derived.** Five had been set against the old metric and were badly wrong
+-- *Slaughter '95* had been trimmed **+16 dB** from a reading that was 23 dB out. The
+catalogue now spans 13.8 dB broadband and the HM-2 presets sit in the middle of it rather
+than at the top.
+
+**The frozen fixture was re-baselined once**, deliberately, with the reason written into
+its header beside the exception already recorded there. Every voice's level changed, so the
+old capture could not survive the correction; it guards these four voices from here on
+exactly as before. The rule is unchanged: if it stops matching and you did not mean to
+change what the plugin does, the plugin is what is wrong.
+
+**One test was wrong, not the plugin.** `the_make_up_holds_the_level_between_the_measured_points`
+compared an output RMS against `NOMINAL_DBFS`, the chord's *peak* constant, and read every
+voice seven decibels low -- the chord's crest factor, nothing to do with the make-up. It
+compares against the input's own broadband level now. Measured properly, the make-up holds
+the Clean voice within **0.13 dB** across the top five knots.

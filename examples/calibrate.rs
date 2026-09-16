@@ -273,6 +273,47 @@ fn measured(sim: &mut Voice, volts: f64) -> measure::Measured {
     measure::run(tone, (RATE / 10.0) as usize, |x| sim.process(x))
 }
 
+/// What the circuit does to the **level of the whole output**, in decibels, for
+/// a signal with something in it.
+///
+/// This is what the make-up is built from, and it used to be
+/// `measured(..).gain_db()` -- the gain of the *fundamental* of one 220 Hz
+/// sine. That is not loudness, and the difference between the two grows with
+/// distortion: at eighty-eight per cent the fundamental is a minority of what
+/// comes out, so normalising it leaves the output far too loud. Measured across
+/// the catalogue, that metric left a list which was nominally level matched
+/// spanning **14.2 dB** broadband, with the most distorted circuits at the top
+/// and the cleanest at the bottom -- the Boss HM-2 ten decibels above a JCM800.
+///
+/// A low chord rather than a sine, because a guitar is not a sine and the
+/// energy a listener hears is spread across the band: a root, a fifth and an
+/// octave, which is enough to excite a shaped circuit everywhere it is shaped.
+fn broadband_db(sim: &mut Voice, volts: f64) -> f64 {
+    let n = (RATE / 4.0) as usize;
+    let partials = [(82.4, 0.5), (123.5, 0.3), (246.9, 0.2)];
+    // Settle first: the reactances have to arrive before anything is counted.
+    for k in 0..n {
+        let t = k as f64 / RATE;
+        let x: f64 = partials
+            .iter()
+            .map(|(hz, a)| a * (std::f64::consts::TAU * hz * t).sin())
+            .sum();
+        sim.process(volts * x);
+    }
+    let (mut out, mut inp) = (0.0, 0.0);
+    for k in n..2 * n {
+        let t = k as f64 / RATE;
+        let x: f64 = partials
+            .iter()
+            .map(|(hz, a)| a * (std::f64::consts::TAU * hz * t).sin())
+            .sum();
+        let y = sim.process(volts * x);
+        out += y * y;
+        inp += (volts * x) * (volts * x);
+    }
+    10.0 * (out / inp.max(1e-30)).max(1e-30).log10()
+}
+
 fn main() {
     // --peak mode: measure the actual peak THD for Boogie and Peavey, then exit.
     if std::env::args().any(|a| a == "--peak") {
@@ -327,7 +368,9 @@ fn main() {
     println!("// Do not edit by hand: run the example and paste its output over this");
     println!("// file. `tests/voice.rs` re-measures every entry and fails on drift.");
     println!();
-    println!("pub const CALIBRATION: [Calibration; VOICES] = [");
+    // Collected rather than printed as they are measured, because the anchor
+    // below needs all of them before any can be written.
+    let mut rows: Vec<(String, f64, [f64; POINTS])> = Vec::new();
 
     for index in 0..VOICES {
         let (gain, diode, amplifier) = voice::voice_at(index);
@@ -391,7 +434,7 @@ fn main() {
         for (i, slot) in make_up.iter_mut().enumerate() {
             let mut sim = Voice::new(gain, diode, amplifier);
             sim.set_control(gain.drive_control(), voice::knot_position(i));
-            *slot = -measured(&mut sim, drive_volts).gain_db();
+            *slot = -broadband_db(&mut sim, drive_volts);
         }
 
         let mut check = Voice::new(gain, diode, amplifier);
@@ -423,7 +466,7 @@ fn main() {
                 _ => "a valve",
             })
         };
-        println!(
+        let note = format!(
             "    // {} with {}: {:.4} V in, {:.1} % distortion, {:.1} % third.{}",
             gain.name(),
             part,
@@ -436,11 +479,65 @@ fn main() {
                 " This voice cannot reach\n    // its intended figure at any level, so this is its peak."
             },
         );
+        rows.push((note, drive_volts, make_up));
+    }
+
+    // The anchor.
+    //
+    // Correcting the metric fixes how the circuits sit *against each other*,
+    // which is what level matching is for; on its own it would also move the
+    // whole catalogue's absolute loudness, and every session anyone has saved
+    // with it. So the table is offset by one constant, chosen so the average
+    // stays where the old metric left it. The matching is the correction; the
+    // absolute level is deliberately left alone.
+    //
+    // The average is taken over the guitar voices at the middle of the drive
+    // control. The studio preamplifiers are excluded: they are calibrated at
+    // their own input levels, from four millivolts to a volt, and averaging
+    // them with guitar circuits would let a microphone preamplifier pull the
+    // whole catalogue about.
+    // The old mean is read from the table that is compiled in right now rather
+    // than written down as a number, so this is exact and running the generator
+    // twice changes nothing the second time.
+    let middle = POINTS / 2;
+    let is_guitar = |index: usize| {
+        let (gain, _, _) = voice::voice_at(index);
+        !matches!(
+            gain,
+            Gain::Console
+                | Gain::Studio
+                | Gain::Neve
+                | Gain::American312
+                | Gain::ConsoleE
+                | Gain::Tube610
+                | Gain::Clean
+        )
+    };
+    let mean_of = |values: Vec<f64>| values.iter().sum::<f64>() / values.len().max(1) as f64;
+    let old_mean = mean_of(
+        (0..VOICES)
+            .filter(|i| is_guitar(*i))
+            .map(|i| voice::CALIBRATION[i].make_up_db[middle])
+            .collect(),
+    );
+    let new_mean = mean_of(
+        rows.iter()
+            .enumerate()
+            .filter(|(i, _)| is_guitar(*i))
+            .map(|(_, (_, _, make_up))| make_up[middle])
+            .collect(),
+    );
+    let anchor = old_mean - new_mean;
+    println!("// Anchored by {anchor:+.2} dB so the catalogue's average loudness is");
+    println!("// unchanged; see `calibrate.rs`. The correction is the matching.");
+    println!("pub const CALIBRATION: [Calibration; VOICES] = [");
+    for (note, drive_volts, make_up) in &rows {
+        println!("{note}");
         println!("    Calibration {{");
         println!("        drive_volts: {drive_volts:.6},");
         print!("        make_up_db: [");
         for (i, m) in make_up.iter().enumerate() {
-            print!("{}{m:.2}", if i > 0 { ", " } else { "" });
+            print!("{}{:.2}", if i > 0 { ", " } else { "" }, m + anchor);
         }
         println!("],");
         println!("    }},");

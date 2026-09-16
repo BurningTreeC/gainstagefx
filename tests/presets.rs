@@ -257,11 +257,38 @@ fn the_catalogue_spans_from_subtle_to_squared_off() {
 /// Loading a preset should not change how loud the track is. They are worked
 /// examples, and comparing two of them has to be a comparison of sound.
 ///
-/// This is one tone at 220 Hz, not loudness, and the threshold is loose
-/// because of it: a scooping voicing into a stack really is ten decibels down
-/// *at 220 Hz* while being no quieter overall, and tightening this would only
-/// mean forbidding the scoop. It catches a preset that is broadly wrong, which
-/// is what it is for.
+/// **Measured broadband**, on a low chord rather than one tone. It was one
+/// 220 Hz sine, and the threshold was loose to excuse it -- "a scooping voicing
+/// really is ten decibels down *at 220 Hz* while being no quieter overall". That
+/// excuse turned out to hide twenty decibels: a preset with a heavily shaped
+/// pedal in front sat at the mean on the sine and nineteen above it in the room,
+/// because 220 Hz fell in the trough between that pedal's two bands. One
+/// frequency cannot stand in for loudness when the circuit's whole job is to
+/// reshape the spectrum.
+/// The level of a chain's whole output, in decibels against a nominal signal:
+/// a root, a fifth and an octave, settled first and then measured.
+fn loudness(chain: &mut Chain, amplitude: f64) -> f64 {
+    let n = (RATE / 2.0) as usize;
+    let partials = [(82.4, 0.5), (123.5, 0.3), (246.9, 0.2)];
+    let at = |k: usize| -> f64 {
+        let t = k as f64 / RATE;
+        amplitude
+            * partials
+                .iter()
+                .map(|(hz, a)| a * (std::f64::consts::TAU * hz * t).sin())
+                .sum::<f64>()
+    };
+    for k in 0..n {
+        chain.process(at(k));
+    }
+    let mut sum = 0.0;
+    for k in n..2 * n {
+        let y = chain.process(at(k));
+        sum += y * y;
+    }
+    20.0 * (sum / n as f64).sqrt().max(1e-12).log10() - NOMINAL_DBFS
+}
+
 #[test]
 fn the_presets_are_level_matched() {
     let mut levels = Vec::new();
@@ -272,13 +299,7 @@ fn the_presets_are_level_matched() {
         chain.settle();
         let trim = 10f64.powf(preset.output_trim as f64 / 20.0);
         let amplitude = 10f64.powf((NOMINAL_DBFS + preset.input_trim as f64) / 20.0);
-        let tone = Tone::near(RATE, 16_384, 220.0, amplitude);
-        let out = measure::run(tone, (RATE / 2.0) as usize, |x| chain.process(x))
-            .fundamental()
-            .magnitude()
-            * trim
-            * preset.mix as f64;
-        levels.push((preset.name, 20.0 * out.max(1e-9).log10() - NOMINAL_DBFS));
+        levels.push((preset.name, loudness(&mut chain, amplitude) + 20.0 * (trim * preset.mix as f64).log10()));
     }
     let (loudest, high) = levels
         .iter()

@@ -31,8 +31,11 @@ pub fn level(gain: Gain, power_amp: PowerAmp) -> f64 {
     for i in 0..n {
         let t = i as f64 / RATE;
         let x = amplitude
-            * ((std::f64::consts::TAU * 110.0 * t).sin() * 0.7
-                + (std::f64::consts::TAU * 330.0 * t).sin() * 0.3);
+            // The same low chord the calibration and the preset levels use, so
+            // every level measurement in the project is made on one signal.
+            * ((std::f64::consts::TAU * 82.4 * t).sin() * 0.5
+                + (std::f64::consts::TAU * 123.5 * t).sin() * 0.3
+                + (std::f64::consts::TAU * 246.9 * t).sin() * 0.2);
         let y = chain.process(x);
         if i >= n / 2 {
             sum += y * y;
