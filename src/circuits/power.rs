@@ -53,7 +53,9 @@
 //!   the mains and with how hard the amplifier is being driven.
 
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues};
-use crate::dsp::netlist::{Circuit, CoreSpec, Fault, Netlist, PentodeSpec, Taper, TriodeSpec};
+use crate::dsp::netlist::{
+    Circuit, CoreSpec, Fault, Netlist, PentodeSpec, RectifierSpec, Taper, TriodeSpec,
+};
 
 /// The presence control.
 pub const PRESENCE: usize = 0;
@@ -144,6 +146,14 @@ pub struct PowerSpec {
     /// What the supply looks back through. This is the sag: a stiff supply is
     /// a small resistance behind a large reservoir.
     pub supply_resistance: f64,
+    /// A rectifier valve between that and the reservoir, where the amplifier
+    /// has one. `None` is a silicon bridge, which is what a fixed resistance
+    /// already describes.
+    ///
+    /// With one fitted the transformer's own winding resistance stays as
+    /// `supply_resistance` and the valve goes in front of the reservoir, so the
+    /// rail's drop under load is the valve's own law rather than a number.
+    pub rectifier: Option<RectifierSpec>,
     pub reservoir: f64,
     pub screen_resistance: f64,
     pub screen_reservoir: f64,
@@ -240,6 +250,7 @@ impl PowerSpec {
         plate_supply: 470.0,
         screen_supply: 468.0,
         supply_resistance: 100.0,
+        rectifier: None,
         reservoir: 50e-6,
         screen_resistance: 100.0,
         screen_reservoir: 50e-6,
@@ -311,6 +322,7 @@ impl PowerSpec {
         plate_supply: 460.0,
         screen_supply: 455.0,
         supply_resistance: 100.0,
+        rectifier: None,
         reservoir: 50e-6,
         screen_resistance: 100.0,
         screen_reservoir: 50e-6,
@@ -377,12 +389,18 @@ impl PowerSpec {
         bias: 0.0,
         cathode_bias: 50.0,     // R24
         cathode_bypass: 250e-6, // C11
-        // ESTIMATED. The drawings carry no voltages; this is the node behind the
-        // rectifier and the choke, and the rectifier's own drop and the choke's
-        // copper are the series resistance.
-        plate_supply: 362.0,
-        screen_supply: 362.0,
-        supply_resistance: 250.0,
+        // ESTIMATED. The drawings carry no voltages. This is what the mains
+        // transformer's secondary rectifies to with nothing drawn; the valve
+        // rectifier below and the choke's copper take it down from there, and
+        // what it settles at under load is checked in `tests/ac30.rs`.
+        plate_supply: 378.0,
+        screen_supply: 378.0,
+        // The transformer's own winding resistance. The rest of what was here
+        // before -- the rectifier's drop -- is now the valve.
+        supply_resistance: 100.0,
+        // The 1971 sheet has a rectifier valve; the 1974 one has silicon diodes.
+        // This is the valve, which is what a JMI AC30 had.
+        rectifier: Some(RectifierSpec::GZ34),
         reservoir: 32e-6,
         // The screens come through the choke, so they sag further and sooner.
         screen_resistance: 700.0,
@@ -466,6 +484,7 @@ impl PowerSpec {
         plate_supply: 490.0,
         screen_supply: 490.0,
         supply_resistance: 100.0,
+        rectifier: None,
         reservoir: 220e-6,
         screen_resistance: 570.0,
         screen_reservoir: 50e-6,
@@ -535,6 +554,79 @@ impl PowerSpec {
         plate_supply: 490.0,
         screen_supply: 485.0,
         supply_resistance: 120.0,
+        rectifier: None,
+        reservoir: 220e-6,
+        screen_resistance: 470.0,
+        screen_reservoir: 100e-6,
+        // APPROXIMATED: no data for transformer #562105 was found. 2.2 k plate to
+        // plate into 8 ohm, which is what four 6L6 on this supply are matched to
+        // -- the Mark IIC+'s 3.6 k is a pair, not two pairs.
+        ratio: 16.583_123_951_777,
+        primary_resistance: 35.0,
+        primary_inductance: 40.0,
+        leakage: 25e-6,
+        saturation_volts: 40.0,
+        saturation_hz: 60.0,
+        core_sharpness: 6.0,
+        speaker: 8.0,
+        // From the 8-16 ohm tap, through the presence network.
+        feedback: 100_000.0,
+        presence_pot: 25_000.0, // the sheet's 25 k
+        presence_cap: 0.1e-6,   // C52
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+    };
+
+    /// The same amplifier with its rectifier switch on VALVE rather than SILICON
+    /// DIODE -- the switch it is named after.
+    ///
+    /// Every other value is the Rev F spec above. What changes is the supply:
+    /// two 5U4GB instead of a bridge, so the rail sits lower and gives way under
+    /// a chord instead of holding. See `docs/models/cali_rectifier.md`.
+pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
+        name: "Recto 6L6, valve rectifier",
+        // The red channel's master is in the preamplifier, where the sheet has it.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.1e-6,
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0, // R214
+        pi_leak_lower: 1_000_000.0, // R213
+        pi_cathode: 470.0,          // R341
+        pi_tail: 10_000.0,          // R353
+        pi_tail_lower: 4_700.0,     // R372
+        pi_cross: 0.1e-6,           // C40
+        pi_plate_driven: 82_000.0,  // R281
+        pi_plate_other: 90_000.0,   // R104
+        // The sheet reads 280 V at both inverter plates.
+        pi_supply: 415.0,
+        pi_tube: TriodeSpec::ECC83,
+        // C1 and C2, 120 pF from each plate. The sheet has one per plate to
+        // ground; plate to plate is the same shape at half the value.
+        pi_plate_cap: 60e-12,
+        couple: 0.047e-6,     // C31, C32
+        grid_leak: 220_000.0, // R222, R223
+        stopper: 750.0,       // 1k5 per valve, two a side
+        screen_resistor: 500.0, // 1k per valve
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::T6L6GC,
+        // The sheet's own figure: "-51v 6L6".
+        bias: -51.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // ESTIMATED: the sheet gives no rail voltage, and a Rectifier's runs high.
+        plate_supply: 490.0,
+        screen_supply: 485.0,
+        supply_resistance: 120.0,
+        // Two 5U4GB in parallel, which is what the amplifier is named after:
+        // one valve's drop at twice its current. Switching to them takes the
+        // rail down and puts sag where a bridge holds firm.
+        rectifier: Some(RectifierSpec {
+            drop_volts: 50.0,
+            at_amps: 0.5,
+        }),
         reservoir: 220e-6,
         screen_resistance: 470.0,
         screen_reservoir: 100e-6,
@@ -595,6 +687,7 @@ impl PowerSpec {
         plate_supply: 470.0,
         screen_supply: 465.0,
         supply_resistance: 150.0,
+        rectifier: None,
         reservoir: 220e-6,
         screen_resistance: 400.0, // R210, 10 W
         screen_reservoir: 100e-6,
@@ -667,6 +760,7 @@ impl PowerSpec {
         // Mesa runs a stiffer supply than Peavey and it is part of why the
         // amplifier feels tighter under the hand.
         supply_resistance: 110.0,
+        rectifier: None,
         reservoir: 330e-6,
         screen_resistance: 470.0,
         screen_reservoir: 100e-6,
@@ -758,6 +852,7 @@ impl PowerSpec {
         screen_supply: 458.0,
         // Stiffer than the Mesa, which is the whole point of the amplifier.
         supply_resistance: 70.0,
+        rectifier: None,
         reservoir: 200e-6,
         screen_resistance: 470.0,
         screen_reservoir: 100e-6,
@@ -965,10 +1060,24 @@ fn assemble(
     // for a couple of hundred microfarads behind a hundred and fifty ohms is
     // about thirty milliseconds, or the length of a chord's attack. That is
     // sag, and it is why the note blooms.
-    net.supply("ht", spec.supply_resistance, spec.plate_supply)
-        .capacitor("ht", "gnd", spec.reservoir)
-        .supply("scr", spec.screen_resistance, spec.screen_supply)
-        .capacitor("scr", "gnd", spec.screen_reservoir);
+    match spec.rectifier {
+        None => {
+            net.supply("ht", spec.supply_resistance, spec.plate_supply)
+                .capacitor("ht", "gnd", spec.reservoir)
+                .supply("scr", spec.screen_resistance, spec.screen_supply)
+                .capacitor("scr", "gnd", spec.screen_reservoir);
+        }
+        Some(valve) => {
+            // The transformer behind the valve, the valve, then the reservoir.
+            // The screens come off the same rail through their own dropper, so
+            // they sag with it and a little further, which is what they do.
+            net.supply("raw", spec.supply_resistance, spec.plate_supply)
+                .rectifier("raw", "ht", valve)
+                .capacitor("ht", "gnd", spec.reservoir)
+                .resistor("ht", "scr", spec.screen_resistance)
+                .capacitor("scr", "gnd", spec.screen_reservoir);
+        }
+    }
     // Where the grid leaks return to, and where the valves' cathodes sit.
     // Fixed bias: a stiff negative supply behind the leaks, cathodes on ground.
     // Cathode bias: leaks on ground, cathodes on their own shared resistor.

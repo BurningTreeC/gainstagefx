@@ -608,6 +608,7 @@ impl Plugin for GainStageFx {
         let settings = Settings {
             pedal,
             power_amp: self.params.power_amp.value().voice(),
+            mains: self.params.mains.value().fraction(),
             acoustic,
             gain: circuit.voice(),
             diode: if circuit.has_diodes() {

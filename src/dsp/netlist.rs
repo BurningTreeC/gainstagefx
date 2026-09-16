@@ -306,6 +306,12 @@ pub enum Part {
         series: f64,
         volts: f64,
     },
+    /// A rectifier valve, conducting from `a` to `k` by Child's law.
+    Rectifier {
+        a: usize,
+        k: usize,
+        spec: RectifierSpec,
+    },
     /// A junction diode.
     Diode {
         a: usize,
@@ -410,6 +416,44 @@ pub enum Adjust {
 pub struct DiodeSpec {
     pub saturation: f64,
     pub emission: f64,
+}
+
+/// A rectifier valve, by the one number its data sheet gives: how many volts it
+/// drops at how much current.
+///
+/// A silicon diode drops the same volt whatever it passes. A valve does not: it
+/// is a space-charge device, so it follows Child's law and its drop goes as the
+/// two-thirds power of the current. That is where "sag" comes from -- a chord
+/// hit hard takes the supply down, and the amplifier goes soft for as long as
+/// the reservoir takes to come back. It is the reason an amplifier with one of
+/// these in it feels different from the same amplifier with diodes, and it is
+/// the reason Mesa put a switch between them on the front panel.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RectifierSpec {
+    /// Volts across one rectifier at `at_amps`.
+    pub drop_volts: f64,
+    pub at_amps: f64,
+}
+
+impl RectifierSpec {
+    /// The perveance Child's law needs: `i = k v^1.5`.
+    pub fn perveance(&self) -> f64 {
+        self.at_amps / self.drop_volts.powf(1.5)
+    }
+
+    /// A GZ34 (5AR4), which is what an AC30 and most Mesas have: about 30 V of
+    /// drop at a quarter of an amp, both plates together.
+    pub const GZ34: RectifierSpec = RectifierSpec {
+        drop_volts: 30.0,
+        at_amps: 0.25,
+    };
+
+    /// A 5U4GB, which is the softer one: about 50 V at the same current. The
+    /// Dual Rectifier's valve setting uses a pair of these.
+    pub const T5U4GB: RectifierSpec = RectifierSpec {
+        drop_volts: 50.0,
+        at_amps: 0.25,
+    };
 }
 
 impl DiodeSpec {
@@ -603,6 +647,10 @@ impl Part {
                 map(b);
             }
             Part::Input { node, .. } | Part::Supply { node, .. } => map(node),
+            Part::Rectifier { a, k, .. } => {
+                map(a);
+                map(k);
+            }
             Part::Diode { a, k, .. } => {
                 map(a);
                 map(k);
@@ -671,7 +719,7 @@ impl Part {
             Part::Pot { a, wiper, b, .. } => vec![a, wiper, b],
             Part::Pentode { p, g, k, s, .. } => vec![p, g, k, s],
             Part::Input { node, .. } | Part::Supply { node, .. } => vec![node],
-            Part::Diode { a, k, .. } => vec![a, k],
+            Part::Diode { a, k, .. } | Part::Rectifier { a, k, .. } => vec![a, k],
             Part::Triode { p, g, k, .. } => vec![p, g, k],
             Part::OpAmp {
                 out,
@@ -712,6 +760,7 @@ impl Part {
         !matches!(
             self,
             Part::Diode { .. }
+                | Part::Rectifier { .. }
                 | Part::Triode { .. }
                 | Part::Pentode { .. }
                 | Part::OpAmp { .. }
@@ -732,6 +781,7 @@ impl Part {
             Part::Input { .. } => "input",
             Part::Supply { .. } => "supply",
             Part::Diode { .. } => "diode",
+            Part::Rectifier { .. } => "rectifier valve",
             Part::Triode { .. } => "triode",
             Part::Pentode { .. } => "pentode",
             Part::Jfet { .. } => "JFET",
@@ -895,6 +945,13 @@ impl Netlist {
     pub fn diode(&mut self, a: &str, k: &str, spec: DiodeSpec) -> &mut Self {
         let (a, k) = (self.pin(a), self.pin(k));
         self.parts.push(Part::Diode { a, k, spec });
+        self
+    }
+
+    /// A rectifier valve, from plate to cathode.
+    pub fn rectifier(&mut self, a: &str, k: &str, spec: RectifierSpec) -> &mut Self {
+        let (a, k) = (self.pin(a), self.pin(k));
+        self.parts.push(Part::Rectifier { a, k, spec });
         self
     }
 
@@ -1105,6 +1162,7 @@ impl Netlist {
                 }
                 Part::Input { series, .. } | Part::Supply { series, .. } => series <= 0.0,
                 Part::Diode { spec, .. } => spec.saturation <= 0.0 || spec.emission <= 0.0,
+                Part::Rectifier { spec, .. } => spec.drop_volts <= 0.0 || spec.at_amps <= 0.0,
                 Part::Triode { spec, .. } => spec.mu <= 0.0 || spec.kg1 <= 0.0,
                 Part::Pentode { spec, count, .. } => {
                     spec.mu <= 0.0 || spec.kg1 <= 0.0 || count <= 0.0

@@ -181,6 +181,7 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                 }
             }
             Part::Diode { .. }
+            | Part::Rectifier { .. }
             | Part::Triode { .. }
             | Part::Pentode { .. }
             | Part::Jfet { .. }

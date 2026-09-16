@@ -65,6 +65,7 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 | `ts808` (proposed `pedal_ts808`) | Green 808 | Ibanez **TS808** Tube Screamer (JRC4558D, 1N4148 pair, BC549 buffers) | `src/circuits/ts808.rs` | IMPLEMENTED (input buffer, clipper, tone, level, output buffer); **values corrected 2026-09-15** to the three-source TS-808 values (owner decision), catalogue voice and pedal slot `pedal_ts808` build the same circuit | [green_808.md](models/green_808.md): Cerutti and ElectroSmash drawings, Keen analysis; manufacturer sheet not obtained | none | Catalogue voice, or in front of any circuit via the pedal slot | Green Overdrive, Screamer Boost, Texas Storm '83 (slot) | Display changed (was "TS808"); stored `ts808` now means the corrected values | Green 808 |
 | `pedal_ts9` (pedal slot only) | Green 9 | Ibanez **TS9** Tube Screamer (TS808 with 470 ohm / 100 k output resistors) | `ts808::TS9` via `ts808::build_with` | IMPLEMENTED (op-amp type variation not represented) | [green_9.md](models/green_9.md) | none | pedal slot | none | new `pedal` parameter id | Green 9 |
 | `pedal_rat` (pedal slot) | Rodent | **Pro Co RAT**, LM308 with 30 pF compensation, 1N914 to ground, 2N5458 follower | `rodent.rs` | IMPLEMENTED 2026-09-15 | ElectroSmash analysis + LM308 curves; op-amp as transconductor-integrator (GBW 1.1 MHz, slew 0.3 V/us). Log: `docs/models/rodent.md` | none | pedal slot | none | `pedal` id | Rodent |
+| `pedal_mxr_dist_plus` (pedal slot) | Yellow Dist | **MXR Distortion+**, 741 with germanium diodes to ground | `distortion_plus.rs` | IMPLEMENTED 2026-09-16 | ElectroSmash's analysis, with its own arithmetic as the check (3.5-46.5 dB, 350 mV of clipping). Log: `docs/models/yellow_dist.md` | none | pedal slot | Blizzard '80 | `pedal` id | Yellow Dist |
 | `pedal_fuzz_face` (pedal slot) | Round Fuzz | Arbiter **Fuzz Face**, germanium PNP (1966-68), AC128 models | `round_fuzz.rs` | IMPLEMENTED 2026-09-15 | ElectroSmash analysis + fuzzboxes.org survey (C1 2.5 uF / C2 20 uF conflict recorded); native PNP device. Log: `docs/models/round_fuzz.md` | none | pedal slot | none | `pedal` id | Round Fuzz |
 | `bigmuff` (proposed `pedal_bigmuff_ramshead`) | Ram Fuzz | Electro-Harmonix **Big Muff Pi, 1973 Ram's Head** (4 transistors, 1N914) | `src/circuits/bigmuff.rs` (`RAMS_HEAD` selected); also `pedal_bigmuff_ramshead` in the pedal slot | IMPLEMENTED | Kit Rae's traced archive ([big_muff.md](models/big_muff.md)); value-by-value cross-check not yet done | none | same pedal-slot limitation | Sustain Fuzz | Not in the target list: **keep**. Display renamed to "Ram Fuzz" (owner request, 2026-09-15); ids unchanged | Ram Fuzz |
 | (voicing) `bigmuff::TRIANGLE` | — | EHX Big Muff Pi **1971 Triangle** | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (netlist voicing, tested in `tests/bigmuff.rs`, not selectable) | as above | none | — | none | would need selection | TBD |
@@ -196,8 +197,16 @@ Microphones (research: `docs/models/microphones.md`):
 - **Chain stages:** pedal slot, speaker load, cabinets and microphones are implemented.
 - **Research logs still owed for implemented models:** Big Muff (value-by-value
   cross-check), 73P (online DIYRE source record).
-- **Solver capability gaps (remaining):** cathode-biased no-NFB power stage (AC30), tube rectifier sag (Rectifier/AC30),
-  control-rate adjustable R/L/C was added 2026-09-15 for speaker loads (`tests/speaker_load.rs`).
+- **Solver capability gaps:** none of the ones this document listed remain.
+  - control-rate adjustable R/L/C, 2026-09-15, for speaker loads (`tests/speaker_load.rs`);
+  - PNP bipolars and op-amp gain-bandwidth/slew, 2026-09-15, for the Round Fuzz and Rodent;
+  - cathode bias, no feedback loop and a cut control, 2026-09-16, for the AC30;
+  - a direct-coupled inverter and an input carrying a direct voltage, 2026-09-16, for the
+    DR103;
+  - **a rectifier valve** (`Part::Rectifier`, Child's law), 2026-09-16, for the Rectifier's
+    valve setting and the AC30's GZ34 (`tests/devices.rs`);
+  - **the mains** (`Simulation::set_supply_scale` and the `mains` parameter), 2026-09-16,
+    which is a variac and what the Brown presets are wired to (`tests/mains.rs`).
 - **Naming:** Big Muff is displayed as "Ram Fuzz" (2026-09-15).
 
 ## 8. Prioritized research / implementation queue

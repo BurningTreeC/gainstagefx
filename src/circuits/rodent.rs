@@ -33,8 +33,21 @@ pub const FILTER: usize = 1;
 /// R VOLUME, 100 k audio.
 pub const VOLUME: usize = 2;
 
-/// Where Volume rests, like the other pedals' level controls.
-pub const VOLUME_REST: f64 = 0.7;
+/// Where the level control rests, which is what the panel's Level knob means
+/// at noon: **unity through the pedal**, measured at a guitar's level with the
+/// drive control at its own middle.
+///
+/// The circuit list is level matched by the calibration table, so switching
+/// circuits does not change how loud the plugin is. The pedal slot had nothing
+/// of the kind: every pedal rested at the same 0.7 of its own track, which is a
+/// different amount of gain in each of them, so switching pedals moved the level
+/// by up to ten decibels. This is the matching, and it is a position rather than
+/// a hidden make-up: it is where a player sets a pedal's level anyway. Every
+/// pedal in the slot carries its own, measured the same way
+/// (`examples/pedallevel.rs`), and they are all a little above half because a
+/// pedal's level control is an attenuator after a stage with gain. The other
+/// half of the matching is `Chain::pedal_hand_off`.
+pub const VOLUME_REST: f64 = 0.543;
 
 /// LM308 gain-bandwidth with Cf = 30 pF: the data sheet curve gives 67 dB at 500 Hz.
 pub const GBW_HZ: f64 = 1.1e6;

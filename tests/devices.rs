@@ -263,3 +263,39 @@ fn no_device_stamps_outside_its_declared_footprint() {
         }
     }
 }
+
+/// A rectifier valve follows Child's law, so its drop climbs as the two-thirds
+/// power of the current it passes. That is what makes a supply behind one sag
+/// where a silicon bridge would not, and it is a property of the part.
+#[test]
+fn a_rectifier_valve_drops_by_the_two_thirds_power() {
+    use gainstagefx::dsp::netlist::{Netlist, RectifierSpec};
+    use gainstagefx::dsp::time::Simulation;
+    let spec = RectifierSpec::GZ34;
+    let drop_at = |amps: f64| {
+        // A stiff source through the valve into whatever load draws `amps`.
+        let mut net = Netlist::new("rectifier");
+        // A signal source the measurement does not use: every netlist needs one,
+        // and a gigaohm in series makes sure it changes nothing here.
+        net.input("ht", 1e9)
+            .supply("raw", 0.001, 400.0)
+            .rectifier("raw", "ht", spec)
+            .resistor("ht", "gnd", 400.0 / amps);
+        let circuit = net.build("ht").unwrap();
+        let (raw, ht) = (
+            circuit.unknown_named("raw").unwrap(),
+            circuit.unknown_named("ht").unwrap(),
+        );
+        let mut sim = Simulation::new(circuit, 48_000.0);
+        assert!(sim.find_operating_point());
+        (sim.voltage_at(raw) - sim.voltage_at(ht), sim.voltage_at(ht) / (400.0 / amps))
+    };
+    let (small, i_small) = drop_at(0.05);
+    let (large, i_large) = drop_at(0.25);
+    println!("{:.1} V at {:.0} mA, {:.1} V at {:.0} mA", small, i_small * 1e3, large, i_large * 1e3);
+    // The data sheet figure at the current it is quoted for.
+    assert!((large - spec.drop_volts).abs() < 4.0, "{large} against {}", spec.drop_volts);
+    // And five times the current is 5^(2/3) = 2.92 times the drop.
+    let ratio = large / small;
+    assert!((ratio - (i_large / i_small).powf(2.0 / 3.0)).abs() < 0.3, "{ratio}");
+}

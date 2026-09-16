@@ -169,7 +169,7 @@ mod revisions {
 /// allocating, and moves the sound.
 #[test]
 fn every_pedal_runs_in_front_of_an_amplifier() {
-    for pedal in [Pedal::Green808, Pedal::BigMuff, Pedal::Green9, Pedal::Rodent, Pedal::RoundFuzz] {
+    for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
         let base = Settings { gain: Gain::Twin, drive: 0.35, tone: Tone::Off, ..Settings::default() };
         let with = Settings {
             pedal: PedalSettings { pedal, drive: 0.6, tone: 0.5, level: 0.6 },
@@ -185,5 +185,48 @@ fn every_pedal_runs_in_front_of_an_amplifier() {
                 assert!(chain.process(guitar(k)).is_finite());
             }
         });
+    }
+}
+
+/// The pedal slot is level matched the way the circuit list is.
+///
+/// Every pedal's Level knob at noon is unity through that pedal (each circuit
+/// carries its own measured resting position), so switching pedals with the
+/// knobs where they are moves the level by a few decibels rather than by ten,
+/// and what is left is the pedals being different pedals: a fuzz at half its
+/// drive makes more than a clean boost does.
+///
+/// And it holds in front of *any* circuit. A pedal is fed a guitar because that
+/// is what it was built for; the circuit behind it is fed the level it was
+/// calibrated at, which is a guitar for the amplifiers and anything up to a
+/// volt for the consoles and the clean stage. Without that hand-off a pedal in
+/// front of the clean circuit drove it nineteen decibels under its calibration
+/// point. See `Chain::pedal_hand_off`.
+#[test]
+fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
+    let at = |gain: Gain, pedal: Pedal| {
+        let s = Settings {
+            gain,
+            tone: Tone::Off,
+            drive: 0.5,
+            pedal: PedalSettings { pedal, drive: 0.5, tone: 0.5, level: 0.5 },
+            ..Settings::default()
+        };
+        20.0 * rms(&render(&s, 24_000).1[12_000..]).max(1e-12).log10()
+    };
+    // Crunch is calibrated at a guitar's 0.122 V, Clean at 1.12 V.
+    for gain in [Gain::Crunch, Gain::Clean] {
+        let bare = at(gain, Pedal::None);
+        for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
+            let departure = at(gain, pedal) - bare;
+            assert!(departure.abs() < 6.0, "{gain:?} {pedal:?}: {departure:+.1} dB");
+        }
+    }
+    // The same pedal departs by the same amount whichever of the two it is in
+    // front of: that is the hand-off doing its job rather than a coincidence.
+    for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
+        let guitar = at(Gain::Crunch, pedal) - at(Gain::Crunch, Pedal::None);
+        let line = at(Gain::Clean, pedal) - at(Gain::Clean, Pedal::None);
+        assert!((guitar - line).abs() < 1.0, "{pedal:?}: {guitar:+.1} vs {line:+.1} dB");
     }
 }

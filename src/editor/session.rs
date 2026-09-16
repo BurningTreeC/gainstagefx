@@ -24,8 +24,15 @@ use crate::presets::{self, Stored, GROUPS, SAVED};
 
 /// How tall the menu is allowed to get before it scrolls. Short enough to sit
 /// inside the window at the size the panel opens at.
-const MENU_H: f32 = 330.0;
-const MENU_W: f32 = 260.0;
+/// The preset list's own size.
+///
+/// It was 330 px tall when the catalogue was thirty presets in nine groups. It
+/// is now sixty-seven in twelve, which is about seventeen hundred pixels of
+/// list: at 330 the groups near the bottom -- Alternative, Metal / Heavy, Blues
+/// -- were four screens down a scroll bar nobody was going to find. The panel
+/// is 880 px tall below its header, so the list may as well use it.
+const MENU_H: f32 = crate::editor::style::PANEL_H - 48.0;
+const MENU_W: f32 = 300.0;
 const ROW_H: f32 = 22.0;
 const HEADING_H: f32 = 24.0;
 

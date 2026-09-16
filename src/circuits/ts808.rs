@@ -140,10 +140,11 @@ fn assemble(v: &Values, source: f64, load: f64, at: &str) -> Result<Circuit, Fau
     // level with the Drive at 0.85, the middle of this hundred-kilohm audio
     // track is **9.6 dB down**, and the calibration table was handing back
     // twelve decibels of clean digital gain to make up for a knob nobody had
-    // turned. Unity is at 0.60; a Tube Screamer is a boost and is normally
-    // run above it, which is where 0.70 puts it -- about two o'clock, and
-    // 3.3 dB up. See `Netlist::rest` and `examples/screamer.rs`.
-    net.rest(LEVEL, 0.70);
+    // turned. This is unity instead: the pedal slot's Level knob at noon is
+    // unity through whichever pedal is in it, and a Screamer is a boost that
+    // is normally run above that. See `Netlist::rest`, `rodent::VOLUME_REST`
+    // and `examples/screamer.rs`.
+    net.rest(LEVEL, 0.626);
 
     // The supply, and the half-supply bias every stage sits on. R16 and R17
     // are 10 k each from 9 V, so the bias is 4.5 V behind 5 k, and C11 47 uF

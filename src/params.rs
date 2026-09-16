@@ -271,10 +271,13 @@ pub enum PowerAmp {
     #[id = "power_recto_6l6"]
     #[name = "Recto 6L6"]
     Recto6L6,
+    #[id = "power_recto_6l6_tube"]
+    #[name = "Recto 6L6 Tube"]
+    Recto6L6Tube,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -285,6 +288,7 @@ impl PowerAmp {
         Self::AC30EL84,
         Self::DR103EL34,
         Self::Recto6L6,
+        Self::Recto6L6Tube,
     ];
 
     pub fn name(self) -> &'static str {
@@ -303,6 +307,46 @@ impl PowerAmp {
             Self::AC30EL84 => voice::PowerAmp::AC30EL84,
             Self::DR103EL34 => voice::PowerAmp::DR103EL34,
             Self::Recto6L6 => voice::PowerAmp::Recto6L6,
+            Self::Recto6L6Tube => voice::PowerAmp::Recto6L6Tube,
+        }
+    }
+}
+
+/// What the amplifier is plugged into. Append new ids only.
+///
+/// A variac is not an effect: it is how the rig was wired, and it belongs with
+/// the other selections rather than on a knob. The first entry is the wall,
+/// which is what every session that has never heard of this parameter gets.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+pub enum Mains {
+    #[id = "mains_nominal"]
+    #[name = "Nominal"]
+    Nominal,
+    #[id = "mains_90"]
+    #[name = "90 %"]
+    Ninety,
+    #[id = "mains_80"]
+    #[name = "80 %"]
+    Eighty,
+    #[id = "mains_70"]
+    #[name = "70 %"]
+    Seventy,
+}
+
+impl Mains {
+    pub const ALL: [Self; 4] = [Self::Nominal, Self::Ninety, Self::Eighty, Self::Seventy];
+
+    pub fn name(self) -> &'static str {
+        Self::variants()[self.to_index()]
+    }
+
+    /// The fraction every supply is multiplied by.
+    pub fn fraction(self) -> f64 {
+        match self {
+            Self::Nominal => 1.0,
+            Self::Ninety => 0.9,
+            Self::Eighty => 0.8,
+            Self::Seventy => 0.7,
         }
     }
 }
@@ -328,19 +372,23 @@ pub enum PedalModel {
     #[id = "pedal_rat"]
     #[name = "Rodent"]
     Rodent,
+    #[id = "pedal_mxr_dist_plus"]
+    #[name = "Yellow Dist"]
+    YellowDist,
     #[id = "pedal_fuzz_face"]
     #[name = "Round Fuzz"]
     RoundFuzz,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
         Self::Green9,
         Self::Rodent,
         Self::RoundFuzz,
+        Self::YellowDist,
     ];
 
     pub fn name(self) -> &'static str {
@@ -355,6 +403,7 @@ impl PedalModel {
             Self::Green9 => voice::Pedal::Green9,
             Self::Rodent => voice::Pedal::Rodent,
             Self::RoundFuzz => voice::Pedal::RoundFuzz,
+            Self::YellowDist => voice::Pedal::YellowDist,
         }
     }
 }
@@ -863,6 +912,8 @@ pub struct GainStageParams {
     pub circuit: EnumParam<Circuit>,
     #[id = "power_amp"]
     pub power_amp: EnumParam<PowerAmp>,
+    #[id = "mains"]
+    pub mains: EnumParam<Mains>,
     #[id = "diode"]
     pub diode: EnumParam<Diode>,
     #[id = "amplifier"]
@@ -1081,6 +1132,7 @@ impl Default for GainStageParams {
             pedal_level: position("Pedal Level", 0.5),
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
             power_amp: EnumParam::new("Power Amp", PowerAmp::Matched),
+            mains: EnumParam::new("Mains", Mains::Nominal),
             diode: EnumParam::new("Diode", Diode::Silicon),
             amplifier: EnumParam::new("Amplifier", Amplifier::Jfet),
             iron: EnumParam::new("Iron", Iron::Off),

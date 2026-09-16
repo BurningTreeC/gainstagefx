@@ -27,8 +27,8 @@ pub const HEADER_H: f32 = 32.0;
 pub const SECTIONS: [(&str, &str, f32); 6] = [
     // Trim and meter, then the pedal in front of the circuit.
     ("1", "INPUT", 124.0),
-    // Six dropdowns in two columns, and the line describing the circuit.
-    ("2", "CIRCUIT", 128.0),
+    // Seven dropdowns in two columns, and the line describing the circuit.
+    ("2", "CIRCUIT", 156.0),
     ("3", "DRIVE", 160.0),
     // Two rows: the stack's Bass/Middle/Treble, and beneath them the three
     // the Twin Reverb adds. Below rather than beside, because beside put

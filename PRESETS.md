@@ -138,6 +138,58 @@ Sources: [The gear of the Smashing Pumpkins (Reverb)](https://reverb.com/news/th
 [Billy Corgan's gear (GuitarGangsters)](https://guitargangsters.net/billy-corgan-guitars-gear/),
 [Smashing Pumpkins recorded with Butch Vig again (Rolling Stone)](https://www.rollingstone.com/music/music-news/smashing-pumpkins-butch-vig-first-time-siamese-dream-1235566401/).
 
+### Brown '78 and Brown '84 (group Classic Rock)
+
+Target inspiration: Van Halen, *Van Halen* (1978) and *1984*, Eddie Van Halen's rhythm
+and lead sound. Engineer Donn Landee, producer Ted Templeman.
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | the Frankenstrat, a PAF humbucker from a 1960s ES-335 in a Strat body, one volume knob | WIDELY REPORTED | nominal input |
+| Pedal | none in the amplifier's path (MXR Phase 90, Flanger and an Echoplex on some tracks) | WIDELY REPORTED | none |
+| Preamp / power | a 1967/68 Marshall 1959 Super Lead, "pretty much stock", used on the first six records; "the only way the amp sounded good was with everything all the way up" | WIDELY REPORTED; Eddie's own 1978 claims about modifications were later retracted | Brit Plexi, Volume 1.0, Matched EL34 |
+| **Mains** | "he was using the Variac [variable transformer] to run his Marshall at 85 volts instead of 120. That was one of the key reasons he got that sound ... He'd have it set to between 80 and 85 volts and he would rarely change it" | DOCUMENTED (Donn Landee, Tape Op interview) | **Mains 70 %**, which is 84 V of 120. The whole amplifier's supplies come down together; see `Chain::set_mains` |
+| Cabinet / speaker | Marshall 4x12s; a combination cabinet with Celestions and JBLs is reported for the first album | WIDELY REPORTED / CONFLICTING | Brit Green 4x12, Matched (25 W greenbacks) - APPROXIMATED, no JBL profile |
+| Mics | "If the mic was right on the speaker, it was likely an SM56 or 57"; one cabinet, always | DOCUMENTED (Landee) | Dynamic 57 close, with a condenser (1978) or ribbon (1984) further out |
+| Not modeled | the dummy-load resistor box reported on the first album, the Echoplex preamp, the phaser and flanger | - | - |
+
+Sources: [Donn Landee interview (Tape Op)](https://tapeop.com/interviews/159/donn-landee-1),
+[The gear used by Eddie Van Halen on Van Halen I (Guitar.com)](https://guitar.com/features/artist-rigs/the-gear-used-by-eddie-van-halen-on-van-halen-i/),
+[Eddie Van Halen's 1967/68 Marshall 1959 (Ground Guitar)](https://www.groundguitar.com/eddie-van-halen-gear/eddie-van-halens-1967-68-marshall-1959-super-lead/).
+
+### Blizzard '80 (group Classic Rock)
+
+Target inspiration: Ozzy Osbourne, *Blizzard of Ozz* (recorded March-April 1980, Ridge
+Farm; engineer Max Norman), Randy Rhoads's rhythm and lead sound.
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | a Les Paul Custom, later the polka-dot Flying V | WIDELY REPORTED | nominal input |
+| Pedal | "The crucial effects in the pedalboard were an MXR Distortion +, which Rhoads almost always kept on, and an MXR Ten Band Graphic Equalizer" | WIDELY REPORTED | Yellow Dist, Distortion 0.6, Output 0.7. The ten-band EQ is not modeled |
+| Preamp / power | "a stock mid-'70s Marshall JMP model 1959 Super Lead MKII 100-watt head that was rented for the sessions" | WIDELY REPORTED | Brit Plexi, Volume 0.85, Matched EL34 |
+| **Mains** | "Similar to Eddie Van Halen, he would turn the voltage down to 90 or 92" volts | WIDELY REPORTED | **Mains 80 %**, which is 96 V of 120 -- the nearest setting |
+| Cabinet / speaker | "a pair of 4x12 cabinets loaded with Altec 417-8H speakers" | WIDELY REPORTED | Brit Closed 4x12, Matched - APPROXIMATED (no Altec profile) |
+| Studio | a short delay and slight detune across the two sides (AMS DMX 15-80S) | WIDELY REPORTED (Max Norman) | not modeled |
+
+Sources: [The gear used by Randy Rhoads on Blizzard of Ozz (Guitar.com)](https://guitar.com/features/artist-rigs/gear-used-by-randy-rhoads-blizzard-of-ozz-ozzy-osbourne/),
+[Behind the scenes of Blizzard of Ozz (Guitar World)](https://www.guitarworld.com/features/ozzy-osbourne-randy-rhoads-recording-of-blizzard-of-ozz).
+
+### Machine Rage '92 (group Alternative)
+
+Target inspiration: Rage Against the Machine, *Rage Against the Machine* (1992), Tom
+Morello's rhythm sound. Producer Garth Richardson.
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | "Arm The Homeless", a 1986 Performance Guitar build with EMG pickups; a 1982 Telecaster for drop-D tracks | WIDELY REPORTED | nominal input |
+| Preamp / power | a Marshall **2205** head: "It's identical. It's unchanged, for every RATM album, every Audioslave song, every show" (Morello) | WIDELY REPORTED, and the quote is his | Brit 800 - **APPROXIMATED**: the model is the 100 W single-channel 2203, and the 2205 is the two-channel 50 W amplifier of the same family and year. Its extra preamp stage is not modeled |
+| Pedals | a DOD EQ as a boost, Whammy, Cry Baby, DOD delay, flanger | WIDELY REPORTED | none. The EQ-as-boost is not modeled, and nothing else here is on the rhythm sound |
+| Cabinet / speaker | a Peavey 4x12 | WIDELY REPORTED | Oversized 4x12, Matched - APPROXIMATED (no Peavey cabinet profile) |
+| Studio | tracked live with the amplifiers in back rooms and a PA in the live room (Garth Richardson) | DOCUMENTED | not modeled |
+
+Sources: [The gear used on Rage Against The Machine's debut (Guitar.com)](https://guitar.com/features/artist-rigs/the-gear-used-on-rage-against-the-machine-self-titled-debut/),
+[All-Star Gear: Tom Morello's JCM800 (MusicRadar)](https://www.musicradar.com/news/guitars/all-star-gear-tom-morellos-arm-the-homeless-guitar-and-marshall-jcm800-amp-537090).
+
 ### Texas Storm '83 (`blues_1983_texas_storm`, group Blues)
 
 Target inspiration: Stevie Ray Vaughan, *Texas Flood* (recorded November 1982,
@@ -160,12 +212,13 @@ plus its own rig research at that time.
 
 | Preset | Blocked on |
 |---|---|
-| Appetite '87 | Rig research. Commonly said to be a modified (hot-rodded) 1959T, which the stock Brit Plexi would not be; not yet sourced |
-| Blizzard '80 | Rig research. Commonly said to be a master-volume-modified 1959 with an MXR Distortion+, neither modeled; not yet sourced |
-| Brown '78, Brown '84 | The Brit Plexi now exists, but the documented rig ran it from a variac at 80-89 V ("he was using the Variac to run his Marshall at 85 volts instead of 120", Donn Landee, Tape Op), which needs a mains-voltage supply model; a dummy-load box is also reported |
+| Appetite '87 | Rig research. Commonly said to be a rented, modified 1959T; the stock Brit Plexi is not that amplifier |
+| Dirty Chains '92 | Three amplifiers at once, none of them modeled: "Lows: Bogner Fish preamp/VHT amp ... mids: Bogner Ecstasy; highs: Rockman Pocket amp direct" (Dave Jerden), split three ways and recombined |
+| Unknown Garden '94 | A Sunn Model T for much of it, which is not modeled |
+| Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the Super Bass is not modeled and the record is the two together |
+| Never Mind '91, Seattle Ten '91, Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research; the documented amplifiers (a Mesa Studio .22 preamp, a Marshall Major, an Ampeg VT) are not modeled |
 | Lead Airship II '69 | Rig research (the amplifier used on the record is disputed) |
 | Paranoia '70 | A Laney Supergroup preamp and a treble booster |
-| Never Mind '91, Dirty Chains '92, Seattle Ten '91, Unknown Garden '94, Spiral '96, Machine Rage '92, Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research, plus models such as the Cali Rectifier depending on the documented rig |
 
 ## Catalogue update (2026-09-15)
 
@@ -191,8 +244,9 @@ preset uses it.
   (American 312), British Desk Pre / Driven (British 4K E), Valve Console Pre / Pushed
   (Tube 610).
 
-Level (220 Hz, `tests/presets.rs`): the catalogue spans 10.8 dB (Blackout '80 loudest at +3.7 dB), with nine output trims
-set to keep it there.
+Level (220 Hz, `tests/presets.rs`): the catalogue spans 10.8 dB (Blackout '80 loudest at
++3.7 dB, Parallel Warmth quietest at -7.1), with nine output trims set to keep it there.
+`examples/presetlevel.rs` prints the whole list, which is how those trims are chosen.
 
 ## Level
 

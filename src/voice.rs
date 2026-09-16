@@ -27,8 +27,8 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, dr103, evh5150, iron,
-    markiic, neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, distortion_plus, dr103,
+    evh5150, iron, markiic, neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -548,6 +548,14 @@ pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
     (Gain::Clean, Diode::Silicon, Amplifier::Valve)
 }
 
+/// Output stages that are nobody's matched stage, and so have no voice to
+/// borrow a resistor-loaded simulation from. They sit after the catalogue in
+/// `Chain::powers`, in this order.
+pub const EXTRA_POWER_SPECS: [&power::PowerSpec; 1] = [&power::PowerSpec::RECTO_6L6_TUBE];
+
+/// How many of them there are.
+pub const EXTRA_POWERS: usize = EXTRA_POWER_SPECS.len();
+
 /// Physical power circuit identity, independent of the preamp catalogue.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PowerModel {
@@ -559,10 +567,11 @@ pub enum PowerModel {
     AC30EL84,
     DR103EL34,
     Recto6L6,
+    Recto6L6Tube,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 8] = [
+    pub const ALL: [PowerModel; 9] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -571,6 +580,7 @@ impl PowerModel {
         PowerModel::AC30EL84,
         PowerModel::DR103EL34,
         PowerModel::Recto6L6,
+        PowerModel::Recto6L6Tube,
     ];
 
     pub fn spec(self) -> &'static power::PowerSpec {
@@ -583,6 +593,7 @@ impl PowerModel {
             Self::AC30EL84 => &power::PowerSpec::AC30_EL84,
             Self::DR103EL34 => &power::PowerSpec::DR103_EL34,
             Self::Recto6L6 => &power::PowerSpec::RECTO_6L6,
+            Self::Recto6L6Tube => &power::PowerSpec::RECTO_6L6_TUBE,
         }
     }
 
@@ -596,6 +607,7 @@ impl PowerModel {
             Self::AC30EL84 => 5,
             Self::DR103EL34 => 6,
             Self::Recto6L6 => 7,
+            Self::Recto6L6Tube => 8,
         }
     }
 
@@ -611,6 +623,9 @@ impl PowerModel {
             Self::AC30EL84 => voice_index(Gain::AC30, Diode::Silicon, Amplifier::Valve),
             Self::DR103EL34 => voice_index(Gain::DR103, Diode::Silicon, Amplifier::Valve),
             Self::Recto6L6 => voice_index(Gain::Recto, Diode::Silicon, Amplifier::Valve),
+            // No voice has this one as its own, so it lives in the slot after
+            // the catalogue. See `EXTRA_POWER_SPECS`.
+            Self::Recto6L6Tube => VOICES,
         }
     }
 }
@@ -629,10 +644,11 @@ pub enum PowerAmp {
     AC30EL84,
     DR103EL34,
     Recto6L6,
+    Recto6L6Tube,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -643,6 +659,7 @@ impl PowerAmp {
         Self::AC30EL84,
         Self::DR103EL34,
         Self::Recto6L6,
+        Self::Recto6L6Tube,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -667,6 +684,7 @@ impl PowerAmp {
             Self::AC30EL84 => Some(PowerModel::AC30EL84),
             Self::DR103EL34 => Some(PowerModel::DR103EL34),
             Self::Recto6L6 => Some(PowerModel::Recto6L6),
+            Self::Recto6L6Tube => Some(PowerModel::Recto6L6Tube),
         }
     }
 }
@@ -687,6 +705,8 @@ pub enum Pedal {
     Rodent,
     /// The Arbiter Fuzz Face, germanium (`circuits::round_fuzz`).
     RoundFuzz,
+    /// The MXR Distortion+ (`circuits::distortion_plus`).
+    YellowDist,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
@@ -706,16 +726,17 @@ struct PedalControls {
 }
 
 impl Pedal {
-    pub const ALL: [Pedal; 6] = [
+    pub const ALL: [Pedal; 7] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
         Pedal::Green9,
         Pedal::Rodent,
         Pedal::RoundFuzz,
+        Pedal::YellowDist,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 5;
+    const SLOTS: usize = 6;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -725,6 +746,7 @@ impl Pedal {
             Pedal::Green9 => Some(2),
             Pedal::Rodent => Some(3),
             Pedal::RoundFuzz => Some(4),
+            Pedal::YellowDist => Some(5),
         }
     }
 
@@ -740,7 +762,8 @@ impl Pedal {
             1 => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
             2 => ts808::build_with(&ts808::TS9, 10_000.0, 470_000.0),
             3 => rodent::build(10_000.0, 470_000.0),
-            _ => round_fuzz::build(10_000.0, 470_000.0),
+            4 => round_fuzz::build(10_000.0, 470_000.0),
+            _ => distortion_plus::build(10_000.0, 470_000.0),
         }
     }
 
@@ -764,11 +787,17 @@ impl Pedal {
                 tone_inverted: true,
                 level: rodent::VOLUME,
             },
-            _ => PedalControls {
+            4 => PedalControls {
                 drive: round_fuzz::FUZZ,
                 tone: usize::MAX,
                 tone_inverted: false,
                 level: round_fuzz::VOLUME,
+            },
+            _ => PedalControls {
+                drive: distortion_plus::DISTORTION,
+                tone: usize::MAX,
+                tone_inverted: false,
+                level: distortion_plus::VOLUME,
             },
         }
     }
@@ -1465,6 +1494,9 @@ pub struct Settings {
     pub speed: f64,
     pub intensity: f64,
     pub oversampling: usize,
+    /// What the amplifier is plugged into, as a fraction of its own mains. One
+    /// is the wall; less is a variac. See `Chain::set_mains`.
+    pub mains: f64,
 }
 
 impl Default for Settings {
@@ -1489,6 +1521,7 @@ impl Default for Settings {
             intensity: 0.0,
             treble: 0.5,
             oversampling: 2,
+            mains: 1.0,
         }
     }
 }
@@ -1508,6 +1541,20 @@ pub struct Chain {
     pedal: Option<usize>,
     /// Volts per unit of digital input when a pedal takes the guitar first.
     pedal_into: f64,
+    /// What the pedal's output is multiplied by on the way into the circuit:
+    /// `into / pedal_into`.
+    ///
+    /// A pedal is always handed a guitar, because that is what it was built for
+    /// and where its diodes sit; a circuit is handed the level *it* was built
+    /// for, which is what `into` is and which is a guitar for the amplifiers
+    /// and anything from five millivolts to a volt for the consoles and the
+    /// clean stages. Without this the pedal's guitar-level output went straight
+    /// into whatever followed, so putting a pedal in front of the clean circuit
+    /// drove it nineteen decibels under its calibration point and the plugin
+    /// went quiet. One for the amplifiers, where the two levels are the same.
+    pedal_hand_off: f64,
+    /// What every supply is running at, as a fraction of nominal.
+    mains: f64,
     /// Each guitar power circuit at its own amplifier's catalogue index.
     powers: Vec<Option<Simulation>>,
     /// Zero is an empty catalogue slot, used for complete power bypass.
@@ -1713,8 +1760,17 @@ impl Chain {
                         .collect()
                 });
                 let powers = scope.spawn(|| {
-                    (0..VOICES)
+                    // One per voice, and then the output stages that belong to
+                    // no voice of their own: an amplifier's second rectifier
+                    // setting is the same preamplifier's power stage twice over,
+                    // so it needs a slot here rather than a catalogue entry.
+                    (0..VOICES + EXTRA_POWERS)
                         .map(|i| {
+                            if i >= VOICES {
+                                let spec = EXTRA_POWER_SPECS[i - VOICES];
+                                let built = power::build(spec, 10_000.0).expect("catalogue builds");
+                                return Some(Simulation::new(built, rate));
+                            }
                             let gain = voice_at(i).0;
                             // Studio line output is kept with its preamp independently.
                             gain.power_stage()
@@ -1784,12 +1840,14 @@ impl Chain {
             speaker::voltage_driven(&initial).expect("voltage-driven speaker builds");
         let driven_motional = driven_circuit.output;
         let mut chain = Self {
+            mains: 1.0,
             gains,
             pedals: (0..Pedal::SLOTS)
                 .map(|slot| Simulation::new(Pedal::build(slot).expect("pedal builds"), rate))
                 .collect(),
             pedal: None,
             pedal_into: 1.0,
+            pedal_hand_off: 1.0,
             powers,
             loaded,
             driven: Box::new(Loaded {
@@ -2042,6 +2100,7 @@ impl Chain {
                 .unwrap_or(DEFAULT_MASTER_REST);
             sim.set_control(controls.level, Self::master_position(rest, s.level));
             self.pedal_into = Pedal::input_volts(i) / 10f64.powf(NOMINAL_DBFS / 20.0);
+            self.pedal_hand_off = self.into / self.pedal_into;
         }
     }
 
@@ -2078,6 +2137,7 @@ impl Chain {
             PowerAmp::AC30EL84 => 6,
             PowerAmp::DR103EL34 => 7,
             PowerAmp::Recto6L6 => 8,
+            PowerAmp::Recto6L6Tube => 9,
         };
         let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
         10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
@@ -2272,6 +2332,9 @@ impl Chain {
         // A nominal digital signal has to arrive as the stated voltage.
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
         self.into = calibration.drive_volts / nominal;
+        // The circuit's own input level moved, so what the pedal hands it does
+        // too. See `pedal_hand_off`.
+        self.pedal_hand_off = self.into / self.pedal_into;
         // The Master knob's lift rides with the make-up, because that is what
         // it is: the same output gain, turned by hand. See `master_lift`.
         let trim = self.power_trim();
@@ -2584,6 +2647,7 @@ impl Chain {
     /// go through here, so that forgetting one is a change to this function
     /// rather than a line quietly missing from a loop somewhere.
     pub fn apply(&mut self, s: &Settings) {
+        self.set_mains(s.mains);
         self.set_pedal(&s.pedal);
         self.set_voice(s.gain, s.diode, s.amplifier);
         // After `set_voice`, because which control this reaches depends on
@@ -2601,6 +2665,43 @@ impl Chain {
         self.set_drive(s.drive);
         self.set_tone_knobs(s.bass, s.mid, s.treble);
         self.set_reverb_and_tremolo(s);
+    }
+
+    /// What the amplifier is plugged into, as a fraction of its own mains.
+    ///
+    /// One is the wall. Less is a variac, which is a thing players did and some
+    /// records depend on: every rail in the amplifier comes down together, so
+    /// the valves run out of room earlier and the whole thing goes soft and
+    /// compressed at a volume it used to be clean at. It reaches every
+    /// simulation that has a supply in it -- preamplifier, power stage, the
+    /// speaker-loaded twins and the studio line output -- because a variac feeds
+    /// the amplifier, not one stage of it.
+    ///
+    /// It is a setting rather than a knob: it is how the rig was wired, and
+    /// nobody sweeps it while playing.
+    pub fn set_mains(&mut self, fraction: f64) {
+        if (self.mains - fraction).abs() < 1e-9 {
+            return;
+        }
+        self.mains = fraction;
+        for sim in self
+            .gains
+            .iter_mut()
+            .chain(self.pedals.iter_mut())
+            .chain(self.powers.iter_mut().flatten())
+            .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
+            .chain(std::iter::once(&mut self.driven.sim))
+            .chain(std::iter::once(self.line.as_mut()))
+            .chain(std::iter::once(&mut self.tail))
+        {
+            sim.set_supply_scale(fraction);
+        }
+        // Every rail moved, so every operating point did.
+        self.fade_remaining = FADE_LEN;
+    }
+
+    pub fn mains(&self) -> f64 {
+        self.mains
     }
 
     /// One figure, always. See `LATENCY`.
@@ -2691,10 +2792,13 @@ impl Chain {
 
         let mut pedal = self.pedal.map(|i| &mut self.pedals[i]);
         let input_scale = if pedal.is_some() { self.pedal_into } else { self.into };
+        let hand_off = self.pedal_hand_off;
         let mut y = self.over.process(x * input_scale, &mut |v| {
-            // The pedal, when there is one, between the guitar and the circuit.
+            // The pedal, when there is one, between the guitar and the circuit:
+            // a guitar's level in, and out at the level the circuit behind it
+            // was calibrated for. See `pedal_hand_off`.
             let v = match pedal {
-                Some(ref mut sim) => sim.process(v),
+                Some(ref mut sim) => sim.process(v) * hand_off,
                 None => v,
             };
             // The power amplifier goes here, in volts, *before* the make-up.

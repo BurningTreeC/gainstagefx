@@ -455,12 +455,18 @@ fn circuit(cx: &mut Context) {
     grid.dropdown(cx, 0, 2, "iron", |p| &p.iron, Choice::Iron, true);
     grid.dropdown(cx, 1, 2, "power amp", |p| &p.power_amp, Choice::PowerAmp, true);
 
+    // What the amplifier is plugged into. A variac is how a rig was wired
+    // rather than something anybody sweeps, so it sits with the selections and
+    // not on a knob: every supply in the circuit and its power stage comes down
+    // together, which is what a valve amplifier on low mains does.
+    grid.dropdown(cx, 0, 3, "mains", |p| &p.mains, Choice::Mains, true);
+
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
     Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 98.0))
+        .top(Pixels(top + 126.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
         .child_top(Stretch(1.0))
@@ -662,7 +668,7 @@ pub fn describe(circuit: Circuit) -> String {
         }
         Circuit::Recto => {
             "Modeled after a 90s American two-channel head: five triodes, one \
-                          run cold. Silicon rectifier only."
+                          run cold, and a choice of rectifier."
         }
     }
     .to_string()

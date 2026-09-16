@@ -13,7 +13,7 @@
 //! thing to an independent check either of them can have.
 
 use super::device::{
-    AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Stamper,
+    AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Rectifier, Stamper,
     Transconductor, Triode,
 };
 use super::netlist::{Adjust, Circuit, Part, GROUND};
@@ -653,6 +653,8 @@ struct Inductor {
 pub struct Simulation {
     circuit: Circuit,
     rate: f64,
+    /// What every supply is multiplied by. See `set_supply_scale`.
+    supply_scale: f64,
     n: usize,
     /// Everything that does not change from sample to sample.
     base: Vec<f64>,
@@ -1107,6 +1109,7 @@ impl Simulation {
                     ..
                 } => inductor_count += 1,
                 Part::Diode { .. }
+                | Part::Rectifier { .. }
                 | Part::Triode { .. }
                 | Part::Pentode { .. }
                 | Part::Jfet { .. }
@@ -1187,6 +1190,7 @@ impl Simulation {
         let mut sim = Self {
             circuit,
             rate,
+            supply_scale: 1.0,
             n,
             base: vec![0.0; n * n],
             base_dc: vec![0.0; n * n],
@@ -1574,6 +1578,26 @@ impl Simulation {
         }
     }
 
+    /// What every supply in this circuit is multiplied by.
+    ///
+    /// One is the amplifier on its own mains. Less than one is the amplifier on
+    /// a variac -- which is a real thing players did, and on some records the
+    /// whole point: every rail comes down together, so the valves run out of
+    /// room sooner, the bias supply follows, and the amplifier goes soft where
+    /// it used to be loud. It scales the supplies and nothing else, because
+    /// that is all a variac does.
+    pub fn set_supply_scale(&mut self, scale: f64) {
+        let scale = scale.clamp(0.1, 2.0);
+        if (self.supply_scale - scale).abs() > 1e-9 {
+            self.supply_scale = scale;
+            self.dirty = true;
+        }
+    }
+
+    pub fn supply_scale(&self) -> f64 {
+        self.supply_scale
+    }
+
     pub fn set_rate(&mut self, rate: f64) {
         if (self.rate - rate).abs() > 1e-9 {
             self.rate = rate;
@@ -1686,7 +1710,10 @@ impl Simulation {
                         stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
                             source[node] += g;
-                            bias[node] += g * at;
+                            // The direct voltage a directly coupled block was
+                            // handed comes from the block in front of it, so it
+                            // moves with the mains like every other supply here.
+                            bias[node] += g * at * self.supply_scale;
                         }
                     }
                     Part::Capacitor { a, b, farads } => {
@@ -1769,12 +1796,18 @@ impl Simulation {
                         let g = 1.0 / series;
                         stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
-                            bias[node] += g * volts;
+                            bias[node] += g * volts * self.supply_scale;
                         }
                     }
                     Part::Diode { a, k, spec } => {
                         if !keep_devices {
                             self.devices.push(AnyDevice::Diode(Diode::new(a, k, spec)));
+                        }
+                    }
+                    Part::Rectifier { a, k, spec } => {
+                        if !keep_devices {
+                            self.devices
+                                .push(AnyDevice::Rectifier(Rectifier::new(a, k, spec)));
                         }
                     }
                     Part::Triode { p, g, k, spec } => {

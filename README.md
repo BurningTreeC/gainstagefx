@@ -93,7 +93,7 @@ sources, where they disagree and what was approximated.
 | Brit Plexi | A late-60s British 100 W lead amp with no master: the bright channel's three triodes into its own stack, so the Volume decides how hard the power valves work | Brit Plexi EL34 |
 | Brit AC30 | A 60s British 30 W combo: a top-boost valve into a stack with no middle control, then self-biased power valves with no feedback loop at all | AC30 EL84 |
 | Brit DR103 | A British 100 W head built for headroom: five triodes, a master volume, and an inverter the driver holds still so it cannot shift its bias | DR103 EL34 |
-| Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off. Silicon rectifier only | Recto 6L6 |
+| Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off | Recto 6L6 (or Recto 6L6 Tube) |
 
 Display names are generic on purpose. The hardware each was researched from is
 named in [`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md) and the research
@@ -142,11 +142,33 @@ overtakes it when driven hard.
 
 **Green 808**, **Ram Fuzz**, **Green 9** (the 808 with the later pedal's
 output resistors), **Rodent** (a hard-clipping distortion whose slow op-amp runs out
-of gain-bandwidth and slew rate, as the original's does) and **Round Fuzz** (two
-germanium transistors), each with its own drive, tone and level knobs, in front of
+of gain-bandwidth and slew rate, as the original's does), **Round Fuzz** (two
+germanium transistors) and **Yellow Dist** (one slow op-amp and a pair of germanium
+diodes to ground), each with its own drive, tone and level knobs, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
 feeds, so a pedal can also sit in front of itself.
+
+The slot is level matched the way the circuit list is. Each pedal's **Level**
+knob at noon is *unity through that pedal* — its own measured position, a little
+above half on all of them, because the level control of a pedal is an attenuator
+after a stage with gain. So switching pedals with the knobs where they are moves
+the level by a few decibels rather than by ten, and what is left is the pedals
+being different pedals: a fuzz at half its drive really does make more than a
+clean boost does. And the pedal is fed a guitar whatever follows it, while the
+circuit behind it is fed the level *it* was calibrated at — a guitar for the
+amplifiers, up to a volt for the clean stage and the consoles — so a pedal in
+front of the clean circuit sounds like a pedal rather than like a fault.
+
+## The mains
+
+**Nominal**, **90 %**, **80 %** or **70 %**. A valve amplifier's supplies all come from
+one transformer, so running it from a variac brings every rail down together: the valves
+have less room, the bias follows them, and the amplifier goes soft and compressed at a
+setting where it used to be loud and clean. It is a selection rather than a knob because
+that is what it was — how the rig was wired, not something anyone swept while playing.
+The Brown '78 and Brown '84 presets use it, because the engineer who recorded those
+records says the amplifier ran at 80 to 85 volts.
 
 ## The power stage
 
@@ -162,6 +184,7 @@ feeds, so a pedal can also sit in front of itself.
 | AC30 EL84 | Four EL84s sharing a 50 ohm cathode resistor, no feedback loop, and a cut control across the inverter; the Brit AC30's own |
 | DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop, with the inverter direct-coupled to the preamplifier; the Brit DR103's own |
 | Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing; the Cali Rectifier's own |
+| Recto 6L6 Tube | The same stage with its rectifier switch on valve: two 5U4GB, so the rail sits lower and sags under a chord |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
 output valves with their screen supplies, a centre-tapped transformer with a
@@ -231,13 +254,14 @@ Quality says, and the control shows it.
 
 ## Presets
 
-Sixty-seven, ordered quietest first within each group so the list reads as a
+Seventy-one, ordered quietest first within each group so the list reads as a
 range: Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier, and
 five groups of chains aimed at particular records — **Classic Rock**,
 **Psychedelic / Lead**, **Alternative**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier
 sounds, with the cabinet off throughout — a guitar speaker in front of a
 microphone preamplifier makes no sense at all, and a test enforces it. The
-whole catalogue is level matched, and a test holds it to that.
+whole catalogue is level matched, and a test holds it to that; `cargo run
+--release --example presetlevel` prints where each one sits.
 
 Each one is a full set of panel positions — loading one and looking at the panel
 tells you how the sound is made. Every guitar sound comes out of a physical cabinet,

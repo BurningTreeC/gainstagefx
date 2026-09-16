@@ -149,3 +149,33 @@ fn matched_is_the_ac30_stage_and_the_chain_stays_realtime_safe() {
         assert!(work.power.unsettled == 0 && work.gain.unsettled == 0, "{rate}: {work:?}");
     }
 }
+
+/// The AC30 has a rectifier valve, and it is built as one. What it does *not*
+/// do is sag much, and that is the amplifier rather than the model: a
+/// cathode-biased stage running near class A draws nearly the same current
+/// whether it is idling or working, so there is little for the valve to drop.
+/// What moves instead is the bias, on the shared cathode resistor.
+#[test]
+fn the_rectifier_is_a_valve_and_the_bias_is_what_moves() {
+    let spec = PowerSpec::AC30_EL84;
+    assert!(spec.rectifier.is_some(), "the AC30 has a rectifier valve");
+    let circuit = power::build(&spec, 10_000.0).unwrap();
+    let (ht, ok) = (
+        circuit.unknown_named("ht").unwrap(),
+        circuit.unknown_named("ok").unwrap(),
+    );
+    let mut s = Simulation::new(circuit, RATE);
+    s.find_operating_point();
+    let (rail_idle, bias_idle) = (s.voltage_at(ht), s.voltage_at(ok));
+    let (mut rail_loud, mut bias_loud) = (rail_idle, bias_idle);
+    for k in 0..(RATE as usize / 2) {
+        s.process(60.0 * (k as f64 * std::f64::consts::TAU * 82.0 / RATE).sin());
+        rail_loud = rail_loud.min(s.voltage_at(ht));
+        bias_loud = bias_loud.max(s.voltage_at(ok));
+    }
+    println!(
+        "rail {rail_idle:.0} V -> {rail_loud:.0} V, bias {bias_idle:.1} V -> {bias_loud:.1} V"
+    );
+    assert!(bias_loud > bias_idle + 0.5, "the bias moves: {bias_idle:.1} to {bias_loud:.1}");
+    assert!(rail_idle - rail_loud < 20.0, "and the rail hardly does");
+}

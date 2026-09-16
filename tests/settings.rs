@@ -44,6 +44,7 @@ fn difference(a: &[f64], b: &[f64]) -> f64 {
 fn every_control_reaches_the_circuit() {
     // A voice with a tone stack and diodes, so that every control applies.
     let base = Settings {
+        mains: 1.0,
         power_amp: Default::default(),
         acoustic: Default::default(),
         pedal: Default::default(),

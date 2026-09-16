@@ -24,8 +24,10 @@ pub const FUZZ: usize = 0;
 /// R VOL, 500 k audio.
 pub const VOLUME: usize = 1;
 
-/// Where Volume rests, like the other pedals' level controls.
-pub const VOLUME_REST: f64 = 0.7;
+/// Where the level control rests: **unity through the pedal**, which is what
+/// the panel's Level knob means at noon. Highest of the pedals, because this one
+/// has the least gain to give away. See `rodent::VOLUME_REST`.
+pub const VOLUME_REST: f64 = 0.747;
 
 /// ESTIMATED: a 9 V PP3 carbon-zinc battery's internal resistance. The analysis
 /// notes that the battery resistance adds to R2 and changes the sound; none is

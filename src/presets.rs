@@ -10,11 +10,15 @@
 //! use, because that is how somebody looking for a sound is thinking.
 
 use crate::params::{
+    Mains,
     Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, MicModel, Oversampling, PedalModel,
     PowerAmp, SpeakerModel, ToneStack,
 };
 
 pub struct Preset {
+    /// What the amplifier is plugged into. `Mains::Nominal` is the wall, which
+    /// is what every preset but a variac one wants.
+    pub mains: Mains,
     /// A pedal ahead of the circuit, and its three knobs.
     pub pedal: PedalModel,
     pub pedal_drive: f32,
@@ -90,6 +94,7 @@ pub struct Preset {
 /// preset in the file.
 const fn base(group: &'static str, name: &'static str) -> Preset {
     Preset {
+        mains: Mains::Nominal,
         pedal: PedalModel::None,
         pedal_drive: 0.5,
         pedal_tone: 0.5,
@@ -1031,11 +1036,121 @@ pub const PRESETS: &[Preset] = &[
         mic_b_position: 0.5,
         mic_b_distance: 0.5,
         mic_blend: 0.3,
-        // A fuzz into a hundred watts of headroom is the loudest thing in the
-        // catalogue; this is the trim that keeps it level with the rest.
-        output_trim: -5.0,
+        // A fuzz into a hundred watts of headroom would otherwise be one of the
+        // loudest things in the catalogue; this is the trim that keeps it level
+        // with the rest. Measured with `examples/presetlevel.rs`, and measured
+        // again when the pedal slot's resting level moved under it.
+        output_trim: -1.0,
         oversampling: Oversampling::Off,
         ..base("Psychedelic / Lead", "The Great Wall '79")
+    },
+    // A late-60s British 100 W head run from a variac at about seventy per cent
+    // of its mains, everything on the stop, into a 4x12. The variac is the
+    // documented part of this rig and the reason it sounds the way it does:
+    // every rail comes down together, so the amplifier is soft and compressed at
+    // a setting where it would otherwise be brutal. See PRESETS.md.
+    Preset {
+        circuit: Circuit::Plexi,
+        power_amp: PowerAmp::Matched,
+        mains: Mains::Seventy,
+        drive: 1.0,
+        bass: 0.55,
+        mid: 0.65,
+        treble: 0.7,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritGreen,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.02,
+        mic_a_angle: 0.0,
+        mic_b: MicModel::Condenser87,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.9,
+        mic_b_angle: 30.0,
+        mic_blend: 0.3,
+        // A variac takes the whole amplifier down, so this one is quiet.
+        output_trim: 3.0,
+        oversampling: Oversampling::Off,
+        ..base("Classic Rock", "Brown '78")
+    },
+    // The same amplifier and the same variac six years later, with the guitar
+    // brighter and the room further back.
+    Preset {
+        circuit: Circuit::Plexi,
+        power_amp: PowerAmp::Matched,
+        mains: Mains::Seventy,
+        drive: 1.0,
+        bass: 0.5,
+        mid: 0.7,
+        treble: 0.75,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritGreen,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.03,
+        mic_b: MicModel::Ribbon121,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.4,
+        mic_blend: 0.35,
+        // A variac takes the whole amplifier down, so this one is quiet.
+        output_trim: 3.0,
+        oversampling: Oversampling::Off,
+        ..base("Classic Rock", "Brown '84")
+    },
+    // A germanium distortion pedal kept on all the time, into a stock 100 W
+    // British head run from a variac at about ninety volts, into 4x12s. See
+    // PRESETS.md.
+    Preset {
+        pedal: PedalModel::YellowDist,
+        pedal_drive: 0.6,
+        pedal_level: 0.7,
+        circuit: Circuit::Plexi,
+        power_amp: PowerAmp::Matched,
+        mains: Mains::Eighty,
+        drive: 0.85,
+        bass: 0.5,
+        mid: 0.6,
+        treble: 0.7,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritClosed,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.02,
+        mic_b: MicModel::Condenser87,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.6,
+        mic_blend: 0.3,
+        // A variac again, so this one is quiet.
+        output_trim: 4.0,
+        oversampling: Oversampling::Off,
+        ..base("Classic Rock", "Blizzard '80")
+    },
+    // One master-volume British head and one 4x12, unchanged for every record
+    // the band made, with the guitar's own volume doing the rest. See PRESETS.md.
+    Preset {
+        circuit: Circuit::Brit800,
+        power_amp: PowerAmp::Matched,
+        drive: 0.65,
+        master: 0.7,
+        bass: 0.45,
+        mid: 0.55,
+        treble: 0.7,
+        tone: ToneStack::Off,
+        cab_model: CabModel::Oversized,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.25,
+        mic_a_distance: 0.02,
+        mic_b: MicModel::Dynamic421,
+        mic_b_position: 0.4,
+        mic_b_distance: 0.03,
+        mic_blend: 0.35,
+        output_trim: -3.0,
+        oversampling: Oversampling::Off,
+        ..base("Alternative", "Machine Rage '92")
     },
     // A four-transistor fuzz into the low input of an early-80s British
     // master-volume head with its master wide open, the preamp volume doing the
@@ -1126,6 +1241,7 @@ impl Preset {
             angle: angle as f64,
         };
         crate::voice::Settings {
+            mains: self.mains.fraction(),
             pedal: crate::voice::PedalSettings {
                 pedal: self.pedal.voice(),
                 drive: self.pedal_drive as f64,
@@ -1179,7 +1295,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 41] {
+    pub fn dials(&self) -> [(&'static str, f32); 42] {
         [
             ("in_trim", self.input_trim),
             ("pedal", index_in(&PedalModel::ALL, self.pedal)),
@@ -1188,6 +1304,7 @@ impl Preset {
             ("pedal_level", self.pedal_level),
             ("circuit", index_in(&Circuit::ALL, self.circuit)),
             ("power_amp", index_in(&PowerAmp::ALL, self.power_amp)),
+            ("mains", index_in(&Mains::ALL, self.mains)),
             ("diode", index_in(&Diode::ALL, self.diode)),
             ("amplifier", index_in(&Amplifier::ALL, self.amplifier)),
             ("iron", index_in(&Iron::ALL, self.iron)),
@@ -1434,6 +1551,9 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     preset.values.entry("cab_model".into()).or_insert(0.0);
     // No pedal is the first pedal entry.
     preset.values.entry("pedal".into()).or_insert(0.0);
+    // And the wall is the first mains entry, which is what an amplifier that
+    // has never heard of a variac is plugged into.
+    preset.values.entry("mains".into()).or_insert(0.0);
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {
             if let Some(index) = names.iter().position(|name| *name == saved) {

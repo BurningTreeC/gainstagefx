@@ -517,6 +517,95 @@ impl Device for Diode {
     }
 }
 
+/// A rectifier valve, by Child's law.
+///
+/// `i = k v^1.5` when the plate is positive of the cathode, and nothing when it
+/// is not -- a valve cannot conduct backwards at all, which is the other half of
+/// what makes it different from a silicon bridge.
+///
+/// The two-thirds power is the whole point. A silicon diode's drop barely moves
+/// with current, so the supply behind it is stiff; this one's drop climbs as the
+/// amplifier draws, so the rail falls under a chord and comes back with the
+/// reservoir's time constant. That is sag, and it is a property of the part
+/// rather than a number anybody tunes.
+pub struct Rectifier {
+    a: usize,
+    k: usize,
+    perveance: f64,
+    voltage: f64,
+    delta: f64,
+    clamped: bool,
+}
+
+impl Rectifier {
+    /// Below this the valve is treated as off, with a tiny conductance so the
+    /// node it feeds is never left floating.
+    const OFF: f64 = 1e-9;
+
+    pub fn new(a: usize, k: usize, spec: crate::dsp::netlist::RectifierSpec) -> Self {
+        Self {
+            a,
+            k,
+            perveance: spec.perveance(),
+            voltage: 0.0,
+            delta: 0.0,
+            clamped: false,
+        }
+    }
+}
+
+impl Device for Rectifier {
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.a, self.k);
+    }
+
+    fn linearisation(&self) -> Linearisation {
+        Linearisation {
+            at: [self.voltage, self.delta, 0.0, 0.0],
+            clamped: self.clamped,
+        }
+    }
+
+    fn relinearise(&mut self, saved: Linearisation) {
+        self.voltage = saved.at[0];
+        self.delta = saved.at[1];
+        self.clamped = saved.clamped;
+    }
+
+    fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
+        // The step limiter a power supply needs is a plain one: the law is a
+        // three-halves power rather than an exponential, so it cannot run away
+        // the way a junction does, but a solve that starts far from the answer
+        // can still ask for a plate volt that is negative on one pass and a
+        // hundred on the next.
+        let wanted = across(v, self.a, self.k);
+        let (guess, clamped) = limit(wanted, self.voltage, 25.0);
+        self.clamped = clamped;
+        self.delta = (guess - self.voltage).abs();
+        self.voltage = guess;
+
+        let (i, g) = if guess > 0.0 {
+            let root = guess.sqrt();
+            (
+                self.perveance * guess * root,
+                (1.5 * self.perveance * root).max(Self::OFF),
+            )
+        } else {
+            (0.0, Self::OFF)
+        };
+        s.conductance(self.a, self.k, g);
+        s.current(self.a, self.k, i - g * guess);
+    }
+
+    fn moved(&self) -> f64 {
+        self.delta
+    }
+
+    fn settled(&self, tolerance: f64) -> bool {
+        !self.clamped && self.delta < tolerance
+    }
+}
+
 /// A triode, by Koren's equations.
 ///
 /// The plate current follows a three-halves power law rather than an
@@ -1662,6 +1751,7 @@ impl Device for Transconductor {
 /// type it is holding.
 pub enum AnyDevice {
     Diode(Diode),
+    Rectifier(Rectifier),
     Triode(Triode),
     Pentode(Pentode),
     Jfet(Jfet),
@@ -1679,6 +1769,7 @@ impl AnyDevice {
     pub fn copy_runtime_state_from(&mut self, source: &Self) {
         match (self, source) {
             (Self::Diode(dst), Self::Diode(src)) => dst.relinearise(src.linearisation()),
+            (Self::Rectifier(dst), Self::Rectifier(src)) => dst.relinearise(src.linearisation()),
             (Self::Triode(dst), Self::Triode(src)) => dst.relinearise(src.linearisation()),
             (Self::Pentode(dst), Self::Pentode(src)) => dst.relinearise(src.linearisation()),
             (Self::Jfet(dst), Self::Jfet(src)) => dst.relinearise(src.linearisation()),
@@ -1705,6 +1796,7 @@ impl Device for AnyDevice {
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
         match self {
             AnyDevice::Diode(d) => d.stamp(s, v),
+            AnyDevice::Rectifier(r) => r.stamp(s, v),
             AnyDevice::Triode(t) => t.stamp(s, v),
             AnyDevice::Pentode(p) => p.stamp(s, v),
             AnyDevice::Jfet(j) => j.stamp(s, v),
@@ -1719,6 +1811,7 @@ impl Device for AnyDevice {
     fn footprint(&self, m: &mut Mark) {
         match self {
             AnyDevice::Diode(d) => d.footprint(m),
+            AnyDevice::Rectifier(r) => r.footprint(m),
             AnyDevice::Triode(t) => t.footprint(m),
             AnyDevice::Pentode(p) => p.footprint(m),
             AnyDevice::Jfet(j) => j.footprint(m),
@@ -1733,6 +1826,7 @@ impl Device for AnyDevice {
     fn moved(&self) -> f64 {
         match self {
             AnyDevice::Diode(d) => d.moved(),
+            AnyDevice::Rectifier(r) => r.moved(),
             AnyDevice::Triode(t) => t.moved(),
             AnyDevice::Pentode(p) => p.moved(),
             AnyDevice::Jfet(j) => j.moved(),
@@ -1747,6 +1841,7 @@ impl Device for AnyDevice {
     fn settled(&self, tolerance: f64) -> bool {
         match self {
             AnyDevice::Diode(d) => d.settled(tolerance),
+            AnyDevice::Rectifier(r) => r.settled(tolerance),
             AnyDevice::Triode(t) => t.settled(tolerance),
             AnyDevice::Pentode(p) => p.settled(tolerance),
             AnyDevice::Jfet(j) => j.settled(tolerance),
@@ -1761,6 +1856,7 @@ impl Device for AnyDevice {
     fn linearisation(&self) -> Linearisation {
         match self {
             AnyDevice::Diode(d) => d.linearisation(),
+            AnyDevice::Rectifier(r) => r.linearisation(),
             AnyDevice::Triode(t) => t.linearisation(),
             AnyDevice::Pentode(p) => p.linearisation(),
             AnyDevice::Jfet(j) => j.linearisation(),
@@ -1775,6 +1871,7 @@ impl Device for AnyDevice {
     fn relinearise(&mut self, saved: Linearisation) {
         match self {
             AnyDevice::Diode(d) => d.relinearise(saved),
+            AnyDevice::Rectifier(r) => r.relinearise(saved),
             AnyDevice::Triode(t) => t.relinearise(saved),
             AnyDevice::Pentode(p) => p.relinearise(saved),
             AnyDevice::Jfet(j) => j.relinearise(saved),
@@ -1789,6 +1886,7 @@ impl Device for AnyDevice {
     fn advance(&mut self) {
         match self {
             AnyDevice::Diode(d) => d.advance(),
+            AnyDevice::Rectifier(r) => r.advance(),
             AnyDevice::Triode(t) => t.advance(),
             AnyDevice::Pentode(p) => p.advance(),
             AnyDevice::Jfet(j) => j.advance(),
@@ -1803,6 +1901,7 @@ impl Device for AnyDevice {
     fn switches(&self) -> bool {
         match self {
             AnyDevice::Diode(d) => d.switches(),
+            AnyDevice::Rectifier(r) => r.switches(),
             AnyDevice::Triode(t) => t.switches(),
             AnyDevice::Pentode(p) => p.switches(),
             AnyDevice::Jfet(j) => j.switches(),

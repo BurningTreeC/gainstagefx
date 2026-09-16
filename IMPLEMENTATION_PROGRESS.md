@@ -495,5 +495,99 @@ dual-slope law. Now ±10-15 dB and flat when centred. New `Taper::Symmetric`.
   and the panel description says so.
 - Presets: Recto Rhythm, Recto Lead. Tests: `tests/rectifier.rs`.
 
-**Still open.** A valve-rectifier device and a mains-voltage (variac) supply, which the
-Brown '78/'84 presets wait on; rig research for the remaining album titles.
+## Session 9 (2026-09-16): the rectifier valve, the mains, and a bigger preset list
+
+**The preset browser.** 330 px tall for a catalogue that has grown to sixty-nine presets
+in twelve groups -- about seventeen hundred pixels of list -- so the groups near the
+bottom were four screens down. It now uses the panel's height.
+
+**A rectifier valve** (`Part::Rectifier`). Child's law: the drop goes as the two-thirds
+power of the current, which is what sag is. Measured against a GZ34's data sheet figure:
+10.1 V at 49 mA, 28.6 V at 232 mA (`tests/devices.rs`).
+- The **AC30** now has its valve rectifier rather than a resistance standing in for it. It
+  still idles at 9.7 V of cathode bias against the factory sheet's 10 V. What that
+  amplifier does *not* do is sag much -- a cathode-biased stage near class A draws the same
+  current either way -- and what moves instead is its bias, which the test now says.
+- The **Rectifier** has both of its settings, because it has a switch: Recto 6L6 (silicon)
+  and Recto 6L6 Tube (two 5U4GB). Measured: 482 V idling with 59 V of sag against 471 V
+  and 83 V. Output stages that belong to no voice now have their own slots
+  (`EXTRA_POWER_SPECS`).
+
+**The mains** (`Simulation::set_supply_scale`, the `mains` parameter, a dropdown in the
+CIRCUIT section). Every supply in the circuit and its power stage is multiplied together,
+which is all a variac does. Measured on the plexi at 70 %: rails fall in proportion, the
+power stage's distortion at the same drive goes from 13.6 % to 30.9 %, and the whole thing
+is quieter.
+
+**Presets.** Brown '78 and Brown '84 (Classic Rock), which were waiting on exactly that --
+"he was using the Variac to run his Marshall at 85 volts instead of 120" (Donn Landee,
+Tape Op). Sixty-nine presets in all.
+
+**Yellow Dist (MXR Distortion+).** Added because the research for Blizzard of Ozz named it
+as the pedal Rhoads "almost always kept on", and it is a small, fully documented circuit:
+one 741 with germanium diodes to ground. Log: [yellow_dist.md](docs/models/yellow_dist.md).
+Measured against the published analysis's own arithmetic -- 5.8 dB and 45.2 dB against its
+3.5 and 46.5, clipping at 0.295 V against its 0.35 -- and given a log gain track so the
+control sweeps evenly instead of doing everything in its last few millimetres.
+Tests: `tests/distortion_plus.rs`.
+
+**More album presets.** Blizzard '80 (Classic Rock) and Machine Rage '92 (Alternative),
+each with its evidence table. Seventy-one presets.
+
+**Rig research, recorded rather than built.** Several of the remaining titles turn out to
+need amplifiers nobody has modelled, and PRESETS.md now says which:
+- *Dirty Chains '92*: three amps at once (Bogner Fish/VHT, Bogner Ecstasy, Rockman),
+  split and recombined -- Dave Jerden's own description;
+- *Unknown Garden '94*: a Sunn Model T for much of it;
+- *Spiral '96*: a modified Marshall Super Bass with its channels jumpered, alongside a
+  Rectifier;
+- *Never Mind '91*, *Seattle Ten '91*, *Desert Deaf '02*, *Californicated '99*,
+  *Blood Sugar '91*: a Mesa Studio .22 preamp, a Marshall Major, an Ampeg VT;
+- *Appetite '87*: a rented, modified 1959T, which the stock Brit Plexi is not.
+
+**Still open.** The amplifiers those presets would need, if they are ever wanted.
+
+## Session 10 (2026-09-16): the pedal slot gets the level matching the circuits have
+
+Asked whether the level matching that holds the circuit list together (`CALIBRATION`) and
+the power overrides (`POWER_TRIM_DB`) also holds the pedal slot. It did not, in two
+separate ways, and `examples/pedallevel.rs` is the measurement.
+
+**Every pedal rested at the same position on its own track**, which is a different amount
+of gain in each of them: with the knobs where they are, switching from a Round Fuzz to a
+Rodent moved the level by 8.5 dB, and every pedal but one was *quieter* than no pedal at
+all. Each pedal's resting position is now its **measured unity point** -- Green 808 0.626,
+Ram Fuzz 0.565, Rodent 0.543, Round Fuzz 0.747, Yellow Dist 0.631 -- so the panel's Level
+knob at noon means unity through that pedal. It is a position rather than a hidden
+make-up: it is where a player sets a pedal's output anyway.
+
+**The pedal's output went straight into the circuit behind it.** A pedal is handed a
+guitar's 0.122 V, which is what it was built for and where its diodes sit; but a circuit is
+calibrated at the level *it* was built for, which is a guitar for the amplifiers and
+anything from 4.7 mV to 1.12 V for the consoles, the studio preamplifiers and the clean
+stage. So putting any pedal in front of the clean circuit drove it 19 dB under its
+calibration point and the plugin went quiet. `Chain::pedal_hand_off` is the missing
+rescale, and it is one for every guitar amplifier in the list, where the two levels are the
+same number.
+
+Measured after both, at the knobs' middles, against no pedal at all:
+
+| | into Clean | into Crunch | into Twin Reverb |
+|---|---|---|---|
+| before | -8.0 to -17.9 dB | +1.4 to +8.6 dB | +1.3 to +8.5 dB |
+| after | -2.3 to +2.8 dB | -2.3 to +2.7 dB | -3.7 to +3.9 dB |
+
+What is left is the pedals being different pedals: a fuzz at half its drive makes more
+than a clean boost does, and flattening that would be flattening the pedals.
+
+Test: `the_pedal_slot_is_level_matched_in_front_of_any_circuit` in `tests/pedal_slot.rs`,
+which holds the departure under 6 dB and asserts that a pedal departs by the same amount in
+front of a guitar-level circuit and a line-level one -- that is the hand-off, rather than a
+coincidence. `src/calibration.rs` and `src/power_trim.rs` were regenerated, because two of
+the pedals are also voices in the circuit list.
+
+`examples/presetlevel.rs` prints the whole preset catalogue loudest first, with the pedal
+each one carries, which is how the output trims are chosen. One of them was stale after
+this change -- The Great Wall '79 had been trimmed 5 dB down against the old resting level
+and had become the quietest entry in the list -- and is now -1. Seven presets carry a
+pedal and they average half a decibel below the rest of the catalogue, which spans 10.8 dB.

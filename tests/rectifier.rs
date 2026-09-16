@@ -145,3 +145,32 @@ fn matched_is_the_recto_stage_and_the_chain_stays_realtime_safe() {
         assert!(work.power.unsettled == 0 && work.gain.unsettled == 0, "{rate}: {work:?}");
     }
 }
+
+/// The switch the amplifier is named after. On SILICON the rail holds; on VALVE
+/// it sits lower and gives way under a chord, because a rectifier valve's drop
+/// follows its current. This is a class-AB stage, so the current really does
+/// swing -- unlike the AC30's, which draws nearly the same either way.
+#[test]
+fn the_valve_rectifier_setting_sags_where_the_silicon_one_holds() {
+    let rail = |spec: &PowerSpec| {
+        let circuit = power::build(spec, 10_000.0).unwrap();
+        let ht = circuit.unknown_named("ht").unwrap();
+        let mut s = Simulation::new(circuit, 48_000.0);
+        assert!(s.find_operating_point());
+        let idle = s.voltage_at(ht);
+        let mut lowest = idle;
+        for k in 0..24_000 {
+            s.process(60.0 * (k as f64 * std::f64::consts::TAU * 82.0 / 48_000.0).sin());
+            lowest = lowest.min(s.voltage_at(ht));
+        }
+        (idle, idle - lowest)
+    };
+    let (silicon_idle, silicon_sag) = rail(&PowerSpec::RECTO_6L6);
+    let (valve_idle, valve_sag) = rail(&PowerSpec::RECTO_6L6_TUBE);
+    println!("silicon {silicon_idle:.0} V, {silicon_sag:.0} V of sag; valve {valve_idle:.0} V, {valve_sag:.0} V");
+    assert!(PowerSpec::RECTO_6L6.rectifier.is_none());
+    assert!(PowerSpec::RECTO_6L6_TUBE.rectifier.is_some());
+    // The valve starts lower and gives way further.
+    assert!(valve_idle < silicon_idle - 5.0, "{valve_idle} {silicon_idle}");
+    assert!(valve_sag > silicon_sag * 1.2, "{valve_sag} {silicon_sag}");
+}

@@ -21,8 +21,8 @@ use std::sync::Arc;
 use super::style::*;
 use super::Panel;
 use crate::params::{
-    Amplifier, CabModel, Circuit, Diode, GainStageParams, Iron, MicModel, PedalModel, PowerAmp,
-    SpeakerModel,
+    Amplifier, CabModel, Circuit, Diode, GainStageParams, Iron, Mains, MicModel, PedalModel,
+    PowerAmp, SpeakerModel,
 };
 
 const ROW_H: f32 = 21.0;
@@ -41,6 +41,7 @@ pub enum Choice {
     /// The rest of it: circuits modelled from their schematics.
     Modelled,
     PowerAmp,
+    Mains,
     Clipping,
     Amplifier,
     Iron,
@@ -118,6 +119,7 @@ impl Choice {
                 }
             }
             Choice::PowerAmp => whole(all(&PowerAmp::ALL, PowerAmp::name), 0),
+            Choice::Mains => whole(all(&Mains::ALL, Mains::name), 0),
             Choice::Clipping => whole(all(&Diode::ALL, Diode::name), 0),
             Choice::Amplifier => whole(all(&Amplifier::ALL, Amplifier::name), 0),
             Choice::Iron => whole(all(&Iron::ALL, Iron::name), 0),
@@ -138,6 +140,7 @@ impl Choice {
             Choice::Pedal => of(&p.pedal),
             Choice::Topology | Choice::Modelled => of(&p.circuit),
             Choice::PowerAmp => of(&p.power_amp),
+            Choice::Mains => of(&p.mains),
             Choice::Clipping => of(&p.diode),
             Choice::Amplifier => of(&p.amplifier),
             Choice::Iron => of(&p.iron),

@@ -57,11 +57,12 @@ power amp: V5A/V5B 12AX7 long-tailed pair, R104 90k and R281 82k plates with 120
    the RED stack; and in the power stage the inverter, the couplings, the leaks, the
    stoppers, the screens, the four 6L6s and the feedback with its presence control.
 7. **Approximated and estimated.**
-   - **The rectifier itself is not modelled as valves.** The amplifier's name is its
-     switchable silicon/valve rectifiers; the supply here is a voltage behind a resistance,
-     so the model is the silicon setting. The valve setting's sag would need a rectifier
-     device. This is the one thing the name promises that the model does not do, and it is
-     stated on the panel description as well as here.
+   - **Both rectifier settings are modelled** (2026-09-16). SILICON DIODE is the supply
+     as a voltage behind a resistance; VALVE is two 5U4GB as a `Part::Rectifier`, which
+     follows Child's law, so the rail sits lower and sags under load. They are two power
+     amplifiers in the list -- Recto 6L6 and Recto 6L6 Tube -- because the amplifier has a
+     switch. Matched is the silicon one. Measured: 482 V idling and 59 V of sag on a loud
+     low note against 471 V and 83 V.
    - Supplies: the sheet's own node voltages are used to set the rails (200 V at V1A's
      plate, 280 V at V2A's, 384 V at V2B's, 415 V at the follower's).
    - The LDR switching (channel and mode) is modelled as the RED channel in Modern; the

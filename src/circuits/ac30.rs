@@ -37,16 +37,16 @@ pub const BASS: usize = 2;
 
 /// The high-tension node the droppers hang from, in volts. The drawings carry no
 /// voltages; this is where the power stage's own supply settles
-/// (`PowerSpec::AC30_EL84`, whose 362 V behind 250 ohm is set so the output
-/// valves idle at the factory sheet's 10 V of cathode bias). Checked in
+/// (`PowerSpec::AC30_EL84`, whose transformer and rectifier valve are set so the
+/// output valves idle at the factory sheet's 10 V of cathode bias). Checked in
 /// `tests/ac30.rs`.
-pub const HT: f64 = 311.0;
+pub const HT: f64 = 331.0;
 
 /// R11 22 k feeds the phase inverter from the same high-tension node.
 /// The inverter is solved in the power stage's netlist, so its supply is stated
 /// here: HT less the drop its own idle current makes across R11. Re-measured by
 /// `tests/ac30.rs`.
-pub const INVERTER_NODE: f64 = 284.0;
+pub const INVERTER_NODE: f64 = 305.0;
 
 /// The normal channel's triode, which is not built. It shares V1's cathode
 /// resistor, so its current sets the bias of the stage that *is* built: this is

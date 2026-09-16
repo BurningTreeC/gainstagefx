@@ -219,9 +219,10 @@ pub fn tap(v: &Voicing, source: f64, load: f64, at: &str) -> Result<Circuit, Fau
         // The same trap the Screamer's Level was in: the plugin does not reach
         // this knob, so without saying so it sits at the middle of an audio
         // track, which is a tenth of it. A Muff has enormous output and is
-        // normally run well below maximum, but not at a tenth. See
-        // `Netlist::rest`.
-        .rest(VOLUME, 0.70);
+        // normally run well below maximum, but not at a tenth. This is unity
+        // through the pedal, which is what the slot's Level knob means at noon:
+        // see `Netlist::rest` and `rodent::VOLUME_REST`.
+        .rest(VOLUME, 0.565);
 
     net.build(at)
 }
