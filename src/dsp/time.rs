@@ -42,7 +42,9 @@ const SEARCH_TRACE_TRIALS: usize = 9;
 #[cfg(test)]
 const TAIL_TRACE_PASSES: usize = 8;
 #[cfg(test)]
-const TEST_LAST_SETTLED_RESTART_PASSES: usize = 32;
+const TEST_LAST_SETTLED_RESTART_PASSES_DEFAULT: usize = 32;
+#[cfg(test)]
+const TEST_POST_RESTART_STAGE_PASSES: usize = 32;
 
 #[cfg(test)]
 #[derive(Clone, Copy, Debug)]
@@ -327,6 +329,12 @@ const CONVERGING: f64 = 0.5;
 const NONMONOTONE_MIN_PROGRESS: f64 = 1.0e-6;
 #[cfg(test)]
 const TEST_V21_NONMONOTONE_MIN_PROGRESS: f64 = 1.0e-5;
+// Keep repeat-cycle gating deliberately narrow.  The Slaughter '95 / Twin
+// solve-49465 trace has a slower 1.2e-5..1.7e-5 drift, but widening this window
+// to 2e-5 changed the physical trajectory and increased the full recording
+// from six to eight unsettled power solves.  Leave that case to the separate
+// branch-preserving restart experiment instead of rejecting a still-useful
+// nonmonotone step globally.
 const REPEAT_CYCLE_MAX_PROGRESS: f64 = 1.0e-5;
 const REPEAT_CYCLE_MATCH_REL: f64 = 1.0e-4;
 
@@ -446,6 +454,243 @@ fn repeat_cycle_guard_requires_recurrence_of_same_pair() {
         0.033_794_202_049_355_44,
         0.073_825_018_786_463_82,
         0.071_505_251_319_160_08,
+    ));
+}
+
+#[cfg(test)]
+#[inline]
+fn collect_post_restart_cycle_geometry(
+    trace_unsettled: bool,
+    post_restart_continuation: bool,
+) -> bool {
+    // The post-restart rescue uses the dominant Newton unknown as part of its
+    // deliberately narrow A/B-cycle signature.  That geometry must therefore
+    // be collected when the rescue experiment is enabled even if the verbose
+    // GAINSTAGEFX_TRACE_UNSETTLED diagnostics are off.  Keep the deeper
+    // passive line-search probes trace-only; this helper covers only the cheap
+    // O(nodes) dominant-correction scan needed for the recovery predicate.
+    trace_unsettled || post_restart_continuation
+}
+
+#[cfg(test)]
+#[test]
+fn post_restart_continuation_collects_cycle_geometry_without_trace() {
+    assert!(!collect_post_restart_cycle_geometry(false, false));
+    assert!(collect_post_restart_cycle_geometry(true, false));
+    assert!(collect_post_restart_cycle_geometry(false, true));
+    assert!(collect_post_restart_cycle_geometry(true, true));
+}
+
+#[inline]
+fn late_continuation_rejection(
+    target_passes: usize,
+    min_target_passes: usize,
+    line_search_failed: bool,
+    ordinary_stuck: bool,
+    stuck_only: bool,
+) -> bool {
+    target_passes >= min_target_passes
+        && (ordinary_stuck || (!stuck_only && line_search_failed))
+}
+
+#[cfg(test)]
+#[test]
+fn stuck_only_continuation_ignores_recoverable_line_search_fallbacks() {
+    let late = LATE_CONTINUATION_MIN_TARGET_PASSES;
+
+    // Production policy today: a late fallback is enough to try the midpoint.
+    assert!(late_continuation_rejection(late, late, true, false, false));
+    // Test policy: only an actual exhausted/stuck Newton step may steer source.
+    assert!(!late_continuation_rejection(late, late, true, false, true));
+    assert!(late_continuation_rejection(late, late, false, true, true));
+    // Never steer early, even for a stuck step.
+    assert!(!late_continuation_rejection(late - 1, late, true, true, true));
+}
+
+#[cfg(test)]
+#[test]
+fn continuation_min_target_pass_delays_fallback_steering_without_disabling_it() {
+    let production = LATE_CONTINUATION_MIN_TARGET_PASSES;
+    let delayed = production + 8;
+
+    // A recoverable fallback that would steer under production remains on the
+    // exact target until the configured delayed threshold is reached.
+    assert!(late_continuation_rejection(
+        production,
+        production,
+        true,
+        false,
+        false,
+    ));
+    assert!(!late_continuation_rejection(
+        production,
+        delayed,
+        true,
+        false,
+        false,
+    ));
+    assert!(late_continuation_rejection(
+        delayed,
+        delayed,
+        true,
+        false,
+        false,
+    ));
+
+    // A genuine stuck step obeys the same minimum-pass gate.
+    assert!(!late_continuation_rejection(
+        delayed - 1,
+        delayed,
+        false,
+        true,
+        false,
+    ));
+    assert!(late_continuation_rejection(
+        delayed,
+        delayed,
+        false,
+        true,
+        false,
+    ));
+}
+
+#[cfg(test)]
+#[inline]
+fn post_restart_two_cycle_signature(
+    count: usize,
+    here: &[f64; TAIL_TRACE_PASSES],
+    accepted_lambda: &[f64; TAIL_TRACE_PASSES],
+    fallback: &[bool; TAIL_TRACE_PASSES],
+    max_unknown: &[usize; TAIL_TRACE_PASSES],
+) -> bool {
+    // This detector is deliberately failure-only.  It is evaluated only after
+    // both the normal solve and the full last-settled restart have exhausted
+    // their budgets, so it cannot perturb a successful realtime trajectory.
+    // Do not hard-code Twin node numbers here: require two distinct dominant
+    // unknowns to alternate with the measured 0.5/1.0 A/B line-search rhythm.
+    if count < TAIL_TRACE_PASSES {
+        return false;
+    }
+
+    let a = max_unknown[0];
+    let b = max_unknown[1];
+    if a == b {
+        return false;
+    }
+
+    for i in 0..TAIL_TRACE_PASSES {
+        if fallback[i] || !here[i].is_finite() || here[i] <= 0.0 {
+            return false;
+        }
+        let expected_unknown = if i % 2 == 0 { a } else { b };
+        let expected_lambda = if i % 2 == 0 { 0.5 } else { 1.0 };
+        if max_unknown[i] != expected_unknown
+            || (accepted_lambda[i] - expected_lambda).abs() > 1.0e-12
+        {
+            return false;
+        }
+    }
+
+    let high0 = here[0];
+    let low0 = here[1];
+    if high0 <= low0 * 2.0 {
+        return false;
+    }
+
+    fn close(a: f64, b: f64) -> bool {
+        let scale = a.abs().max(b.abs()).max(1.0e-12);
+        (a - b).abs() <= scale * 3.0e-4
+    }
+
+    (2..TAIL_TRACE_PASSES).all(|i| {
+        if i % 2 == 0 {
+            close(here[i], high0)
+        } else {
+            close(here[i], low0)
+        }
+    })
+}
+
+#[cfg(test)]
+#[test]
+fn post_restart_continuation_detects_slaughter_twin_two_cycle_only() {
+    // Slaughter '95 / American Twin solve 49465 before the restart.  The
+    // dominant correction alternates spk/pl_a in the trace, but the generic
+    // solver deliberately keys on the two-state geometry instead of node IDs.
+    let here = [
+        0.635_474_905_366_872_9,
+        0.100_128_195_774_345_97,
+        0.635_465_566_573_893_9,
+        0.100_120_717_560_601_84,
+        0.635_457_844_752_295,
+        0.100_114_531_889_541_35,
+        0.635_451_456_236_436_2,
+        0.100_109_412_716_881_83,
+    ];
+    let accepted_lambda = [0.5, 1.0, 0.5, 1.0, 0.5, 1.0, 0.5, 1.0];
+    let fallback = [false; TAIL_TRACE_PASSES];
+    let max_unknown = [14, 8, 14, 8, 14, 8, 14, 8];
+
+    assert!(post_restart_two_cycle_signature(
+        TAIL_TRACE_PASSES,
+        &here,
+        &accepted_lambda,
+        &fallback,
+        &max_unknown,
+    ));
+
+    // A normal descending Newton tail is not an A/B cycle and must not arm
+    // the post-restart continuation rescue.
+    let descending = [0.63, 0.31, 0.15, 0.07, 0.03, 0.01, 0.004, 0.001];
+    assert!(!post_restart_two_cycle_signature(
+        TAIL_TRACE_PASSES,
+        &descending,
+        &accepted_lambda,
+        &fallback,
+        &max_unknown,
+    ));
+
+    let mut same_unknown = max_unknown;
+    same_unknown[1] = 14;
+    assert!(!post_restart_two_cycle_signature(
+        TAIL_TRACE_PASSES,
+        &here,
+        &accepted_lambda,
+        &fallback,
+        &same_unknown,
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn repeat_cycle_guard_leaves_slaughter_twin_slow_drift_to_restart() {
+    // Slaughter '95 / American Twin recording solve 49465.  v4.5 widened the
+    // cycle window enough to reject this return, but that changed the later
+    // trajectory and increased the full recording from six to eight unsettled
+    // power solves.  Keep this slower drift outside the global cycle guard and
+    // handle the rare failed sample with a branch-preserving restart instead.
+    let first_here = 0.100_128_195_774_345_97;
+    let first_reference = 0.635_474_905_366_872_9;
+    let first_return = 0.635_465_566_573_893_9;
+    let second_here = 0.100_120_717_560_601_84;
+    let second_reference = 0.635_465_566_573_893_9;
+    let second_return = 0.635_457_844_752_295;
+
+    assert!(!repeat_cycle_edge(
+        first_here,
+        first_reference,
+        first_return,
+    ));
+    assert!(!repeat_cycle_edge(
+        second_here,
+        second_reference,
+        second_return,
+    ));
+    assert!(repeat_cycle_pair_matches(
+        first_here,
+        first_reference,
+        second_here,
+        second_reference,
     ));
 }
 
@@ -948,6 +1193,18 @@ pub struct Simulation {
     unsettled_solver_trace_len: usize,
     #[cfg(test)]
     test_disable_continuation_deepening: bool,
+    /// Test-only cost experiment: ordinary late source continuation is allowed
+    /// only after `iterate()` returns `Pass::Stuck`. A recoverable late
+    /// line-search fallback stays on the exact target instead of paying for a
+    /// midpoint pass. The proven 32-pass last-settled/staged rescue is
+    /// independent and remains available.
+    #[cfg(test)]
+    test_continuation_stuck_only: bool,
+    /// Test-only continuation cost sweep. Production begins ordinary late
+    /// source continuation at `LATE_CONTINUATION_MIN_TARGET_PASSES`; this may
+    /// delay that gate without changing the 32-pass last-settled/staged rescue.
+    #[cfg(test)]
+    test_continuation_min_target_passes: usize,
     /// Recurrence-based two-cycle guard for the late-continuation circuit
     /// policy. Unlike the rejected global 1e-5 threshold, this never rejects
     /// the first near-reference nonmonotone crossing. It acts only when
@@ -971,6 +1228,23 @@ pub struct Simulation {
     /// committing the alternate weak-deep trajectory.
     #[cfg(test)]
     test_last_settled_restart: bool,
+    #[cfg(test)]
+    test_last_settled_restart_passes: usize,
+    /// Test-only follow-up for the one Slaughter/Twin sample that still fails
+    /// after the full branch-preserving restart. It is allowed to steer only
+    /// after restart exhaustion and only when the pre-restart tail is the
+    /// measured alternating two-state cycle. The source is advanced through
+    /// settled 25%, 50%, 75%, and 100% stages, each with the full test budget.
+    #[cfg(test)]
+    test_post_restart_continuation: bool,
+    /// Transactional backups while the post-restart source-stepping
+    /// experiment runs. A failed diagnostic must not leave either voltage,
+    /// predictor, or junction-limiting scratch on a different branch for the
+    /// next audio sample. Storage is reserved with the immutable topology.
+    #[cfg(test)]
+    post_restart_saved_voltage: Vec<f64>,
+    #[cfg(test)]
+    post_restart_saved_linearisation: Vec<Linearisation>,
     #[cfg(test)]
     last_search_cycle_rejected: bool,
     #[cfg(test)]
@@ -1249,6 +1523,10 @@ impl Simulation {
             rebuilds: 0,
             point: vec![0.0; n],
             saved: Vec::with_capacity(device_count),
+            #[cfg(test)]
+            post_restart_saved_voltage: vec![0.0; n],
+            #[cfg(test)]
+            post_restart_saved_linearisation: Vec::with_capacity(device_count),
             backtrack_count: 0,
             fallbacks: 0,
             nonfinite: 0,
@@ -1280,6 +1558,19 @@ impl Simulation {
                 "GAINSTAGEFX_DISABLE_CONTINUATION_DEEPENING",
             )
             .is_some(),
+            #[cfg(test)]
+            test_continuation_stuck_only: std::env::var_os(
+                "GAINSTAGEFX_TEST_CONTINUATION_STUCK_ONLY",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_continuation_min_target_passes: std::env::var(
+                "GAINSTAGEFX_TEST_CONTINUATION_MIN_TARGET_PASSES",
+            )
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .map(|value| value.max(LATE_CONTINUATION_MIN_TARGET_PASSES))
+            .unwrap_or(LATE_CONTINUATION_MIN_TARGET_PASSES),
             cycle_armed: false,
             cycle_age: 0,
             cycle_here: 0.0,
@@ -1292,6 +1583,19 @@ impl Simulation {
             #[cfg(test)]
             test_last_settled_restart: std::env::var_os(
                 "GAINSTAGEFX_TEST_LAST_SETTLED_RESTART",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_last_settled_restart_passes: std::env::var(
+                "GAINSTAGEFX_TEST_LAST_SETTLED_RESTART_PASSES",
+            )
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .map(|passes| passes.clamp(1, TEST_LAST_SETTLED_RESTART_PASSES_DEFAULT))
+            .unwrap_or(TEST_LAST_SETTLED_RESTART_PASSES_DEFAULT),
+            #[cfg(test)]
+            test_post_restart_continuation: std::env::var_os(
+                "GAINSTAGEFX_TEST_POST_RESTART_CONTINUATION",
             )
             .is_some(),
             #[cfg(test)]
@@ -1870,6 +2174,24 @@ impl Simulation {
                                 .push(AnyDevice::Core(Core::new(a, b, spec, rate)));
                         }
                     }
+                    Part::LinearOpAmp { out, plus, minus } => {
+                        let branch = self.circuit.branch_of(index);
+                        // Exact ideal-op-amp stamp: output branch current plus
+                        // the constraint V+ - V- = 0. There is no rail state,
+                        // so this belongs permanently to the cached linear base.
+                        if out != GROUND {
+                            base[out * n + branch] += 1.0;
+                            base_dc[out * n + branch] += 1.0;
+                        }
+                        if plus != GROUND {
+                            base[branch * n + plus] += 1.0;
+                            base_dc[branch * n + plus] += 1.0;
+                        }
+                        if minus != GROUND {
+                            base[branch * n + minus] -= 1.0;
+                            base_dc[branch * n + minus] -= 1.0;
+                        }
+                    }
                     Part::OpAmp {
                         out,
                         plus,
@@ -1921,6 +2243,9 @@ impl Simulation {
         // this resize only changes the logical length. The line search may not
         // allocate on the audio thread.
         self.saved
+            .resize(self.devices.len(), Linearisation::default());
+        #[cfg(test)]
+        self.post_restart_saved_linearisation
             .resize(self.devices.len(), Linearisation::default());
         self.base = base;
         self.base_dc = base_dc;
@@ -2900,7 +3225,12 @@ impl Simulation {
         // the line search on the moment one does not. See `CONVERGING`.
         self.moved = moved;
         #[cfg(test)]
-        if search && self.test_trace_search_geometry {
+        if search
+            && collect_post_restart_cycle_geometry(
+                self.test_trace_search_geometry,
+                self.test_post_restart_continuation,
+            )
+        {
             let mut max_norm = 0.0f64;
             let mut max_at = 0usize;
             for (at, (&delta, &voltage)) in self.scratch.iter().zip(&self.voltage).enumerate() {
@@ -3592,7 +3922,11 @@ impl Simulation {
                         repeat_cycle_rejections += 1;
                     }
                     #[cfg(test)]
-                    if self.test_trace_search_geometry && search {
+                    if collect_post_restart_cycle_geometry(
+                        self.test_trace_search_geometry,
+                        self.test_post_restart_continuation,
+                    ) && search
+                    {
                         // Keep a rolling, allocation-free history of the last
                         // few *actual* line searches.  Earlier diagnostics only
                         // recorded the final deep-continuation window, which
@@ -3729,8 +4063,23 @@ impl Simulation {
                     }
 
                     let ordinary_stuck = matches!(pass, Pass::Stuck);
-                    let late_rejection = target_passes >= LATE_CONTINUATION_MIN_TARGET_PASSES
-                        && (line_search_failed || ordinary_stuck);
+                    #[cfg(test)]
+                    let continuation_stuck_only = self.test_continuation_stuck_only;
+                    #[cfg(not(test))]
+                    let continuation_stuck_only = false;
+                    #[cfg(test)]
+                    let continuation_min_target_passes =
+                        self.test_continuation_min_target_passes;
+                    #[cfg(not(test))]
+                    let continuation_min_target_passes =
+                        LATE_CONTINUATION_MIN_TARGET_PASSES;
+                    let late_rejection = late_continuation_rejection(
+                        target_passes,
+                        continuation_min_target_passes,
+                        line_search_failed,
+                        ordinary_stuck,
+                        continuation_stuck_only,
+                    );
 
                     if continuation_from_stuck.is_none()
                         && used_passes < ceiling
@@ -3822,7 +4171,7 @@ impl Simulation {
                     self.cycle_reference = 0.0;
                     self.backtracks = MAX_BACKTRACKS;
 
-                    for restart_pass in 0..TEST_LAST_SETTLED_RESTART_PASSES {
+                    for restart_pass in 0..self.test_last_settled_restart_passes {
                         let stalled = self.moved > before * CONVERGING;
                         before = self.moved;
                         self.newton_passes += 1;
@@ -3847,6 +4196,155 @@ impl Simulation {
                     last_settled_restart_fallbacks = self.fallbacks - restart_fallbacks_before;
                     if settled && continuation_from_stuck.is_some() {
                         self.continuation_successes += 1;
+                    }
+                }
+
+                // Test-only staged source-stepping rescue for the one
+                // remaining Slaughter '95 / Twin failure. v4.8 proved that a
+                // fully settled 50% midpoint is reachable, but the direct
+                // 50% -> 100% jump still falls back into the measured spk/pl_a
+                // two-cycle. Keep the complete 32-pass branch-preserving
+                // restart, then walk the source along the already continuous
+                // physical branch in 25% increments. Every stage gets its own
+                // full 32-pass Newton budget and must settle before advancing.
+                //
+                // The experiment is transactional on failure. In particular,
+                // do not borrow `predicted` as scratch: that vector is part of
+                // the normal predictor state and v4.8 could therefore perturb
+                // later samples even after restoring the failed-restart volts.
+                #[cfg(test)]
+                if !settled
+                    && self.test_post_restart_continuation
+                    && last_settled_restart_attempted
+                    && !last_settled_restart_settled
+                    && last_settled_restart_passes == self.test_last_settled_restart_passes
+                    && self.test_last_settled_restart_passes
+                        == TEST_LAST_SETTLED_RESTART_PASSES_DEFAULT
+                    && continuation_from_stuck.is_none()
+                    && post_restart_two_cycle_signature(
+                        tail_trace_count,
+                        &tail_trace_here,
+                        &tail_trace_accepted_lambda,
+                        &tail_trace_fallback,
+                        &tail_trace_max_unknown,
+                    )
+                {
+                    continuation_trigger_pass = used_passes;
+                    continuation_trigger_target_passes = target_passes;
+                    continuation_trigger_was_stuck = false;
+                    continuation_trigger_moved = self.moved;
+                    continuation_trigger_merit = self.search_merit;
+                    self.continuation_attempts += 1;
+                    continuation_from_stuck = Some(false);
+
+                    self.post_restart_saved_voltage.copy_from_slice(&self.voltage);
+                    for (device, saved) in self
+                        .devices
+                        .iter()
+                        .zip(self.post_restart_saved_linearisation.iter_mut())
+                    {
+                        *saved = device.linearisation();
+                    }
+                    let failed_restart_moved = self.moved;
+                    let failed_restart_search_merit = self.search_merit;
+                    let failed_restart_before = before;
+                    let failed_restart_exact = self.exact;
+                    let failed_restart_cycle_armed = self.cycle_armed;
+                    let failed_restart_cycle_age = self.cycle_age;
+                    let failed_restart_cycle_here = self.cycle_here;
+                    let failed_restart_cycle_reference = self.cycle_reference;
+                    let normal_backtracks = self.backtracks;
+                    self.backtracks = MAX_BACKTRACKS;
+
+                    self.voltage.copy_from_slice(&self.earlier);
+                    self.cycle_armed = false;
+                    self.cycle_age = 0;
+                    self.cycle_here = 0.0;
+                    self.cycle_reference = 0.0;
+                    self.moved = f64::INFINITY;
+                    self.search_merit = 0.0;
+                    before = f64::INFINITY;
+
+                    let source_delta = input - self.last_input;
+                    let stage_fractions = [0.25f64, 0.5, 0.75, 1.0];
+                    let mut staged_path_settled = true;
+
+                    for fraction in stage_fractions {
+                        let stage_input = self.last_input + fraction * source_delta;
+                        let exact_stage = fraction == 1.0;
+                        self.prepare_rhs(stage_input, false);
+                        self.moved = f64::INFINITY;
+                        self.search_merit = 0.0;
+                        before = f64::INFINITY;
+                        self.cycle_armed = false;
+                        self.cycle_age = 0;
+                        self.cycle_here = 0.0;
+                        self.cycle_reference = 0.0;
+
+                        let mut stage_settled = false;
+                        for stage_pass in 0..TEST_POST_RESTART_STAGE_PASSES {
+                            let stalled = self.moved > before * CONVERGING;
+                            before = self.moved;
+                            self.newton_passes += 1;
+                            used_passes += 1;
+                            if exact_stage {
+                                target_passes += 1;
+                            }
+                            let search = stalled || stage_pass >= FULL_STEPS;
+                            match self.iterate(false, search) {
+                                Pass::Settled => {
+                                    stage_settled = true;
+                                    break;
+                                }
+                                Pass::Moved => {}
+                                Pass::Stuck => break,
+                            }
+                        }
+
+                        // Keep the existing trace fields useful without
+                        // changing the telemetry schema: they describe the
+                        // most recently attempted intermediate source stage.
+                        if !exact_stage {
+                            continuation_midpoint = stage_input;
+                            continuation_midpoint_moved = self.moved;
+                            continuation_midpoint_stuck = !stage_settled;
+                            if fraction == 0.5 && stage_settled {
+                                self.continuation_midpoint_successes += 1;
+                            }
+                        }
+
+                        if !stage_settled {
+                            staged_path_settled = false;
+                            break;
+                        }
+                    }
+
+                    if staged_path_settled {
+                        settled = true;
+                        self.continuation_successes += 1;
+                        self.continuation_actual_rescues += 1;
+                    }
+
+                    self.backtracks = normal_backtracks;
+                    if !settled {
+                        self.voltage
+                            .copy_from_slice(&self.post_restart_saved_voltage);
+                        for (device, saved) in self
+                            .devices
+                            .iter_mut()
+                            .zip(self.post_restart_saved_linearisation.iter())
+                        {
+                            device.relinearise(*saved);
+                        }
+                        self.prepare_rhs(input, false);
+                        self.moved = failed_restart_moved;
+                        self.search_merit = failed_restart_search_merit;
+                        before = failed_restart_before;
+                        self.exact = failed_restart_exact;
+                        self.cycle_armed = failed_restart_cycle_armed;
+                        self.cycle_age = failed_restart_cycle_age;
+                        self.cycle_here = failed_restart_cycle_here;
+                        self.cycle_reference = failed_restart_cycle_reference;
                     }
                 }
 

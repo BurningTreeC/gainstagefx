@@ -1001,7 +1001,7 @@ pub const PRESETS: &[Preset] = &[
         pedal_drive: 1.0,
         pedal_tone: 1.0,
         pedal_tone_b: 1.0,
-        pedal_level: 1.0,
+        pedal_level: 0.5,
         // A solid-state Peavey Studio Pro 40 is not modelled. The nearest
         // thing the plugin has to "a clean amplifier that only makes it
         // louder" is the blackface channel with its power stage bypassed --
@@ -1029,7 +1029,7 @@ pub const PRESETS: &[Preset] = &[
         // An HM-2 with everything at ten into a clean amplifier is the loudest
         // thing in the catalogue; this is the trim that keeps it level with the
         // rest. Measured with `examples/presetlevel.rs`.
-        output_trim: -24.0,
+        output_trim: -9.0,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Swedish Death '90")
     },
@@ -1042,7 +1042,7 @@ pub const PRESETS: &[Preset] = &[
         pedal_drive: 0.85,
         pedal_tone: 0.75,
         pedal_tone_b: 0.80,
-        pedal_level: 0.55,
+        pedal_level: 0.25,
         circuit: Circuit::Mt2,
         power_amp: PowerAmp::Bypass,
         // The Metal Zone's own Dist, and its equaliser doing the tightening:

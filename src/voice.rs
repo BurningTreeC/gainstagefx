@@ -918,13 +918,19 @@ impl Pedal {
     /// | Metal Zone | 22.4 | 55.5 | **100.7** |
     /// | Heavy Metal | 41.6 | 75.1 | **132.6** |
     ///
-    /// The last two do not fit at twice the host rate, and a chain that does not
-    /// fit is a DAW missing its deadline: crackle, stuttering, dropouts. They
-    /// are fifty-unknown circuits with a nonlinear device on almost every node,
-    /// which is two to four times what the older pedals are, and no amount of
-    /// tidying changes that -- it is what those two boxes are.
+    /// The last two did not fit at twice the host rate in that measurement, and
+    /// a chain that does not fit is a DAW missing its deadline: crackle,
+    /// stuttering, dropouts. HM-2 keeps only the Colour Mix input follower in
+    /// the exact linear Schur interior. The actual boost/cut amplifier remains
+    /// rail-aware because the service-specified +21 dB resonant boost can drive
+    /// it into its finite output swing at all-knobs-max settings.
+    /// MT-2 deliberately keeps its post-distortion op-amps rail-aware: the first
+    /// attempt to linearise them changed the response, and the later rail-fallback
+    /// shortcut was much slower than the original solver. Keep this host-rate
+    /// guard until each MT-2 stage is independently proven safe or is split into
+    /// a dedicated stage-level processor.
     ///
-    /// So the chain keeps them at the host rate, exactly as it keeps the
+    /// So the chain keeps them at the host rate for now, exactly as it keeps the
     /// modelled amplifiers under `MODELLED_MAX_OVERSAMPLING`, and for the same
     /// reason. See `Chain::set_oversampling`.
     pub fn is_expensive(self) -> bool {

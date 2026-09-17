@@ -144,7 +144,8 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             // current its output has to carry to do that is the unknown.
             Part::OpAmp {
                 out, plus, minus, ..
-            } => {
+            }
+            | Part::LinearOpAmp { out, plus, minus } => {
                 let branch = circuit.branch_of(index);
                 if out != GROUND {
                     y[out * n + branch] = y[out * n + branch] + C::real(1.0);

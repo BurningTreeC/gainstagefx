@@ -1,9 +1,10 @@
 //! What each pedal costs, alone and in front of an amplifier.
 //!
 //! A chain that does not fit inside its deadline is a DAW crackling and
-//! dropping out, which is what this is for. The two fifty-unknown pedals do not
-//! fit at twice the host rate, which is why `Pedal::is_expensive` exists and
-//! why the oversampling cap looks at the pedal slot and not only at the voice.
+//! dropping out, which is what this is for. HM-2 now partitions its verified
+//! linear Colour Mix op-amps out of Newton's boundary. MT-2 deliberately keeps
+//! its post-distortion op-amps rail-aware until stage-level partitioning is
+//! proven equivalent. The existing 1x safety cap therefore remains for both.
 //!
 //! `cargo run --release --example pedalcost`
 use gainstagefx::voice::{Chain, Gain, Pedal, PedalSettings, Settings, Tone, NOMINAL_DBFS};

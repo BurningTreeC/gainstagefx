@@ -498,6 +498,21 @@ impl View for Meter {
 
         let db = self.meters.input_db();
         if db <= -Self::SPAN {
+            // Nothing arriving, or nothing within twenty-four decibels of
+            // nominal. Drawn as a stub at the floor rather than as an empty
+            // track, because an empty track is what a broken meter looks like:
+            // this was reported as "the meter doesn't move" on a standalone
+            // whose backend feeds silence, and there was no way to tell the two
+            // apart by looking. The stub is deliberately dimmer and squarer
+            // than the bar, so it reads as an absence rather than a level.
+            let mut stub = vg::Path::new();
+            stub.rect(
+                b.x + 2.0 * scale,
+                b.y + 4.0 * scale,
+                3.0 * scale,
+                b.h - 8.0 * scale,
+            );
+            canvas.fill_path(&stub, &vg::Paint::color(rgba(0x6f7d88, 0.35)));
             return;
         }
         // A bar from the bottom of the scale to where the signal is, lit warm

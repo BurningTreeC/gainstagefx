@@ -92,7 +92,40 @@ pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
 
+#[cfg(test)]
+pub fn build_full_newton_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
+    tap_impl(source, load, "out", false, false, false)
+}
+
 pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
+    // U4A and U4B must remain rail-aware: the wide operating-envelope probe
+    // shows real response changes when either stage is forced linear (U4B is
+    // especially visible around its 105 Hz resonance at large input). The
+    // swept-mid gyrator follower, however, remains reference-equivalent across
+    // the same frequency/level/control grid, so it can live in the linear
+    // Schur interior instead of enlarging the Newton boundary.
+    tap_impl(source, load, at, false, false, true)
+}
+
+#[cfg(test)]
+fn build_partition_candidate(
+    source: f64,
+    load: f64,
+    linear_u4b: bool,
+    linear_u4a: bool,
+    linear_gyrator: bool,
+) -> Result<Circuit, Fault> {
+    tap_impl(source, load, "out", linear_u4b, linear_u4a, linear_gyrator)
+}
+
+fn tap_impl(
+    source: f64,
+    load: f64,
+    at: &str,
+    linear_u4b: bool,
+    linear_u4a: bool,
+    linear_gyrator: bool,
+) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("Metal Zone");
 
     // --- supply and bias --------------------------------------------------------------
@@ -170,8 +203,12 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // times, resonance or not, which is not a scoop but a gain stage; in
     // series, the legs are a high impedance away from their resonances and the
     // stage sits at unity everywhere except the two ends of the band.
-    net.opamp("u4b", "post", "u4b_m", SWING)
-        .resistor("u4b", "u4b_m", 100_000.0) // R029
+    if linear_u4b {
+        net.linear_opamp("u4b", "post", "u4b_m");
+    } else {
+        net.opamp("u4b", "post", "u4b_m", SWING);
+    }
+    net.resistor("u4b", "u4b_m", 100_000.0) // R029
         .capacitor("u4b", "u4b_m", 47e-12) // C022
         .resistor("u4b_m", "u4b_legs", 3_300.0); // R030
     leg(&mut net, "u4b_legs", "plow", POST_LOW);
@@ -183,9 +220,13 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // the wiper, so it boosts toward one end, cuts toward the other and is flat
     // in the middle. Published range: +-20 dB on Low and High, +-15 dB on the
     // middle.
-    net.resistor("u4b", "cut", 22_000.0) // R028
-        .opamp("u4a", "cut", "boost", SWING)
-        .resistor("u4a", "boost", 22_000.0) // R026
+    net.resistor("u4b", "cut", 22_000.0); // R028
+    if linear_u4a {
+        net.linear_opamp("u4a", "cut", "boost");
+    } else {
+        net.opamp("u4a", "cut", "boost", SWING);
+    }
+    net.resistor("u4a", "boost", 22_000.0) // R026
         .capacitor("u4a", "boost", 10e-12); // C018
 
     // VR03a Low: the 106 Hz resonance.
@@ -246,7 +287,12 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .resistor("gyr_in", "mid_r2", 2_200.0) // R062
         .pot("mid_r2", "gnd", "gnd", 50_000.0, Taper::Linear, MID_FREQ)
         // op-amp 2b, the follower the drawing puts here.
-        .opamp("gyr_out", "gyr_in", "gyr_out", SWING);
+        ;
+    if linear_gyrator {
+        net.linear_opamp("gyr_out", "gyr_in", "gyr_out");
+    } else {
+        net.opamp("gyr_out", "gyr_in", "gyr_out", SWING);
+    }
 
     // --- Level and the output buffer --------------------------------------------------------
     net.resistor("u4a", "lvl_top", 22_000.0) // R014
@@ -261,4 +307,226 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .resistor("out", "gnd", load);
 
     net.build(at)
+}
+
+#[cfg(test)]
+mod partition_tests {
+    use super::*;
+    use crate::dsp::time::Simulation;
+
+    fn configure(sim: &mut Simulation) {
+        for (control, value) in [
+            (DIST, 0.7),
+            (LOW, 0.7),
+            (MIDDLE, 0.65),
+            (MID_FREQ, 0.4),
+            (HIGH, 0.7),
+            (LEVEL, 0.45),
+        ] {
+            sim.set_control(control, value);
+        }
+    }
+
+    fn worst_difference(candidate: Circuit) -> (usize, usize, f64) {
+        let mut partitioned = Simulation::new(candidate, 48_000.0);
+        let mut reference =
+            Simulation::new(build_full_newton_reference(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        configure(&mut partitioned);
+        configure(&mut reference);
+
+        let before = reference
+            .nonlinear_reduction()
+            .map(|(boundary, _)| boundary)
+            .unwrap_or(reference.unknowns());
+        let after = partitioned
+            .nonlinear_reduction()
+            .map(|(boundary, _)| boundary)
+            .unwrap_or(partitioned.unknowns());
+
+        let mut worst = 0.0_f64;
+        for k in 0..12_000 {
+            let t = k as f64 / 48_000.0;
+            let x = 0.018
+                * ((std::f64::consts::TAU * 110.0 * t).sin() * 0.65
+                    + (std::f64::consts::TAU * 220.0 * t).sin() * 0.35);
+            let a = partitioned.process(x);
+            let b = reference.process(x);
+            worst = worst.max((a - b).abs());
+        }
+        (before, after, worst)
+    }
+
+    #[test]
+    fn production_mt2_partitions_only_safe_mid_gyrator_follower() {
+        let (before, after, worst) = worst_difference(build(10_000.0, 470_000.0).unwrap());
+        assert_eq!(before, 25, "unexpected MT-2 reference Newton boundary");
+        assert_eq!(after, 22, "production MT-2 should remove only the mid gyrator follower from Newton");
+        assert!(worst < 1e-8, "production MT-2 mid-gyrator partition changed response: {worst:e}");
+    }
+
+    #[test]
+    fn production_mt2_mid_gyrator_partition_matches_wide_probe_worst_case() {
+        let mut production = Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut reference = Simulation::new(
+            build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
+            48_000.0,
+        );
+
+        // The wide candidate probe reported the follower's largest (still
+        // numerical-noise-sized) difference here: setting 1, 220 Hz, 30 mV.
+        for (control, value) in [
+            (DIST, 1.0),
+            (LOW, 1.0),
+            (MIDDLE, 1.0),
+            (MID_FREQ, 0.5),
+            (HIGH, 1.0),
+            (LEVEL, 0.45),
+        ] {
+            production.set_control(control, value);
+            reference.set_control(control, value);
+        }
+
+        let mut worst = 0.0_f64;
+        for k in 0..4_096 {
+            let t = k as f64 / 48_000.0;
+            let x = 0.03 * (std::f64::consts::TAU * 220.0 * t).sin();
+            worst = worst.max((production.process(x) - reference.process(x)).abs());
+        }
+        assert!(
+            worst < 1e-8,
+            "production MT-2 mid-gyrator partition diverged at wide-probe worst case: {worst:e}"
+        );
+    }
+
+    /// Diagnostic for the next partitioning step. Run with:
+    ///
+    /// cargo test --release report_post_eq_partition_candidates -- --ignored --nocapture
+    ///
+    /// A candidate is safe to promote into the production netlist only if its
+    /// worst error is effectively zero across this probe (and later the audio
+    /// fixture probe). Keeping this ignored avoids baking an intentionally
+    /// exploratory measurement into the normal test suite.
+    #[test]
+    #[ignore]
+    fn report_post_eq_partition_candidates() {
+        for (name, flags) in [
+            ("u4b_scoop", (true, false, false)),
+            ("u4a_eq", (false, true, false)),
+            ("mid_gyrator_follower", (false, false, true)),
+            ("u4b_plus_mid_gyrator", (true, false, true)),
+        ] {
+            let circuit = build_partition_candidate(
+                10_000.0,
+                470_000.0,
+                flags.0,
+                flags.1,
+                flags.2,
+            )
+            .unwrap();
+            let (before, after, worst) = worst_difference(circuit);
+            println!(
+                "MT-2 candidate={name:<22} boundary={before}->{after} worst_abs_error={worst:e}"
+            );
+        }
+    }
+    /// Wider operating-envelope validation for candidates that look safe in the
+    /// narrow probe above. This deliberately drives the resonant post-EQ stages
+    /// at their important frequencies and across realistic guitar peak levels.
+    /// A candidate must remain effectively identical here before it may replace
+    /// a rail-aware op-amp in the production netlist.
+    #[test]
+    #[ignore]
+    fn report_post_eq_partition_candidates_wide() {
+        const SETTINGS: [[f64; 6]; 7] = [
+            // dist, low, middle, mid-freq, high, level
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.45],
+            [1.0, 1.0, 1.0, 0.5, 1.0, 0.45],
+            [1.0, 1.0, 0.5, 0.5, 0.0, 0.45],
+            [1.0, 0.0, 0.5, 0.5, 1.0, 0.45],
+            [1.0, 0.5, 1.0, 0.0, 0.5, 0.45],
+            [1.0, 0.5, 1.0, 1.0, 0.5, 0.45],
+            [1.0, 0.0, 0.0, 0.5, 0.0, 0.45],
+        ];
+        const FREQUENCIES: [f64; 4] = [105.0, 220.0, 950.0, 4_890.0];
+        const INPUTS: [f64; 3] = [0.03, 0.12, 0.30];
+
+        for (name, flags) in [
+            ("u4b_scoop", (true, false, false)),
+            ("mid_gyrator_follower", (false, false, true)),
+            ("u4b_plus_mid_gyrator", (true, false, true)),
+        ] {
+            let mut worst = 0.0_f64;
+            let mut worst_case = (0usize, 0.0_f64, 0.0_f64);
+            for (setting_index, values) in SETTINGS.iter().enumerate() {
+                for &hz in &FREQUENCIES {
+                    for &volts in &INPUTS {
+                        let mut candidate = Simulation::new(
+                            build_partition_candidate(
+                                10_000.0,
+                                470_000.0,
+                                flags.0,
+                                flags.1,
+                                flags.2,
+                            )
+                            .unwrap(),
+                            48_000.0,
+                        );
+                        let mut reference = Simulation::new(
+                            build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
+                            48_000.0,
+                        );
+                        for (control, value) in [
+                            (DIST, values[0]),
+                            (LOW, values[1]),
+                            (MIDDLE, values[2]),
+                            (MID_FREQ, values[3]),
+                            (HIGH, values[4]),
+                            (LEVEL, values[5]),
+                        ] {
+                            candidate.set_control(control, value);
+                            reference.set_control(control, value);
+                        }
+
+                        let mut case_worst = 0.0_f64;
+                        for k in 0..4_096 {
+                            let t = k as f64 / 48_000.0;
+                            let x = volts * (std::f64::consts::TAU * hz * t).sin();
+                            case_worst = case_worst
+                                .max((candidate.process(x) - reference.process(x)).abs());
+                        }
+                        if case_worst > worst {
+                            worst = case_worst;
+                            worst_case = (setting_index, hz, volts);
+                        }
+                    }
+                }
+            }
+            let circuit = build_partition_candidate(
+                10_000.0,
+                470_000.0,
+                flags.0,
+                flags.1,
+                flags.2,
+            )
+            .unwrap();
+            let reference = Simulation::new(
+                build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
+                48_000.0,
+            );
+            let candidate = Simulation::new(circuit, 48_000.0);
+            let before = reference
+                .nonlinear_reduction()
+                .map(|(boundary, _)| boundary)
+                .unwrap_or(reference.unknowns());
+            let after = candidate
+                .nonlinear_reduction()
+                .map(|(boundary, _)| boundary)
+                .unwrap_or(candidate.unknowns());
+            println!(
+                "MT-2 wide candidate={name:<22} boundary={before}->{after} worst_abs_error={worst:e} setting={} hz={} input_v={}",
+                worst_case.0, worst_case.1, worst_case.2
+            );
+        }
+    }
+
 }

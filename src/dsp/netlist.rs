@@ -357,6 +357,17 @@ pub enum Part {
         reference: usize,
         rail: f64,
     },
+    /// An ideal op-amp used only where the modeled hardware section is intended
+    /// to stay inside its rails. Unlike `OpAmp`, this part never switches state,
+    /// so it is genuinely linear and may be eliminated by the exact Schur
+    /// partition. This is useful for large pedal EQ/gyrator networks: a tone
+    /// amplifier that never clips must not make the whole filter a Newton
+    /// boundary merely because another op-amp elsewhere in the pedal does.
+    LinearOpAmp {
+        out: usize,
+        plus: usize,
+        minus: usize,
+    },
     /// An ideal transformer, `ratio` primary turns to one secondary turn.
     /// Everything that colours a real one hangs off it as ordinary parts.
     Transformer {
@@ -678,6 +689,11 @@ impl Part {
                 map(minus);
                 map(reference);
             }
+            Part::LinearOpAmp { out, plus, minus } => {
+                map(out);
+                map(plus);
+                map(minus);
+            }
             Part::Transformer { p1, p2, s1, s2, .. } => {
                 map(p1);
                 map(p2);
@@ -728,6 +744,7 @@ impl Part {
                 reference,
                 ..
             } => vec![out, plus, minus, reference],
+            Part::LinearOpAmp { out, plus, minus } => vec![out, plus, minus],
             Part::Transformer { p1, p2, s1, s2, .. } => vec![p1, p2, s1, s2],
             Part::Jfet { d, g, s, .. } => vec![d, g, s],
             Part::Core { a, b, .. } => vec![a, b],
@@ -751,7 +768,10 @@ impl Part {
     /// the row it adds has a zero where the diagonal would be. That is why the
     /// factorisation has to pivot.
     pub fn needs_branch(&self) -> bool {
-        matches!(self, Part::OpAmp { .. } | Part::Transformer { .. })
+        matches!(
+            self,
+            Part::OpAmp { .. } | Part::LinearOpAmp { .. } | Part::Transformer { .. }
+        )
     }
 
     /// Whether this part has a single frequency response. A device does not,
@@ -789,6 +809,7 @@ impl Part {
             Part::Bipolar { .. } => "transistor",
             Part::Transconductor { .. } => "transconductor",
             Part::OpAmp { .. } => "op-amp",
+            Part::LinearOpAmp { .. } => "linear op-amp",
             Part::Transformer { .. } => "transformer",
         }
     }
@@ -1063,6 +1084,17 @@ impl Netlist {
         self
     }
 
+    /// An ideal op-amp for a stage that is part of the pedal's linear filtering
+    /// network and is not intended to reach a rail. It stamps exactly the
+    /// small-signal op-amp equation used by the AC solver, but because it cannot
+    /// switch to a rail it remains in the passive/linear side of the realtime
+    /// Schur partition instead of enlarging Newton's boundary.
+    pub fn linear_opamp(&mut self, out: &str, plus: &str, minus: &str) -> &mut Self {
+        let (out, plus, minus) = (self.pin(out), self.pin(plus), self.pin(minus));
+        self.parts.push(Part::LinearOpAmp { out, plus, minus });
+        self
+    }
+
     /// An op-amp on a single supply, clipping about the bias point the whole
     /// circuit sits at.
     pub fn opamp_biased(
@@ -1180,6 +1212,7 @@ impl Netlist {
                         || spec.early <= 0.0
                 }
                 Part::OpAmp { rail, .. } => rail <= 0.0,
+                Part::LinearOpAmp { .. } => false,
                 Part::Transconductor { gm, limit, .. } => gm <= 0.0 || limit <= 0.0,
                 Part::Transformer { ratio, .. } => ratio <= 0.0,
             };

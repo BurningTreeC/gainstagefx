@@ -854,6 +854,14 @@ fn run_realtime_pass(
 
         let mut left = [0.0; BLOCK];
         left[..chunk.len()].copy_from_slice(chunk);
+        let block_solver_before = if std::env::var_os("GAINSTAGEFX_TRACE_SLOW_BLOCKS").is_some()
+            && circuit == Circuit::Twin
+            && layout == ProbeLayout::Mono
+        {
+            Some(plugin.channels[0].solver_breakdown())
+        } else {
+            None
+        };
         let timing = match layout {
             ProbeLayout::Mono => process_profiled(&mut plugin, &mut left[..chunk.len()], None),
             ProbeLayout::AutoDualMono => {
@@ -902,6 +910,43 @@ fn run_realtime_pass(
         if cpu_elapsed > callback_budget.as_secs_f64() {
             cpu_compute_misses += 1;
             first_cpu_compute_miss.get_or_insert(block);
+        }
+        if let Some(block_solver_before) = block_solver_before {
+            if elapsed > callback_budget.as_secs_f64()
+                || cpu_elapsed > callback_budget.as_secs_f64()
+            {
+                let delta = plugin.channels[0]
+                    .solver_breakdown()
+                    .saturating_delta(block_solver_before);
+                println!(
+                    "realtime_slow_block,voice=American Twin,mode={},block={},frames={},wall_us={:.2},cpu_us={:.2},budget_us={:.2},gain_solves={},gain_passes={},gain_backtracks={},gain_fallbacks={},gain_cont_attempts={},gain_cont_rescues={},power_solves={},power_passes={},power_unsettled={},power_backtracks={},power_fallbacks={},power_cont_attempts={},power_cont_midpoints={},power_cont_successes={},power_cont_rescues={},iron_solves={},iron_passes={},reverb_solves={},reverb_passes={}",
+                    if live_paced { "live_paced_mono" } else { "playback_ahead_mono" },
+                    block,
+                    chunk.len(),
+                    wall_us,
+                    cpu_us,
+                    callback_budget.as_secs_f64() * 1e6,
+                    delta.gain.solves,
+                    delta.gain.passes,
+                    delta.gain.backtracks,
+                    delta.gain.fallbacks,
+                    delta.gain.continuation_attempts,
+                    delta.gain.continuation_actual_rescues,
+                    delta.power.solves,
+                    delta.power.passes,
+                    delta.power.unsettled,
+                    delta.power.backtracks,
+                    delta.power.fallbacks,
+                    delta.power.continuation_attempts,
+                    delta.power.continuation_midpoint_successes,
+                    delta.power.continuation_successes,
+                    delta.power.continuation_actual_rescues,
+                    delta.iron.solves,
+                    delta.iron.passes,
+                    delta.reverb_return.solves,
+                    delta.reverb_return.passes,
+                );
+            }
         }
         if live_paced && callback_finish > deadline {
             deadline_misses += 1;
@@ -1178,4 +1223,70 @@ fn read_mono_pcm24(path: &str) -> (u32, Vec<f32>) {
             })
             .collect(),
     )
+}
+
+/// The Trim knob reaches the audio, and the meter reads what the circuit is
+/// actually handed.
+///
+/// Both of these are easy to break without a test noticing, because neither
+/// shows up in any circuit measurement: the trim is applied in `process`
+/// before the chain sees anything, and the meter is a side effect of the same
+/// loop. Reported as "the input trim and input meter aren't working any more",
+/// which is exactly the pair this covers.
+#[test]
+fn the_input_trim_reaches_the_audio_and_the_meter_follows_it() {
+    let nominal = 10f32.powf(crate::voice::NOMINAL_DBFS as f32 / 20.0);
+    let at = |db: f32| {
+        let mut plugin = initialized(Circuit::Clean, true, 48_000.0);
+        plugin.params.input_trim.smoothed.reset(db);
+        // Mix fully wet would put the circuit's own level in the way; the
+        // question here is only what arrives at its input.
+        plugin.params.mix.smoothed.reset(0.0);
+        plugin.params.output_trim.smoothed.reset(0.0);
+        let sine = |k: usize| nominal * (std::f32::consts::TAU * 220.0 * k as f32 / 48_000.0).sin();
+        // The trim is ramped across a block, and the meter is a peak hold that
+        // falls at 300 ms, so the first block is both of them arriving and the
+        // meter then takes the best part of a second to come down off it.
+        // Settle past that -- thirty blocks is 1.3 seconds -- and measure the
+        // block after.
+        for _ in 0..30 {
+            let mut warm: Vec<f32> = (0..2048).map(sine).collect();
+            process(&mut plugin, &mut warm, None);
+        }
+        let mut left: Vec<f32> = (0..2048).map(sine).collect();
+        process(&mut plugin, &mut left, None);
+        let peak = left.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        (peak, plugin.meters.input_db())
+    };
+
+    let (quiet, quiet_meter) = at(-12.0);
+    let (unity, unity_meter) = at(0.0);
+    let (loud, loud_meter) = at(12.0);
+
+    // The dry path is the trimmed input, so the trim has to show up in it.
+    let down = 20.0 * (quiet / unity).log10();
+    let up = 20.0 * (loud / unity).log10();
+    assert!(
+        (down + 12.0).abs() < 1.0,
+        "-12 dB of trim moved the audio by {down:+.2} dB",
+    );
+    assert!(
+        (up - 12.0).abs() < 1.0,
+        "+12 dB of trim moved the audio by {up:+.2} dB",
+    );
+
+    // And the meter reads the level arriving at the circuit, so it moves with
+    // the trim rather than sitting still.
+    assert!(
+        (unity_meter - 3.0).abs() < 3.5,
+        "a nominal sine should read near the meter's zero, not {unity_meter:+.2} dB",
+    );
+    assert!(
+        (quiet_meter - (unity_meter - 12.0)).abs() < 1.0,
+        "the meter read {quiet_meter:+.2} dB with 12 dB of cut against {unity_meter:+.2} at unity",
+    );
+    assert!(
+        (loud_meter - (unity_meter + 12.0)).abs() < 1.0,
+        "the meter read {loud_meter:+.2} dB with 12 dB of boost against {unity_meter:+.2} at unity",
+    );
 }

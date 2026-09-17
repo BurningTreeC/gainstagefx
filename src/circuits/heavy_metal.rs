@@ -28,8 +28,9 @@
 
 use crate::dsp::netlist::{BipolarSpec, Circuit, DiodeSpec, Fault, JfetSpec, Netlist, Taper};
 
-/// VR4, the Dist control, 250 k (250KD on the drawing), across the second gain
-/// stage into the clipping amplifier.
+/// VR4, the Dist control, 250 kD on Boss's drawing. Its wiper is grounded:
+/// one half shunts Q6 harder at low settings while the other half sets IC1B's
+/// feedback gain, so one knob changes both pre-drive and clipper gain.
 pub const DIST: usize = 0;
 /// VR2, Colour Mix Low, 10 k.
 pub const LOW: usize = 1;
@@ -38,14 +39,17 @@ pub const HIGH: usize = 2;
 /// VR1, the Level control, 10 k audio.
 pub const LEVEL: usize = 3;
 
-/// Where the level control rests: **unity through the pedal**, which is what
-/// the panel's Level knob means at noon. See `rodent::VOLUME_REST`.
+/// Where the level control rests: **unity through the pedal** with DIST and
+/// both Colour Mix controls centred. This is what the plugin's Level knob means
+/// at noon; the ends still reach the ends of the real 10 k audio pot.
 ///
-/// Measured **broadband** (`examples/pedallevel.rs`) rather than on one tone.
-/// For this pedal the two are two decibels apart -- its Colour Mix shapes hard
-/// enough that its level at 220 Hz is not how loud it is -- and the same is true
-/// of the Metal Zone. At this position it sits 2 dB above no pedal at all.
-pub const LEVEL_REST: f64 = 0.60;
+/// Re-measured after the 2026-09-17 HM-2 topology and Colour-Mix rail fixes
+/// using the broadband low-chord probe in `examples/hm2level.rs`. Physical
+/// level 0.51 measured -0.61 dB and 0.60 measured +6.88 dB. Because the upper
+/// half of our audio taper is linear in divider fraction, those two readings
+/// put unity at about 0.5148; 0.515 is the calibrated rest. Keeping the old
+/// 0.60 rest over-drove following pedals by roughly seven decibels at noon.
+pub const LEVEL_REST: f64 = 0.515;
 
 /// The germanium pair of the coring gate, D6 and D7.
 ///
@@ -62,9 +66,12 @@ const CORING: DiodeSpec = DiodeSpec {
 /// and the Boss standard of the period is a 2SK30A-class small-signal JFET.
 const BUFFER: JfetSpec = JfetSpec::J201;
 
-/// The NPNs. APPROXIMATED the same way, to the high-beta Japanese small-signal
-/// part the catalogue already carries.
-const NPN: BipolarSpec = BipolarSpec::NPN_2SC3378;
+/// Q6 is a 2SC2240-GR NPN and Q7 is a 2SA970-GR PNP on Boss's parts list.
+/// The catalogue has no dedicated models for those complementary low-noise
+/// Japanese parts yet, so use the same small-signal magnitude and mirror Q7
+/// with `bipolar_pnp()`. The polarity is not optional: modelling Q7 as NPN
+/// puts the whole high-gain block at the wrong operating point.
+const SMALL_SIGNAL_BJT: BipolarSpec = BipolarSpec::NPN_2SC3378;
 
 /// The op-amp rail, either side of the 4.5 V bias.
 const SWING: f64 = 3.6;
@@ -114,7 +121,16 @@ pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
 
+#[cfg(test)]
+pub fn build_full_newton_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
+    tap_impl(source, load, "out", false)
+}
+
 pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
+    tap_impl(source, load, at, true)
+}
+
+fn tap_impl(source: f64, load: f64, at: &str, partition_filters: bool) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("Heavy Metal");
 
     // --- supply and bias ------------------------------------------------------------
@@ -140,100 +156,102 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .jfet("v9", "g1", "s1", BUFFER)
         .resistor("s1", "gnd", 10_000.0); // R7, the source resistor
 
-    // --- first gain stage, Q6 ----------------------------------------------------------
-    // C4 1 uF into Q4's follower, then C6 .047 into the stage proper.
-    //
-    // Q6 is a **shunt-feedback** common-emitter stage, which is the Boss house
-    // arrangement of the period and the same one the DS-1's booster uses: R16
-    // 470 k from collector back to base is the whole DC bias -- the base has no
-    // other path -- and the gain is set by the collector load against the
-    // emitter resistance, R19 22 k over R18 22, pulled down by that feedback.
-    // C10 100 p across it keeps the top under control.
-    net.capacitor("s1", "b4", 1e-6) // C4
-        .resistor("b4", "vref", 1_000_000.0) // R11
-        .bipolar("v9", "b4", "e4", NPN)
-        .resistor("e4", "gnd", 100_000.0) // R21
-        .capacitor("e4", "b6", 0.047e-6) // C6
-        .bipolar("c6", "b6", "e6", NPN)
-        .resistor("c6", "b6", 470_000.0) // R16, the shunt feedback and the bias
-        .resistor("v9a", "c6", 22_000.0) // R19
+    // --- distortion pre-gain, Q6 and Q7 -------------------------------------------
+    // Boss's original circuit is a complementary two-transistor block. Q6 is
+    // 2SC2240-GR (NPN): 47 nF/22 k feed the base, 100 k biases it to ground,
+    // 10 k is the collector load, 22 ohm the emitter resistor, and 470 k/100 pF
+    // feed collector voltage back to the base. The previous model had
+    // an extra bipolar follower here and a 22 k collector load; neither is on
+    // the HM-2 audio path.
+    net.capacitor("s1", "q6_in", 0.047e-6) // C6
+        .resistor("q6_in", "b6", 22_000.0) // R22
+        .resistor("b6", "gnd", 100_000.0) // R17
+        .bipolar("c6", "b6", "e6", SMALL_SIGNAL_BJT) // Q6, 2SC2240-GR
+        .resistor("v9a", "c6", 10_000.0) // R19
         .resistor("e6", "gnd", 22.0) // R18
+        .resistor("c6", "b6", 470_000.0) // R16
         .capacitor("c6", "b6", 100e-12); // C10
 
-    // --- second gain stage, Q7 ---------------------------------------------------------
-    // R26 100 k and R28 120 set this one; C31 10 uF over R49 150 is its emitter
-    // bypass, which is where most of the gain comes from.
-    net.capacitor("c6", "b7", 0.047e-6) // C11
-        .bipolar("c7", "b7", "e7", NPN)
-        .resistor("c7", "b7", 470_000.0) // R29, shunt feedback again
-        .resistor("v9a", "c7", 100_000.0) // R26
-        .resistor("e7", "e7b", 120.0) // R28
-        .resistor("e7b", "gnd", 150.0) // R49
-        .capacitor("e7b", "gnd", 10e-6) // C31
+    // Q7 is the complementary 2SA970-GR **PNP**. Its emitter goes toward the
+    // positive rail through 120 ohm, its collector toward ground through 10 k,
+    // and R29/C14 are the same collector-to-base shunt feedback used around
+    // Q6. The old model instantiated this as another NPN, which is a topology
+    // error rather than a harmless transistor approximation.
+    net.capacitor("c6", "q7_in", 0.047e-6) // C11
+        .resistor("q7_in", "b7", 22_000.0) // R27
+        .resistor("v9a", "b7", 100_000.0) // R26
+        .bipolar_pnp("c7", "b7", "e7", SMALL_SIGNAL_BJT) // Q7, 2SA970-GR
+        .resistor("v9a", "e7", 120.0) // R28
+        .resistor("c7", "gnd", 10_000.0) // collector load
+        .resistor("c7", "b7", 470_000.0) // R29
         .capacitor("c7", "b7", 100e-12); // C14
 
-    // --- Dist ---------------------------------------------------------------------------
-    // VR4 250 k, across the second gain stage's output with its wiper feeding the
-    // clipping amplifier. The drawing's own pin routing puts it here -- its three
-    // pins all land in the gain-stage region, between Q6/Q7 and op-amp 1b -- and
-    // that is what makes it a *distortion* control rather than a volume: it
-    // decides how hard the clipper is driven into its diodes, and the clipping
-    // then holds the level roughly where it was.
+    // --- Dist, VR4 -------------------------------------------------------------------
+    // This is the unusual part of the real HM-2 and the reason a plain
+    // pre-clipper attenuator gives the wrong control law. VR4 is a 250 kD pot
+    // with its **wiper grounded**. One end is AC-coupled back to Q6's collector
+    // through C31/R49; the other end continues through R25/C22 to IC1B's
+    // inverting input. Turning DIST up therefore does two things at once:
     //
-    // Built after the clipper instead, it only attenuated what had already been
-    // squared off, so the knob changed loudness and not much else: twenty
-    // decibels down at noon with the same distortion.
+    //   low:  Q6 is strongly shunted + IC1B has a large ground-leg resistance
+    //   high: Q6 is barely shunted   + IC1B has a small ground-leg resistance
     //
-    // The taper letter (250KD) is Boss's own and the law behind it was not
-    // found; a linear track is used, which sweeps the drive evenly. ESTIMATED.
-    // Coupled in, so the track does not drag the collector's bias toward
-    // ground: a 250 k path straight off Q7's collector costs the stage forty
-    // decibels and most of its operating point.
-    // Coupled in, and its cold end on the 4.5 V bias rather than ground: the
-    // wiper feeds the clipping amplifier's inverting input through R25, so its
-    // direct voltage has to be the one that amplifier sits at. Taken to ground
-    // instead, R25 works against R20 and drives the op-amp into its rail, where
-    // it stays -- the pedal then passes a millivolt of leakage and nothing else.
-    net.capacitor("c7", "dist_top", 0.047e-6)
-        .pot("dist_top", "dist", "vref", 250_000.0, Taper::Linear, DIST);
+    // Boss used a D/log-like track. `Audio` is deliberately used instead of
+    // the old linear track so the electrical action is spread over the knob's
+    // travel instead of piling almost all useful range at one end.
+    //
+    // `Pot(a, wiper, b)`: at p=0, b->wiper is ~0 and a->wiper is the full
+    // track. Put the Q6 shunt on `b` and the feedback leg on `a` so p=0 really
+    // is minimum distortion.
+    net.capacitor("c6", "dist_shunt_c", 10e-6) // C31
+        .resistor("dist_shunt_c", "dist_shunt", 150.0) // R49
+        .pot("dist_fb", "gnd", "dist_shunt", 250_000.0, Taper::Audio, DIST)
+        .resistor("dist_fb", "dist_fb_r", 47_000.0) // R25
+        .capacitor("dist_fb_r", "u1b_m", 0.047e-6); // C22
 
-    // --- the clipper, op-amp 1b -------------------------------------------------------
-    // R20 220 k round the loop with C9 100 p, and the diodes across it: D3 on its
-    // own one way, D4 and D5 in series the other. That asymmetry is the point.
-    net.resistor("dist", "u1b_m", 68_000.0) // R25
-        .capacitor("u1b_m", "gnd", 0.047e-6) // C22
-        .opamp_biased("u1b", "vref", "u1b_m", "vref", SWING)
+    // --- asymmetric soft clipper, IC1B ----------------------------------------------
+    // Q7 drives the non-inverting input directly. A 68 k resistor returns that
+    // node to the 4.5 V reference; the DIST-controlled leg above sets the closed-loop
+    // gain at the inverting input. D3 against D4+D5 gives the asymmetric soft
+    // clipping in Boss's drawing.
+    net.resistor("c7", "vref", 68_000.0) // bias return
+        .opamp_biased("u1b", "c7", "u1b_m", "vref", SWING)
         .resistor("u1b", "u1b_m", 220_000.0) // R20
         .capacitor("u1b", "u1b_m", 100e-12) // C9
         .diode("u1b_m", "u1b", DiodeSpec::SILICON) // D3
         .diode("u1b", "d45", DiodeSpec::SILICON) // D4
         .diode("d45", "u1b_m", DiodeSpec::SILICON); // D5
 
-    // --- the coring gate ---------------------------------------------------------------
-    // D6 and D7 back to back *in series with the signal*. Nothing crosses them
-    // until it is bigger than a germanium diode, so the tail of a note is cut
-    // off rather than faded out.
-    net.capacitor("u1b", "gate_in", 1e-6) // C12
-        .resistor("gate_in", "vref", 10_000.0) // R23
+    // --- coring gate and hard clipper ------------------------------------------------
+    // C12/R23 AC-couple IC1B into the anti-parallel germanium pair D6/D7.
+    // R30 then feeds the *separate* D8/D9 hard clipper to ground, with C16
+    // across it. The old model put R23/R30 to the 4.5 V bias and moved D8/D9
+    // into IC1A's feedback loop. That is not the HM-2 schematic and lets this
+    // section produce enormous internal excursions instead of bounding them.
+    net.capacitor("u1b", "c12", 1e-6) // C12
+        .resistor("c12", "gate_in", 10_000.0) // R23
         .diode("gate_in", "gate_out", CORING) // D6
         .diode("gate_out", "gate_in", CORING) // D7
-        // The leakage a real diode has. Two diodes in series with the signal
-        // leave the node between them at a very high impedance whenever both
-        // are off, which is most of the time and is what the gate is *for*; the
-        // solver then needs half again as many Newton passes to place it. A
-        // real germanium pair leaks microamps, and saying so conditions the
-        // matrix without changing what the gate does.
+        // Real germanium parts leak. Keeping a very large parallel resistance
+        // prevents the intentionally-open coring node from becoming a numerically
+        // floating island without materially bypassing the gate.
         .resistor("gate_in", "gate_out", 10_000_000.0)
-        .resistor("gate_out", "vref", 10_000.0); // R30
+        .resistor("gate_out", "hard_clip", 10_000.0) // R30
+        .diode("hard_clip", "gnd", DiodeSpec::SILICON) // D8
+        .diode("gnd", "hard_clip", DiodeSpec::SILICON) // D9
+        .capacitor("hard_clip", "gnd", 0.001e-6); // C16
 
-    // --- recovery, op-amp 1a -----------------------------------------------------------
-    net.capacitor("gate_out", "u1a_m", 1e-6) // C15
-        .opamp_biased("u1a", "vref", "u1a_m", "vref", SWING)
-        .resistor("u1a", "u1a_m", 68_000.0) // R24
-        .capacitor("u1a", "u1a_m", 0.001e-6) // C16
-        .diode("u1a_m", "u1a", DiodeSpec::SILICON) // D8
-        .diode("u1a", "u1a_m", DiodeSpec::SILICON) // D9
-        .resistor("u1a", "eqfeed", 47_000.0); // R42
+    // --- recovery/buffer, IC1A --------------------------------------------------------
+    // C15 lifts the ground-referenced hard-clipped signal back onto the 4.5 V
+    // bias through the 68 k input return. IC1A is a voltage follower in the
+    // original pedal; it is not another diode-feedback clipping amplifier.
+    net.capacitor("hard_clip", "u1a_p", 1e-6) // C15
+        .resistor("u1a_p", "vref", 68_000.0)
+        .opamp_biased("u1a", "u1a_p", "u1a", "vref", SWING)
+        // Keep the existing tone-section interface here. The distortion fix is
+        // intentionally isolated from the already-verified Colour Mix Schur
+        // partition; the tone network can be re-derived separately.
+        .resistor("u1a", "eqfeed", 47_000.0);
 
     // --- the Colour Mix -------------------------------------------------------------------
     // A feedback equaliser, the same shape as the Mark IIC+'s graphic: op-amp 3a
@@ -255,11 +273,22 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // the equaliser left the solver with a follower that would not follow
     // below about a tenth of a volt.
     net.capacitor("eqfeed", "eqac", 1e-6)
-        .resistor("eqac", "gnd", 1_000_000.0)
-        .opamp("eqin", "eqac", "eqin", SWING)
-        .resistor("eqin", "cut", 3_300.0) // R52
-        .opamp("u3a", "cut", "boost", SWING)
-        .resistor("u3a", "boost", 3_300.0) // R54
+        .resistor("eqac", "gnd", 1_000_000.0);
+    if partition_filters {
+        net.linear_opamp("eqin", "eqac", "eqin");
+    } else {
+        net.opamp("eqin", "eqac", "eqin", SWING);
+    }
+    net.resistor("eqin", "cut", 3_300.0); // R52
+    // IC3A is the actual boost/cut amplifier. Boss's service check specifies
+    // roughly +21 dB at the Colour Mix resonances from centre to full clockwise.
+    // With the hard-clipped signal feeding it, that is enough to hit the M5218's
+    // finite output swing at the classic all-knobs-max setting. It therefore must
+    // remain rail-aware even in the partitioned production circuit. Making this
+    // op-amp linear/unlimited was only equivalent in the earlier moderate-level
+    // probe and made the Swedish-death settings physically too loud.
+    net.opamp("u3a", "cut", "boost", SWING);
+    net.resistor("u3a", "boost", 3_300.0) // R54
         .capacitor("u3a", "boost", 470e-12); // C33
 
     // VR2, Colour Mix Low: the 87 Hz band.
@@ -286,11 +315,87 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .resistor("q10", "vref", 1_000_000.0) // R60
         .capacitor("q10", "b3", 0.047e-6) // C7
         .resistor("b3", "vref", 1_000_000.0) // R48
-        .bipolar("v9", "b3", "e3", NPN)
+        .bipolar("v9", "b3", "e3", SMALL_SIGNAL_BJT)
         .resistor("e3", "gnd", 10_000.0) // R13
         .capacitor("e3", "out", 1e-6) // C3
         .resistor("out", "gnd", 10_000.0) // R3
         .resistor("out", "gnd", load);
 
     net.build(at)
+}
+
+#[cfg(test)]
+mod partition_tests {
+    use super::*;
+    use crate::dsp::time::Simulation;
+
+    #[test]
+    fn colour_mix_opamps_leave_newton_boundary_without_changing_linear_operation() {
+        let mut partitioned = Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut reference =
+            Simulation::new(build_full_newton_reference(10_000.0, 470_000.0).unwrap(), 48_000.0);
+
+        for (control, value) in [(DIST, 0.7), (LOW, 0.85), (HIGH, 0.8), (LEVEL, 0.6)] {
+            partitioned.set_control(control, value);
+            reference.set_control(control, value);
+        }
+
+        let before = reference.nonlinear_reduction().expect("reference reduction").0;
+        let after = partitioned.nonlinear_reduction().expect("partitioned reduction").0;
+        assert!(after < before, "HM-2 boundary did not shrink: {before} -> {after}");
+
+        let mut worst = 0.0_f64;
+        for k in 0..12_000 {
+            let t = k as f64 / 48_000.0;
+            let x = 0.018
+                * ((std::f64::consts::TAU * 82.4 * t).sin() * 0.7
+                    + (std::f64::consts::TAU * 164.8 * t).sin() * 0.3);
+            let a = partitioned.process(x);
+            let b = reference.process(x);
+            worst = worst.max((a - b).abs());
+        }
+        assert!(worst < 1e-6, "HM-2 linear filter partition changed response: {worst:e}");
+    }
+
+    #[test]
+    fn colour_mix_partition_keeps_rail_clipping_at_all_knobs_max() {
+        let mut partitioned =
+            Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut reference =
+            Simulation::new(build_full_newton_reference(10_000.0, 470_000.0).unwrap(), 48_000.0);
+
+        for (control, value) in [(DIST, 1.0), (LOW, 1.0), (HIGH, 1.0), (LEVEL, 1.0)] {
+            partitioned.set_control(control, value);
+            reference.set_control(control, value);
+        }
+        partitioned.find_operating_point();
+        reference.find_operating_point();
+
+        let before = reference.nonlinear_reduction().expect("reference reduction").0;
+        let after = partitioned.nonlinear_reduction().expect("partitioned reduction").0;
+        assert!(after < before, "HM-2 boundary did not shrink: {before} -> {after}");
+
+        let mut worst = 0.0_f64;
+        let mut peak_partitioned = 0.0_f64;
+        let mut peak_reference = 0.0_f64;
+        for k in 0..24_000 {
+            let t = k as f64 / 48_000.0;
+            // Hot B-standard-ish two-note input, deliberately harder than the
+            // old moderate partition probe. This is the operating region of the
+            // Swedish-death preset where IC3A's +21 dB resonant boost can rail.
+            let x = 0.122
+                * ((std::f64::consts::TAU * 82.4 * t).sin() * 0.65
+                    + (std::f64::consts::TAU * 123.5 * t).sin() * 0.35);
+            let a = partitioned.process(x);
+            let b = reference.process(x);
+            worst = worst.max((a - b).abs());
+            peak_partitioned = peak_partitioned.max(a.abs());
+            peak_reference = peak_reference.max(b.abs());
+        }
+
+        assert!(
+            worst < 1e-6,
+            "HM-2 partition lost Colour Mix rail clipping: worst={worst:e}, partitioned_peak={peak_partitioned:.6}, reference_peak={peak_reference:.6}"
+        );
+    }
 }
