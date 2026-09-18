@@ -22,6 +22,7 @@
 
 use gainstagefx::dsp::measure::Tone;
 use gainstagefx::dsp::time::Simulation;
+use gainstagefx::circuits::twin;
 use gainstagefx::voice::{self, Gain};
 
 const RATE: f64 = 48_000.0;
@@ -306,6 +307,9 @@ fn every_control_is_either_reachable_or_given_a_resting_position() {
         let mut reachable = vec![gain.drive_control()];
         if let Some((b, m, t)) = gain.own_tone() {
             reachable.extend([b, m, t]);
+        }
+        if gain.has_reverb_and_tremolo() {
+            reachable.extend([twin::REVERB, twin::INTENSITY]);
         }
         let rested: Vec<usize> = netlist.resting.iter().map(|&(which, _)| which).collect();
         for control in 0..netlist.controls {

@@ -299,6 +299,10 @@ pub enum Part {
         node: usize,
         series: f64,
         bias: f64,
+        /// Zero is the primary audio input used by `Simulation::process`.
+        /// Positive values identify auxiliary inputs driven independently by
+        /// `Simulation::set_aux_input` / `process_with_aux`.
+        source: usize,
     },
     /// A supply rail behind its series resistance, as a Norton source.
     Supply {
@@ -420,6 +424,10 @@ pub enum Adjust {
     Resistor,
     Capacitor,
     Inductor,
+    /// A resistor whose value may change every sample without rebuilding the
+    /// immutable matrix. It is stamped alongside nonlinear devices so its
+    /// current conductance is present in every Newton and line-search stamp.
+    RealtimeResistor,
 }
 
 /// Saturation current and emission coefficient.
@@ -788,6 +796,7 @@ impl Part {
                 | Part::Core { .. }
                 | Part::Bipolar { .. }
                 | Part::Transconductor { .. }
+                | Part::Adjustable { kind: Adjust::RealtimeResistor, .. }
         )
     }
 
@@ -852,6 +861,7 @@ pub struct Netlist {
     parts: Vec<Part>,
     controls: usize,
     adjustables: Vec<f64>,
+    aux_inputs: usize,
     initial_voltages: Vec<(usize, f64)>,
     resting: Vec<(usize, f64)>,
 }
@@ -865,6 +875,7 @@ impl Netlist {
             parts: Vec::new(),
             controls: 0,
             adjustables: Vec::new(),
+            aux_inputs: 0,
             initial_voltages: Vec::new(),
             resting: Vec::new(),
         }
@@ -942,6 +953,7 @@ impl Netlist {
             node,
             series,
             bias: 0.0,
+            source: 0,
         });
         self
     }
@@ -949,8 +961,31 @@ impl Netlist {
     /// The same, from something sitting at a direct voltage of its own.
     pub fn input_at(&mut self, node: &str, series: f64, bias: f64) -> &mut Self {
         let node = self.pin(node);
-        self.parts.push(Part::Input { node, series, bias });
+        self.parts.push(Part::Input {
+            node,
+            series,
+            bias,
+            source: 0,
+        });
         self
+    }
+
+    /// Add an independent signal input. The returned slot is zero-based and
+    /// is supplied at runtime without rebuilding the circuit. This is used by
+    /// electromechanical split models such as the AB763 spring tank: the dry
+    /// amplifier remains one electrical circuit while the delayed tank pickup
+    /// re-enters at the recovery-grid jack.
+    pub fn aux_input(&mut self, node: &str, series: f64) -> usize {
+        let node = self.pin(node);
+        let slot = self.aux_inputs;
+        self.aux_inputs += 1;
+        self.parts.push(Part::Input {
+            node,
+            series,
+            bias: 0.0,
+            source: slot + 1,
+        });
+        slot
     }
 
     pub fn supply(&mut self, node: &str, series: f64, volts: f64) -> &mut Self {
@@ -1177,7 +1212,7 @@ impl Netlist {
             .parts
             .iter()
             .find_map(|p| match p {
-                Part::Input { node, .. } => Some(*node),
+                Part::Input { node, source: 0, .. } => Some(*node),
                 _ => None,
             })
             .ok_or_else(|| Fault::Malformed(format!("'{}' has no input", self.name)))?;
@@ -1316,6 +1351,7 @@ impl Netlist {
             output: out,
             controls: self.controls,
             adjustables: self.adjustables,
+            aux_inputs: self.aux_inputs,
             initial_voltages,
             resting: self.resting,
         })
@@ -1365,6 +1401,8 @@ pub struct Circuit {
     pub controls: usize,
     /// The starting value of every adjustable part, by slot. See `Part::Adjustable`.
     pub adjustables: Vec<f64>,
+    /// Number of independently driven auxiliary input ports.
+    pub aux_inputs: usize,
     /// Initial node voltages for the DC solver. (node_index, voltage)
     pub initial_voltages: Vec<(usize, f64)>,
     /// Where the controls nobody turns are left. (control, position)

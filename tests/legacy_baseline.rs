@@ -32,7 +32,11 @@
 //! the Mark IIC+ voice was corrected on 2026-09-15 to include the lead return,
 //! V2B, the Lead Master and V2A, which both of its drawings have and the frozen
 //! model left out (`docs/models/cali_iic_plus.md`). Its blocks are no longer
-//! compared; the 5150, Twin and 73P blocks still are, sample for sample.
+//! compared. The Twin was likewise deliberately replaced in 2026-09 by the
+//! completed AB763 circuit (coupled reverb recovery/mixer, optical tremolo
+//! loading, corrected PI/power supply/output stage), so its old frozen samples
+//! are no longer a valid regression oracle either. The 5150 and 73P blocks
+//! remain frozen and are still compared sample for sample.
 use gainstagefx::voice::{Chain, Gain, Settings, Tone};
 use std::f64::consts::TAU;
 
@@ -40,17 +44,15 @@ use std::f64::consts::TAU;
 const BLOCK: usize = 4 * 5 * 2048;
 /// One run: a reset, an operating point, and 2048 samples of one signal.
 const RUN: usize = 2048;
-/// How many of the 400 runs are allowed to reach the solver's fallback.
+/// How many guarded 5150/73P runs are allowed to reach the solver's fallback.
 ///
 /// Not zero, and that is the finding this test carries. Measured with a
 /// perturbation the size of a different libm's rounding, the 5150 settles every
-/// sample at every amplitude and every rate; the **Twin** reaches its fallback
-/// on a handful of samples at 0.03 and 0.7, and the **73P** on twenty-five to
-/// fifty samples per run at 0.126 and 0.7 -- the last of those even with no
-/// perturbation at all. A run that falls back is not reproducible across
+/// sample at every amplitude and every rate; the **73P** can reach its fallback
+/// at the hottest amplitudes. A run that falls back is not reproducible across
 /// machines, because *which* samples fail depends on the last bit of
 /// arithmetic, and a different glibc's `exp` and `sin` differ there. So those
-/// runs are not compared, and this budget fails if more of them appear.
+/// guarded runs are not compared, and this budget fails if more of them appear.
 const FALLBACK_BUDGET: usize = 40;
 /// The voices `render` walks, in order, at each rate.
 const VOICES: [Gain; 4] = [Gain::Boogie, Gain::Peavey, Gain::Twin, Gain::Neve];
@@ -143,22 +145,35 @@ fn legacy_matched_output_is_preserved() {
     .expect("the settled mask is captured beside the samples");
     assert_eq!(captured_settled.len(), settled.len(), "the settled mask is the wrong length");
 
+    let guarded_runs = settled.len() * 2 / VOICES.len();
     let fell_back = settled
         .iter()
         .zip(&captured_settled)
-        .filter(|(now, then)| !**now || **then == 0)
+        .enumerate()
+        .filter(|(run, _)| {
+            let voice = VOICES[(*run / (4 * 5)) % VOICES.len()];
+            !matches!(voice, Gain::Boogie | Gain::Twin)
+        })
+        .filter(|(_, (now, then))| !**now || **then == 0)
         .count();
     assert!(
         fell_back <= FALLBACK_BUDGET,
         "{fell_back} of {} runs reached the solver's fallback, which is more than the \
          {FALLBACK_BUDGET} this test records. Those runs are not comparable across \
          machines; if the number has grown, something has made the solve less stable.",
-        settled.len(),
+        guarded_runs,
     );
 
     let mut compared = 0usize;
+    const RATES: [f64; 5] = [44100.0, 48000.0, 88200.0, 96000.0, 192000.0];
+    const AMPLITUDES: [f64; 4] = [0.001, 0.03, 0.126, 0.7];
+
     for (index, (&actual, bytes)) in actual.iter().zip(expected_samples).enumerate() {
-        if VOICES[(index / BLOCK) % VOICES.len()] == Gain::Boogie {
+        let voice = VOICES[(index / BLOCK) % VOICES.len()];
+        // These two voices were deliberately redesigned after this fixture was
+        // captured, so their historical samples are not valid regression
+        // references. Keep the fixture guarding the untouched 5150 and 73P.
+        if matches!(voice, Gain::Boogie | Gain::Twin) {
             continue;
         }
         // A run the solver did not settle is not reproducible on another
@@ -171,20 +186,27 @@ fn legacy_matched_output_is_preserved() {
         let expected = f32::from_le_bytes(*bytes);
         error += f64::from(actual - expected).powi(2);
         energy += f64::from(expected).powi(2);
+        let voice_block = index % BLOCK;
+        let run_in_voice = voice_block / RUN;
+        let amplitude = AMPLITUDES[run_in_voice / 5];
+        let signal = run_in_voice % 5;
+        let sample = voice_block % RUN;
+        let rate = RATES[index / (BLOCK * VOICES.len())];
         assert!(
             (actual - expected).abs() <= 2e-6 * (1.0 + expected.abs()),
-            "{actual} != {expected}"
+            "{voice:?} rate={rate} amplitude={amplitude} signal={signal} sample={sample}: {actual} != {expected}"
         );
     }
     eprintln!(
         "legacy relative RMS error: {} over {compared} samples; {fell_back} of {} runs \
          reached the fallback and were skipped",
         (error / energy.max(1e-30)).sqrt(),
-        settled.len(),
+        guarded_runs,
     );
+    let guarded_samples = actual.len() * 2 / VOICES.len();
     assert!(
-        compared > actual.len() / 2,
-        "only {compared} samples were comparable, which is too few to be a guard",
+        compared > guarded_samples * 3 / 4,
+        "only {compared} of {guarded_samples} guarded 5150/73P samples were comparable; too few for a useful regression guard",
     );
 }
 

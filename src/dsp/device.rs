@@ -164,6 +164,55 @@ impl Stamper<'_> {
     }
 }
 
+
+/// Residual-only counterpart to [`Stamper`] for line-search trial points.
+///
+/// A rejected backtracking trial is never solved, so it does not need a
+/// Jacobian. It only needs the nonlinear contribution to `F(x)`. Keeping that
+/// path separate avoids calculating derivative terms and writing a compact
+/// matrix that will immediately be thrown away.
+pub struct ResidualStamper<'a> {
+    pub residual: &'a mut [f64],
+    pub map: &'a [usize],
+    pub mapping_failed: bool,
+    pub limiting: bool,
+    pub junction_held: bool,
+}
+
+impl ResidualStamper<'_> {
+    #[inline]
+    fn local(&mut self, node: usize) -> Option<usize> {
+        if node == GROUND {
+            return None;
+        }
+        let local = self.map.get(node).copied().unwrap_or(usize::MAX);
+        if local == usize::MAX || local >= self.residual.len() {
+            self.mapping_failed = true;
+            None
+        } else {
+            Some(local)
+        }
+    }
+
+    #[inline]
+    pub fn row(&mut self, node: usize, value: f64) {
+        if let Some(row) = self.local(node) {
+            self.residual[row] += value;
+        }
+    }
+
+    /// Add a physical current flowing out of `a` and into `b` to `F(x)`.
+    #[inline]
+    pub fn current(&mut self, a: usize, b: usize, amps: f64) {
+        if let Some(a) = self.local(a) {
+            self.residual[a] += amps;
+        }
+        if let Some(b) = self.local(b) {
+            self.residual[b] -= amps;
+        }
+    }
+}
+
 /// Which matrix positions a device can write to, in any of its states.
 ///
 /// The solver needs the circuit's *structure* -- which entries can be nonzero
@@ -1749,6 +1798,338 @@ impl Device for Transconductor {
 /// The trait stays, and `AnyDevice` implements it by forwarding, so nothing
 /// that calls `device.stamp(...)` or `device.settled(...)` needs to know which
 /// type it is holding.
+
+/// A resistor whose value may change at audio/control rate without rebuilding
+/// the circuit topology.  It is linear at every instant, but it is stamped with
+/// the nonlinear devices because its conductance is not part of the immutable
+/// base matrix.  The AB763 optocoupler uses this for the photocell: the lamp/LDR
+/// dynamics choose the resistance once per sample and Newton then sees the real
+/// loading of the V4-B plate hand-off, rather than a post-circuit gain multiply.
+pub struct VariableResistor {
+    a: usize,
+    b: usize,
+    slot: usize,
+    ohms: f64,
+}
+
+impl VariableResistor {
+    pub fn new(a: usize, b: usize, slot: usize, ohms: f64) -> Self {
+        Self { a, b, slot, ohms }
+    }
+
+    #[inline]
+    pub fn set(&mut self, slot: usize, ohms: f64) -> bool {
+        if self.slot == slot && ohms.is_finite() && ohms > 0.0 {
+            self.ohms = ohms;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl Device for VariableResistor {
+    #[inline]
+    fn footprint(&self, m: &mut Mark) {
+        m.conductance(self.a, self.b);
+    }
+
+    #[inline]
+    fn stamp(&mut self, s: &mut Stamper, _v: &[f64]) {
+        s.conductance(self.a, self.b, 1.0 / self.ohms);
+    }
+
+    #[inline]
+    fn moved(&self) -> f64 {
+        0.0
+    }
+}
+
+
+/// Device evaluation used only by Schur-reduced line-search merit probes.
+///
+/// These routines update the same numerical linearisation state as `stamp`,
+/// including limiters and op-amp rail hysteresis, but they do not form any
+/// derivative/Jacobian entries. For an exact trial point the contribution is
+/// the physical device equation itself. Junction-held trials are abandoned by
+/// the caller exactly as before, so no merit decision is made from a limited
+/// diode/BJT point.
+trait TrialResidual {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]);
+}
+
+impl TrialResidual for Diode {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let guess = self.limit_junction(across(v, self.a, self.k));
+        r.junction_held |= self.clamped;
+        self.delta = (guess - self.voltage).abs();
+        self.voltage = guess;
+        if self.clamped {
+            return;
+        }
+        let x = guess * self.inv_scale;
+        let i = if x >= CLAMP {
+            self.spec.saturation * (CLAMP.exp() - 1.0)
+        } else {
+            self.spec.saturation * (x.exp() - 1.0)
+        };
+        r.current(self.a, self.k, i);
+    }
+}
+
+impl TrialResidual for Rectifier {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let wanted = across(v, self.a, self.k);
+        let (guess, clamped) = limit(wanted, self.voltage, 25.0);
+        self.clamped = clamped;
+        self.delta = (guess - self.voltage).abs();
+        self.voltage = guess;
+
+        // Rectifier limiting is intentionally unconditional in the production
+        // stamp. When it engages, reproduce the old tangent residual at the
+        // requested point rather than substituting the current at `guess`.
+        let (i, g) = if guess > 0.0 {
+            let root = guess.sqrt();
+            (
+                self.perveance * guess * root,
+                (1.5 * self.perveance * root).max(Self::OFF),
+            )
+        } else {
+            (0.0, Self::OFF)
+        };
+        r.current(self.a, self.k, i + g * (wanted - guess));
+    }
+}
+
+impl TrialResidual for Triode {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let vpk = across(v, self.p, self.k).max(0.0);
+        let raw = across(v, self.g, self.k);
+        let (vgk, clamped) = if r.limiting {
+            limit_grid(raw, self.vgk)
+        } else {
+            (raw, false)
+        };
+        self.clamped = clamped;
+        self.delta = (vpk - self.vpk).abs().max((vgk - self.vgk).abs());
+        self.vpk = vpk;
+        self.vgk = vgk;
+        r.current(self.p, self.k, self.plate(vpk, vgk));
+        r.current(self.g, self.k, self.grid(vgk));
+    }
+}
+
+impl TrialResidual for Pentode {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let vpk = across(v, self.p, self.k).max(0.0);
+        let vsk = across(v, self.s, self.k).max(0.0);
+        let raw = across(v, self.g, self.k);
+        let (vgk, clamped) = if r.limiting {
+            limit(raw, self.vgk, 4.0)
+        } else {
+            (raw, false)
+        };
+        self.clamped = clamped;
+        self.delta = (vpk - self.vpk)
+            .abs()
+            .max((vgk - self.vgk).abs())
+            .max((vsk - self.vsk).abs());
+        self.vpk = vpk;
+        self.vgk = vgk;
+        self.vsk = vsk;
+
+        let (ip, ig2) = if vsk <= 0.0 || vpk <= 0.0 {
+            (0.0, 0.0)
+        } else {
+            let c = &self.spec;
+            let inner = c.kp * (self.inv_mu + vgk / vsk);
+            let soft = if inner > 30.0 {
+                inner
+            } else {
+                inner.exp().ln_1p()
+            };
+            let e1 = vsk * self.inv_kp * soft;
+            if e1 <= 0.0 {
+                (0.0, 0.0)
+            } else {
+                let powered = e1.powf(c.ex);
+                let plate_base = powered * self.inv_kg1;
+                let screen_base = powered * self.inv_kg2;
+                (
+                    self.count * plate_base * (vpk * self.inv_kvb).atan(),
+                    self.count * screen_base,
+                )
+            }
+        };
+        r.current(self.p, self.k, ip);
+        r.current(self.s, self.k, ig2);
+        r.current(self.g, self.k, self.grid(vgk));
+    }
+}
+
+impl TrialResidual for Jfet {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let raw_vgs = across(v, self.g, self.s);
+        let raw_vds = across(v, self.d, self.s);
+        let (vgs, held_g) = if r.limiting {
+            limit(raw_vgs, self.vgs, 0.5)
+        } else {
+            (raw_vgs, false)
+        };
+        let (vds, held_d) = if r.limiting {
+            limit(raw_vds, self.vds, 2.0)
+        } else {
+            (raw_vds, false)
+        };
+        self.clamped = held_g || held_d;
+        self.delta = (vgs - self.vgs).abs().max((vds - self.vds).abs());
+        self.vgs = vgs;
+        self.vds = vds;
+        r.current(self.d, self.s, self.drain(vgs, vds));
+    }
+}
+
+impl TrialResidual for Bipolar {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let (vbe_now, vbc_now) = if self.pnp {
+            (across(v, self.e, self.b), across(v, self.c, self.b))
+        } else {
+            (across(v, self.b, self.e), across(v, self.b, self.c))
+        };
+        let (vbe, held_e) = self.limit_junction(vbe_now, self.vbe);
+        let (vbc, held_c) = self.limit_junction(vbc_now, self.vbc);
+        r.junction_held |= held_e || held_c;
+        self.clamped = held_e || held_c;
+        self.delta = (vbe - self.vbe).abs().max((vbc - self.vbc).abs());
+        self.vbe = vbe;
+        self.vbc = vbc;
+        if self.clamped {
+            return;
+        }
+
+        let ef = (vbe / VT).min(60.0).exp();
+        let er = (vbc / VT).min(60.0).exp();
+        let forward = self.spec.saturation * (ef - 1.0);
+        let reverse = self.spec.saturation * (er - 1.0);
+        let vce = vbe - vbc;
+        let early = 1.0 + (vce * self.inv_early).max(-0.9);
+        let ic = (forward - reverse) * early - reverse * self.inv_reverse_beta;
+        let ib = forward * self.inv_forward_beta + reverse * self.inv_reverse_beta;
+        if self.pnp {
+            r.current(self.e, self.c, ic);
+            r.current(self.e, self.b, ib);
+        } else {
+            r.current(self.c, self.e, ic);
+            r.current(self.b, self.e, ib);
+        }
+    }
+}
+
+impl TrialResidual for OpAmp {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let output = across(v, self.out, self.reference);
+        let error = across(v, self.plus, self.minus);
+        let was = self.clamped;
+        self.clamped = if was > 0.0 {
+            if error >= 0.0 { self.rail } else { 0.0 }
+        } else if was < 0.0 {
+            if error <= 0.0 { -self.rail } else { 0.0 }
+        } else if output > self.rail {
+            self.rail
+        } else if output < -self.rail {
+            -self.rail
+        } else {
+            0.0
+        };
+        self.delta = (self.clamped - was).abs().max(if self.clamped == 0.0 {
+            error.abs()
+        } else {
+            0.0
+        });
+
+        let branch_current = if self.branch == GROUND { 0.0 } else { v[self.branch] };
+        r.row(self.out, branch_current);
+        if self.clamped == 0.0 {
+            r.row(self.branch, error);
+        } else {
+            r.row(self.branch, output - self.clamped);
+        }
+    }
+}
+
+impl TrialResidual for Core {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let raw = across(v, self.a, self.b);
+        let (volts, clamped) = if r.limiting {
+            let scale = self.spec.knee / (2.0 * self.half_step * self.spec.sharpness);
+            limit(raw, self.volts, scale)
+        } else {
+            (raw, false)
+        };
+        self.clamped = clamped;
+        self.delta = (volts - self.volts).abs();
+        self.volts = volts;
+        let history = self.last_flux + self.half_step * self.last_volts;
+        let flux = history + self.half_step * volts;
+        self.flux = flux;
+
+        let knee = self.spec.knee;
+        let over = flux * self.inv_knee;
+        let magnitude = over.abs();
+        let i = if magnitude < 1e-30 {
+            flux * self.inv_henry
+        } else {
+            let powered = match self.sharpness_integer {
+                3 => {
+                    let square = magnitude * magnitude;
+                    square * magnitude
+                }
+                6 => {
+                    let cube = magnitude * magnitude * magnitude;
+                    cube * cube
+                }
+                7 => {
+                    let cube = magnitude * magnitude * magnitude;
+                    cube * cube * magnitude
+                }
+                9 => {
+                    let cube = magnitude * magnitude * magnitude;
+                    cube * cube * cube
+                }
+                exponent if exponent != 0 => powi_small(magnitude, exponent),
+                _ => magnitude.powf(self.spec.sharpness),
+            };
+            flux * self.inv_henry + powered * over.signum() * knee * self.inv_henry
+        };
+        r.current(self.a, self.b, i);
+    }
+}
+
+impl TrialResidual for Transconductor {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let difference = across(v, self.plus, self.minus);
+        self.delta = (difference - self.difference).abs();
+        self.difference = difference;
+        r.current(self.reference, self.out, self.current(difference));
+    }
+}
+
+impl TrialResidual for VariableResistor {
+    #[inline]
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        r.current(self.a, self.b, across(v, self.a, self.b) / self.ohms);
+    }
+}
+
 pub enum AnyDevice {
     Diode(Diode),
     Rectifier(Rectifier),
@@ -1759,6 +2140,7 @@ pub enum AnyDevice {
     OpAmp(OpAmp),
     Core(Core),
     Transconductor(Transconductor),
+    VariableResistor(VariableResistor),
 }
 
 impl AnyDevice {
@@ -1778,6 +2160,9 @@ impl AnyDevice {
             (Self::Transconductor(dst), Self::Transconductor(src)) => {
                 dst.relinearise(src.linearisation())
             }
+            (Self::VariableResistor(dst), Self::VariableResistor(src)) => {
+                dst.ohms = src.ohms;
+            }
             (Self::Core(dst), Self::Core(src)) => {
                 dst.relinearise(src.linearisation());
                 dst.last_flux = src.last_flux;
@@ -1787,6 +2172,34 @@ impl AnyDevice {
                 dst.half_step = src.half_step;
             }
             _ => panic!("runtime copy requires identical device variants"),
+        }
+    }
+
+    /// Update one audio-rate resistor by its netlist slot. Returns true when
+    /// this is the device that owns the slot.
+    #[inline]
+    pub fn set_realtime_resistor(&mut self, slot: usize, ohms: f64) -> bool {
+        match self {
+            Self::VariableResistor(r) => r.set(slot, ohms),
+            _ => false,
+        }
+    }
+
+
+    /// Evaluate only the nonlinear residual for a line-search trial point.
+    #[inline]
+    pub(crate) fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        match self {
+            Self::Diode(d) => d.trial_residual(r, v),
+            Self::Rectifier(x) => x.trial_residual(r, v),
+            Self::Triode(t) => t.trial_residual(r, v),
+            Self::Pentode(p) => p.trial_residual(r, v),
+            Self::Jfet(j) => j.trial_residual(r, v),
+            Self::Bipolar(b) => b.trial_residual(r, v),
+            Self::OpAmp(o) => o.trial_residual(r, v),
+            Self::Core(c) => c.trial_residual(r, v),
+            Self::Transconductor(t) => t.trial_residual(r, v),
+            Self::VariableResistor(vr) => vr.trial_residual(r, v),
         }
     }
 }
@@ -1804,6 +2217,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.stamp(s, v),
             AnyDevice::Core(c) => c.stamp(s, v),
             AnyDevice::Transconductor(t) => t.stamp(s, v),
+            AnyDevice::VariableResistor(r) => r.stamp(s, v),
         }
     }
 
@@ -1819,6 +2233,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.footprint(m),
             AnyDevice::Core(c) => c.footprint(m),
             AnyDevice::Transconductor(t) => t.footprint(m),
+            AnyDevice::VariableResistor(r) => r.footprint(m),
         }
     }
 
@@ -1834,6 +2249,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.moved(),
             AnyDevice::Core(c) => c.moved(),
             AnyDevice::Transconductor(t) => t.moved(),
+            AnyDevice::VariableResistor(r) => r.moved(),
         }
     }
 
@@ -1849,6 +2265,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.settled(tolerance),
             AnyDevice::Core(c) => c.settled(tolerance),
             AnyDevice::Transconductor(t) => t.settled(tolerance),
+            AnyDevice::VariableResistor(r) => r.settled(tolerance),
         }
     }
 
@@ -1864,6 +2281,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.linearisation(),
             AnyDevice::Core(c) => c.linearisation(),
             AnyDevice::Transconductor(t) => t.linearisation(),
+            AnyDevice::VariableResistor(r) => r.linearisation(),
         }
     }
 
@@ -1879,6 +2297,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.relinearise(saved),
             AnyDevice::Core(c) => c.relinearise(saved),
             AnyDevice::Transconductor(t) => t.relinearise(saved),
+            AnyDevice::VariableResistor(r) => r.relinearise(saved),
         }
     }
 
@@ -1894,6 +2313,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.advance(),
             AnyDevice::Core(c) => c.advance(),
             AnyDevice::Transconductor(t) => t.advance(),
+            AnyDevice::VariableResistor(r) => r.advance(),
         }
     }
 
@@ -1909,6 +2329,7 @@ impl Device for AnyDevice {
             AnyDevice::OpAmp(o) => o.switches(),
             AnyDevice::Core(c) => c.switches(),
             AnyDevice::Transconductor(t) => t.switches(),
+            AnyDevice::VariableResistor(r) => r.switches(),
         }
     }
 }

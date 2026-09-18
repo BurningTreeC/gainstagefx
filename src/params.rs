@@ -483,8 +483,8 @@ impl PedalModel {
         Self::BigMuff,
         Self::Green9,
         Self::Rodent,
-        Self::RoundFuzz,
         Self::YellowDist,
+        Self::RoundFuzz,
         Self::HeavyMetal,
         Self::MetalZone,
     ];
@@ -998,6 +998,14 @@ pub struct GainStageParams {
     /// the control that makes the rest of the panel mean what it says.
     #[id = "in_trim"]
     pub input_trim: FloatParam,
+    /// Which of the American Twin Vibrato channel's two stock input jacks is
+    /// used. `false` is Jack 1 / High; `true` is Jack 2 / Low (-6 dB). The
+    /// parameter is ignored by every other circuit.
+    #[id = "twin_low_input"]
+    pub twin_low_input: BoolParam,
+    /// Stock 120 pF Bright switch across the Twin channel Volume control.
+    #[id = "twin_bright"]
+    pub twin_bright: BoolParam,
 
     // --- 2 Circuit -------------------------------------------------------
     #[id = "pedal"]
@@ -1116,9 +1124,10 @@ pub struct GainStageParams {
     /// The tremolo oscillator's rate: about 1.8 Hz to 11 Hz.
     #[id = "speed"]
     pub speed: FloatParam,
-    /// How hard the oscillator drives the neon bulb. There is a real dead zone
-    /// at the bottom, because below its striking voltage the bulb never fires
-    /// and the tremolo is simply off -- which is what the amplifier does.
+    /// How strongly the optical cell is coupled to the audio node by the
+    /// stock 50 k reverse-audio Intensity pot. The oscillator and neon keep
+    /// running independently; at zero the wiper sits at ground so the LDR
+    /// cannot modulate the signal.
     #[id = "intensity"]
     pub intensity: FloatParam,
 
@@ -1241,6 +1250,10 @@ impl Default for GainStageParams {
             preset_name: Mutex::new(String::from(crate::presets::NONE)),
 
             input_trim: decibels("Input", 24.0),
+            twin_low_input: BoolParam::new("Twin Sensitivity", false),
+            // Preserve the sound of sessions made before the switch was exposed:
+            // the old model had the 120 pF capacitor permanently connected.
+            twin_bright: BoolParam::new("Twin Bright", true),
 
             pedal: EnumParam::new("Pedal", PedalModel::None),
             pedal_drive: position("Pedal Drive", 0.5),

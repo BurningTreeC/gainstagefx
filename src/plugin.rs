@@ -642,6 +642,8 @@ impl Plugin for GainStageFx {
             bass: self.params.bass.smoothed.next_step(samples) as f64,
             mid: self.params.mid.smoothed.next_step(samples) as f64,
             treble: self.params.treble.smoothed.next_step(samples) as f64,
+            twin_low_input: self.params.twin_low_input.value(),
+            twin_bright: self.params.twin_bright.value(),
             reverb: self.params.reverb.smoothed.next_step(samples) as f64,
             speed: self.params.speed.smoothed.next_step(samples) as f64,
             intensity: self.params.intensity.smoothed.next_step(samples) as f64,
@@ -686,7 +688,9 @@ impl Plugin for GainStageFx {
                 let power_op = first.power_operating_point();
                 let line_op = first.line_operating_point();
                 let pedal_op = first.pedal_operating_point();
+                let reverb_driver_op = first.reverb_driver_operating_point();
                 let reverb_op = first.reverb_operating_point();
+                let twin_mix_op = first.twin_mix_operating_point();
                 for chain in rest.iter_mut().filter(|_| !duplicated_mono) {
                     chain.share_operating_point_from(gain_op);
                     if let Some(op) = iron_op {
@@ -701,8 +705,14 @@ impl Plugin for GainStageFx {
                     if let Some(op) = power_op {
                         chain.share_power_operating_point_from(op);
                     }
+                    if let Some(op) = reverb_driver_op {
+                        chain.share_reverb_driver_operating_point_from(op);
+                    }
                     if let Some(op) = reverb_op {
                         chain.share_reverb_operating_point_from(op);
+                    }
+                    if let Some(op) = twin_mix_op {
+                        chain.share_twin_mix_operating_point_from(op);
                     }
                 }
             }

@@ -822,11 +822,13 @@ pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
         master_rest: 1.0,
         pi_couple: 0.001e-6,
         driver_volts: 0.0,
-        pi_stopper: 22_000.0,
+        // The stock AB763 has no separate 22 kΩ series grid stopper here;
+        // that value belongs to the long-tail resistor.
+        pi_stopper: 0.0,
         pi_leak_upper: 1_000_000.0,
         pi_leak_lower: 1_000_000.0,
         pi_cathode: 470.0,
-        pi_tail: 10_000.0,
+        pi_tail: 22_000.0,
         pi_tail_lower: 100.0,
         pi_cross: 0.1e-6,
         // 82 k and 100 k, both five per cent parts on the drawing. Unequal on
@@ -834,14 +836,18 @@ pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
         // the two halves up before they reach the output grids.
         pi_plate_driven: 82_000.0,
         pi_plate_other: 100_000.0,
-        pi_supply: 410.0,
+        pi_supply: 450.0,
         pi_tube: TriodeSpec::ECC81,
         pi_plate_cap: 0.0,
 
         couple: 0.1e-6,
         grid_leak: 220_000.0,
-        stopper: 1_500.0,
-        screen_resistor: 470.0,
+        // The nonlinear Pentode below represents the two parallel 6L6GCs on
+        // one phase as one device with twice the current. The real amp gives
+        // *each* valve a 1.5 kΩ grid stopper and 470 Ω screen resistor, so the
+        // exact equivalent seen by the aggregate device is the parallel value.
+        stopper: 750.0,
+        screen_resistor: 235.0,
         tubes_per_side: 2.0, // four 6L6GC
         tube: PentodeSpec::T6L6GC,
         bias: -52.0,
@@ -853,9 +859,13 @@ pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
         // Stiffer than the Mesa, which is the whole point of the amplifier.
         supply_resistance: 70.0,
         rectifier: None,
-        reservoir: 200e-6,
-        screen_resistance: 470.0,
-        screen_reservoir: 100e-6,
+        // The original supply uses the much smaller blackface filter bank,
+        // followed by the choke-fed screen node; do not give the Twin a
+        // modern 200/100 uF reservoir by accident. Two 70 uF series caps are
+        // about 35 uF effective on the plate reservoir and the B node is 20 uF.
+        reservoir: 35e-6,
+        screen_resistance: 100.0,
+        screen_reservoir: 20e-6,
 
         // Roughly 1.9 k plate to plate into the 4 ohms two eight-ohm speakers
         // make in parallel: `sqrt(1900 / 4)`.
@@ -980,9 +990,20 @@ fn assemble(
     // half takes, and the tail voltage is what tells it to.
     // A direct-coupled inverter is handed the driver's direct voltage as well as
     // its signal; a capacitor-coupled one is handed the signal alone.
-    net.input_at("in", source, spec.driver_volts)
-        .rest(MASTER, spec.master_rest)
-        .pot("in", "master", "gnd", spec.master, Taper::Audio, MASTER);
+    let twin_supply = spec.name == PowerSpec::TWIN.name;
+    net.input_at("in", source, spec.driver_volts);
+    // The AB763 Twin has no master volume. Every other modular power model may
+    // keep its real/synthetic interstage master, but inserting a 1 MΩ pot into
+    // the Twin adds both a nonexistent divider and a parallel load at the exact
+    // hand-off we are trying to model. For the Twin the channel-mix source goes
+    // straight to the stock 0.001 µF phase-inverter coupling capacitor.
+    let master_node = if twin_supply {
+        "in"
+    } else {
+        net.rest(MASTER, spec.master_rest)
+            .pot("in", "master", "gnd", spec.master, Taper::Audio, MASTER);
+        "master"
+    };
     // How the inverter's grids get their direct voltage, which is most of what
     // decides whether an amplifier stays clean when it is driven hard.
     //
@@ -998,9 +1019,9 @@ fn assemble(
     // and `pi_leak_lower` are those two resistors rather than a leak chain.
     let direct = spec.pi_couple <= 0.0;
     if direct {
-        net.resistor("master", "pi_a", spec.pi_leak_upper);
+        net.resistor(master_node, "pi_a", spec.pi_leak_upper);
     } else {
-        net.capacitor("master", "pi_a", spec.pi_couple)
+        net.capacitor(master_node, "pi_a", spec.pi_couple)
             .resistor("pi_a", "pi_b", spec.pi_leak_upper);
     }
     let driven_grid = if spec.pi_stopper > 0.0 {
@@ -1029,7 +1050,7 @@ fn assemble(
     };
     // The second grid comes off the same place the first one does: the leak
     // junction when there is one, the driver when there is not.
-    net.resistor(if direct { "master" } else { "pi_b" }, "pi_g2", spec.pi_leak_lower);
+    net.resistor(if direct { master_node } else { "pi_b" }, "pi_g2", spec.pi_leak_lower);
     // Where the tail lands: a node of its own when a feedback loop comes back to
     // it, ground when there is no loop to bring back.
     let tail = if spec.pi_tail_lower > 0.0 { "tail" } else { "gnd" };
@@ -1046,9 +1067,17 @@ fn assemble(
     if spec.pi_cross > 0.0 {
         net.capacitor(tail, "pi_g2", spec.pi_cross);
     }
-    net.supply("pi_p1", spec.pi_plate_driven, spec.pi_supply)
-        .supply("pi_p2", spec.pi_plate_other, spec.pi_supply)
-        .triode("pi_p1", driven_grid, cathode, spec.pi_tube)
+    if twin_supply {
+        // AB763: both PI plate loads return to the shared +450 V C node, not
+        // to two independent ideal supplies. The C node itself is built from
+        // the common reservoir/choke chain below.
+        net.resistor("pi_c", "pi_p1", spec.pi_plate_driven)
+            .resistor("pi_c", "pi_p2", spec.pi_plate_other);
+    } else {
+        net.supply("pi_p1", spec.pi_plate_driven, spec.pi_supply)
+            .supply("pi_p2", spec.pi_plate_other, spec.pi_supply);
+    }
+    net.triode("pi_p1", driven_grid, cathode, spec.pi_tube)
         .triode("pi_p2", "pi_g2", cathode, spec.pi_tube);
     if spec.pi_plate_cap > 0.0 {
         net.capacitor("pi_p1", "pi_p2", spec.pi_plate_cap);
@@ -1061,6 +1090,24 @@ fn assemble(
     // about thirty milliseconds, or the length of a chord's attack. That is
     // sag, and it is why the note blooms.
     match spec.rectifier {
+        None if twin_supply => {
+            // Original AB763 doghouse: two 70 uF cans in series (35 uF
+            // effective) with 220 k balancing resistors at the +460 V A node,
+            // then the 125C1A choke (4 H, ~104 ohm DCR) to +458 V B, then
+            // 1 k to the +450 V PI C node. Keeping these as shared nodes means
+            // screen-current changes and PI current now move the same supply
+            // instead of two unrelated Norton sources.
+            net.supply("ht", spec.supply_resistance, spec.plate_supply)
+                .capacitor("ht", "ht_mid", 70e-6)
+                .capacitor("ht_mid", "gnd", 70e-6)
+                .resistor("ht", "ht_mid", 220_000.0)
+                .resistor("ht_mid", "gnd", 220_000.0)
+                .resistor("ht", "choke_in", 104.0)
+                .inductor("choke_in", "scr", 4.0)
+                .capacitor("scr", "gnd", 20e-6)
+                .resistor("scr", "pi_c", 1_000.0)
+                .capacitor("pi_c", "gnd", 20e-6);
+        }
         None => {
             net.supply("ht", spec.supply_resistance, spec.plate_supply)
                 .capacitor("ht", "gnd", spec.reservoir)
@@ -1085,9 +1132,23 @@ fn assemble(
         net.resistor("ok", "gnd", spec.cathode_bias)
             .capacitor("ok", "gnd", spec.cathode_bypass);
         ("gnd", "ok")
+    } else if twin_supply {
+        // AB763 fixed-bias supply. The transformer bias tap/diode is represented
+        // by its rectified Thevenin source, followed by the stock 470 Ω feed,
+        // 25 µF filter and 10 kΩ linear balance track over the 27 kΩ ground leg.
+        // The unexposed balance pot is parked at its electrical midpoint; the
+        // source value is chosen so that the unloaded wiper is the schematic's
+        // -52 V after the divider and 470 Ω feed. Grid current can now charge
+        // and recover through the real filter instead of seeing a naked 22 kΩ
+        // synthetic source.
+        net.supply("bias_raw", 470.0, -60.888_75)
+            .capacitor("bias_raw", "gnd", 25e-6)
+            .resistor("bias_raw", "bias", 5_000.0)
+            .resistor("bias", "bias_leg", 5_000.0)
+            .resistor("bias_leg", "gnd", 27_000.0);
+        ("bias", "gnd")
     } else {
-        // Stiff: it feeds two grid leaks and nothing else until the grids
-        // start drawing, and what happens then is the point.
+        // Stiff generic fixed-bias source used by the other power models.
         net.supply("bias", 22_000.0, spec.bias);
         ("bias", "gnd")
     };
@@ -1188,10 +1249,22 @@ fn assemble(
     // drawing read more like the drawing. It also put a one siemens branch
     // next to grid leaks of a few microsiemens, which is six orders of
     // conditioning spent on nothing.
-    net.resistor("ht", "m", spec.primary_resistance)
-        .inductor("m", "pl_a", half)
-        .inductor("m", "pl_b", half)
-        .transformer("pl_a", "ht", "sec", "gnd", each)
+    if twin_supply {
+        // The 125A29A primary is centre tapped: each half has its own copper
+        // resistance and magnetising path from the +460 V tap to its plate.
+        // A single resistor before the split makes one phase's current sag the
+        // other phase through copper that is not shared, and doubles the DC
+        // drop for a balanced pair. Keep the two real half-windings explicit.
+        net.resistor("ht", "m_a", spec.primary_resistance)
+            .inductor("m_a", "pl_a", half)
+            .resistor("ht", "m_b", spec.primary_resistance)
+            .inductor("m_b", "pl_b", half);
+    } else {
+        net.resistor("ht", "m", spec.primary_resistance)
+            .inductor("m", "pl_a", half)
+            .inductor("m", "pl_b", half);
+    }
+    net.transformer("pl_a", "ht", "sec", "gnd", each)
         .transformer("ht", "pl_b", "sec", "gnd", each)
         .core("sec", "gnd", secondary_core)
         .inductor("sec", "spk", spec.leakage);
@@ -1233,4 +1306,32 @@ fn assemble(
     }
 
     Ok((net.build(at)?, slots))
+}
+
+#[cfg(test)]
+mod twin_reduction_tests {
+    use super::*;
+    use crate::dsp::time::Simulation;
+
+    #[test]
+    fn twin_power_uses_minimal_exact_nonlinear_schur_core() {
+        let circuit = build(&PowerSpec::TWIN, 10_000.0).expect("Twin power amp builds");
+        let sim = Simulation::new(circuit, 48_000.0);
+        let reduction = sim
+            .nonlinear_reduction()
+            .expect("Twin power should use exact nonlinear Schur reduction");
+        println!(
+            "twin_power_schur,unknowns={},boundary={},internal={},boundary_names={:?}",
+            sim.unknowns(),
+            reduction.0,
+            reduction.1,
+            sim.nonlinear_boundary_names()
+        );
+        assert_eq!(sim.unknowns(), 31, "unexpected Twin power MNA size");
+        assert_eq!(
+            reduction,
+            (13, 18),
+            "Twin power exact Schur core changed: every PI/6L6/core terminal touched by a nonlinear stamp must remain on the Newton boundary"
+        );
+    }
 }

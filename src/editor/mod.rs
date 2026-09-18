@@ -493,12 +493,43 @@ fn circuit(cx: &mut Context) {
     // together, which is what a valve amplifier on low mains does.
     grid.dropdown(cx, 0, 3, "mains", |p| &p.mains, Choice::Mains, true);
 
+    // The Twin's two switched input jacks are part of the amplifier wiring,
+    // not an arbitrary gain trim. Keep the control visible but grey for every
+    // other model so the panel does not change shape when circuits are changed.
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.circuit.value() == Circuit::Twin),
+        move |cx, live| {
+            let live = live.get(cx);
+            grid.caption(cx, 1, 3, "sensitivity", live);
+            selector(
+                cx,
+                Grid::right(),
+                grid.y(3),
+                Grid::right_w(),
+                |p| &p.twin_low_input,
+                vec!["High 1 (1 MΩ)", "Low 2 (-6 dB)"],
+                live,
+            );
+            grid.caption(cx, 1, 4, "bright", live);
+            selector(
+                cx,
+                Grid::right(),
+                grid.y(4),
+                Grid::right_w(),
+                |p| &p.twin_bright,
+                vec!["Off", "On (120 pF)"],
+                live,
+            );
+        },
+    );
+
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
     Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::SelfDirected)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 126.0))
+        .top(Pixels(top + 154.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
         .child_top(Stretch(1.0))

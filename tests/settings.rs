@@ -49,6 +49,8 @@ fn every_control_reaches_the_circuit() {
         power_amp: Default::default(),
         acoustic: Default::default(),
         pedal: Default::default(),
+        twin_low_input: false,
+        twin_bright: true,
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,
@@ -191,4 +193,74 @@ fn the_quality_setting_reaches_the_solver() {
     );
 }
 
+#[test]
+fn twin_low_input_is_the_stock_lower_sensitivity_jack() {
+    let high = Settings {
+        gain: Gain::Twin,
+        tone: Tone::Off,
+        cabinet: Cabinet::Off,
+        drive: 0.5,
+        twin_low_input: false,
+        twin_bright: true,
+        reverb: 0.0,
+        intensity: 0.0,
+        oversampling: 1,
+        ..Settings::default()
+    };
+    let low = Settings {
+        twin_low_input: true,
+        ..high
+    };
+    let high_audio = render(&high);
+    let low_audio = render(&low);
+    let rms = |samples: &[f64]| {
+        (samples.iter().map(|x| x * x).sum::<f64>() / samples.len() as f64).sqrt()
+    };
+    let ratio = rms(&low_audio) / rms(&high_audio).max(1e-30);
+    assert!(
+        (0.35..0.70).contains(&ratio),
+        "Twin Low/2 should be roughly the stock -6 dB input, got ratio {ratio}"
+    );
+}
+
 use gainstagefx::voice::Amplifier;
+
+
+/// Twin-only controls must never alias control numbers in another circuit.
+///
+/// This caught the shipped-preset bug where Twin REVERB=4 and INTENSITY=5
+/// were written to every active gain circuit.  On the Mark IIC+ those same
+/// slots are LEAD_DRIVE and LEAD_MASTER, so loading Puppet Master '86 first
+/// set the intended gain and then silently replaced it with a clean setting.
+#[test]
+fn twin_only_controls_are_inert_on_mark_iic() {
+    let base = Settings {
+        gain: Gain::Boogie,
+        drive: 0.80,
+        master: 0.55,
+        tone: Tone::Off,
+        cabinet: Cabinet::Off,
+        graphic: [0.65, 0.45, 0.25, 0.65, 0.70],
+        bass: 0.20,
+        mid: 0.35,
+        treble: 0.75,
+        reverb: 0.0,
+        speed: 0.4,
+        intensity: 0.0,
+        oversampling: 1,
+        ..Settings::default()
+    };
+    let reference = render(&base);
+    let impossible_twin_controls = render(&Settings {
+        reverb: 1.0,
+        speed: 1.0,
+        intensity: 1.0,
+        ..base
+    });
+    let d = difference(&impossible_twin_controls, &reference);
+    assert!(
+        d < 1e-12,
+        "Twin-only controls leaked into the Mark IIC+ by {:.9}%",
+        d * 100.0
+    );
+}

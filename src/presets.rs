@@ -9,6 +9,8 @@
 //! They are grouped by what they are for rather than by which circuit they
 //! use, because that is how somebody looking for a sound is thinking.
 
+use nih_plug::prelude::Enum;
+
 use crate::params::{
     Mains,
     Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, MicModel, Oversampling, PedalModel,
@@ -72,6 +74,9 @@ pub struct Preset {
     /// preset because a preset that does not say leaves them wherever the last
     /// one put them, and a reverb arriving with a patch that never asked for
     /// one is the same defect as a knob that reaches nothing.
+    /// American Twin input jack: false = High/1, true = Low/2 (-6 dB).
+    pub twin_low_input: bool,
+    pub twin_bright: bool,
     pub reverb: f32,
     pub speed: f32,
     pub intensity: f32,
@@ -139,6 +144,8 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         mid: 0.5,
         treble: 0.5,
         cabinet: Cabinet::Off,
+        twin_low_input: false,
+        twin_bright: true,
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,
@@ -616,20 +623,27 @@ pub const PRESETS: &[Preset] = &[
     },
     // --- American Twin ------------------------------------------------------
     // The clean reference: chime, headroom, and the spring tank underneath.
-    // Volume at 6, Bass 6, Middle 3.5, Treble 6.5 -- the blackface scoop -- and
-    // Reverb at 3.5. Into an open-back 2x12 with ceramic drivers, a 57 close and
+    // The completed AB763 was re-measured rather than keeping the old knob
+    // numbers: Volume 0.24 gives about 2 % core THD at nominal input, with the
+    // familiar Bass 6 / Middle 3.5 / Treble 6.5 blackface scoop and Reverb 0.30
+    // measuring about -12 dB against the dry path. Into an open-back 2x12 with
+    // ceramic drivers, a 57 close and
     // a ribbon a little back. The Steel iron these carried is gone: with a real
     // power stage and speaker the amplifier already has its own output
     // transformer, and on the physical path the Iron control would sit in front
     // of the power stage, which an AB763 does not have.
     Preset {
-        drive: 0.60,
+        // Re-measured against the completed AB763 at 48 kHz: this is the
+        // nearest one-percent Volume position to 2 % core THD at nominal input.
+        drive: 0.24,
         circuit: Circuit::Twin,
         tone: ToneStack::Off,
         bass: 0.60,
         mid: 0.35,
         treble: 0.65,
-        reverb: 0.35,
+        // Measured with the corrected 4AB3C1B pickup sensitivity: about
+        // -11.9 dB spring return against the dry path.
+        reverb: 0.30,
         cab_model: CabModel::AmericanOpen212,
         mic_a_position: 0.3,
         mic_a_distance: 0.03,
@@ -640,23 +654,33 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Blackface Clean")
     },
-    // The same amplifier with its tremolo running: speed a little under half,
-    // intensity well up, because the neon bulb does not strike at all below
-    // about a third and the control's useful travel starts there.
+    // The same amplifier with its tremolo running: the completed circuit puts
+    // its ~2 % clean-core point at Volume 0.17 with this tone/mic voicing.
+    // Reverb 0.38 is about -10 dB wet/dry, and Intensity 0.94 measures about
+    // 8 dB optical modulation at the shipped ~3.7 Hz speed.
     Preset {
-        drive: 0.55,
+        // The slightly different tone/mic voicing reaches the same clean core
+        // target lower on the Volume control.
+        drive: 0.17,
         circuit: Circuit::Twin,
         tone: ToneStack::Off,
         bass: 0.55,
         mid: 0.40,
         treble: 0.60,
-        reverb: 0.45,
+        // A little more spring than Clean: measured about -10.0 dB wet/dry.
+        reverb: 0.38,
         speed: 0.40,
-        intensity: 0.75,
+        // Measured on the completed optical cell for about 8 dB modulation
+        // depth at the shipped ~3.7 Hz speed.
+        intensity: 0.94,
         cab_model: CabModel::AmericanOpen212,
         mic_a_position: 0.35,
         mic_a_distance: 0.04,
         oversampling: Oversampling::Off,
+        // Optical modulation raises the untrimmed RMS by about 1.49 dB
+        // against Blackface Clean. The panel is stepped in tenths, so -1.5 dB
+        // is the nearest user-representable level match.
+        output_trim: -1.5,
         ..base("Amplifier", "Blackface Throb")
     },
     Preset {
@@ -1398,6 +1422,8 @@ impl Preset {
             mid: self.mid as f64,
             treble: self.treble as f64,
             tone_sweep: self.tone_sweep as f64,
+            twin_low_input: self.twin_low_input,
+            twin_bright: self.twin_bright,
             reverb: self.reverb as f64,
             speed: self.speed as f64,
             intensity: self.intensity as f64,
@@ -1413,10 +1439,15 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 46] {
+    pub fn dials(&self) -> [(&'static str, f32); 48] {
         [
             ("in_trim", self.input_trim),
-            ("pedal", index_in(&PedalModel::ALL, self.pedal)),
+            (
+                "twin_low_input",
+                if self.twin_low_input { 1.0 } else { 0.0 },
+            ),
+            ("twin_bright", if self.twin_bright { 1.0 } else { 0.0 }),
+            ("pedal", self.pedal.to_index() as f32),
             ("pedal_drive", self.pedal_drive),
             ("pedal_tone", self.pedal_tone),
             ("pedal_tone_b", self.pedal_tone_b),
@@ -1424,12 +1455,12 @@ impl Preset {
             ("pedal_tone_d", self.pedal_tone_d),
             ("pedal_level", self.pedal_level),
             ("tone_sweep", self.tone_sweep),
-            ("circuit", index_in(&Circuit::ALL, self.circuit)),
-            ("power_amp", index_in(&PowerAmp::ALL, self.power_amp)),
-            ("mains", index_in(&Mains::ALL, self.mains)),
-            ("diode", index_in(&Diode::ALL, self.diode)),
-            ("amplifier", index_in(&Amplifier::ALL, self.amplifier)),
-            ("iron", index_in(&Iron::ALL, self.iron)),
+            ("circuit", self.circuit.to_index() as f32),
+            ("power_amp", self.power_amp.to_index() as f32),
+            ("mains", self.mains.to_index() as f32),
+            ("diode", self.diode.to_index() as f32),
+            ("amplifier", self.amplifier.to_index() as f32),
+            ("iron", self.iron.to_index() as f32),
             ("drive", self.drive),
             ("master", self.master),
             ("eq60", self.graphic[0]),
@@ -1437,18 +1468,18 @@ impl Preset {
             ("eq750", self.graphic[2]),
             ("eq2200", self.graphic[3]),
             ("eq6600", self.graphic[4]),
-            ("tone", index_in(&ToneStack::ALL, self.tone)),
+            ("tone", self.tone.to_index() as f32),
             ("bass", self.bass),
             ("mid", self.mid),
             ("treble", self.treble),
-            ("cabinet", index_in(&Cabinet::ALL, self.cabinet)),
-            ("cab_model", index_in(&CabModel::ALL, self.cab_model)),
-            ("speaker", index_in(&SpeakerModel::ALL, self.speaker)),
-            ("mic_a", index_in(&MicModel::ALL, self.mic_a)),
+            ("cabinet", self.cabinet.to_index() as f32),
+            ("cab_model", self.cab_model.to_index() as f32),
+            ("speaker", self.speaker.to_index() as f32),
+            ("mic_a", self.mic_a.to_index() as f32),
             ("mic_a_position", self.mic_a_position),
             ("mic_a_distance", self.mic_a_distance),
             ("mic_a_angle", self.mic_a_angle),
-            ("mic_b", index_in(&MicModel::ALL, self.mic_b)),
+            ("mic_b", self.mic_b.to_index() as f32),
             ("mic_b_position", self.mic_b_position),
             ("mic_b_distance", self.mic_b_distance),
             ("mic_b_angle", self.mic_b_angle),
@@ -1462,17 +1493,12 @@ impl Preset {
             ("out_trim", self.output_trim),
             (
                 "oversampling",
-                index_in(&Oversampling::ALL, self.oversampling),
+                self.oversampling.to_index() as f32,
             ),
         ]
     }
 }
 
-/// Where a variant sits in its list, which is what an enumerated parameter
-/// takes as its plain value.
-fn index_in<T: PartialEq + Copy>(all: &[T], value: T) -> f32 {
-    all.iter().position(|v| *v == value).unwrap_or(0) as f32
-}
 
 /// What the strip shows when no preset has been loaded.
 ///
@@ -1623,7 +1649,6 @@ fn load_saved() -> Vec<Stored> {
 
 /// Enum identities are independent of display labels and normalized list lengths.
 fn ids(id: &str) -> Option<&'static [&'static str]> {
-    use nih_plug::prelude::Enum;
     match id {
         "circuit" => Circuit::ids(),
         "power_amp" => PowerAmp::ids(),

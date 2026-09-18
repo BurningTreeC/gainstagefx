@@ -22,9 +22,11 @@
 //! Cheap, too, which matters when the amplifier in front of it is already
 //! spending a third of realtime on its power stage.
 //!
-//! **More than one spring.** A Fender long-decay tank carries three, at
-//! slightly different lengths, so their reflections never line up and the tail
-//! does not flutter. Equal lengths would ring.
+//! **More than one propagation path.** The Fender 4AB3C1B is a Type-4 2x2
+//! tank (two transmission-spring assemblies, each made from two coupled spring
+//! sections). The three slightly unequal dispersive paths used here are an
+//! engineering approximation to its dense reflection field, not a claim that
+//! the hardware literally contains three springs.
 //!
 //! **A narrow band.** The transducers and the springs themselves pass roughly
 //! a hundred hertz to four or five kilohertz. A tank does not reverberate the
@@ -38,6 +40,20 @@
 //! need a file, and could not be driven -- a real tank's springs are shaken
 //! harder by a louder signal and this model can be given that later. It is
 //! marked as the engineering approximation it is.
+
+
+/// Small-signal voltage transfer of a real 4AB3C1B tank.
+///
+/// Elliott Sound Products measured 4-5.3 mV from a 4AB3C1B at the
+/// manufacturer's suggested ~30 mA drive. With the tank's 8 ohm input that is
+/// about 0.24 V RMS at the drive transducer, or 0.0167-0.0221 V/V. The
+/// midpoint keeps the synthetic mechanical model at the correct electrical
+/// scale before the AB763's 7025 recovery stage supplies its large gain.
+///
+/// The previous model used unity voltage transfer. That made the pickup tens
+/// of decibels too hot and compressed the useful Reverb control range into the
+/// first few percent of travel.
+const ACCUTRONICS_4AB3C1B_PICKUP_GAIN: f64 = 0.019_4;
 
 /// A plain delay line.
 struct Line {
@@ -201,7 +217,11 @@ impl Tank {
             .iter()
             .map(|&(delay, decay)| Spring::new(rate, delay, decay, 48))
             .collect::<Vec<_>>();
-        let scale = 1.0 / springs.len() as f64;
+        // The dispersive paths describe the mechanics. Their sum still has to
+        // pass through the real tank's lossy electromechanical transducers:
+        // unlike a digital delay line, a 4AB3C1B does not return volts for
+        // volts. Average the paths and then apply the measured pickup transfer.
+        let scale = ACCUTRONICS_4AB3C1B_PICKUP_GAIN / springs.len() as f64;
         Self { springs, scale }
     }
 
@@ -222,6 +242,13 @@ impl Tank {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn accutronics_pickup_level_uses_measured_transducer_sensitivity() {
+        let tank = Tank::accutronics(48_000.0);
+        let combined_gain = tank.scale * tank.springs.len() as f64;
+        assert!((combined_gain - 0.019_4).abs() < 1e-12);
+    }
 
     #[test]
     fn optimized_allpass_matches_original_formula() {

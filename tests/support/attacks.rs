@@ -153,6 +153,7 @@ fn blackface_throb_converges_through_high_pick_attacks() {
 }
 
 fn check_pick_attacks(mut plugin: GainStageFx) {
+    plugin.channels[0].reset_twin_level_trace();
     for block in 0..375 {
         let mut left = std::array::from_fn::<_, 256, _>(|j| treble_pick(block * 256 + j, 48_000.0));
         let mut right = left;
@@ -161,7 +162,7 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
         assert!(left.iter().all(|x| x.is_finite()));
     }
     if std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some() {
-        for trace in plugin.channels[0].power_solver_trace() {
+        for trace in plugin.channels[0].unsettled_power_solver_trace() {
             let probe_unknown_name = if trace.probe_pass != 0 {
                 plugin.channels[0]
                     .power_solver_unknown_name(trace.probe_max_correction_unknown)
@@ -250,6 +251,11 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
                 trace.probe_unsettled_devices,
                 trace.settled,
             );
+        }
+    }
+    if let Some(levels) = plugin.channels[0].twin_level_diagnostics() {
+        if levels.power_input.samples > 0 {
+            println!("twin_level_diagnostics={levels:?}");
         }
     }
     let health = plugin.channels[0].solver_health();

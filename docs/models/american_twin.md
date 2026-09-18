@@ -24,3 +24,31 @@ Checkpoint answers: AB763; original found; original Fender sheets best; schemati
 and layout cross-checked; key values above; old DSP preserved exactly; approximated
 legacy sections above; deferred correction avoids unversioned session sound change.
 Tests: multi-rate/level/signal frozen baseline including the Twin.
+
+
+## 2026-09-17 circuit-completion pass
+
+The Vibrato-channel electrical path is now one MNA network from the switched
+High/Low input through V2A, the stock tone/Volume/Bright network, V2B, the dry
+3.3 MΩ || 10 pF path, the 500 pF/paralleled-12AT7 reverb driver, V4A recovery,
+shared 820 Ω/25 µF V4 cathode network, V4B, the 50 kΩ reverse-audio Intensity
+pot/LDR shunt and the 220 kΩ channel mix hand-off. The unused Normal-channel
+second triode and its 220 kΩ mix branch remain electrically present so their
+shared-cathode and channel-loading effects are not replaced by a guessed shunt.
+The spring itself is still a mechanical DSP transmission element; its 4AB3C1B
+pickup returns through an independent 2.25 kΩ electrical source port in the same
+MNA solve.
+
+The previous split `dry_mix`, `reverb_return`, `mix_recovery`, and standalone
+reverb-driver simulations were removed from the active chain. A dynamic-resistor
+netlist part now puts the optical LDR into the Newton stamp directly; tremolo is
+not a post-stage scalar. The spurious 500 pF tone-stack shunt was removed (the
+500 pF part on the Fender drawing is the reverb-send filter). The stock 120 pF
+Bright capacitor is now switchable.
+
+The modular power circuit remains separate by design so GainStageFX can switch
+power amplifiers. Its Twin spec now uses the original 22 kΩ PI tail, +450 V PI
+rail and the shared AB763 +460 reservoir -> 4 H/104 Ω choke -> screen B node ->
+1 kΩ -> PI C node supply rather than independent screen/PI sources. The two 70 µF
+series reservoir capacitors and 220 kΩ balancing resistors are represented
+explicitly.

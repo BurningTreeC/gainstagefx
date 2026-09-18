@@ -1,14 +1,32 @@
 //! What the plugin ships knowing how to sound like.
 
 use gainstagefx::dsp::measure::{self, Tone};
-use gainstagefx::params::{Cabinet, Circuit};
+use gainstagefx::params::{Cabinet, Circuit, PedalModel};
 use gainstagefx::presets::{GROUPS, PRESETS};
 use gainstagefx::voice::{Chain, CALIBRATION, NOMINAL_DBFS};
+use nih_plug::prelude::Enum;
 
 const RATE: f64 = 96_000.0;
 
 /// Two presets with the same name are two presets a saved session cannot tell
 /// apart, and the one that reloads is whichever happens to be found first.
+
+/// Hand-written selector lists must stay in the same order as the host enum.
+/// Presets and automation are normalized against the enum declaration order;
+/// a different UI list makes a click select the neighboring model.
+#[test]
+fn pedal_selector_order_matches_the_host_enum() {
+    for (index, model) in PedalModel::ALL.iter().copied().enumerate() {
+        assert_eq!(
+            model.to_index(),
+            index,
+            "PedalModel::ALL puts {:?} at {index}, but the host enum puts it at {}",
+            model,
+            model.to_index()
+        );
+    }
+}
+
 #[test]
 fn every_preset_has_its_own_name() {
     let mut seen = std::collections::HashSet::new();
@@ -587,4 +605,52 @@ fn guitar_presets_use_a_physical_cabinet() {
             );
         }
     }
+}
+
+/// The album-era Mark IIC+ preset is supposed to be an already-saturated
+/// amplifier sound. Keep a direct whole-chain measurement here so changes in
+/// calibration, preset loading, the pedal hand-off, or the matched power path
+/// cannot silently turn it into a clean preset.
+#[test]
+fn puppet_master_86_is_still_distorted() {
+    let preset = PRESETS
+        .iter()
+        .find(|p| p.name == "Puppet Master '86")
+        .expect("Puppet Master '86 is shipped");
+
+    assert_eq!(preset.circuit, Circuit::Boogie, "wrong amplifier in preset");
+    assert!(preset.drive >= 0.75, "preset drive unexpectedly low: {}", preset.drive);
+
+    let mut chain = Chain::new(RATE);
+    chain.apply(&preset.settings());
+    chain.settle();
+
+    // Exactly the level the plugin receives for this preset: nominal -18 dBFS
+    // plus its +3 dB hot-humbucker input trim.
+    let amplitude = 10f64.powf((NOMINAL_DBFS + preset.input_trim as f64) / 20.0);
+    let tone = Tone::near(RATE, 16_384, 220.0, amplitude);
+    let measured = measure::run(tone, (RATE / 2.0) as usize, |x| chain.process(x));
+
+    println!(
+        "puppet_master_86,circuit={:?},drive={:.3},master={:.3},input_trim_db={:.2},pedal={:?},pedal_drive={:.3},pedal_level={:.3},thd={:.3}%,h2={:.3}%,h3={:.3}%,gain_db={:.3}",
+        preset.circuit,
+        preset.drive,
+        preset.master,
+        preset.input_trim,
+        preset.pedal,
+        preset.pedal_drive,
+        preset.pedal_level,
+        measured.thd_percent(),
+        measured.harmonic_percent(2),
+        measured.harmonic_percent(3),
+        measured.gain_db(),
+    );
+
+    // The preset comment records ~19 % whole-chain distortion. Leave a wide
+    // floor because this is a regression guard, not a calibration target.
+    assert!(
+        measured.thd_percent() > 10.0,
+        "Puppet Master '86 has become effectively clean: {:.3}% THD",
+        measured.thd_percent()
+    );
 }

@@ -331,6 +331,10 @@ pub struct ReducedNonlinear {
     /// nonlinear devices directly into this compact boundary matrix instead of
     /// rebuilding/stamping a full n x n MNA matrix and copying A_bb back out.
     boundary_base: Vec<f64>,
+    /// Merit-only linear Schur matrix `A_bb - A_bi inv(A_ii) A_ib`. Newton
+    /// keeps its original arithmetic order; only rejected line-search trials
+    /// use this precomputed invariant matrix.
+    merit_linear: Vec<f64>,
     /// Global unknown -> compact boundary index. `usize::MAX` means internal.
     node_to_boundary: Vec<usize>,
     /// Full-MNA slots for the boundary-boundary block, in the same row-major
@@ -383,6 +387,7 @@ impl ReducedNonlinear {
         self.condensed.copy_runtime_state_from(&source.condensed);
         self.coupling.copy_from_slice(&source.coupling);
         self.boundary_base.copy_from_slice(&source.boundary_base);
+        self.merit_linear.copy_from_slice(&source.merit_linear);
         self.internal_boundary_response
             .copy_from_slice(&source.internal_boundary_response);
         self.internal_rhs_responses
@@ -461,6 +466,7 @@ impl ReducedNonlinear {
             condensed,
             coupling: vec![0.0; b * b],
             boundary_base: vec![0.0; b * b],
+            merit_linear: vec![0.0; b * b],
             node_to_boundary,
             boundary_matrix_slots,
             reduced_matrix: vec![0.0; b * b],
@@ -481,6 +487,7 @@ impl ReducedNonlinear {
         result.update_internal_boundary_response();
         result.update_coupling();
         result.update_boundary_base(matrix);
+        result.update_merit_linear();
         result.update_rhs_responses();
         Some(result)
     }
@@ -508,6 +515,7 @@ impl ReducedNonlinear {
             || self.condensed.full_rhs.len() != n
             || self.coupling.len() != b * b
             || self.boundary_base.len() != b * b
+            || self.merit_linear.len() != b * b
             || self.node_to_boundary.len() != n
             || self.boundary_matrix_slots.len() != b * b
             || self.reduced_matrix.len() != b * b
@@ -603,6 +611,7 @@ impl ReducedNonlinear {
         self.update_internal_boundary_response();
         self.update_coupling();
         self.update_boundary_base(matrix);
+        self.update_merit_linear();
         self.update_rhs_responses();
         self.rhs_prepared = false;
         self.pivot_planned = false;
@@ -661,6 +670,54 @@ impl ReducedNonlinear {
             ..
         } = self;
         Some((reduced_matrix, reduced_rhs, node_to_boundary))
+    }
+
+
+    /// Build the linear part of the exact Schur residual at a trial point.
+    /// Nonlinear devices then add their physical current/constraint equations
+    /// directly to this compact vector. No Jacobian is needed because the
+    /// line-search candidate is judged but never solved.
+    #[inline]
+    pub fn begin_residual<'a>(
+        &'a self,
+        fixed_rhs: &[f64],
+        full: &[f64],
+        residual: &mut [f64],
+    ) -> Option<&'a [usize]> {
+        if !self.valid
+            || !self.rhs_prepared
+            || fixed_rhs.len() != self.node_to_boundary.len()
+            || full.len() != self.node_to_boundary.len()
+            || residual.len() < self.condensed.boundary.len()
+        {
+            return None;
+        }
+        let b = self.condensed.boundary.len();
+        for row in 0..b {
+            let global_row = self.condensed.boundary[row];
+            let mut value = -fixed_rhs[global_row] + self.rhs_internal_correction[row];
+            let coefficients = &self.merit_linear[row * b..(row + 1) * b];
+            for (&coefficient, &global_column) in
+                coefficients.iter().zip(&self.condensed.boundary)
+            {
+                value += coefficient * full[global_column];
+            }
+            residual[row] = value;
+        }
+        Some(&self.node_to_boundary)
+    }
+
+    #[inline]
+    pub fn residual_merit(&self, residual: &[f64]) -> Option<f64> {
+        let b = self.condensed.boundary.len();
+        if residual.len() < b {
+            return None;
+        }
+        let mut total = 0.0;
+        for &value in &residual[..b] {
+            total += value * value;
+        }
+        Some(total)
     }
 
     /// Complete the Schur system after direct nonlinear device stamping.
@@ -839,6 +896,17 @@ impl ReducedNonlinear {
     fn update_boundary_base(&mut self, matrix: &[f64]) {
         for (value, &slot) in self.boundary_base.iter_mut().zip(&self.boundary_matrix_slots) {
             *value = matrix[slot];
+        }
+    }
+
+    fn update_merit_linear(&mut self) {
+        for ((target, &base), &coupling) in self
+            .merit_linear
+            .iter_mut()
+            .zip(&self.boundary_base)
+            .zip(&self.coupling)
+        {
+            *target = base - coupling;
         }
     }
 

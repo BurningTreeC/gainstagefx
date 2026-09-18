@@ -93,7 +93,7 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
             Part::Adjustable { a, b, kind, slot } => {
                 let value = circuit.adjustables[slot];
                 let adm = match kind {
-                    Adjust::Resistor => C::real(1.0 / value),
+                    Adjust::Resistor | Adjust::RealtimeResistor => C::real(1.0 / value),
                     Adjust::Capacitor => C::new(0.0, w * value),
                     Adjust::Inductor if w * value > 1e-12 => C::new(0.0, -1.0 / (w * value)),
                     Adjust::Inductor => C::real(1e12),
@@ -126,11 +126,14 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                 stamp(&mut y, wiper, b, C::real(1.0 / (ohms * f)));
                 stamp(&mut y, a, wiper, C::real(1.0 / (ohms * (1.0 - f))));
             }
-            Part::Input { node, series, .. } => {
-                // A Norton source: one volt behind the source impedance.
+            Part::Input { node, series, source, .. } => {
+                // Every input port contributes its source impedance. Only the
+                // primary port is excited for the ordinary transfer function;
+                // auxiliary ports are AC-grounded through their own source
+                // impedance, exactly as an inactive external source is.
                 let g = 1.0 / series;
                 stamp(&mut y, node, GROUND, C::real(g));
-                if node != GROUND {
+                if source == 0 && node != GROUND {
                     i[node] = i[node] + C::real(g);
                 }
             }

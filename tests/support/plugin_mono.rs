@@ -816,6 +816,7 @@ fn run_realtime_pass(
         }
     }
 
+    plugin.channels[0].reset_twin_level_trace();
     let solver_before = plugin.channels[0].solver_breakdown();
     let capacity = input.len().div_ceil(BLOCK);
     let mut times = Vec::with_capacity(capacity);
@@ -1085,6 +1086,14 @@ fn run_realtime_pass(
     let solver = plugin.channels[0]
         .solver_breakdown()
         .saturating_delta(solver_before);
+    if circuit == Circuit::Twin {
+        if let Some(levels) = plugin.channels[0].twin_level_diagnostics() {
+            println!(
+                "twin_level_diagnostics,live_paced={},layout={:?},levels={:?}",
+                live_paced, layout, levels
+            );
+        }
+    }
     RealtimePass {
         blocks: times.len(),
         mean_us,

@@ -1696,6 +1696,142 @@ impl SolverBreakdown {
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LevelSnapshot {
+    pub samples: u64,
+    /// Arithmetic mean, useful for spotting a leaked DC operating point.
+    pub mean: f64,
+    /// RMS after removing the measured mean. This is the useful AC level even
+    /// for tube plate nodes that sit hundreds of volts above ground.
+    pub ac_rms: f64,
+    /// Largest absolute sample, including DC where present.
+    pub peak: f64,
+    pub min: f64,
+    pub max: f64,
+    pub nonfinite: u64,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TwinLevelDiagnostics {
+    /// Actual V2-B plate voltage used by the reverb send branch.
+    pub v2_plate: LevelSnapshot,
+    /// Main Twin preamp output before the 3.3 M || 10 pF dry mixer.
+    pub dry_source: LevelSnapshot,
+    /// Reverb-transformer secondary voltage presented to the spring input.
+    pub transformer_secondary: LevelSnapshot,
+    /// Mechanical tank pickup signal before V4-A.
+    pub tank_pickup: LevelSnapshot,
+    /// V4-A/Reverb-pot/470 k contribution at the V4-B grid node.
+    pub wet_mix: LevelSnapshot,
+    /// 3.3 M || 10 pF dry contribution at the V4-B grid node.
+    pub dry_mix: LevelSnapshot,
+    /// Sum of the dry and wet contributions presented to V4-B.
+    pub v4b_grid: LevelSnapshot,
+    /// Output of the separated V4-B circuit at the modeled PI hand-off.
+    pub v4b_to_pi: LevelSnapshot,
+    /// Voltage actually passed to the power-stage simulation.
+    pub power_input: LevelSnapshot,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+struct LevelAccumulator {
+    samples: u64,
+    sum: f64,
+    sum_squares: f64,
+    peak: f64,
+    min: f64,
+    max: f64,
+    nonfinite: u64,
+}
+
+
+#[cfg(test)]
+impl Default for LevelAccumulator {
+    fn default() -> Self {
+        Self {
+            samples: 0,
+            sum: 0.0,
+            sum_squares: 0.0,
+            peak: 0.0,
+            min: f64::INFINITY,
+            max: f64::NEG_INFINITY,
+            nonfinite: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+impl LevelAccumulator {
+    #[inline]
+    fn push(&mut self, value: f64) {
+        if !value.is_finite() {
+            self.nonfinite += 1;
+            return;
+        }
+        self.samples += 1;
+        self.sum += value;
+        self.sum_squares += value * value;
+        self.peak = self.peak.max(value.abs());
+        self.min = self.min.min(value);
+        self.max = self.max.max(value);
+    }
+
+    fn snapshot(self) -> LevelSnapshot {
+        if self.samples == 0 {
+            return LevelSnapshot {
+                nonfinite: self.nonfinite,
+                ..LevelSnapshot::default()
+            };
+        }
+        let mean = self.sum / self.samples as f64;
+        let mean_square = self.sum_squares / self.samples as f64;
+        let variance = (mean_square - mean * mean).max(0.0);
+        LevelSnapshot {
+            samples: self.samples,
+            mean,
+            ac_rms: variance.sqrt(),
+            peak: self.peak,
+            min: self.min,
+            max: self.max,
+            nonfinite: self.nonfinite,
+        }
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+struct TwinLevelAccumulator {
+    v2_plate: LevelAccumulator,
+    dry_source: LevelAccumulator,
+    transformer_secondary: LevelAccumulator,
+    tank_pickup: LevelAccumulator,
+    wet_mix: LevelAccumulator,
+    dry_mix: LevelAccumulator,
+    v4b_grid: LevelAccumulator,
+    v4b_to_pi: LevelAccumulator,
+    power_input: LevelAccumulator,
+}
+
+#[cfg(test)]
+impl TwinLevelAccumulator {
+    fn snapshot(self) -> TwinLevelDiagnostics {
+        TwinLevelDiagnostics {
+            v2_plate: self.v2_plate.snapshot(),
+            dry_source: self.dry_source.snapshot(),
+            transformer_secondary: self.transformer_secondary.snapshot(),
+            tank_pickup: self.tank_pickup.snapshot(),
+            wet_mix: self.wet_mix.snapshot(),
+            dry_mix: self.dry_mix.snapshot(),
+            v4b_grid: self.v4b_grid.snapshot(),
+            v4b_to_pi: self.v4b_to_pi.snapshot(),
+            power_input: self.power_input.snapshot(),
+        }
+    }
+}
+
 /// Every panel setting that reaches the circuits, as plain values.
 ///
 /// This exists so the step from "what the panel says" to "what the chain is
@@ -1727,6 +1863,11 @@ pub struct Settings {
     pub bass: f64,
     pub mid: f64,
     pub treble: f64,
+    /// Which stock American Twin input jack is used. `false` is High/1,
+    /// `true` is Low/2. Ignored by every other voice.
+    pub twin_low_input: bool,
+    /// Stock 120 pF Bright switch across the upper half of the Twin Volume pot.
+    pub twin_bright: bool,
     /// The three the Twin Reverb has and nothing else does. Ignored by every
     /// other voice; the panel greys them out. See `Gain::extra_controls`.
     pub reverb: f64,
@@ -1757,6 +1898,8 @@ impl Default for Settings {
             graphic: [0.5; 5],
             bass: 0.5,
             mid: 0.5,
+            twin_low_input: false,
+            twin_bright: true,
             reverb: 0.0,
             speed: 0.4,
             intensity: 0.0,
@@ -1853,13 +1996,26 @@ pub struct Chain {
     /// chain rather than only for the Twin, because building one inside
     /// `apply` would be an allocation on the audio thread.
     tank: Tank,
-    /// The recovery stage and the Reverb control, which *are* a circuit and so
-    /// are solved like one. Only the tank between them is not.
-    tail: Simulation,
+    /// Renumbered V2-B plate node in the Twin gain circuit. The physical 500 pF
+    /// send is taken from this plate, before the dry-path .1 uF coupling cap.
+    #[cfg(test)]
+    twin_reverb_send_plate: usize,
+    /// Reverb-transformer secondary/tank-drive node in the unified Twin circuit.
+    twin_tank_send: usize,
+    /// Shared V4B dry/wet grid node, for diagnostics.
+    #[cfg(test)]
+    twin_v4b_grid: usize,
+    /// The mechanical tank runs once per host frame while the electrical Twin
+    /// may be oversampled. Keep the last transformer-secondary voltage for the
+    /// next host-frame spring update; the extra ~20 us at 48 kHz is negligible
+    /// beside the tank's ~37 ms first flight.
+    twin_tank_drive_previous: f64,
     tremolo: Tremolo,
     reverb: f64,
     speed: f64,
     intensity: f64,
+    #[cfg(test)]
+    twin_level_trace: Option<TwinLevelAccumulator>,
     /// The make-up at the Drive control's reference position, for the iron.
     /// See `iron_drive`.
     iron_reference: f64,
@@ -1969,8 +2125,8 @@ impl Chain {
             self.graphic.copy_runtime_state_from(&source.graphic);
         }
         if self.voice.has_reverb_and_tremolo() {
+            self.twin_tank_drive_previous = source.twin_tank_drive_previous;
             self.tank.copy_runtime_state_from(&source.tank);
-            self.tail.copy_runtime_state_from(&source.tail);
             self.tremolo.copy_runtime_state_from(&source.tremolo);
         }
         self.out_of = source.out_of;
@@ -2084,6 +2240,20 @@ impl Chain {
         let (driven_circuit, driven_slots) =
             speaker::voltage_driven(&initial).expect("voltage-driven speaker builds");
         let driven_motional = driven_circuit.output;
+        // Node numbering is topology-derived. Resolve the V2-B plate from the
+        // same Twin circuit instead of baking a numeric index into the audio path.
+        let twin_nodes = twin::build(10_000.0, 1_000_000.0).expect("Twin catalogue builds");
+        #[cfg(test)]
+        let twin_reverb_send_plate = twin_nodes
+            .unknown_named(twin::REVERB_SEND_PLATE)
+            .expect("Twin has the V2-B reverb-send plate");
+        let twin_tank_send = twin_nodes
+            .unknown_named(twin::SEND)
+            .expect("Twin has the reverb-transformer secondary");
+        #[cfg(test)]
+        let twin_v4b_grid = twin_nodes
+            .unknown_named(twin::V4B_GRID)
+            .expect("Twin has the shared V4B grid");
         let mut chain = Self {
             mains: 1.0,
             gains,
@@ -2133,15 +2303,20 @@ impl Chain {
             requested_oversampling: 4,
             pad: Delay::new(1),
             dry: Delay::new(LATENCY as usize),
+            #[cfg(test)]
+            twin_reverb_send_plate,
+            twin_tank_send,
+            #[cfg(test)]
+            twin_v4b_grid,
+            twin_tank_drive_previous: 0.0,
             tank: Tank::accutronics(rate),
-            tail: Simulation::new(
-                twin::reverb_return(10_000.0, 1_000_000.0).expect("catalogue builds"),
-                rate,
-            ),
             tremolo: Tremolo::new(rate),
             reverb: 0.0,
             speed: 0.5,
             intensity: 0.0,
+            #[cfg(test)]
+            twin_level_trace: std::env::var_os("GAINSTAGEFX_TWIN_LEVEL_TRACE")
+                .map(|_| TwinLevelAccumulator::default()),
             iron_reference: 1.0,
             rate,
             drive: 0.5,
@@ -2183,9 +2358,9 @@ impl Chain {
         self.voice = gain;
         if index != self.gain {
             self.gain = index;
+            self.twin_tank_drive_previous = 0.0;
             self.tank.reset();
             self.tremolo.reset();
-            self.tail.reset_deferred();
             self.gains[index].reset_deferred();
             // And its power stage, for the same reason and more so. A power
             // stage sits at four hundred volts with its output transformer
@@ -2751,7 +2926,6 @@ impl Chain {
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.set_rate(rate);
         }
-        self.tail.set_rate(rate);
         self.tremolo.set_rate(rate);
         self.tank = Tank::accutronics(rate);
         self.acoustic.set_rate(rate);
@@ -2825,11 +2999,10 @@ impl Chain {
             .iron
             .map(|index| health(&self.irons[index]))
             .unwrap_or_default();
-        let reverb_return = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
-            health(&self.tail)
-        } else {
-            SolverHealth::default()
-        };
+        // Reverb send, recovery, mixer and optical shunt are now part of the
+        // Twin gain simulation itself. Keep this legacy telemetry bucket zero
+        // rather than double-counting the gain solver.
+        let reverb_return = SolverHealth::default();
 
         SolverBreakdown {
             pedal: self.pedal.map(|i| health(&self.pedals[i])).unwrap_or_default(),
@@ -2867,18 +3040,12 @@ impl Chain {
 
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
-        let reverb = if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
-            Some(&self.tail)
-        } else {
-            None
-        };
         let sims = std::iter::once(&self.gains[self.gain])
             .chain(self.pedal.map(|i| &self.pedals[i]))
             .chain(self.active_power())
             .chain(self.active_driven().then_some(&self.driven.sim))
             .chain((self.voice == Gain::Neve).then_some(self.line.as_ref()))
-            .chain(self.iron.map(|i| &self.irons[i]))
-            .chain(reverb);
+            .chain(self.iron.map(|i| &self.irons[i]));
         for sim in sims {
             let (solves, passes, unsettled, _) = sim.statistics();
             let (backtracks, fallbacks, nonfinite) = sim.health();
@@ -2914,6 +3081,8 @@ impl Chain {
         self.set_mains(s.mains);
         self.set_pedal(&s.pedal);
         self.set_voice(s.gain, s.diode, s.amplifier);
+        self.set_twin_input(s.twin_low_input);
+        self.set_twin_bright(s.twin_bright);
         // After `set_voice`, because which control this reaches depends on
         // which circuit is selected, and before `set_drive`, because both
         // touch the same simulation and the order they dirty it in should not
@@ -2956,7 +3125,6 @@ impl Chain {
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
             .chain(std::iter::once(self.line.as_mut()))
-            .chain(std::iter::once(&mut self.tail))
         {
             sim.set_supply_scale(fraction);
         }
@@ -2971,6 +3139,18 @@ impl Chain {
     /// One figure, always. See `LATENCY`.
     pub fn latency(&self) -> u32 {
         LATENCY
+    }
+
+    #[cfg(test)]
+    pub fn reset_twin_level_trace(&mut self) {
+        if self.twin_level_trace.is_some() {
+            self.twin_level_trace = Some(TwinLevelAccumulator::default());
+        }
+    }
+
+    #[cfg(test)]
+    pub fn twin_level_diagnostics(&self) -> Option<TwinLevelDiagnostics> {
+        self.twin_level_trace.map(TwinLevelAccumulator::snapshot)
     }
 
     /// The dry signal, held back so it lines up with what `process` returns.
@@ -3028,32 +3208,36 @@ impl Chain {
         let mut line = (self.voice == Gain::Neve).then_some(self.line.as_mut());
         let graphic = self.voice.has_graphic();
         let self_graphic = &mut self.graphic;
-        // The Twin's reverb and tremolo. Neither is a netlist part and both
-        // are in the signal path, so they go here rather than nowhere.
-        //
-        // The reverb is a send and a return: the tank between the driver's
-        // transformer and the recovery stage's grid, and the recovery stage
-        // solved as the circuit it is. `twin::reverb_return` says what this
-        // arrangement departs from on the drawing and why it has to.
+        #[cfg(test)]
+        let twin_level_trace = &mut self.twin_level_trace;
+        // The complete Twin electrical signal path now lives in `gain`. The
+        // spring is the only mechanical break: drive it from the previous host
+        // sample's transformer secondary and feed its pickup into the circuit's
+        // independent return port. The optical cell is likewise a real
+        // audio-rate resistor in that same netlist.
         let twin = self.voice.has_reverb_and_tremolo();
-        let wet = if twin && self.reverb > 0.0 {
-            let sent = self.tank.process(x * self.into * twin::SEND_GAIN);
-            // Divided by the path's own gain, because the dry has been through
-            // the make-up and this has not. See `twin::RETURN_TRIM`.
-            self.tail.process(sent) * twin::RETURN_TRIM
+        let tank_pickup = if twin {
+            self.tank.process(self.twin_tank_drive_previous)
         } else {
             0.0
         };
-        // The tremolo's cell shunts the signal where the channel hands over to
-        // the phase inverter: a valve plate's own resistance in front of it and
-        // the inverter's grid leak behind. `Tremolo::attenuation` is that
-        // divider rather than a depth.
-        let throb = if twin && self.intensity > 0.0 {
-            self.tremolo.attenuation(self.speed, self.intensity)
-        } else {
-            1.0
-        };
-
+        if twin {
+            gain.set_aux_input(twin::TANK_RETURN_AUX, tank_pickup);
+            let ldr = self.tremolo.resistance(self.speed, self.intensity);
+            gain.set_realtime_value(twin::LDR_SLOT, ldr);
+            #[cfg(test)]
+            if let Some(trace) = twin_level_trace.as_mut() {
+                trace.transformer_secondary.push(self.twin_tank_drive_previous);
+                trace.tank_pickup.push(tank_pickup);
+                trace.wet_mix.push(tank_pickup);
+            }
+        }
+        #[cfg(test)]
+        let twin_reverb_send_plate = self.twin_reverb_send_plate;
+        let twin_tank_send = self.twin_tank_send;
+        #[cfg(test)]
+        let twin_v4b_grid = self.twin_v4b_grid;
+        let mut next_twin_tank_drive = self.twin_tank_drive_previous;
         let mut pedal = self.pedal.map(|i| &mut self.pedals[i]);
         let input_scale = if pedal.is_some() { self.pedal_into } else { self.into };
         let hand_off = self.pedal_hand_off;
@@ -3082,6 +3266,19 @@ impl Chain {
             // naming. The power stage itself executes in this callback, so it
             // must use the same effective sample rate as the preamplifier.
             let mut amplified = gain.process(v);
+            if twin {
+                next_twin_tank_drive = gain.voltage_at(twin_tank_send);
+                #[cfg(test)]
+                if let Some(trace) = twin_level_trace.as_mut() {
+                    let v2_plate = gain.voltage_at(twin_reverb_send_plate);
+                    let v4b_grid = gain.voltage_at(twin_v4b_grid);
+                    trace.v2_plate.push(v2_plate);
+                    trace.dry_source.push(v2_plate);
+                    trace.dry_mix.push(v4b_grid);
+                    trace.v4b_grid.push(v4b_grid);
+                    trace.v4b_to_pi.push(amplified);
+                }
+            }
             // The graphic equaliser, where the drawing puts it: `EQ INPUT` is
             // taken from `LEAD OUTPUT`, which is where the preamplifier above
             // stops, and `EQ OUTPUT` goes to the phase inverter. Late in the
@@ -3122,6 +3319,12 @@ impl Chain {
                 return pressure * out_of;
             }
             if let Some(ref mut sim) = power {
+                #[cfg(test)]
+                if twin {
+                    if let Some(trace) = twin_level_trace.as_mut() {
+                        trace.power_input.push(amplified);
+                    }
+                }
                 amplified = sim.process(amplified);
             }
             // The iron goes here, in front of the make-up, for the same
@@ -3154,11 +3357,11 @@ impl Chain {
             };
             amplified * out_of
         });
-        // The tremolo shunts the channel's output, and the reverb is summed
-        // on to it. Both before the tone section and the cabinet, which is
-        // where they sit on the amplifier: the tank and the optical cell are
-        // in the preamplifier, and what follows is the speaker.
-        y = y * throb + wet;
+        if twin {
+            self.twin_tank_drive_previous = next_twin_tank_drive;
+        }
+        // Reverb and tremolo have both already been applied at their AB763
+        // nodes ahead of the phase inverter / power stage.
         // Every setting delays by the same reported amount.
         y = self.pad.process(y);
         if let Some(i) = self.tone {
@@ -3204,16 +3407,64 @@ impl Chain {
         self.iron.map(|i| self.irons[i].operating_point())
     }
 
+    /// Select the stock AB763 Vibrato-channel input jack. High/1 presents
+    /// 1 MΩ and parallels the two 68 k grid stoppers to 34 k. Low/2 makes
+    /// those same two 68 k parts a divider, so the guitar sees about 136 kΩ
+    /// and the valve grid receives roughly half the voltage.
+    fn set_twin_input(&mut self, low: bool) {
+        if self.voice != Gain::Twin {
+            return;
+        }
+        let sim = &mut self.gains[self.gain];
+        if low {
+            sim.set_value(twin::INPUT_SERIES_SLOT, twin::INPUT_LOW_SERIES_OHMS);
+            sim.set_value(twin::INPUT_JACK_LOAD_SLOT, twin::INPUT_OPEN_OHMS);
+            sim.set_value(
+                twin::INPUT_GRID_SHUNT_SLOT,
+                twin::INPUT_LOW_GRID_SHUNT_OHMS,
+            );
+        } else {
+            sim.set_value(twin::INPUT_SERIES_SLOT, twin::INPUT_HIGH_SERIES_OHMS);
+            sim.set_value(
+                twin::INPUT_JACK_LOAD_SLOT,
+                twin::INPUT_HIGH_JACK_LOAD_OHMS,
+            );
+            sim.set_value(twin::INPUT_GRID_SHUNT_SLOT, twin::INPUT_OPEN_OHMS);
+        }
+    }
+
+    /// Switch the stock 120 pF Bright capacitor. This is a real capacitor in
+    /// the Twin netlist, not an EQ approximation.
+    fn set_twin_bright(&mut self, bright: bool) {
+        if self.voice == Gain::Twin {
+            self.gains[self.gain].set_value(
+                twin::BRIGHT_CAP_SLOT,
+                if bright { twin::BRIGHT_CAP_FARADS } else { twin::BRIGHT_OFF_FARADS },
+            );
+        }
+    }
+
     /// The Twin's own three, carried through `apply` like everything else
     /// that reaches a circuit.
     fn set_reverb_and_tremolo(&mut self, s: &Settings) {
+        // These control numbers belong to the Twin netlist only.  In
+        // particular they collide with the Mark IIC+'s LEAD_DRIVE (4) and
+        // LEAD_MASTER (5).  Writing them unconditionally made every shipped
+        // non-Twin preset overwrite two unrelated controls at the very end of
+        // `apply()`: Puppet Master loaded its intended Drive/Master and then
+        // silently replaced them with Reverb=0 and 1-Intensity=1.
+        if self.voice != Gain::Twin {
+            return;
+        }
         self.reverb = s.reverb;
         self.speed = s.speed;
         self.intensity = s.intensity;
         // The Reverb control is a pot in the recovery stage's own circuit, so
         // it goes where every other control goes: into the simulation, once a
         // block, through `apply`.
-        self.tail.set_control(twin::REVERB, s.reverb);
+        self.gains[self.gain].set_control(twin::REVERB, s.reverb);
+        // The physical 50 k pot is wired opposite the panel-number direction.
+        self.gains[self.gain].set_control(twin::INTENSITY, 1.0 - s.intensity);
     }
 
     /// Cap the Newton passes every circuit in this chain may take.
@@ -3227,7 +3478,6 @@ impl Chain {
             .chain(self.powers.iter_mut().flatten())
             .chain(self.irons.iter_mut())
             .chain(std::iter::once(self.line.as_mut()))
-            .chain(std::iter::once(&mut self.tail))
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
             .chain(self.pedals.iter_mut())
@@ -3244,7 +3494,6 @@ impl Chain {
             .chain(self.powers.iter().flatten())
             .chain(self.irons.iter())
             .chain(std::iter::once(self.line.as_ref()))
-            .chain(std::iter::once(&self.tail))
             .chain(self.loaded.iter().map(|l| &l.sim))
             .chain(std::iter::once(&self.driven.sim))
             .chain(self.pedals.iter())
@@ -3267,9 +3516,6 @@ impl Chain {
             || (self.voice == Gain::Neve && self.line.needs_operating_point())
             || self.active_power().is_some_and(|s| s.needs_operating_point())
             || (self.active_driven() && self.driven.sim.needs_operating_point())
-            || (self.voice.has_reverb_and_tremolo()
-                && self.reverb > 0.0
-                && self.tail.needs_operating_point())
     }
 
     /// The operating point of the active voice's power stage, if it has one.
@@ -3319,26 +3565,16 @@ impl Chain {
         }
     }
 
-    /// The Twin recovery stage's operating point, for sharing with another
-    /// otherwise identical channel before either channel has processed audio.
-    pub fn reverb_operating_point(&self) -> Option<&[f64]> {
-        if self.voice.has_reverb_and_tremolo() && self.reverb > 0.0 {
-            Some(self.tail.operating_point())
-        } else {
-            None
-        }
-    }
-
-    /// Apply a pre-computed Twin recovery-stage operating point when it is
-    /// still safe to do so.
-    pub fn share_reverb_operating_point_from(&mut self, op: &[f64]) {
-        if self.voice.has_reverb_and_tremolo()
-            && self.reverb > 0.0
-            && self.tail.needs_operating_point()
-        {
-            self.tail.apply_operating_point(op);
-        }
-    }
+    /// Reverb send/recovery/mix now live inside the active Twin gain circuit,
+    /// whose operating point is shared through `operating_point()` above.
+    /// These legacy accessors remain for the plugin's channel-sharing call
+    /// surface and intentionally report no separate simulation.
+    pub fn reverb_driver_operating_point(&self) -> Option<&[f64]> { None }
+    pub fn share_reverb_driver_operating_point_from(&mut self, _op: &[f64]) {}
+    pub fn reverb_operating_point(&self) -> Option<&[f64]> { None }
+    pub fn share_reverb_operating_point_from(&mut self, _op: &[f64]) {}
+    pub fn twin_mix_operating_point(&self) -> Option<&[f64]> { None }
+    pub fn share_twin_mix_operating_point_from(&mut self, _op: &[f64]) {}
 
     /// Hunts only the operating points that are actually pending.
     ///
@@ -3372,12 +3608,6 @@ impl Chain {
         }
         if self.voice == Gain::Neve && self.line.needs_operating_point() {
             settled &= self.line.find_operating_point();
-        }
-        if self.voice.has_reverb_and_tremolo()
-            && self.reverb > 0.0
-            && self.tail.needs_operating_point()
-        {
-            settled &= self.tail.find_operating_point();
         }
 
         settled
@@ -3427,15 +3657,10 @@ impl Chain {
         for (sim, _) in self.tones.iter_mut().chain(self.cabinets.iter_mut()) {
             sim.reset_deferred();
         }
-        // The four things `reset` used to miss. `graphic` is in the Boogie's
-        // path and its LC state is large enough to be heard on its own;
-        // `tail` is the reverb recovery stage, `tank` the spring and
-        // `tremolo` the oscillator -- all three retain signal between calls
-        // unless told otherwise. `set_voice` already resets the last three
-        // and the graphic as well, but a reset is a bigger operation than a
-        // voice switch and everything stateful belongs in it.
+        // The graph, spring and optical oscillator all retain dynamic state
+        // between calls and must be reset with the electrical circuit.
         self.graphic.reset_deferred();
-        self.tail.reset_deferred();
+        self.twin_tank_drive_previous = 0.0;
         self.tank.reset();
         self.tremolo.reset();
         self.over.reset();
