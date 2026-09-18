@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use std::sync::Arc;
 
 use crate::meters::Meters;
-use crate::params::{Amplifier, Diode, GainStageParams, Oversampling};
+use crate::params::{Amplifier, Circuit, Diode, GainStageParams, Oversampling};
 use crate::stereo_worker::{StereoJob, StereoWorker};
 use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 
@@ -612,7 +612,25 @@ impl Plugin for GainStageFx {
         };
         let settings = Settings {
             pedal,
-            tone_sweep: self.params.tone_sweep.smoothed.next_step(samples) as f64,
+            // Circuit-specific controls are sampled at their neutral point for
+            // every other circuit. This makes the DSP state itself isolated,
+            // not merely the UI: a hidden MT-2/HM-2 value can never reach an
+            // unrelated model during preset or circuit changes.
+            tone_sweep: if circuit == Circuit::Mt2 {
+                self.params.tone_sweep.smoothed.next_step(samples) as f64
+            } else {
+                0.5
+            },
+            hm2_colour_lo: if circuit == Circuit::Hm2 {
+                self.params.hm2_colour_lo.smoothed.next_step(samples) as f64
+            } else {
+                0.5
+            },
+            hm2_colour_hi: if circuit == Circuit::Hm2 {
+                self.params.hm2_colour_hi.smoothed.next_step(samples) as f64
+            } else {
+                0.5
+            },
             power_amp: self.params.power_amp.value().voice(),
             mains: self.params.mains.value().fraction(),
             acoustic,

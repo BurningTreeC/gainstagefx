@@ -612,7 +612,17 @@ impl Selector {
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
-        Self::build_row(cx, params, params_to_param, labels, true, 0, total, None, Some(ceiling))
+        Self::build_row(
+            cx,
+            params,
+            params_to_param,
+            labels,
+            true,
+            0,
+            total,
+            None,
+            Some(ceiling),
+        )
     }
 
     /// A row showing `labels` starting at `offset` of a `total`-long list.
@@ -633,7 +643,17 @@ impl Selector {
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
-        Self::build_row(cx, params, params_to_param, labels, enabled, offset, total, forced, None)
+        Self::build_row(
+            cx,
+            params,
+            params_to_param,
+            labels,
+            enabled,
+            offset,
+            total,
+            forced,
+            None,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]

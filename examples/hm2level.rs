@@ -7,7 +7,7 @@
 //!
 //! `cargo run --release --example hm2level`
 
-use gainstagefx::circuits::heavy_metal::{self, DIST, HIGH, LEVEL, LOW, LEVEL_REST};
+use gainstagefx::circuits::heavy_metal::{self, DIST, HIGH, LEVEL, LEVEL_REST, LOW};
 use gainstagefx::dsp::time::Simulation;
 use gainstagefx::voice::GUITAR_VOLTS;
 
@@ -68,7 +68,14 @@ fn main() {
 
     // The resting position is supposed to make the pedal level sensible with
     // the sound controls centered. Re-scan it after any topology change.
-    let mut best = (f64::INFINITY, 0.0, Reading { gain_db: 0.0, peak: 0.0 });
+    let mut best = (
+        f64::INFINITY,
+        0.0,
+        Reading {
+            gain_db: 0.0,
+            peak: 0.0,
+        },
+    );
     for step in 0..=100 {
         let level = step as f64 / 100.0;
         let r = measure(0.5, 0.5, 0.5, level);
@@ -94,10 +101,7 @@ fn main() {
         let r = measure(1.0, 1.0, 1.0, level);
         println!(
             "  {:>5.2}    {:+8.2} dB    {:+8.2} dB      {:>7.4} V",
-            level,
-            r.gain_db,
-            -r.gain_db,
-            r.peak
+            level, r.gain_db, -r.gain_db, r.peak
         );
     }
 

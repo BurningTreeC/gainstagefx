@@ -1032,6 +1032,15 @@ pub struct GainStageParams {
     /// that has no such control. See `voice::Gain::own_sweep`.
     #[id = "tone_sweep"]
     pub tone_sweep: FloatParam,
+    /// The Heavy Metal circuit's two Colour Mix controls. These used to share
+    /// the generic Bass/Treble parameters, which meant a hidden HM-2 setting
+    /// could be carried by a preset that was not an HM-2 at all. Keep them as
+    /// circuit-scoped host parameters instead; presets neutralise them for
+    /// every other circuit.
+    #[id = "hm2_colour_lo"]
+    pub hm2_colour_lo: FloatParam,
+    #[id = "hm2_colour_hi"]
+    pub hm2_colour_hi: FloatParam,
     #[id = "circuit"]
     pub circuit: EnumParam<Circuit>,
     #[id = "power_amp"]
@@ -1218,15 +1227,24 @@ fn distance(name: &str, default: f32) -> FloatParam {
     .with_smoother(SmoothingStyle::Linear(20.0))
     .with_unit(" cm")
     .with_value_to_string(Arc::new(|v| format!("{:.1}", v * 100.0)))
-    .with_string_to_value(Arc::new(|s| s.trim().parse::<f32>().ok().map(|v| v / 100.0)))
+    .with_string_to_value(Arc::new(|s| {
+        s.trim().parse::<f32>().ok().map(|v| v / 100.0)
+    }))
 }
 
 /// Microphone angle off the cone's axis, degrees.
 fn angle(name: &str) -> FloatParam {
-    FloatParam::new(name, 0.0, FloatRange::Linear { min: 0.0, max: 90.0 })
-        .with_smoother(SmoothingStyle::Linear(20.0))
-        .with_unit(" deg")
-        .with_step_size(0.5)
+    FloatParam::new(
+        name,
+        0.0,
+        FloatRange::Linear {
+            min: 0.0,
+            max: 90.0,
+        },
+    )
+    .with_smoother(SmoothingStyle::Linear(20.0))
+    .with_unit(" deg")
+    .with_step_size(0.5)
 }
 
 fn decibels(name: &str, span: f32) -> FloatParam {
@@ -1263,6 +1281,8 @@ impl Default for GainStageParams {
             pedal_tone_d: position("Pedal Tone 4", 0.5),
             pedal_level: position("Pedal Level", 0.5),
             tone_sweep: position("Mid Freq", 0.5),
+            hm2_colour_lo: position("HM-2 Colour Low", 0.5),
+            hm2_colour_hi: position("HM-2 Colour High", 0.5),
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
             power_amp: EnumParam::new("Power Amp", PowerAmp::Matched),
             mains: EnumParam::new("Mains", Mains::Nominal),

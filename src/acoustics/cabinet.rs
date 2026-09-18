@@ -40,7 +40,12 @@ pub struct CabinetProfile {
     pub default_speaker: &'static SpeakerProfile,
 }
 
-const FOUR: [(f64, f64); 4] = [(-0.170, 0.168), (0.170, 0.168), (-0.170, -0.168), (0.170, -0.168)];
+const FOUR: [(f64, f64); 4] = [
+    (-0.170, 0.168),
+    (0.170, 0.168),
+    (-0.170, -0.168),
+    (0.170, -0.168),
+];
 
 impl CabinetProfile {
     pub const BRIT_1960: CabinetProfile = CabinetProfile {
@@ -68,7 +73,12 @@ impl CabinetProfile {
         depth: 0.362,
         wall: 0.019,
         drivers: 4,
-        positions: [(-0.168, 0.180), (0.168, 0.180), (-0.168, -0.180), (0.168, -0.180)],
+        positions: [
+            (-0.168, 0.180),
+            (0.168, 0.180),
+            (-0.168, -0.180),
+            (0.168, -0.180),
+        ],
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
@@ -108,7 +118,12 @@ impl CabinetProfile {
         depth: 0.380,
         wall: 0.018,
         drivers: 4,
-        positions: [(-0.172, 0.185), (0.172, 0.185), (-0.172, -0.185), (0.172, -0.185)],
+        positions: [
+            (-0.172, 0.185),
+            (0.172, 0.185),
+            (-0.172, -0.185),
+            (0.172, -0.185),
+        ],
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
@@ -207,14 +222,16 @@ impl CabinetProfile {
     /// Air volume behind all drivers, m^3.
     pub fn volume(&self) -> f64 {
         let (w, h, d) = self.internal();
-        (w * h * d * (1.0 - self.slant) * (1.0 - BRACING) - DRIVER_DISPLACEMENT * self.drivers as f64)
+        (w * h * d * (1.0 - self.slant) * (1.0 - BRACING)
+            - DRIVER_DISPLACEMENT * self.drivers as f64)
             .max(0.005)
     }
 
     /// How the box loads each driver's cone. An open back has no air spring.
     pub fn mounting(&self) -> Mounting {
         Mounting {
-            volume_per_driver: (!self.is_open()).then(|| self.volume() / self.drivers.max(1) as f64),
+            volume_per_driver: (!self.is_open())
+                .then(|| self.volume() / self.drivers.max(1) as f64),
             leakage_q: self.leakage_q,
             drivers: self.drivers,
         }

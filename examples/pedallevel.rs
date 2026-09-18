@@ -15,7 +15,12 @@ fn level(pedal: Pedal, drive: f64, level: f64, gain: Gain) -> f64 {
     let mut chain = Chain::new(RATE);
     chain.apply(&Settings {
         gain,
-        pedal: PedalSettings { pedal, drive, tone: [0.5; 4], level },
+        pedal: PedalSettings {
+            pedal,
+            drive,
+            tone: [0.5; 4],
+            level,
+        },
         tone: Tone::Off,
         drive: 0.5,
         oversampling: 1,
@@ -41,7 +46,10 @@ fn level(pedal: Pedal, drive: f64, level: f64, gain: Gain) -> f64 {
 
 fn main() {
     for gain in [Gain::Clean, Gain::Crunch, Gain::Twin] {
-        println!("\ninto {} (drive 0.5), pedal knobs at their middles:", gain.name());
+        println!(
+            "\ninto {} (drive 0.5), pedal knobs at their middles:",
+            gain.name()
+        );
         let bare = level(Pedal::None, 0.5, 0.5, gain);
         println!("  {:<12}{bare:7.1} dB", "no pedal");
         let mut worst: (f64, &str) = (0.0, "");

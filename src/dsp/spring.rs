@@ -41,7 +41,6 @@
 //! harder by a louder signal and this model can be given that later. It is
 //! marked as the engineering approximation it is.
 
-
 /// Small-signal voltage transfer of a real 4AB3C1B tank.
 ///
 /// Elliott Sound Products measured 4-5.3 mV from a 4AB3C1B at the

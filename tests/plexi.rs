@@ -6,7 +6,9 @@ use gainstagefx::circuits::plexi::{self, BASS, MIDDLE, TREBLE, VOLUME};
 use gainstagefx::circuits::power::{self, PowerSpec};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::voice::{Chain, Gain, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS,
+};
 
 const RATE: f64 = 96_000.0;
 
@@ -29,27 +31,50 @@ fn at(controls: &[(usize, f64)], hz: f64, volts: f64) -> measure::Measured {
 fn the_supply_chain_is_self_consistent() {
     let pre = plexi::build(10_000.0, 1_000_000.0).unwrap();
     let names = ["pin", "v2n", "v1n", "v1_k", "v2_k"];
-    let nodes: Vec<usize> = names.iter().map(|n| pre.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = names
+        .iter()
+        .map(|n| pre.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(pre, RATE);
     assert!(s.find_operating_point());
     let v: Vec<f64> = nodes.iter().map(|&n| s.voltage_at(n)).collect();
-    println!("inverter node {:.1} V, V2 {:.1} V, V1 {:.1} V", v[0], v[1], v[2]);
-    assert!((v[0] - plexi::INVERTER_NODE).abs() < 3.0, "inverter node {:.1}", v[0]);
+    println!(
+        "inverter node {:.1} V, V2 {:.1} V, V1 {:.1} V",
+        v[0], v[1], v[2]
+    );
+    assert!(
+        (v[0] - plexi::INVERTER_NODE).abs() < 3.0,
+        "inverter node {:.1}",
+        v[0]
+    );
     // Below the c. 1967 drawing's 300 / 270 V, which had an 8.2 k dropper where
     // Unicord's has 20 k, and above the 2203's 290 / 280 V is not required.
-    assert!((240.0..310.0).contains(&v[1]) && (225.0..290.0).contains(&v[2]), "{v:?}");
-    assert!((1.0..2.5).contains(&v[3]) && (0.6..1.6).contains(&v[4]), "{v:?}");
+    assert!(
+        (240.0..310.0).contains(&v[1]) && (225.0..290.0).contains(&v[2]),
+        "{v:?}"
+    );
+    assert!(
+        (1.0..2.5).contains(&v[3]) && (0.6..1.6).contains(&v[4]),
+        "{v:?}"
+    );
 
     let spec = &PowerSpec::PLEXI_EL34;
     let amp = power::build(spec, 10_000.0).unwrap();
     let names = ["pi_p1", "pi_p2", "ht"];
-    let nodes: Vec<usize> = names.iter().map(|n| amp.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = names
+        .iter()
+        .map(|n| amp.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(amp, RATE);
     assert!(s.find_operating_point());
     let v: Vec<f64> = nodes.iter().map(|&n| s.voltage_at(n)).collect();
-    let inverter = (spec.pi_supply - v[0]) / spec.pi_plate_driven + (spec.pi_supply - v[1]) / spec.pi_plate_other;
+    let inverter = (spec.pi_supply - v[0]) / spec.pi_plate_driven
+        + (spec.pi_supply - v[1]) / spec.pi_plate_other;
     let assumed = spec.pi_supply / plexi::INVERTER_IDLE;
-    assert!((inverter / assumed - 1.0).abs() < 0.05, "{inverter} A against {assumed} A");
+    assert!(
+        (inverter / assumed - 1.0).abs() < 0.05,
+        "{inverter} A against {assumed} A"
+    );
     // And the valves idle at a sane fraction of an EL34's 25 W.
     let per_valve = (spec.plate_supply - v[2]) / spec.supply_resistance / 4.0 * v[2];
     println!("{per_valve:.1} W a valve at idle");
@@ -60,7 +85,9 @@ fn the_supply_chain_is_self_consistent() {
 fn silence_in_is_silence_out() {
     let mut s = Simulation::new(plexi::build(10_000.0, 1_000_000.0).unwrap(), RATE);
     assert!(s.find_operating_point());
-    let worst = (0..(RATE as usize / 4)).map(|_| s.process(0.0).abs()).fold(0.0, f64::max);
+    let worst = (0..(RATE as usize / 4))
+        .map(|_| s.process(0.0).abs())
+        .fold(0.0, f64::max);
     assert!(worst < 0.05, "{worst}");
 }
 
@@ -69,7 +96,8 @@ fn silence_in_is_silence_out() {
 #[test]
 fn the_bright_channel_is_bright_and_brightest_turned_down() {
     let tilt = |volume: f64| {
-        at(&[(VOLUME, volume)], 5_000.0, 0.001).gain_db() - at(&[(VOLUME, volume)], 100.0, 0.001).gain_db()
+        at(&[(VOLUME, volume)], 5_000.0, 0.001).gain_db()
+            - at(&[(VOLUME, volume)], 100.0, 0.001).gain_db()
     };
     let (low, high) = (tilt(0.2), tilt(1.0));
     println!("5 kHz over 100 Hz: {low:.1} dB at Volume 0.2, {high:.1} dB at 1.0");
@@ -94,12 +122,16 @@ fn the_stack_controls_go_the_way_they_are_labelled() {
 /// turned up it hands it several times that.
 #[test]
 fn the_volume_drives_the_power_stage() {
-    let peak = |volume: f64| 0.122 * 10f64.powf(at(&[(VOLUME, volume)], 220.0, 0.122).gain_db() / 20.0);
+    let peak =
+        |volume: f64| 0.122 * 10f64.powf(at(&[(VOLUME, volume)], 220.0, 0.122).gain_db() / 20.0);
     let (quarter, full) = (peak(0.25), peak(1.0));
     println!("{quarter:.1} V at a quarter, {full:.1} V full");
     assert!(quarter > 3.0 && full > 20.0, "{quarter} {full}");
 
-    let mut amp = Simulation::new(power::build(&PowerSpec::PLEXI_EL34, 10_000.0).unwrap(), RATE);
+    let mut amp = Simulation::new(
+        power::build(&PowerSpec::PLEXI_EL34, 10_000.0).unwrap(),
+        RATE,
+    );
     amp.find_operating_point();
     let tone = Tone::near(RATE, 16_384, 220.0, 2.0);
     let clean = measure::run(tone, (RATE / 5.0) as usize, |x| amp.process(x));
@@ -111,7 +143,10 @@ fn the_volume_drives_the_power_stage() {
 
 #[test]
 fn matched_is_the_plexi_el34_and_the_chain_stays_realtime_safe() {
-    assert_eq!(PowerAmp::Matched.resolved(Gain::Plexi), Some(PowerModel::BritPlexiEL34));
+    assert_eq!(
+        PowerAmp::Matched.resolved(Gain::Plexi),
+        Some(PowerModel::BritPlexiEL34)
+    );
     let settings = Settings {
         gain: Gain::Plexi,
         drive: 0.8,
@@ -136,6 +171,9 @@ fn matched_is_the_plexi_el34_and_the_chain_stays_realtime_safe() {
         });
         let work = chain.solver_breakdown().saturating_delta(before);
         assert!(work.gain.solves > 0 && work.power.solves > 0, "{rate}");
-        assert!(work.power.unsettled == 0 && work.gain.unsettled == 0, "{rate}: {work:?}");
+        assert!(
+            work.power.unsettled == 0 && work.gain.unsettled == 0,
+            "{rate}: {work:?}"
+        );
     }
 }

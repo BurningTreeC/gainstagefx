@@ -164,7 +164,6 @@ impl Stamper<'_> {
     }
 }
 
-
 /// Residual-only counterpart to [`Stamper`] for line-search trial points.
 ///
 /// A rejected backtracking trial is never solved, so it does not need a
@@ -284,14 +283,15 @@ impl Mark<'_> {
     }
 }
 
-/// Where a device is linearised, saved so a rejected trial step can undo it.
+/// Where a device is linearised, saved so a mutating trial step can undo it.
 ///
-/// A backtracking line search evaluates the circuit's residual at trial points
-/// it may then throw away, and stamping is not free of consequence: every
-/// device records the terminal voltages it was linearised at, and that record
-/// is the reference its own step limiter measures the *next* step against. The
-/// op-amp goes further and keeps which rail it is against, deliberately, so
-/// that it stops chattering between states.
+/// Full-MNA/watch-mode backtracking still evaluates trial points by stamping,
+/// and stamping is not free of consequence: every device records the terminal
+/// voltages it was linearised at, and that record is the reference its own step
+/// limiter measures the *next* step against. The op-amp goes further and keeps
+/// which rail it is against, deliberately, so that it stops chattering between
+/// states. The production Schur residual probe is read-only and therefore does
+/// not need this save/restore path for rejected candidates.
 ///
 /// If a rejected trial were allowed to leave those behind, the limiter's idea
 /// of "where we were" would become the last place the line search happened to
@@ -1350,6 +1350,10 @@ pub struct Core {
     inv_henry: f64,
     inv_knee: f64,
     sharpness_integer: u8,
+    /// Antialias only the nonlinear excess magnetising current. The linear
+    /// inductance remains exact, so the small-signal transformer response does
+    /// not acquire the half-sample low-pass of naive ADAA.
+    antialias: bool,
     /// Flux linkage, in weber-turns. The state that makes this frequency
     /// dependent.
     flux: f64,
@@ -1367,12 +1371,21 @@ pub struct Core {
 
 impl Core {
     pub fn new(a: usize, b: usize, spec: CoreSpec, rate: f64) -> Self {
+        Self::with_antialias(a, b, spec, rate, false)
+    }
+
+    pub fn new_antialiased(a: usize, b: usize, spec: CoreSpec, rate: f64) -> Self {
+        Self::with_antialias(a, b, spec, rate, true)
+    }
+
+    fn with_antialias(a: usize, b: usize, spec: CoreSpec, rate: f64, antialias: bool) -> Self {
         let rounded = spec.sharpness.round();
-        let sharpness_integer = if (spec.sharpness - rounded).abs() < 1e-12 && (1.0..=15.0).contains(&rounded) {
-            rounded as u8
-        } else {
-            0
-        };
+        let sharpness_integer =
+            if (spec.sharpness - rounded).abs() < 1e-12 && (1.0..=15.0).contains(&rounded) {
+                rounded as u8
+            } else {
+                0
+            };
         Self {
             a,
             b,
@@ -1380,6 +1393,7 @@ impl Core {
             inv_henry: 1.0 / spec.henry,
             inv_knee: 1.0 / spec.knee,
             sharpness_integer,
+            antialias,
             flux: 0.0,
             last_flux: 0.0,
             last_volts: 0.0,
@@ -1440,6 +1454,82 @@ impl Core {
         (current, slope)
     }
 
+    /// Nonlinear saturation current only, excluding the linear magnetising
+    /// inductance, and its derivative with respect to flux.
+    #[inline]
+    fn nonlinear_excess_with_slope(&self, flux: f64) -> (f64, f64) {
+        let over = flux * self.inv_knee;
+        let magnitude = over.abs();
+        if magnitude < 1e-30 {
+            return (0.0, 0.0);
+        }
+        let powered = match self.sharpness_integer {
+            exponent if exponent != 0 => powi_small(magnitude, exponent),
+            _ => magnitude.powf(self.spec.sharpness),
+        };
+        let current = powered * over.signum() * self.spec.knee * self.inv_henry;
+        let slope = self.spec.sharpness * (powered / magnitude) * self.inv_henry;
+        (current, slope)
+    }
+
+    /// Antiderivative of the nonlinear saturation current. This is the cheap
+    /// primitive needed for first-order antiderivative antialiasing.
+    #[inline]
+    fn nonlinear_excess_antiderivative(&self, flux: f64) -> f64 {
+        let magnitude = (flux * self.inv_knee).abs();
+        if magnitude < 1e-30 {
+            return 0.0;
+        }
+        let exponent = self.spec.sharpness + 1.0;
+        let powered = if self.sharpness_integer != 0 {
+            powi_small(magnitude, self.sharpness_integer.saturating_add(1))
+        } else {
+            magnitude.powf(exponent)
+        };
+        self.spec.knee * self.spec.knee * self.inv_henry * powered / exponent
+    }
+
+    /// Average only the nonlinear excess current over the flux interval from
+    /// the previous settled sample to this candidate sample. This suppresses
+    /// the high-order fold-back from a hard core knee without doubling the
+    /// entire Newton solve. The linear magnetising current remains evaluated
+    /// at the current flux, preserving the transformer's low-level response.
+    #[inline]
+    fn antialiased_magnetising_with_slope(&self, flux: f64) -> (f64, f64) {
+        if !self.antialias {
+            return self.magnetising_with_slope(flux);
+        }
+
+        let previous = self.last_flux;
+        let delta = flux - previous;
+        let threshold = (self.spec.knee.abs() * 1e-8).max(1e-15);
+
+        let (nonlinear, nonlinear_slope) = if delta.abs() <= threshold {
+            // The divided difference tends to f at the interval midpoint; its
+            // derivative with respect to the new endpoint tends to half f'.
+            let midpoint = 0.5 * (flux + previous);
+            let (value, slope) = self.nonlinear_excess_with_slope(midpoint);
+            (value, 0.5 * slope)
+        } else {
+            let primitive_now = self.nonlinear_excess_antiderivative(flux);
+            let primitive_previous = self.nonlinear_excess_antiderivative(previous);
+            let average = (primitive_now - primitive_previous) / delta;
+            let (instantaneous, _) = self.nonlinear_excess_with_slope(flux);
+            let slope = ((instantaneous - average) / delta).max(0.0);
+            (average, slope)
+        };
+
+        (
+            flux * self.inv_henry + nonlinear,
+            self.inv_henry + nonlinear_slope,
+        )
+    }
+
+    #[inline]
+    fn antialiased_magnetising(&self, flux: f64) -> f64 {
+        self.antialiased_magnetising_with_slope(flux).0
+    }
+
     pub fn flux(&self) -> f64 {
         self.flux
     }
@@ -1490,7 +1580,7 @@ impl Device for Core {
         let flux = history + self.half_step * volts;
         self.flux = flux;
 
-        let (i, slope) = self.magnetising_with_slope(flux);
+        let (i, slope) = self.antialiased_magnetising_with_slope(flux);
         // d(current)/d(volts) is d(current)/d(flux) times the half step, which
         // is what the integration contributes. Use the exact derivative of
         // this same current curve: differencing nearby flux values both loses
@@ -1709,7 +1799,14 @@ pub struct Transconductor {
 }
 
 impl Transconductor {
-    pub fn new(plus: usize, minus: usize, out: usize, reference: usize, gm: f64, limit: f64) -> Self {
+    pub fn new(
+        plus: usize,
+        minus: usize,
+        out: usize,
+        reference: usize,
+        gm: f64,
+        limit: f64,
+    ) -> Self {
         Self {
             plus,
             minus,
@@ -1845,27 +1942,39 @@ impl Device for VariableResistor {
     }
 }
 
-
 /// Device evaluation used only by Schur-reduced line-search merit probes.
 ///
-/// These routines update the same numerical linearisation state as `stamp`,
-/// including limiters and op-amp rail hysteresis, but they do not form any
-/// derivative/Jacobian entries. For an exact trial point the contribution is
-/// the physical device equation itself. Junction-held trials are abandoned by
-/// the caller exactly as before, so no merit decision is made from a limited
-/// diode/BJT point.
+/// A rejected reduced trial must not perturb device state. Keeping these probes
+/// read-only removes the old save/restore walk from every backtrack while
+/// evaluating exactly the same residual equation from the same pre-trial
+/// linearisation state. The one accepted trial commits that state separately.
 trait TrialResidual {
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]);
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]);
 }
 
 impl TrialResidual for Diode {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
-        let guess = self.limit_junction(across(v, self.a, self.k));
-        r.junction_held |= self.clamped;
-        self.delta = (guess - self.voltage).abs();
-        self.voltage = guess;
-        if self.clamped {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+        let wanted = across(v, self.a, self.k);
+        let old = self.voltage;
+        let scale = self.scale;
+        let (guess, held) = if wanted > self.critical && (wanted - old).abs() > 2.0 * scale {
+            let guess = if old > 0.0 {
+                let arg = 1.0 + (wanted - old) * self.inv_scale;
+                if arg > 0.0 {
+                    old + scale * arg.ln()
+                } else {
+                    self.critical
+                }
+            } else {
+                scale * (wanted * self.inv_scale).ln()
+            };
+            (guess, true)
+        } else {
+            (wanted, false)
+        };
+        r.junction_held |= held;
+        if held {
             return;
         }
         let x = guess * self.inv_scale;
@@ -1880,12 +1989,9 @@ impl TrialResidual for Diode {
 
 impl TrialResidual for Rectifier {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let wanted = across(v, self.a, self.k);
-        let (guess, clamped) = limit(wanted, self.voltage, 25.0);
-        self.clamped = clamped;
-        self.delta = (guess - self.voltage).abs();
-        self.voltage = guess;
+        let (guess, _) = limit(wanted, self.voltage, 25.0);
 
         // Rectifier limiting is intentionally unconditional in the production
         // stamp. When it engages, reproduce the old tangent residual at the
@@ -1905,18 +2011,14 @@ impl TrialResidual for Rectifier {
 
 impl TrialResidual for Triode {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let raw = across(v, self.g, self.k);
-        let (vgk, clamped) = if r.limiting {
-            limit_grid(raw, self.vgk)
+        let vgk = if r.limiting {
+            limit_grid(raw, self.vgk).0
         } else {
-            (raw, false)
+            raw
         };
-        self.clamped = clamped;
-        self.delta = (vpk - self.vpk).abs().max((vgk - self.vgk).abs());
-        self.vpk = vpk;
-        self.vgk = vgk;
         r.current(self.p, self.k, self.plate(vpk, vgk));
         r.current(self.g, self.k, self.grid(vgk));
     }
@@ -1924,23 +2026,15 @@ impl TrialResidual for Triode {
 
 impl TrialResidual for Pentode {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let vsk = across(v, self.s, self.k).max(0.0);
         let raw = across(v, self.g, self.k);
-        let (vgk, clamped) = if r.limiting {
-            limit(raw, self.vgk, 4.0)
+        let vgk = if r.limiting {
+            limit(raw, self.vgk, 4.0).0
         } else {
-            (raw, false)
+            raw
         };
-        self.clamped = clamped;
-        self.delta = (vpk - self.vpk)
-            .abs()
-            .max((vgk - self.vgk).abs())
-            .max((vsk - self.vsk).abs());
-        self.vpk = vpk;
-        self.vgk = vgk;
-        self.vsk = vsk;
 
         let (ip, ig2) = if vsk <= 0.0 || vpk <= 0.0 {
             (0.0, 0.0)
@@ -1973,30 +2067,26 @@ impl TrialResidual for Pentode {
 
 impl TrialResidual for Jfet {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let raw_vgs = across(v, self.g, self.s);
         let raw_vds = across(v, self.d, self.s);
-        let (vgs, held_g) = if r.limiting {
-            limit(raw_vgs, self.vgs, 0.5)
+        let vgs = if r.limiting {
+            limit(raw_vgs, self.vgs, 0.5).0
         } else {
-            (raw_vgs, false)
+            raw_vgs
         };
-        let (vds, held_d) = if r.limiting {
-            limit(raw_vds, self.vds, 2.0)
+        let vds = if r.limiting {
+            limit(raw_vds, self.vds, 2.0).0
         } else {
-            (raw_vds, false)
+            raw_vds
         };
-        self.clamped = held_g || held_d;
-        self.delta = (vgs - self.vgs).abs().max((vds - self.vds).abs());
-        self.vgs = vgs;
-        self.vds = vds;
         r.current(self.d, self.s, self.drain(vgs, vds));
     }
 }
 
 impl TrialResidual for Bipolar {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let (vbe_now, vbc_now) = if self.pnp {
             (across(v, self.e, self.b), across(v, self.c, self.b))
         } else {
@@ -2005,11 +2095,7 @@ impl TrialResidual for Bipolar {
         let (vbe, held_e) = self.limit_junction(vbe_now, self.vbe);
         let (vbc, held_c) = self.limit_junction(vbc_now, self.vbc);
         r.junction_held |= held_e || held_c;
-        self.clamped = held_e || held_c;
-        self.delta = (vbe - self.vbe).abs().max((vbc - self.vbc).abs());
-        self.vbe = vbe;
-        self.vbc = vbc;
-        if self.clamped {
+        if held_e || held_c {
             return;
         }
 
@@ -2033,14 +2119,22 @@ impl TrialResidual for Bipolar {
 
 impl TrialResidual for OpAmp {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let output = across(v, self.out, self.reference);
         let error = across(v, self.plus, self.minus);
         let was = self.clamped;
-        self.clamped = if was > 0.0 {
-            if error >= 0.0 { self.rail } else { 0.0 }
+        let clamped = if was > 0.0 {
+            if error >= 0.0 {
+                self.rail
+            } else {
+                0.0
+            }
         } else if was < 0.0 {
-            if error <= 0.0 { -self.rail } else { 0.0 }
+            if error <= 0.0 {
+                -self.rail
+            } else {
+                0.0
+            }
         } else if output > self.rail {
             self.rail
         } else if output < -self.rail {
@@ -2048,84 +2142,49 @@ impl TrialResidual for OpAmp {
         } else {
             0.0
         };
-        self.delta = (self.clamped - was).abs().max(if self.clamped == 0.0 {
-            error.abs()
-        } else {
-            0.0
-        });
 
-        let branch_current = if self.branch == GROUND { 0.0 } else { v[self.branch] };
+        let branch_current = if self.branch == GROUND {
+            0.0
+        } else {
+            v[self.branch]
+        };
         r.row(self.out, branch_current);
-        if self.clamped == 0.0 {
+        if clamped == 0.0 {
             r.row(self.branch, error);
         } else {
-            r.row(self.branch, output - self.clamped);
+            r.row(self.branch, output - clamped);
         }
     }
 }
 
 impl TrialResidual for Core {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let raw = across(v, self.a, self.b);
-        let (volts, clamped) = if r.limiting {
+        let volts = if r.limiting {
             let scale = self.spec.knee / (2.0 * self.half_step * self.spec.sharpness);
-            limit(raw, self.volts, scale)
+            limit(raw, self.volts, scale).0
         } else {
-            (raw, false)
+            raw
         };
-        self.clamped = clamped;
-        self.delta = (volts - self.volts).abs();
-        self.volts = volts;
         let history = self.last_flux + self.half_step * self.last_volts;
         let flux = history + self.half_step * volts;
-        self.flux = flux;
 
-        let knee = self.spec.knee;
-        let over = flux * self.inv_knee;
-        let magnitude = over.abs();
-        let i = if magnitude < 1e-30 {
-            flux * self.inv_henry
-        } else {
-            let powered = match self.sharpness_integer {
-                3 => {
-                    let square = magnitude * magnitude;
-                    square * magnitude
-                }
-                6 => {
-                    let cube = magnitude * magnitude * magnitude;
-                    cube * cube
-                }
-                7 => {
-                    let cube = magnitude * magnitude * magnitude;
-                    cube * cube * magnitude
-                }
-                9 => {
-                    let cube = magnitude * magnitude * magnitude;
-                    cube * cube * cube
-                }
-                exponent if exponent != 0 => powi_small(magnitude, exponent),
-                _ => magnitude.powf(self.spec.sharpness),
-            };
-            flux * self.inv_henry + powered * over.signum() * knee * self.inv_henry
-        };
-        r.current(self.a, self.b, i);
+        r.current(self.a, self.b, self.antialiased_magnetising(flux));
     }
 }
 
 impl TrialResidual for Transconductor {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         let difference = across(v, self.plus, self.minus);
-        self.delta = (difference - self.difference).abs();
-        self.difference = difference;
         r.current(self.reference, self.out, self.current(difference));
     }
 }
 
 impl TrialResidual for VariableResistor {
     #[inline]
-    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         r.current(self.a, self.b, across(v, self.a, self.b) / self.ohms);
     }
 }
@@ -2185,10 +2244,34 @@ impl AnyDevice {
         }
     }
 
+    /// Whether this device's ordinary Newton *step limiter* would hold the
+    /// present point back.  This deliberately excludes diode/BJT junction
+    /// limiting: those limiters alter the semiconductor equation used for the
+    /// stamp and retain their existing SPICE-style path.
+    ///
+    /// The Twin power solver uses this cheap preflight only to choose between
+    /// its two existing globalization mechanisms.  If a smooth valve-grid
+    /// limiter would have to walk several volts over several Newton passes, a
+    /// global line search can instead damp the exact Newton direction now.
+    /// Nothing is stamped and no device state is changed here.
+    #[inline]
+    pub(crate) fn step_limiter_would_hold(&self, v: &[f64]) -> bool {
+        match self {
+            Self::Triode(t) => {
+                let wanted = across(v, t.g, t.k);
+                limit_grid(wanted, t.vgk).1
+            }
+            Self::Pentode(p) => {
+                let wanted = across(v, p.g, p.k);
+                limit(wanted, p.vgk, 4.0).1
+            }
+            _ => false,
+        }
+    }
 
     /// Evaluate only the nonlinear residual for a line-search trial point.
     #[inline]
-    pub(crate) fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    pub(crate) fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
         match self {
             Self::Diode(d) => d.trial_residual(r, v),
             Self::Rectifier(x) => x.trial_residual(r, v),
@@ -2200,6 +2283,112 @@ impl AnyDevice {
             Self::Core(c) => c.trial_residual(r, v),
             Self::Transconductor(t) => t.trial_residual(r, v),
             Self::VariableResistor(vr) => vr.trial_residual(r, v),
+        }
+    }
+
+    /// Commit only the nonlinear device state for an accepted reduced
+    /// line-search point. Rejected probes are read-only; doing this once for
+    /// the winner preserves the exact limiter/hysteresis/convergence state the
+    /// old mutating trial stamp would have left behind.
+    #[inline]
+    pub(crate) fn commit_trial_state(&mut self, v: &[f64]) {
+        match self {
+            Self::Diode(d) => {
+                let guess = d.limit_junction(across(v, d.a, d.k));
+                d.delta = (guess - d.voltage).abs();
+                d.voltage = guess;
+            }
+            Self::Rectifier(x) => {
+                let wanted = across(v, x.a, x.k);
+                let (guess, clamped) = limit(wanted, x.voltage, 25.0);
+                x.clamped = clamped;
+                x.delta = (guess - x.voltage).abs();
+                x.voltage = guess;
+            }
+            Self::Triode(t) => {
+                let vpk = across(v, t.p, t.k).max(0.0);
+                let vgk = across(v, t.g, t.k);
+                t.clamped = false;
+                t.delta = (vpk - t.vpk).abs().max((vgk - t.vgk).abs());
+                t.vpk = vpk;
+                t.vgk = vgk;
+            }
+            Self::Pentode(p) => {
+                let vpk = across(v, p.p, p.k).max(0.0);
+                let vsk = across(v, p.s, p.k).max(0.0);
+                let vgk = across(v, p.g, p.k);
+                p.clamped = false;
+                p.delta = (vpk - p.vpk)
+                    .abs()
+                    .max((vgk - p.vgk).abs())
+                    .max((vsk - p.vsk).abs());
+                p.vpk = vpk;
+                p.vgk = vgk;
+                p.vsk = vsk;
+            }
+            Self::Jfet(j) => {
+                let vgs = across(v, j.g, j.s);
+                let vds = across(v, j.d, j.s);
+                j.clamped = false;
+                j.delta = (vgs - j.vgs).abs().max((vds - j.vds).abs());
+                j.vgs = vgs;
+                j.vds = vds;
+            }
+            Self::Bipolar(b) => {
+                let (vbe_now, vbc_now) = if b.pnp {
+                    (across(v, b.e, b.b), across(v, b.c, b.b))
+                } else {
+                    (across(v, b.b, b.e), across(v, b.b, b.c))
+                };
+                let (vbe, held_e) = b.limit_junction(vbe_now, b.vbe);
+                let (vbc, held_c) = b.limit_junction(vbc_now, b.vbc);
+                b.clamped = held_e || held_c;
+                b.delta = (vbe - b.vbe).abs().max((vbc - b.vbc).abs());
+                b.vbe = vbe;
+                b.vbc = vbc;
+            }
+            Self::OpAmp(o) => {
+                let output = across(v, o.out, o.reference);
+                let error = across(v, o.plus, o.minus);
+                let was = o.clamped;
+                o.clamped = if was > 0.0 {
+                    if error >= 0.0 {
+                        o.rail
+                    } else {
+                        0.0
+                    }
+                } else if was < 0.0 {
+                    if error <= 0.0 {
+                        -o.rail
+                    } else {
+                        0.0
+                    }
+                } else if output > o.rail {
+                    o.rail
+                } else if output < -o.rail {
+                    -o.rail
+                } else {
+                    0.0
+                };
+                o.delta =
+                    (o.clamped - was)
+                        .abs()
+                        .max(if o.clamped == 0.0 { error.abs() } else { 0.0 });
+            }
+            Self::Core(c) => {
+                let volts = across(v, c.a, c.b);
+                c.clamped = false;
+                c.delta = (volts - c.volts).abs();
+                c.volts = volts;
+                let history = c.last_flux + c.half_step * c.last_volts;
+                c.flux = history + c.half_step * volts;
+            }
+            Self::Transconductor(t) => {
+                let difference = across(v, t.plus, t.minus);
+                t.delta = (difference - t.difference).abs();
+                t.difference = difference;
+            }
+            Self::VariableResistor(_) => {}
         }
     }
 }
@@ -2334,10 +2523,10 @@ impl Device for AnyDevice {
     }
 }
 
-
 #[cfg(test)]
 mod optimization_tests {
-    use super::{powi_small, Stamper};
+    use super::{powi_small, AnyDevice, Core, Pentode, Stamper, Triode, GROUND};
+    use crate::dsp::netlist::{CoreSpec, PentodeSpec, TriodeSpec};
 
     #[test]
     fn mapped_stamper_writes_compact_boundary() {
@@ -2363,6 +2552,74 @@ mod optimization_tests {
         // silently. The reduced caller will abandon this pass and use full MNA.
         stamper.current(1, 2, 0.25);
         assert!(stamper.mapping_failed);
+    }
+
+    #[test]
+    fn valve_grid_limiter_preflight_is_read_only_and_exact() {
+        // Put the triode at the same deep-cutoff operating point this test's
+        // candidate voltages are measured from. `Triode::new()` deliberately
+        // starts vgk at -1 V, so testing -29 V against a fresh device would
+        // correctly request limiting (a 28 V step) and would not exercise the
+        // intended below-cutoff 4 V/pass branch at all.
+        let mut triode_state = Triode::new(0, 1, GROUND, TriodeSpec::ECC83);
+        triode_state.vgk = -30.0;
+        let triode = AnyDevice::Triode(triode_state);
+        let mut triode_v = vec![0.0; 2];
+        triode_v[1] = -20.0;
+        assert!(triode.step_limiter_would_hold(&triode_v));
+        triode_v[1] = -29.0;
+        assert!(!triode.step_limiter_would_hold(&triode_v));
+        let AnyDevice::Triode(triode_state) = &triode else {
+            unreachable!();
+        };
+        assert_eq!(triode_state.vgk, -30.0);
+
+        let pentode = AnyDevice::Pentode(Pentode::new(0, 1, GROUND, 2, 2.0, PentodeSpec::T6L6GC));
+        let mut pentode_v = vec![0.0; 3];
+        pentode_v[1] = -20.0;
+        assert!(pentode.step_limiter_would_hold(&pentode_v));
+        pentode_v[1] = -25.0;
+        assert!(!pentode.step_limiter_would_hold(&pentode_v));
+        let AnyDevice::Pentode(pentode_state) = &pentode else {
+            unreachable!();
+        };
+        assert_eq!(pentode_state.vgk, -30.0);
+    }
+
+    #[test]
+    fn antialiased_core_preserves_the_static_magnetising_curve() {
+        let spec = CoreSpec {
+            henry: 12.0,
+            knee: 0.01,
+            sharpness: 6.0,
+        };
+        let mut core = Core::new_antialiased(0, GROUND, spec, 48_000.0);
+        for flux in [-0.02, -0.01, -0.003, 0.0, 0.003, 0.01, 0.02] {
+            core.last_flux = flux;
+            let antialiased = core.antialiased_magnetising(flux);
+            let original = core.magnetising(flux);
+            assert!(
+                (antialiased - original).abs() <= 2e-13 * (1.0 + original.abs()),
+                "flux={flux}, antialiased={antialiased}, original={original}"
+            );
+        }
+    }
+
+    #[test]
+    fn antialiased_core_does_not_move_the_small_signal_inductance() {
+        let spec = CoreSpec {
+            henry: 12.0,
+            knee: 0.01,
+            sharpness: 6.0,
+        };
+        let core = Core::new_antialiased(0, GROUND, spec, 48_000.0);
+        let flux = 1e-6;
+        let antialiased = core.antialiased_magnetising(flux);
+        let linear = flux / spec.henry;
+        assert!(
+            (antialiased - linear).abs() < 1e-24,
+            "antialiased={antialiased}, linear={linear}"
+        );
     }
 
     #[test]

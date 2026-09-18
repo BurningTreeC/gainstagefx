@@ -70,6 +70,9 @@ fn every_preset_is_within_range() {
             ("bass", preset.bass),
             ("mid", preset.mid),
             ("treble", preset.treble),
+            ("tone sweep", preset.tone_sweep),
+            ("HM-2 colour low", preset.hm2_colour_lo),
+            ("HM-2 colour high", preset.hm2_colour_hi),
             ("mix", preset.mix),
         ] {
             assert!(
@@ -85,6 +88,31 @@ fn every_preset_is_within_range() {
             assert!(
                 (-24.0..=24.0).contains(&value),
                 "'{}' sets {what} to {value} dB",
+                preset.name
+            );
+        }
+    }
+}
+
+#[test]
+fn circuit_specific_tone_controls_are_neutral_in_other_shipped_presets() {
+    for preset in PRESETS {
+        if preset.circuit != Circuit::Mt2 {
+            assert_eq!(
+                preset.tone_sweep, 0.5,
+                "'{}' is not a Metal Zone but carries its Mid Frequency value",
+                preset.name
+            );
+        }
+        if preset.circuit != Circuit::Hm2 {
+            assert_eq!(
+                preset.hm2_colour_lo, 0.5,
+                "'{}' is not a Heavy Metal but carries Colour Low",
+                preset.name
+            );
+            assert_eq!(
+                preset.hm2_colour_hi, 0.5,
+                "'{}' is not a Heavy Metal but carries Colour High",
                 preset.name
             );
         }
@@ -317,7 +345,10 @@ fn the_presets_are_level_matched() {
         chain.settle();
         let trim = 10f64.powf(preset.output_trim as f64 / 20.0);
         let amplitude = 10f64.powf((NOMINAL_DBFS + preset.input_trim as f64) / 20.0);
-        levels.push((preset.name, loudness(&mut chain, amplitude) + 20.0 * (trim * preset.mix as f64).log10()));
+        levels.push((
+            preset.name,
+            loudness(&mut chain, amplitude) + 20.0 * (trim * preset.mix as f64).log10(),
+        ));
     }
     let (loudest, high) = levels
         .iter()
@@ -541,6 +572,62 @@ fn a_preset_captured_from_the_panel_matches_it() {
     );
 }
 
+#[test]
+fn migration_isolates_metal_zone_and_heavy_metal_tone_state() {
+    let params = GainStageParams::default();
+    let circuit_ptr = params
+        .param_map()
+        .into_iter()
+        .find(|(id, _, _)| id == "circuit")
+        .map(|(_, ptr, _)| ptr)
+        .expect("circuit parameter");
+    let normalised = |circuit: Circuit| {
+        // SAFETY: the pointer belongs to `params` for the duration of the test.
+        unsafe { circuit_ptr.preview_normalized(circuit.to_index() as f32) }
+    };
+
+    // Old HM-2 presets used Bass/Treble for Colour Mix. Migration copies those
+    // positions into the new dedicated controls so old saved sounds survive.
+    let mut old_hm2 = Stored {
+        model_ids: BTreeMap::new(),
+        name: "Old HM-2".into(),
+        values: [
+            ("circuit".into(), normalised(Circuit::Hm2)),
+            ("bass".into(), 0.2),
+            ("treble".into(), 0.8),
+            ("tone_sweep".into(), 0.91),
+        ]
+        .into_iter()
+        .collect(),
+        built_in: true,
+        group: "",
+    };
+    presets::migrate(&mut old_hm2, &params);
+    assert_eq!(old_hm2.values["hm2_colour_lo"], 0.2);
+    assert_eq!(old_hm2.values["hm2_colour_hi"], 0.8);
+    assert_eq!(old_hm2.values["tone_sweep"], 0.5);
+
+    // A non-Boss circuit may not retain hidden values from either model.
+    let mut twin = Stored {
+        model_ids: BTreeMap::new(),
+        name: "Twin".into(),
+        values: [
+            ("circuit".into(), normalised(Circuit::Twin)),
+            ("tone_sweep".into(), 0.93),
+            ("hm2_colour_lo".into(), 0.11),
+            ("hm2_colour_hi".into(), 0.89),
+        ]
+        .into_iter()
+        .collect(),
+        built_in: true,
+        group: "",
+    };
+    presets::migrate(&mut twin, &params);
+    assert_eq!(twin.values["tone_sweep"], 0.5);
+    assert_eq!(twin.values["hm2_colour_lo"], 0.5);
+    assert_eq!(twin.values["hm2_colour_hi"], 0.5);
+}
+
 /// A plugin that has just been added has not loaded a preset, and the strip
 /// has to say so rather than name one.
 ///
@@ -592,7 +679,12 @@ fn guitar_presets_use_a_physical_cabinet() {
     use gainstagefx::params::CabModel;
     for preset in PRESETS {
         if preset.cab_model == CabModel::Legacy {
-            assert_eq!(preset.cabinet, Cabinet::Off, "'{}' still uses the baked filter", preset.name);
+            assert_eq!(
+                preset.cabinet,
+                Cabinet::Off,
+                "'{}' still uses the baked filter",
+                preset.name
+            );
             continue;
         }
         assert!(has_speaker(preset), "{}", preset.name);
@@ -619,7 +711,11 @@ fn puppet_master_86_is_still_distorted() {
         .expect("Puppet Master '86 is shipped");
 
     assert_eq!(preset.circuit, Circuit::Boogie, "wrong amplifier in preset");
-    assert!(preset.drive >= 0.75, "preset drive unexpectedly low: {}", preset.drive);
+    assert!(
+        preset.drive >= 0.75,
+        "preset drive unexpectedly low: {}",
+        preset.drive
+    );
 
     let mut chain = Chain::new(RATE);
     chain.apply(&preset.settings());

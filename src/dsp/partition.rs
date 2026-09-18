@@ -234,16 +234,16 @@ impl ReducedLinear {
         reduced: &mut [f64],
         _scratch: &mut [f64],
     ) -> bool {
-        if !self.valid || rhs.len() != self.condensed.boundary.len() + self.condensed.internal.len()
-            || reduced.is_empty() || full.len() < rhs.len()
+        if !self.valid
+            || rhs.len() != self.condensed.boundary.len() + self.condensed.internal.len()
+            || reduced.is_empty()
+            || full.len() < rhs.len()
         {
             return false;
         }
         let m = self.condensed.internal.len();
         let a = self.rhs_active_nodes.len();
-        if self.rhs_active_inverse.len() != m * a
-            || self.rhs_active_boundary.len() != a
-        {
+        if self.rhs_active_inverse.len() != m * a || self.rhs_active_boundary.len() != a {
             return false;
         }
 
@@ -288,7 +288,12 @@ impl ReducedLinear {
             self.internal_boundary_response[row] = value;
         }
         for (active, &global) in self.rhs_active_nodes.iter().enumerate() {
-            let Some(local) = self.condensed.internal.iter().position(|&node| node == global) else {
+            let Some(local) = self
+                .condensed
+                .internal
+                .iter()
+                .position(|&node| node == global)
+            else {
                 continue;
             };
             self.rhs_active_boundary[active] = self.condensed.boundary_internal[local];
@@ -335,6 +340,11 @@ pub struct ReducedNonlinear {
     /// keeps its original arithmetic order; only rejected line-search trials
     /// use this precomputed invariant matrix.
     merit_linear: Vec<f64>,
+    /// Per-sample constant term of the reduced residual:
+    /// `-b_b + A_bi inv(A_ii) b_i`. It is identical for every backtracking
+    /// trial in the sample, so compute it once beside the other Schur RHS
+    /// caches rather than once per row per trial.
+    merit_rhs_base: Vec<f64>,
     /// Global unknown -> compact boundary index. `usize::MAX` means internal.
     node_to_boundary: Vec<usize>,
     /// Full-MNA slots for the boundary-boundary block, in the same row-major
@@ -467,6 +477,7 @@ impl ReducedNonlinear {
             coupling: vec![0.0; b * b],
             boundary_base: vec![0.0; b * b],
             merit_linear: vec![0.0; b * b],
+            merit_rhs_base: vec![0.0; b],
             node_to_boundary,
             boundary_matrix_slots,
             reduced_matrix: vec![0.0; b * b],
@@ -496,6 +507,11 @@ impl ReducedNonlinear {
         self.condensed.boundary.len()
     }
 
+    #[inline]
+    pub fn boundary_nodes(&self) -> &[usize] {
+        &self.condensed.boundary
+    }
+
     pub fn internal_len(&self) -> usize {
         self.condensed.internal.len()
     }
@@ -516,6 +532,7 @@ impl ReducedNonlinear {
             || self.coupling.len() != b * b
             || self.boundary_base.len() != b * b
             || self.merit_linear.len() != b * b
+            || self.merit_rhs_base.len() != b
             || self.node_to_boundary.len() != n
             || self.boundary_matrix_slots.len() != b * b
             || self.reduced_matrix.len() != b * b
@@ -645,6 +662,14 @@ impl ReducedNonlinear {
                 *target += response * scalar;
             }
         }
+        for ((value, &global), &correction) in self
+            .merit_rhs_base
+            .iter_mut()
+            .zip(&self.condensed.boundary)
+            .zip(&self.rhs_internal_correction)
+        {
+            *value = -rhs[global] + correction;
+        }
         self.rhs_prepared = true;
         true
     }
@@ -672,7 +697,6 @@ impl ReducedNonlinear {
         Some((reduced_matrix, reduced_rhs, node_to_boundary))
     }
 
-
     /// Build the linear part of the exact Schur residual at a trial point.
     /// Nonlinear devices then add their physical current/constraint equations
     /// directly to this compact vector. No Jacobian is needed because the
@@ -694,11 +718,9 @@ impl ReducedNonlinear {
         }
         let b = self.condensed.boundary.len();
         for row in 0..b {
-            let global_row = self.condensed.boundary[row];
-            let mut value = -fixed_rhs[global_row] + self.rhs_internal_correction[row];
+            let mut value = self.merit_rhs_base[row];
             let coefficients = &self.merit_linear[row * b..(row + 1) * b];
-            for (&coefficient, &global_column) in
-                coefficients.iter().zip(&self.condensed.boundary)
+            for (&coefficient, &global_column) in coefficients.iter().zip(&self.condensed.boundary)
             {
                 value += coefficient * full[global_column];
             }
@@ -894,7 +916,11 @@ impl ReducedNonlinear {
     }
 
     fn update_boundary_base(&mut self, matrix: &[f64]) {
-        for (value, &slot) in self.boundary_base.iter_mut().zip(&self.boundary_matrix_slots) {
+        for (value, &slot) in self
+            .boundary_base
+            .iter_mut()
+            .zip(&self.boundary_matrix_slots)
+        {
             *value = matrix[slot];
         }
     }
@@ -1166,7 +1192,8 @@ impl Condensed {
         for (row, &internal) in self.internal.iter().enumerate() {
             let mut value = rhs[internal];
             let width = self.boundary.len();
-            for (&coefficient, &voltage) in self.internal_to_boundary[row * width..(row + 1) * width]
+            for (&coefficient, &voltage) in self.internal_to_boundary
+                [row * width..(row + 1) * width]
                 .iter()
                 .zip(boundary_solution)
             {
@@ -1444,11 +1471,8 @@ mod tests {
     #[test]
     fn unfinished_trial_merit_matches_finished_stamp_bit_for_bit() {
         let base = [
-            10.0, 1.0, 0.5, 2.0, 0.0,
-            1.0, 8.0, 1.0, 0.5, 0.2,
-            0.5, 1.0, 7.0, 1.5, 0.4,
-            2.0, 0.5, 1.5, 9.0, 1.0,
-            0.0, 0.2, 0.4, 1.0, 6.0,
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5, 0.4, 2.0, 0.5,
+            1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
         ];
         let zero = [0.0; 5];
         let prepared_rhs = [0.25, -0.5, 0.75, 0.125, -0.3];
@@ -1500,12 +1524,11 @@ mod tests {
         }
     }
 
-
     #[test]
     fn split_internal_recovery_matches_full_system_with_boundary_rhs_changes() {
         let base = [
-            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5,
-            0.4, 2.0, 0.5, 1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5, 0.4, 2.0, 0.5,
+            1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
         ];
         let zero = [0.0; 5];
         let mut reduced = ReducedNonlinear::new(&base, &zero, &[0, 3]).unwrap();
@@ -1536,8 +1559,8 @@ mod tests {
     #[test]
     fn split_internal_recovery_matches_legacy_recovery() {
         let base = [
-            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5,
-            0.4, 2.0, 0.5, 1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5, 0.4, 2.0, 0.5,
+            1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
         ];
         let rhs = [3.0, -1.0, 2.5, 0.75, -0.4];
         let mut reduced = ReducedNonlinear::new(&base, &[0.0; 5], &[0, 3]).unwrap();
@@ -1586,10 +1609,7 @@ mod tests {
     #[test]
     fn active_rhs_linear_response_matches_full_system() {
         let matrix = [
-            9.0, 1.0, 0.4, 0.2,
-            1.0, 7.0, 0.5, 0.3,
-            0.4, 0.5, 6.0, 0.8,
-            0.2, 0.3, 0.8, 5.0,
+            9.0, 1.0, 0.4, 0.2, 1.0, 7.0, 0.5, 0.3, 0.4, 0.5, 6.0, 0.8, 0.2, 0.3, 0.8, 5.0,
         ];
         // Only nodes 1 and 2 can receive audio-rate source/history current;
         // node 3 is structurally inactive and stays zero.
@@ -1610,23 +1630,15 @@ mod tests {
     #[test]
     fn direct_reduced_stamp_and_pivot_replay_match_full_system() {
         let base = [
-            10.0, 1.0, 0.5, 2.0, 0.0,
-            1.0, 8.0, 1.0, 0.5, 0.2,
-            0.5, 1.0, 7.0, 1.5, 0.4,
-            2.0, 0.5, 1.5, 9.0, 1.0,
-            0.0, 0.2, 0.4, 1.0, 6.0,
+            10.0, 1.0, 0.5, 2.0, 0.0, 1.0, 8.0, 1.0, 0.5, 0.2, 0.5, 1.0, 7.0, 1.5, 0.4, 2.0, 0.5,
+            1.5, 9.0, 1.0, 0.0, 0.2, 0.4, 1.0, 6.0,
         ];
         let zero = [0.0; 5];
         let fixed_rhs = [1.0, -1.25, 0.8, 0.5, -0.3];
         // Internal fixed RHS positions 1, 2 and 4 are the only changing basis
         // contributors. Boundary 0 and 3 remain direct RHS entries.
-        let mut reduced = ReducedNonlinear::new_with_active_rhs(
-            &base,
-            &zero,
-            &[0, 3],
-            &[1, 2, 4],
-        )
-        .unwrap();
+        let mut reduced =
+            ReducedNonlinear::new_with_active_rhs(&base, &zero, &[0, 3], &[1, 2, 4]).unwrap();
 
         for pass in 0..2 {
             assert!(reduced.prepare_rhs(&fixed_rhs));
@@ -1659,25 +1671,17 @@ mod tests {
             let current = [0.1, -0.2, 0.3, -0.4, 0.5];
             let mut actual = [0.0; 5];
             let mut delta = [0.0; 5];
-            let moved = reduced.solve_stamped_with_delta(
-                &mut actual,
-                &current,
-                &mut delta,
-                1e-6,
-                1e-6,
-            );
+            let moved =
+                reduced.solve_stamped_with_delta(&mut actual, &current, &mut delta, 1e-6, 1e-6);
             assert!(moved.is_some());
 
             let expected = solve(&full_matrix, &full_rhs);
-            for ((actual, expected), (delta, current)) in actual
-                .iter()
-                .zip(&expected)
-                .zip(delta.iter().zip(&current))
+            for ((actual, expected), (delta, current)) in
+                actual.iter().zip(&expected).zip(delta.iter().zip(&current))
             {
                 assert!((*actual - *expected).abs() < 1e-11);
                 assert!((*delta - (*expected - *current)).abs() < 1e-11);
             }
         }
     }
-
 }

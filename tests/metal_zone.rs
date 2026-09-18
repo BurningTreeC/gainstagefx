@@ -7,7 +7,14 @@ const RATE: f64 = 96_000.0;
 
 fn at(node: &str, controls: &[(usize, f64)], hz: f64, volts: f64) -> measure::Measured {
     let mut s = Simulation::new(metal_zone::tap(10_000.0, 470_000.0, node).unwrap(), RATE);
-    for (c, v) in [(DIST, 0.5), (LOW, 0.5), (MIDDLE, 0.5), (MID_FREQ, 0.5), (HIGH, 0.5), (LEVEL, 1.0)] {
+    for (c, v) in [
+        (DIST, 0.5),
+        (LOW, 0.5),
+        (MIDDLE, 0.5),
+        (MID_FREQ, 0.5),
+        (HIGH, 0.5),
+        (LEVEL, 1.0),
+    ] {
         s.set_control(c, v);
     }
     for &(c, v) in controls {
@@ -19,7 +26,11 @@ fn at(node: &str, controls: &[(usize, f64)], hz: f64, volts: f64) -> measure::Me
 }
 
 fn db(node: &str, controls: &[(usize, f64)], hz: f64) -> f64 {
-    20.0 * at(node, controls, hz, 0.02).fundamental().magnitude().max(1e-12).log10()
+    20.0 * at(node, controls, hz, 0.02)
+        .fundamental()
+        .magnitude()
+        .max(1e-12)
+        .log10()
 }
 
 #[test]
@@ -42,7 +53,10 @@ fn the_hump_before_the_clipper_peaks_near_a_kilohertz() {
     let peak = db("u3b", &[], 950.0);
     for hz in [100.0, 300.0, 3_000.0] {
         let away = db("u3b", &[], hz);
-        assert!(peak > away + 10.0, "950 Hz {peak:.1} dB against {hz} Hz {away:.1} dB");
+        assert!(
+            peak > away + 10.0,
+            "950 Hz {peak:.1} dB against {hz} Hz {away:.1} dB"
+        );
     }
 }
 
@@ -59,7 +73,9 @@ fn the_dist_control_spans_what_the_analysis_says() {
 /// Each tone control works where it is supposed to, and nowhere else.
 #[test]
 fn the_three_tone_controls_each_own_their_band() {
-    let range = |control: usize, hz: f64| db("out", &[(control, 1.0)], hz) - db("out", &[(control, 0.0)], hz);
+    let range = |control: usize, hz: f64| {
+        db("out", &[(control, 1.0)], hz) - db("out", &[(control, 0.0)], hz)
+    };
     let low = range(LOW, 100.0);
     // The middle is measured at the top of its sweep, which is where it is
     // deepest: its leg's series resistance is the swept one, so the band gets
@@ -72,8 +88,14 @@ fn the_three_tone_controls_each_own_their_band() {
         assert!(got > 10.0, "{name} has no range: {got:.1} dB");
     }
     // ...and each does more in its own band than the other two do there.
-    assert!(low > range(HIGH, 100.0), "the low control is not the low one");
-    assert!(high > range(LOW, 6_000.0), "the high control is not the high one");
+    assert!(
+        low > range(HIGH, 100.0),
+        "the low control is not the low one"
+    );
+    assert!(
+        high > range(LOW, 6_000.0),
+        "the high control is not the high one"
+    );
 }
 
 /// The scoop: two resonances at the ends of the band with a dip between them,
@@ -85,8 +107,14 @@ fn the_post_distortion_stage_is_double_peaked() {
     let at_high = db("u4b", &[], 4_900.0) - db("post", &[], 4_900.0);
     let between = db("u4b", &[], 700.0) - flat;
     println!("scoop: {at_low:+.1} dB at 105 Hz, {between:+.1} at 700, {at_high:+.1} at 4.9 kHz");
-    assert!(at_low > between + 6.0, "no lift at 105 Hz: {at_low:.1} against {between:.1}");
-    assert!(at_high > between + 6.0, "no lift at 4.9 kHz: {at_high:.1} against {between:.1}");
+    assert!(
+        at_low > between + 6.0,
+        "no lift at 105 Hz: {at_low:.1} against {between:.1}"
+    );
+    assert!(
+        at_high > between + 6.0,
+        "no lift at 4.9 kHz: {at_high:.1} against {between:.1}"
+    );
 }
 
 /// The Mid Freq control moves where the middle band works, which is the whole
@@ -114,7 +142,10 @@ fn the_mid_freq_control_moves_the_centre() {
     let down_low = lift(0.0, 250.0);
     println!("knob up: {up_low:+.1} at 250 Hz, {up_high:+.1} at 4 kHz");
     println!("knob down: {down_low:+.1} at 250 Hz, {down_high:+.1} at 4 kHz");
-    assert!(up_high > up_low + 6.0, "turned up it should work high: {up_low:+.1} vs {up_high:+.1}");
+    assert!(
+        up_high > up_low + 6.0,
+        "turned up it should work high: {up_low:+.1} vs {up_high:+.1}"
+    );
     assert!(
         down_high - down_low < up_high - up_low,
         "the centre did not move: up {:+.1}, down {:+.1}",

@@ -394,6 +394,9 @@ pub enum Part {
         a: usize,
         b: usize,
         spec: CoreSpec,
+        /// Apply inexpensive first-order antialiasing to the nonlinear excess
+        /// magnetising current while leaving the linear inductance untouched.
+        antialias: bool,
     },
     /// A bipolar transistor: collector, base, emitter. `pnp` mirrors every
     /// junction and current, which is exactly what a PNP part is.
@@ -796,7 +799,10 @@ impl Part {
                 | Part::Core { .. }
                 | Part::Bipolar { .. }
                 | Part::Transconductor { .. }
-                | Part::Adjustable { kind: Adjust::RealtimeResistor, .. }
+                | Part::Adjustable {
+                    kind: Adjust::RealtimeResistor,
+                    ..
+                }
         )
     }
 
@@ -1074,7 +1080,28 @@ impl Netlist {
     /// The magnetising branch of a winding: what makes iron sound like iron.
     pub fn core(&mut self, a: &str, b: &str, spec: CoreSpec) -> &mut Self {
         let (a, b) = (self.pin(a), self.pin(b));
-        self.parts.push(Part::Core { a, b, spec });
+        self.parts.push(Part::Core {
+            a,
+            b,
+            spec,
+            antialias: false,
+        });
+        self
+    }
+
+    /// The same physical magnetising branch, with antiderivative antialiasing
+    /// on only the nonlinear saturation current. This keeps the expensive MNA
+    /// solve at the host rate while suppressing the high-order fold-back that a
+    /// hard transformer knee can create. The linear inductance is deliberately
+    /// left exact so the small-signal transformer response does not move.
+    pub fn core_antialiased(&mut self, a: &str, b: &str, spec: CoreSpec) -> &mut Self {
+        let (a, b) = (self.pin(a), self.pin(b));
+        self.parts.push(Part::Core {
+            a,
+            b,
+            spec,
+            antialias: true,
+        });
         self
     }
 
@@ -1212,7 +1239,9 @@ impl Netlist {
             .parts
             .iter()
             .find_map(|p| match p {
-                Part::Input { node, source: 0, .. } => Some(*node),
+                Part::Input {
+                    node, source: 0, ..
+                } => Some(*node),
                 _ => None,
             })
             .ok_or_else(|| Fault::Malformed(format!("'{}' has no input", self.name)))?;

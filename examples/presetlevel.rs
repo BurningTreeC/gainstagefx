@@ -56,11 +56,21 @@ fn main() {
             PedalModel::None => String::new(),
             other => format!("   pedal {other:?}"),
         };
-        let trim = if *trim == 0.0 { String::new() } else { format!("   trim {trim:+.0}") };
-        println!("  {db:+7.1} dB  ({:+5.1} against the mean)  {name}{pedal}{trim}", db - mean);
+        let trim = if *trim == 0.0 {
+            String::new()
+        } else {
+            format!("   trim {trim:+.0}")
+        };
+        println!(
+            "  {db:+7.1} dB  ({:+5.1} against the mean)  {name}{pedal}{trim}",
+            db - mean
+        );
     }
-    let pedals: Vec<f64> =
-        levels.iter().filter(|l| l.2 != PedalModel::None).map(|l| l.0).collect();
+    let pedals: Vec<f64> = levels
+        .iter()
+        .filter(|l| l.2 != PedalModel::None)
+        .map(|l| l.0)
+        .collect();
     if !pedals.is_empty() {
         let their_mean = pedals.iter().sum::<f64>() / pedals.len() as f64;
         println!(

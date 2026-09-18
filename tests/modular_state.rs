@@ -67,27 +67,27 @@ fn display_names_change_without_reinterpreting_legacy_enum_positions() {
     // recorded against the parameter. A prefix check fails on all three and
     // passes an append, which is the rule this test exists to state.
     let legacy: &[&str] = &[
-            "clean",
-            "crunch",
-            "highgain",
-            "overdrive",
-            "distortion",
-            "console",
-            "studio",
-            "ts808",
-            "bigmuff",
-            "markiic",
-            "evh5150",
-            "neve",
-            "twin",
-            "amp_jcm800_2203",
-            "pre_api_312",
-            "pre_ssl_4000e",
-            "pre_ua_610a",
-            "amp_marshall_1959",
-            "amp_vox_ac30_tb",
-            "amp_hiwatt_dr103",
-            "amp_dual_rectifier",
+        "clean",
+        "crunch",
+        "highgain",
+        "overdrive",
+        "distortion",
+        "console",
+        "studio",
+        "ts808",
+        "bigmuff",
+        "markiic",
+        "evh5150",
+        "neve",
+        "twin",
+        "amp_jcm800_2203",
+        "pre_api_312",
+        "pre_ssl_4000e",
+        "pre_ua_610a",
+        "amp_marshall_1959",
+        "amp_vox_ac30_tb",
+        "amp_hiwatt_dr103",
+        "amp_dual_rectifier",
     ];
     let ids = Circuit::ids().unwrap();
     assert!(
@@ -96,12 +96,23 @@ fn display_names_change_without_reinterpreting_legacy_enum_positions() {
         ids.len(),
         legacy.len(),
     );
-    assert_eq!(&ids[..legacy.len()], legacy, "a legacy circuit id moved or was renamed");
+    assert_eq!(
+        &ids[..legacy.len()],
+        legacy,
+        "a legacy circuit id moved or was renamed"
+    );
     assert_eq!(Circuit::Boogie.name(), "Cali IIC+");
     // A preset's power stage is written as its stable position in the list.
     for preset in presets::PRESETS {
-        let index = PowerAmp::ALL.iter().position(|p| *p == preset.power_amp).unwrap();
-        assert!(preset.dials().contains(&("power_amp", index as f32)), "{}", preset.name);
+        let index = PowerAmp::ALL
+            .iter()
+            .position(|p| *p == preset.power_amp)
+            .unwrap();
+        assert!(
+            preset.dials().contains(&("power_amp", index as f32)),
+            "{}",
+            preset.name
+        );
     }
 }
 
@@ -132,5 +143,8 @@ fn every_legacy_circuit_position_survives_the_appended_brit_800() {
     )
     .unwrap();
     presets::migrate(&mut new, &params);
-    assert_eq!(new.values["circuit"], params.circuit.preview_normalized(Circuit::Brit800));
+    assert_eq!(
+        new.values["circuit"],
+        params.circuit.preview_normalized(Circuit::Brit800)
+    );
 }

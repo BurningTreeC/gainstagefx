@@ -217,9 +217,8 @@ unsafe fn process_job(job: StereoJob) {
         let dry = chain.delayed_dry(input);
         let wet = chain.process(input);
         if !job.bypassed {
-            samples[i] =
-                ((dry * (1.0 - mix[i] as f64) + wet * mix[i] as f64) * output_trim[i] as f64)
-                    as f32;
+            samples[i] = ((dry * (1.0 - mix[i] as f64) + wet * mix[i] as f64)
+                * output_trim[i] as f64) as f32;
         }
     }
 }

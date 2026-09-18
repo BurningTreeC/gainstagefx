@@ -24,9 +24,18 @@ fn rms(x: &[f64]) -> f64 {
 
 #[test]
 fn no_pedal_is_exactly_the_old_path() {
-    let base = Settings { gain: Gain::Twin, tone: Tone::Off, ..Settings::default() };
+    let base = Settings {
+        gain: Gain::Twin,
+        tone: Tone::Off,
+        ..Settings::default()
+    };
     let explicit = Settings {
-        pedal: PedalSettings { pedal: Pedal::None, drive: 0.9, tone: [0.1; 4], level: 0.9 },
+        pedal: PedalSettings {
+            pedal: Pedal::None,
+            drive: 0.9,
+            tone: [0.1; 4],
+            level: 0.9,
+        },
         ..base
     };
     let (_, a) = render(&base, 8_000);
@@ -36,14 +45,28 @@ fn no_pedal_is_exactly_the_old_path() {
 
 #[test]
 fn a_pedal_is_really_in_front_of_the_amplifier() {
-    let base = Settings { gain: Gain::Twin, drive: 0.35, tone: Tone::Off, ..Settings::default() };
+    let base = Settings {
+        gain: Gain::Twin,
+        drive: 0.35,
+        tone: Tone::Off,
+        ..Settings::default()
+    };
     let boosted = Settings {
-        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.2, tone: [0.5; 4], level: 0.9 },
+        pedal: PedalSettings {
+            pedal: Pedal::Green808,
+            drive: 0.2,
+            tone: [0.5; 4],
+            level: 0.9,
+        },
         ..base
     };
     let (_, clean) = render(&base, 24_000);
     let (mut chain, pushed) = render(&boosted, 24_000);
-    let difference = rms(&clean.iter().zip(&pushed).map(|(a, b)| a - b).collect::<Vec<_>>());
+    let difference = rms(&clean
+        .iter()
+        .zip(&pushed)
+        .map(|(a, b)| a - b)
+        .collect::<Vec<_>>());
     assert!(difference > 0.05 * rms(&clean), "{difference}");
     let before = chain.solver_breakdown();
     assert_no_heap(|| {
@@ -51,7 +74,14 @@ fn a_pedal_is_really_in_front_of_the_amplifier() {
             assert!(chain.process(guitar(k)).is_finite());
         }
     });
-    assert!(chain.solver_breakdown().saturating_delta(before).pedal.solves > 0);
+    assert!(
+        chain
+            .solver_breakdown()
+            .saturating_delta(before)
+            .pedal
+            .solves
+            > 0
+    );
 }
 
 #[test]
@@ -59,7 +89,12 @@ fn the_same_circuit_can_be_both_pedal_and_voice() {
     let s = Settings {
         gain: Gain::Screamer,
         tone: Tone::Off,
-        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.7, tone: [0.4; 4], level: 0.6 },
+        pedal: PedalSettings {
+            pedal: Pedal::Green808,
+            drive: 0.7,
+            tone: [0.4; 4],
+            level: 0.6,
+        },
         ..Settings::default()
     };
     let (chain, out) = render(&s, 12_000);
@@ -75,7 +110,12 @@ fn pedal_level_turns_the_pedal_up_and_down() {
             gain: Gain::Clean,
             tone: Tone::Off,
             drive: 0.1,
-            pedal: PedalSettings { pedal: Pedal::BigMuff, drive: 0.5, tone: [0.5; 4], level },
+            pedal: PedalSettings {
+                pedal: Pedal::BigMuff,
+                drive: 0.5,
+                tone: [0.5; 4],
+                level,
+            },
             ..Settings::default()
         };
         rms(&render(&s, 24_000).1[12_000..])
@@ -88,7 +128,12 @@ fn pedal_level_turns_the_pedal_up_and_down() {
 fn a_pedal_survives_rates_blocks_and_a_stereo_wake() {
     let s = Settings {
         gain: Gain::Boogie,
-        pedal: PedalSettings { pedal: Pedal::Green808, drive: 0.5, tone: [0.6; 4], level: 0.7 },
+        pedal: PedalSettings {
+            pedal: Pedal::Green808,
+            drive: 0.5,
+            tone: [0.6; 4],
+            level: 0.7,
+        },
         ..Settings::default()
     };
     let mut chain = Chain::new(44_100.0);
@@ -130,7 +175,10 @@ mod revisions {
     /// shut so the clipper stays out of the way.
     fn level(values: &Values, tone: f64, hz: f64) -> f64 {
         let rate = 96_000.0;
-        let mut sim = Simulation::new(ts808::build_with(values, 10_000.0, 470_000.0).unwrap(), rate);
+        let mut sim = Simulation::new(
+            ts808::build_with(values, 10_000.0, 470_000.0).unwrap(),
+            rate,
+        );
         sim.set_control(ts808::DRIVE, 0.0);
         sim.set_control(ts808::TONE, tone);
         sim.find_operating_point();
@@ -152,7 +200,10 @@ mod revisions {
         let legacy = reach(&ts808::LEGACY);
         // A 220 ohm shunt under 0.22 uF turns over near 3.2 kHz and swings the top
         // far harder than the 1 k the legacy netlist carries.
-        assert!(verified > legacy + 3.0, "verified {verified:.1} dB vs legacy {legacy:.1} dB");
+        assert!(
+            verified > legacy + 3.0,
+            "verified {verified:.1} dB vs legacy {legacy:.1} dB"
+        );
         assert!(verified > 8.0, "{verified}");
     }
 
@@ -170,15 +221,29 @@ mod revisions {
 #[test]
 fn every_pedal_runs_in_front_of_an_amplifier() {
     for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
-        let base = Settings { gain: Gain::Twin, drive: 0.35, tone: Tone::Off, ..Settings::default() };
+        let base = Settings {
+            gain: Gain::Twin,
+            drive: 0.35,
+            tone: Tone::Off,
+            ..Settings::default()
+        };
         let with = Settings {
-            pedal: PedalSettings { pedal, drive: 0.6, tone: [0.5; 4], level: 0.6 },
+            pedal: PedalSettings {
+                pedal,
+                drive: 0.6,
+                tone: [0.5; 4],
+                level: 0.6,
+            },
             ..base
         };
         let (_, clean) = render(&base, 12_000);
         let (mut chain, pushed) = render(&with, 12_000);
         assert!(pushed.iter().all(|y| y.is_finite()), "{pedal:?}");
-        let difference = rms(&clean.iter().zip(&pushed).map(|(a, b)| a - b).collect::<Vec<_>>());
+        let difference = rms(&clean
+            .iter()
+            .zip(&pushed)
+            .map(|(a, b)| a - b)
+            .collect::<Vec<_>>());
         assert!(difference > 0.05 * rms(&clean), "{pedal:?}: {difference}");
         assert_no_heap(|| {
             for k in 0..1_024 {
@@ -209,7 +274,12 @@ fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
             gain,
             tone: Tone::Off,
             drive: 0.5,
-            pedal: PedalSettings { pedal, drive: 0.5, tone: [0.5; 4], level: 0.5 },
+            pedal: PedalSettings {
+                pedal,
+                drive: 0.5,
+                tone: [0.5; 4],
+                level: 0.5,
+            },
             ..Settings::default()
         };
         20.0 * rms(&render(&s, 24_000).1[12_000..]).max(1e-12).log10()
@@ -219,7 +289,10 @@ fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
         let bare = at(gain, Pedal::None);
         for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
             let departure = at(gain, pedal) - bare;
-            assert!(departure.abs() < 6.0, "{gain:?} {pedal:?}: {departure:+.1} dB");
+            assert!(
+                departure.abs() < 6.0,
+                "{gain:?} {pedal:?}: {departure:+.1} dB"
+            );
         }
     }
     // The same pedal departs by about the same amount whichever of the two it is
@@ -234,7 +307,10 @@ fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
     for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
         let guitar = at(Gain::Crunch, pedal) - at(Gain::Crunch, Pedal::None);
         let line = at(Gain::Clean, pedal) - at(Gain::Clean, Pedal::None);
-        assert!((guitar - line).abs() < 2.0, "{pedal:?}: {guitar:+.1} vs {line:+.1} dB");
+        assert!(
+            (guitar - line).abs() < 2.0,
+            "{pedal:?}: {guitar:+.1} vs {line:+.1} dB"
+        );
     }
 }
 
@@ -253,13 +329,19 @@ fn an_expensive_pedal_holds_the_chain_at_the_host_rate() {
         let mut chain = Chain::new(48_000.0);
         chain.apply(&Settings {
             gain: Gain::Boogie,
-            pedal: PedalSettings { pedal, ..PedalSettings::default() },
+            pedal: PedalSettings {
+                pedal,
+                ..PedalSettings::default()
+            },
             ..Settings::default()
         });
         chain.process(0.0);
         let effective = chain.effective_oversampling();
         if pedal.is_expensive() {
-            assert_eq!(effective, 1, "{pedal:?} must hold the chain at the host rate");
+            assert_eq!(
+                effective, 1,
+                "{pedal:?} must hold the chain at the host rate"
+            );
         } else {
             assert_eq!(
                 effective,
@@ -272,13 +354,22 @@ fn an_expensive_pedal_holds_the_chain_at_the_host_rate() {
     let mut chain = Chain::new(48_000.0);
     let heavy = Settings {
         gain: Gain::Boogie,
-        pedal: PedalSettings { pedal: Pedal::HeavyMetal, ..PedalSettings::default() },
+        pedal: PedalSettings {
+            pedal: Pedal::HeavyMetal,
+            ..PedalSettings::default()
+        },
         ..Settings::default()
     };
     chain.apply(&heavy);
     chain.process(0.0);
     assert_eq!(chain.effective_oversampling(), 1);
-    chain.apply(&Settings { pedal: PedalSettings::default(), ..heavy });
+    chain.apply(&Settings {
+        pedal: PedalSettings::default(),
+        ..heavy
+    });
     chain.process(0.0);
-    assert_eq!(chain.effective_oversampling(), gainstagefx::voice::MODELLED_MAX_OVERSAMPLING);
+    assert_eq!(
+        chain.effective_oversampling(),
+        gainstagefx::voice::MODELLED_MAX_OVERSAMPLING
+    );
 }

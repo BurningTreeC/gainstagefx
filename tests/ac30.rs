@@ -6,7 +6,9 @@ use gainstagefx::circuits::ac30::{self, BASS, TREBLE, VOLUME};
 use gainstagefx::circuits::power::{self, PowerSpec};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::voice::{Chain, Gain, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS,
+};
 
 const RATE: f64 = 96_000.0;
 
@@ -31,7 +33,10 @@ fn the_output_valves_idle_where_the_factory_sheet_says() {
     let spec = &PowerSpec::AC30_EL84;
     let amp = power::build(spec, 10_000.0).unwrap();
     let names = ["ok", "ht", "pi_p1", "pi_p2", "pi_k", "pi_b"];
-    let nodes: Vec<usize> = names.iter().map(|n| amp.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = names
+        .iter()
+        .map(|n| amp.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(amp, RATE);
     assert!(s.find_operating_point());
     let v: Vec<f64> = nodes.iter().map(|&n| s.voltage_at(n)).collect();
@@ -47,9 +52,14 @@ fn the_output_valves_idle_where_the_factory_sheet_says() {
     // not last. That is the amplifier, not a fault in the model.
     assert!((14.0..18.0).contains(&(per_valve * (ht - cathode))));
     // The preamplifier hangs off the same node.
-    assert!((ht - ac30::HT).abs() < 5.0, "HT {ht:.1} against {}", ac30::HT);
+    assert!(
+        (ht - ac30::HT).abs() < 5.0,
+        "HT {ht:.1} against {}",
+        ac30::HT
+    );
     // And the inverter's supply is that node less its own drop through R11 22 k.
-    let inverter = (spec.pi_supply - v[2]) / spec.pi_plate_driven + (spec.pi_supply - v[3]) / spec.pi_plate_other;
+    let inverter = (spec.pi_supply - v[2]) / spec.pi_plate_driven
+        + (spec.pi_supply - v[3]) / spec.pi_plate_other;
     let node = ac30::HT - inverter * 22_000.0;
     assert!((node - ac30::INVERTER_NODE).abs() < 6.0, "{node:.1}");
     // The pair biases itself off its 47 k tail: a volt or two, not a Marshall's.
@@ -66,7 +76,10 @@ fn there_is_no_feedback_and_the_cut_control_is_across_the_inverter() {
     let amp = power::build(spec, 10_000.0).unwrap();
     assert!(amp.unknown_named("pres").is_none(), "no presence network");
     assert!(amp.unknown_named("bias").is_none(), "no bias supply");
-    assert!(amp.unknown_named("ok").is_some(), "a shared cathode instead");
+    assert!(
+        amp.unknown_named("ok").is_some(),
+        "a shared cathode instead"
+    );
     assert!(amp.unknown_named("cut").is_some(), "the cut control");
 
     // Turning the cut down takes the top off, and only the top.
@@ -82,14 +95,19 @@ fn there_is_no_feedback_and_the_cut_control_is_across_the_inverter() {
     let (bright_low, dark_low) = (response(0.0, 200.0), response(1.0, 200.0));
     println!("cut: 4 kHz {bright_top:.1} -> {dark_top:.1} dB, 200 Hz {bright_low:.1} -> {dark_low:.1} dB");
     assert!(bright_top - dark_top > 4.0, "{bright_top} {dark_top}");
-    assert!((bright_low - dark_low).abs() < 1.0, "{bright_low} {dark_low}");
+    assert!(
+        (bright_low - dark_low).abs() < 1.0,
+        "{bright_low} {dark_low}"
+    );
 }
 
 #[test]
 fn silence_in_is_silence_out() {
     let mut s = Simulation::new(ac30::build(10_000.0, 1_000_000.0).unwrap(), RATE);
     assert!(s.find_operating_point());
-    let worst = (0..(RATE as usize / 4)).map(|_| s.process(0.0).abs()).fold(0.0, f64::max);
+    let worst = (0..(RATE as usize / 4))
+        .map(|_| s.process(0.0).abs())
+        .fold(0.0, f64::max);
     assert!(worst < 0.05, "{worst}");
 }
 
@@ -112,7 +130,8 @@ fn the_stack_has_two_controls_and_they_go_the_way_they_are_labelled() {
 #[test]
 fn the_bright_capacitor_keeps_the_top_when_the_volume_comes_down() {
     let tilt = |volume: f64| {
-        at(&[(VOLUME, volume)], 5_000.0, 0.001).gain_db() - at(&[(VOLUME, volume)], 200.0, 0.001).gain_db()
+        at(&[(VOLUME, volume)], 5_000.0, 0.001).gain_db()
+            - at(&[(VOLUME, volume)], 200.0, 0.001).gain_db()
     };
     let (low, high) = (tilt(0.2), tilt(1.0));
     println!("5 kHz over 200 Hz: {low:.1} dB at Volume 0.2, {high:.1} dB at 1.0");
@@ -121,7 +140,10 @@ fn the_bright_capacitor_keeps_the_top_when_the_volume_comes_down() {
 
 #[test]
 fn matched_is_the_ac30_stage_and_the_chain_stays_realtime_safe() {
-    assert_eq!(PowerAmp::Matched.resolved(Gain::AC30), Some(PowerModel::AC30EL84));
+    assert_eq!(
+        PowerAmp::Matched.resolved(Gain::AC30),
+        Some(PowerModel::AC30EL84)
+    );
     let settings = Settings {
         gain: Gain::AC30,
         drive: 0.8,
@@ -146,7 +168,10 @@ fn matched_is_the_ac30_stage_and_the_chain_stays_realtime_safe() {
         });
         let work = chain.solver_breakdown().saturating_delta(before);
         assert!(work.gain.solves > 0 && work.power.solves > 0, "{rate}");
-        assert!(work.power.unsettled == 0 && work.gain.unsettled == 0, "{rate}: {work:?}");
+        assert!(
+            work.power.unsettled == 0 && work.gain.unsettled == 0,
+            "{rate}: {work:?}"
+        );
     }
 }
 
@@ -176,6 +201,9 @@ fn the_rectifier_is_a_valve_and_the_bias_is_what_moves() {
     println!(
         "rail {rail_idle:.0} V -> {rail_loud:.0} V, bias {bias_idle:.1} V -> {bias_loud:.1} V"
     );
-    assert!(bias_loud > bias_idle + 0.5, "the bias moves: {bias_idle:.1} to {bias_loud:.1}");
+    assert!(
+        bias_loud > bias_idle + 0.5,
+        "the bias moves: {bias_idle:.1} to {bias_loud:.1}"
+    );
     assert!(rail_idle - rail_loud < 20.0, "and the rail hardly does");
 }

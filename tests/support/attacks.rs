@@ -260,7 +260,8 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
     }
     let health = plugin.channels[0].solver_health();
     assert_eq!(
-        health.unsettled, 0,
+        health.unsettled,
+        0,
         "{} failed solves: {:?}",
         plugin.params.circuit.value().name(),
         plugin.channels[0].solver_breakdown()

@@ -6,7 +6,9 @@ use gainstagefx::circuits::power::{self, PowerSpec};
 use gainstagefx::circuits::rectifier::{self, BASS, GAIN, MASTER, MIDDLE, TREBLE};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::voice::{Chain, Gain, Level, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, Level, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS,
+};
 
 const RATE: f64 = 96_000.0;
 
@@ -34,23 +36,35 @@ fn the_operating_point_matches_the_sheets_own_voltages() {
         ("v3_p", 213.0),
         ("cf", 216.0),
     ];
-    let nodes: Vec<usize> = table.iter().map(|(n, _)| pre.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = table
+        .iter()
+        .map(|(n, _)| pre.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(pre, RATE);
     assert!(s.find_operating_point());
     for ((name, expected), node) in table.iter().zip(nodes) {
         let got = s.voltage_at(node);
         println!("{name}: {got:.1} V against the sheet's {expected} V");
-        assert!((got - expected).abs() / expected < 0.06, "{name}: {got:.1} V");
+        assert!(
+            (got - expected).abs() / expected < 0.06,
+            "{name}: {got:.1} V"
+        );
     }
 
     let spec = &PowerSpec::RECTO_6L6;
     let amp = power::build(spec, 10_000.0).unwrap();
     let names = ["pi_p1", "pi_p2", "pi_k"];
-    let nodes: Vec<usize> = names.iter().map(|n| amp.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = names
+        .iter()
+        .map(|n| amp.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(amp, RATE);
     assert!(s.find_operating_point());
     let v: Vec<f64> = nodes.iter().map(|&n| s.voltage_at(n)).collect();
-    println!("inverter plates {:.0} / {:.0} V (sheet 280), cathodes {:.0} V (sheet 48)", v[0], v[1], v[2]);
+    println!(
+        "inverter plates {:.0} / {:.0} V (sheet 280), cathodes {:.0} V (sheet 48)",
+        v[0], v[1], v[2]
+    );
     assert!((v[0] - 280.0).abs() < 20.0 && (v[1] - 280.0).abs() < 20.0);
     assert!((v[2] - 48.0).abs() < 8.0, "cathodes {:.1} V", v[2]);
 }
@@ -80,16 +94,26 @@ fn the_cold_stage_clips_one_side_first() {
     s.find_operating_point();
     let tone = Tone::near(RATE, 16_384, 110.0, 0.122);
     let m = measure::run(tone, (RATE / 5.0) as usize, |x| s.process(x));
-    println!("{:.1} % distortion, 2nd {:.1} %, 3rd {:.1} %", m.thd_percent(), m.harmonic_percent(2), m.harmonic_percent(3));
+    println!(
+        "{:.1} % distortion, 2nd {:.1} %, 3rd {:.1} %",
+        m.thd_percent(),
+        m.harmonic_percent(2),
+        m.harmonic_percent(3)
+    );
     assert!(m.thd_percent() > 10.0, "{}", m.thd_percent());
-    assert!(m.harmonic_percent(2) > m.harmonic_percent(3), "one side first");
+    assert!(
+        m.harmonic_percent(2) > m.harmonic_percent(3),
+        "one side first"
+    );
 }
 
 #[test]
 fn silence_in_is_silence_out() {
     let mut s = Simulation::new(rectifier::build(10_000.0, 1_000_000.0).unwrap(), RATE);
     assert!(s.find_operating_point());
-    let worst = (0..(RATE as usize / 4)).map(|_| s.process(0.0).abs()).fold(0.0, f64::max);
+    let worst = (0..(RATE as usize / 4))
+        .map(|_| s.process(0.0).abs())
+        .fold(0.0, f64::max);
     assert!(worst < 0.05, "{worst}");
 }
 
@@ -108,7 +132,10 @@ fn the_stack_controls_go_the_way_they_are_labelled() {
 /// has it, and the panel's Master knob turns it.
 #[test]
 fn the_master_is_the_red_channels_own() {
-    assert_eq!(Gain::Recto.level_control(), Some(Level::Circuit(rectifier::MASTER)));
+    assert_eq!(
+        Gain::Recto.level_control(),
+        Some(Level::Circuit(rectifier::MASTER))
+    );
     let quiet = at(&[(MASTER, 0.1)], 1_000.0, 0.0005).gain_db();
     let loud = at(&[(MASTER, 1.0)], 1_000.0, 0.0005).gain_db();
     println!("master: {quiet:.1} dB to {loud:.1} dB");
@@ -117,7 +144,10 @@ fn the_master_is_the_red_channels_own() {
 
 #[test]
 fn matched_is_the_recto_stage_and_the_chain_stays_realtime_safe() {
-    assert_eq!(PowerAmp::Matched.resolved(Gain::Recto), Some(PowerModel::Recto6L6));
+    assert_eq!(
+        PowerAmp::Matched.resolved(Gain::Recto),
+        Some(PowerModel::Recto6L6)
+    );
     let settings = Settings {
         gain: Gain::Recto,
         drive: 0.7,
@@ -142,7 +172,10 @@ fn matched_is_the_recto_stage_and_the_chain_stays_realtime_safe() {
         });
         let work = chain.solver_breakdown().saturating_delta(before);
         assert!(work.gain.solves > 0 && work.power.solves > 0, "{rate}");
-        assert!(work.power.unsettled == 0 && work.gain.unsettled == 0, "{rate}: {work:?}");
+        assert!(
+            work.power.unsettled == 0 && work.gain.unsettled == 0,
+            "{rate}: {work:?}"
+        );
     }
 }
 
@@ -171,6 +204,9 @@ fn the_valve_rectifier_setting_sags_where_the_silicon_one_holds() {
     assert!(PowerSpec::RECTO_6L6.rectifier.is_none());
     assert!(PowerSpec::RECTO_6L6_TUBE.rectifier.is_some());
     // The valve starts lower and gives way further.
-    assert!(valve_idle < silicon_idle - 5.0, "{valve_idle} {silicon_idle}");
+    assert!(
+        valve_idle < silicon_idle - 5.0,
+        "{valve_idle} {silicon_idle}"
+    );
     assert!(valve_sag > silicon_sag * 1.2, "{valve_sag} {silicon_sag}");
 }

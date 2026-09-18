@@ -205,7 +205,14 @@ fn tap_impl(source: f64, load: f64, at: &str, partition_filters: bool) -> Result
     // is minimum distortion.
     net.capacitor("c6", "dist_shunt_c", 10e-6) // C31
         .resistor("dist_shunt_c", "dist_shunt", 150.0) // R49
-        .pot("dist_fb", "gnd", "dist_shunt", 250_000.0, Taper::Audio, DIST)
+        .pot(
+            "dist_fb",
+            "gnd",
+            "dist_shunt",
+            250_000.0,
+            Taper::Audio,
+            DIST,
+        )
         .resistor("dist_fb", "dist_fb_r", 47_000.0) // R25
         .capacitor("dist_fb_r", "u1b_m", 0.047e-6); // C22
 
@@ -280,23 +287,37 @@ fn tap_impl(source: f64, load: f64, at: &str, partition_filters: bool) -> Result
         net.opamp("eqin", "eqac", "eqin", SWING);
     }
     net.resistor("eqin", "cut", 3_300.0); // R52
-    // IC3A is the actual boost/cut amplifier. Boss's service check specifies
-    // roughly +21 dB at the Colour Mix resonances from centre to full clockwise.
-    // With the hard-clipped signal feeding it, that is enough to hit the M5218's
-    // finite output swing at the classic all-knobs-max setting. It therefore must
-    // remain rail-aware even in the partitioned production circuit. Making this
-    // op-amp linear/unlimited was only equivalent in the earlier moderate-level
-    // probe and made the Swedish-death settings physically too loud.
+                                          // IC3A is the actual boost/cut amplifier. Boss's service check specifies
+                                          // roughly +21 dB at the Colour Mix resonances from centre to full clockwise.
+                                          // With the hard-clipped signal feeding it, that is enough to hit the M5218's
+                                          // finite output swing at the classic all-knobs-max setting. It therefore must
+                                          // remain rail-aware even in the partitioned production circuit. Making this
+                                          // op-amp linear/unlimited was only equivalent in the earlier moderate-level
+                                          // probe and made the Swedish-death settings physically too loud.
     net.opamp("u3a", "cut", "boost", SWING);
     net.resistor("u3a", "boost", 3_300.0) // R54
         .capacitor("u3a", "boost", 470e-12); // C33
 
     // VR2, Colour Mix Low: the 87 Hz band.
-    net.pot("boost", "w_low", "cut", 10_000.0, Taper::Symmetric { span: 150.0 }, LOW);
+    net.pot(
+        "boost",
+        "w_low",
+        "cut",
+        10_000.0,
+        Taper::Symmetric { span: 150.0 },
+        LOW,
+    );
     band(&mut net, "w_low", "bl", LOW_BAND);
 
     // VR3, Colour Mix High: the two upper bands, both on the one knob.
-    net.pot("boost", "w_high", "cut", 10_000.0, Taper::Symmetric { span: 150.0 }, HIGH);
+    net.pot(
+        "boost",
+        "w_high",
+        "cut",
+        10_000.0,
+        Taper::Symmetric { span: 150.0 },
+        HIGH,
+    );
     band(&mut net, "w_high", "bm", MID_BAND);
     band(&mut net, "w_high", "bh", HIGH_BAND);
 
@@ -332,17 +353,28 @@ mod partition_tests {
     #[test]
     fn colour_mix_opamps_leave_newton_boundary_without_changing_linear_operation() {
         let mut partitioned = Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
-        let mut reference =
-            Simulation::new(build_full_newton_reference(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut reference = Simulation::new(
+            build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
+            48_000.0,
+        );
 
         for (control, value) in [(DIST, 0.7), (LOW, 0.85), (HIGH, 0.8), (LEVEL, 0.6)] {
             partitioned.set_control(control, value);
             reference.set_control(control, value);
         }
 
-        let before = reference.nonlinear_reduction().expect("reference reduction").0;
-        let after = partitioned.nonlinear_reduction().expect("partitioned reduction").0;
-        assert!(after < before, "HM-2 boundary did not shrink: {before} -> {after}");
+        let before = reference
+            .nonlinear_reduction()
+            .expect("reference reduction")
+            .0;
+        let after = partitioned
+            .nonlinear_reduction()
+            .expect("partitioned reduction")
+            .0;
+        assert!(
+            after < before,
+            "HM-2 boundary did not shrink: {before} -> {after}"
+        );
 
         let mut worst = 0.0_f64;
         for k in 0..12_000 {
@@ -354,15 +386,19 @@ mod partition_tests {
             let b = reference.process(x);
             worst = worst.max((a - b).abs());
         }
-        assert!(worst < 1e-6, "HM-2 linear filter partition changed response: {worst:e}");
+        assert!(
+            worst < 1e-6,
+            "HM-2 linear filter partition changed response: {worst:e}"
+        );
     }
 
     #[test]
     fn colour_mix_partition_keeps_rail_clipping_at_all_knobs_max() {
-        let mut partitioned =
-            Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
-        let mut reference =
-            Simulation::new(build_full_newton_reference(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut partitioned = Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut reference = Simulation::new(
+            build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
+            48_000.0,
+        );
 
         for (control, value) in [(DIST, 1.0), (LOW, 1.0), (HIGH, 1.0), (LEVEL, 1.0)] {
             partitioned.set_control(control, value);
@@ -371,9 +407,18 @@ mod partition_tests {
         partitioned.find_operating_point();
         reference.find_operating_point();
 
-        let before = reference.nonlinear_reduction().expect("reference reduction").0;
-        let after = partitioned.nonlinear_reduction().expect("partitioned reduction").0;
-        assert!(after < before, "HM-2 boundary did not shrink: {before} -> {after}");
+        let before = reference
+            .nonlinear_reduction()
+            .expect("reference reduction")
+            .0;
+        let after = partitioned
+            .nonlinear_reduction()
+            .expect("partitioned reduction")
+            .0;
+        assert!(
+            after < before,
+            "HM-2 boundary did not shrink: {before} -> {after}"
+        );
 
         let mut worst = 0.0_f64;
         let mut peak_partitioned = 0.0_f64;

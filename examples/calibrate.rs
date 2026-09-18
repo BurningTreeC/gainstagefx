@@ -159,12 +159,9 @@ fn stated_level(gain: Gain) -> Option<f64> {
         Gain::Screamer => Some(GUITAR_VOLTS),
         // And every other pedal, for the same reason: what goes into a pedal
         // is a guitar.
-        Gain::Green9
-        | Gain::Rat
-        | Gain::FuzzFace
-        | Gain::DistPlus
-        | Gain::Hm2
-        | Gain::Mt2 => Some(GUITAR_VOLTS),
+        Gain::Green9 | Gain::Rat | Gain::FuzzFace | Gain::DistPlus | Gain::Hm2 | Gain::Mt2 => {
+            Some(GUITAR_VOLTS)
+        }
         Gain::Twin => Some(GUITAR_VOLTS),
         // A guitar into the front of an amplifier. The same guitar.
         //
@@ -482,54 +479,30 @@ fn main() {
         rows.push((note, drive_volts, make_up));
     }
 
-    // The anchor.
+    // The absolute-level anchor.
     //
-    // Correcting the metric fixes how the circuits sit *against each other*,
-    // which is what level matching is for; on its own it would also move the
-    // whole catalogue's absolute loudness, and every session anyone has saved
-    // with it. So the table is offset by one constant, chosen so the average
-    // stays where the old metric left it. The matching is the correction; the
-    // absolute level is deliberately left alone.
+    // Do NOT derive this from the average of the current catalogue. Adding a
+    // model or recalibrating one model would then shift every existing voice,
+    // which is exactly the kind of session-breaking change the legacy fixture
+    // is meant to catch. The 5150 is an unchanged long-lived guitar voice, so
+    // one frozen point on its make-up curve is the absolute reference. Relative
+    // matching is still measured for every voice; this one number only fixes
+    // the catalogue's overall output level.
     //
-    // The average is taken over the guitar voices at the middle of the drive
-    // control. The studio preamplifiers are excluded: they are calibrated at
-    // their own input levels, from four millivolts to a volt, and averaging
-    // them with guitar circuits would let a microphone preamplifier pull the
-    // whole catalogue about.
-    // The old mean is read from the table that is compiled in right now rather
-    // than written down as a number, so this is exact and running the generator
-    // twice changes nothing the second time.
-    let middle = POINTS / 2;
-    let is_guitar = |index: usize| {
-        let (gain, _, _) = voice::voice_at(index);
-        !matches!(
-            gain,
-            Gain::Console
-                | Gain::Studio
-                | Gain::Neve
-                | Gain::American312
-                | Gain::ConsoleE
-                | Gain::Tube610
-                | Gain::Clean
-        )
-    };
-    let mean_of = |values: Vec<f64>| values.iter().sum::<f64>() / values.len().max(1) as f64;
-    let old_mean = mean_of(
-        (0..VOICES)
-            .filter(|i| is_guitar(*i))
-            .map(|i| voice::CALIBRATION[i].make_up_db[middle])
-            .collect(),
+    // Knot 29 is also close to the legacy test's Drive=0.75 operating point.
+    // The value is from the 2026-09-16 broadband re-level baseline. Change it
+    // only when intentionally making a documented global output-level change.
+    const ABSOLUTE_REFERENCE_KNOT: usize = 29;
+    const ABSOLUTE_REFERENCE_MAKE_UP_DB: f64 = -47.72;
+    let peavey = (0..VOICES)
+        .find(|i| voice::voice_at(*i).0 == Gain::Peavey)
+        .expect("the Peavey/5150 calibration voice exists");
+    let anchor = ABSOLUTE_REFERENCE_MAKE_UP_DB - rows[peavey].2[ABSOLUTE_REFERENCE_KNOT];
+    println!(
+        "// Absolute level anchored to Peavey knot {ABSOLUTE_REFERENCE_KNOT} at \
+         {ABSOLUTE_REFERENCE_MAKE_UP_DB:.2} dB; see `calibrate.rs`."
     );
-    let new_mean = mean_of(
-        rows.iter()
-            .enumerate()
-            .filter(|(i, _)| is_guitar(*i))
-            .map(|(_, (_, _, make_up))| make_up[middle])
-            .collect(),
-    );
-    let anchor = old_mean - new_mean;
-    println!("// Anchored by {anchor:+.2} dB so the catalogue's average loudness is");
-    println!("// unchanged; see `calibrate.rs`. The correction is the matching.");
+    println!("// Catalogue additions/recalibrations do not move existing voices globally.");
     println!("pub const CALIBRATION: [Calibration; VOICES] = [");
     for (note, drive_volts, make_up) in &rows {
         println!("{note}");

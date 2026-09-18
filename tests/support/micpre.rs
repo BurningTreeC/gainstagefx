@@ -5,7 +5,13 @@ use gainstagefx::dsp::netlist::{Circuit, CoreSpec, Netlist};
 use gainstagefx::dsp::time::Simulation;
 use gainstagefx::voice::{Chain, Gain, Settings, Tone as Stack, NOMINAL_DBFS};
 
-pub fn measure(c: &Circuit, rate: f64, controls: &[(usize, f64)], hz: f64, peak: f64) -> measure::Measured {
+pub fn measure(
+    c: &Circuit,
+    rate: f64,
+    controls: &[(usize, f64)],
+    hz: f64,
+    peak: f64,
+) -> measure::Measured {
     let mut sim = Simulation::new(c.clone(), rate);
     for &(k, v) in controls {
         sim.set_control(k, v);
@@ -17,7 +23,15 @@ pub fn measure(c: &Circuit, rate: f64, controls: &[(usize, f64)], hz: f64, peak:
 
 /// A transformer on its own, the way a data sheet tests it.
 #[allow(clippy::too_many_arguments)]
-pub fn transformer(source: f64, primary_r: f64, core: CoreSpec, ratio: f64, secondary_r: f64, shunt: f64, load: f64) -> Circuit {
+pub fn transformer(
+    source: f64,
+    primary_r: f64,
+    core: CoreSpec,
+    ratio: f64,
+    secondary_r: f64,
+    shunt: f64,
+    load: f64,
+) -> Circuit {
     let mut n = Netlist::new("transformer under test");
     n.input("in", source)
         .resistor("in", "p", primary_r)
@@ -40,7 +54,13 @@ pub fn realtime_safe(gain: Gain, alloc: impl Fn(&mut dyn FnMut())) {
     let mut chain = Chain::new(44_100.0);
     for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
         chain.set_rate(rate);
-        chain.apply(&Settings { gain, drive: 0.9, tone: Stack::Off, oversampling: 1, ..Settings::default() });
+        chain.apply(&Settings {
+            gain,
+            drive: 0.9,
+            tone: Stack::Off,
+            oversampling: 1,
+            ..Settings::default()
+        });
         chain.settle();
         chain.reset();
         chain.find_operating_point();
@@ -51,6 +71,13 @@ pub fn realtime_safe(gain: Gain, alloc: impl Fn(&mut dyn FnMut())) {
                 assert!(chain.process(x).is_finite(), "{gain:?} at {rate}");
             }
         });
-        assert!(chain.solver_breakdown().saturating_delta(before).gain.solves > 0);
+        assert!(
+            chain
+                .solver_breakdown()
+                .saturating_delta(before)
+                .gain
+                .solves
+                > 0
+        );
     }
 }

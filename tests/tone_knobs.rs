@@ -23,7 +23,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 13] = [
+const OWN: [(Circuit, [bool; 3]); 12] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     (Circuit::Plexi, [true, true, true]),
@@ -37,12 +37,50 @@ const OWN: [(Circuit, [bool; 3]); 13] = [
     // The Rodent's is a filter and it runs backwards; the knob is made to
     // agree with it by `Gain::tone_runs_backwards`.
     (Circuit::Rat, [false, false, true]),
-    // The Heavy Metal's Colour Mix is a pair -- low and high, with nothing in
-    // the middle -- and the Metal Zone has a three band equaliser. Its fourth
-    // control, the sweep, is a knob of its own; see `Gain::own_sweep`.
-    (Circuit::Hm2, [true, false, true]),
+    // The Heavy Metal's Colour Mix now has two dedicated controls of its own,
+    // not the generic Bass/Treble knobs. The Metal Zone still has a three-band
+    // equaliser plus its own sweep control.
     (Circuit::Mt2, [true, true, true]),
 ];
+
+#[test]
+fn heavy_metal_colour_mix_is_dedicated_not_generic_bass_treble() {
+    let off = ToneKnobs::for_state(Circuit::Hm2, ToneStack::Off);
+    assert_eq!(off.live, [false; 3]);
+    assert_eq!(off.colour_mix, Some(["COLOUR LO", "COLOUR HI"]));
+
+    let stacked = ToneKnobs::for_state(Circuit::Hm2, ToneStack::Wide);
+    assert_eq!(stacked.live, [true; 3]);
+    assert_eq!(stacked.colour_mix, Some(["COLOUR LO", "COLOUR HI"]));
+
+    for circuit in Circuit::ALL {
+        if circuit != Circuit::Hm2 {
+            assert_eq!(
+                ToneKnobs::for_state(circuit, ToneStack::Off).colour_mix,
+                None,
+                "{} must not expose the Heavy Metal controls",
+                circuit.name()
+            );
+        }
+    }
+}
+
+#[test]
+fn metal_zone_mid_frequency_is_exposed_only_for_metal_zone() {
+    for circuit in Circuit::ALL {
+        let sweep = ToneKnobs::for_state(circuit, ToneStack::Off).sweep;
+        if circuit == Circuit::Mt2 {
+            assert_eq!(sweep, Some("MID FREQ"));
+        } else {
+            assert_eq!(
+                sweep,
+                None,
+                "{} must not expose the Metal Zone Mid Frequency control",
+                circuit.name()
+            );
+        }
+    }
+}
 
 #[test]
 fn a_circuit_with_its_own_tone_control_has_a_live_knob_for_it() {

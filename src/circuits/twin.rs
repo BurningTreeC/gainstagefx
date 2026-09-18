@@ -53,6 +53,20 @@ pub const V4B_TO_PI: &str = "channel_mix";
 const V7025: TriodeSpec = TriodeSpec::ECC83;
 const V12AT7: TriodeSpec = TriodeSpec::ECC81;
 
+// Direct inter-electrode capacitances of the ECC83/12AX7. Philips specifies
+// about 1.6 pF anode-to-grid, 1.6 pF grid-to-all-except-anode and roughly
+// 0.23--0.33 pF anode-to-all-except-grid; RCA gives 1.7 pF, 1.6 pF and
+// 0.34--0.46 pF respectively.  The triode device model is otherwise
+// memoryless, so without these parasitics V2B has unrealistically unlimited
+// HF bandwidth.  That omission is especially audible with the stock 120 pF
+// Bright capacitor, whose attack transient bypasses the upper half of the
+// Volume pot straight into V2B.  Cag is Miller-multiplied by the stage gain in
+// the MNA solve, exactly as it is in the valve, so this supplies the missing
+// physical anti-alias bandwidth limit without changing the Bright capacitor.
+const ECC83_CAG: f64 = 1.6e-12;
+const ECC83_CGK: f64 = 1.6e-12;
+const ECC83_CAK: f64 = 0.33e-12;
+
 /// Mechanical tank terminals.
 pub const SEND: &str = "tank_in";
 pub const RETURN: &str = "tank_out";
@@ -132,7 +146,14 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
         .resistor("v1_p", "slope", 100_000.0)
         .capacitor("slope", "t_bot", 0.1e-6)
         .capacitor("slope", "b_bot", 0.047e-6)
-        .pot("t_bot", "b_bot", "b_bot", 250_000.0, Taper::ReverseAudio, BASS)
+        .pot(
+            "t_bot",
+            "b_bot",
+            "b_bot",
+            250_000.0,
+            Taper::ReverseAudio,
+            BASS,
+        )
         .pot("b_bot", "gnd", "gnd", 10_000.0, Taper::ReverseAudio, MIDDLE)
         .pot("ts_out", "vol", "gnd", 1_000_000.0, Taper::Audio, VOLUME);
 
@@ -151,6 +172,16 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
     net.resistor("v2_k", "gnd", 820.0)
         .capacitor("v2_k", "gnd", 25e-6)
         .resistor("bplus_d", "v2_p", 100_000.0)
+        // The Koren triode equations describe the nonlinear static current but
+        // not the real valve's inter-electrode capacitances.  They are
+        // important here because the Bright switch deliberately feeds fast
+        // transients around the Volume pot.  Put the published ECC83
+        // capacitances around V2B so the grid-anode term acquires its natural
+        // Miller multiplication instead of handing a bandwidth-unlimited
+        // transient to the nonlinearity.
+        .capacitor("v2_p", "vol", ECC83_CAG)
+        .capacitor("vol", "v2_k", ECC83_CGK)
+        .capacitor("v2_p", "v2_k", ECC83_CAK)
         .triode("v2_p", "vol", "v2_k", V7025)
         .resistor("normal2_g", "gnd", 1_000_000.0)
         .resistor("bplus_d", "normal2_p", 100_000.0)
@@ -167,8 +198,7 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
     // here means its 500 pF / 1 MΩ grid network and the paralleled 12AT7
     // actually load V2B instead of being replaced by a Thevenin guess.
     let core = CoreSpec {
-        henry: REVERB_XFMR_PRIMARY_L * 40.0
-            / (REVERB_XFMR_RATIO * REVERB_XFMR_RATIO),
+        henry: REVERB_XFMR_PRIMARY_L * 40.0 / (REVERB_XFMR_RATIO * REVERB_XFMR_RATIO),
         knee: 0.017,
         sharpness: 7.0,
     };
@@ -198,7 +228,14 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
         .resistor("bplus_d", "v4a_p", 100_000.0)
         .triode("v4a_p", RETURN, "v4_k", V7025)
         .capacitor("v4a_p", "rv_top", 0.0033e-6)
-        .pot("rv_top", "rv_wiper", "gnd", 100_000.0, Taper::Linear, REVERB)
+        .pot(
+            "rv_top",
+            "rv_wiper",
+            "gnd",
+            100_000.0,
+            Taper::Linear,
+            REVERB,
+        )
         .resistor("rv_wiper", "mix", WET_MIX_R)
         .resistor("bplus_d", "v4b_p", 100_000.0)
         .triode("v4b_p", "mix", "v4_k", V7025);
@@ -207,9 +244,20 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
     // reverse-audio pot is a real circuit element; the LDR is an audio-rate
     // variable resistor stamped in Newton, so the roach changes the actual
     // node loading instead of multiplying the signal after the valve.
-    net.capacitor("v4b_p", "intensity_top", 0.1e-6)
-        .pot("intensity_top", "intensity_wiper", "gnd", 50_000.0, Taper::ReverseAudio, INTENSITY);
-    let ldr = net.adjustable("intensity_wiper", "gnd", Adjust::RealtimeResistor, 5_000_000.0);
+    net.capacitor("v4b_p", "intensity_top", 0.1e-6).pot(
+        "intensity_top",
+        "intensity_wiper",
+        "gnd",
+        50_000.0,
+        Taper::ReverseAudio,
+        INTENSITY,
+    );
+    let ldr = net.adjustable(
+        "intensity_wiper",
+        "gnd",
+        Adjust::RealtimeResistor,
+        5_000_000.0,
+    );
     debug_assert_eq!(ldr, LDR_SLOT);
     // The unused Normal channel still loads the common channel-mix node in a
     // real Twin. Its quiet second triode above therefore continues through its
@@ -284,5 +332,4 @@ mod tests {
             "Twin channel exact Schur core changed: nonlinear and audio-rate matrix terminals must remain on the Newton boundary"
         );
     }
-
 }

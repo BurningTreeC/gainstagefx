@@ -20,9 +20,9 @@
 //! block boundary, against the same render with the knob left alone. Whatever
 //! comes back is not the knob.
 
+use gainstagefx::circuits::twin;
 use gainstagefx::dsp::measure::Tone;
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::circuits::twin;
 use gainstagefx::voice::{self, Gain};
 
 const RATE: f64 = 48_000.0;

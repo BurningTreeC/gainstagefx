@@ -98,7 +98,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::Dynamic,
         highpass: (64.0, 0.460),
-        peaks: [pk(490.0, -1.35, 1.63), pk(4302.0, 2.40, 1.19), pk(5620.0, 2.00, 2.81), pk(11129.0, 1.76, 3.75)],
+        peaks: [
+            pk(490.0, -1.35, 1.63),
+            pk(4302.0, 2.40, 1.19),
+            pk(5620.0, 2.00, 2.81),
+            pk(11129.0, 1.76, 3.75),
+        ],
         lowpass: (8789.0, 1.269),
         off_axis_db: 4.0,
         proximity: 0.18,
@@ -112,7 +117,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::Dynamic,
         highpass: (19.2, 0.343),
-        peaks: [pk(168.0, -2.88, 0.40), pk(3714.0, 2.19, 0.61), pk(4920.0, 1.67, 1.48), pk(9542.0, -0.80, 3.55)],
+        peaks: [
+            pk(168.0, -2.88, 0.40),
+            pk(3714.0, 2.19, 0.61),
+            pk(4920.0, 1.67, 1.48),
+            pk(9542.0, -0.80, 3.55),
+        ],
         lowpass: (10800.0, 1.169),
         off_axis_db: 5.0,
         proximity: 0.25,
@@ -126,7 +136,12 @@ impl MicProfile {
         pattern: Pattern::Supercardioid,
         family: Family::Dynamic,
         highpass: (67.6, 0.461),
-        peaks: [pk(968.0, -0.26, 3.46), pk(3536.0, 2.52, 1.02), pk(10385.0, 2.37, 1.72), pk(10385.0, 2.37, 1.72)],
+        peaks: [
+            pk(968.0, -0.26, 3.46),
+            pk(3536.0, 2.52, 1.02),
+            pk(10385.0, 2.37, 1.72),
+            pk(10385.0, 2.37, 1.72),
+        ],
         lowpass: (6254.0, 1.114),
         off_axis_db: 3.0,
         proximity: 0.25,
@@ -140,7 +155,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::Dynamic,
         highpass: (47.5, 0.300),
-        peaks: [pk(103.0, -1.06, 1.13), pk(3748.0, 0.61, 3.15), pk(12094.0, 4.34, 1.84), pk(12106.0, 4.33, 1.85)],
+        peaks: [
+            pk(103.0, -1.06, 1.13),
+            pk(3748.0, 0.61, 3.15),
+            pk(12094.0, 4.34, 1.84),
+            pk(12106.0, 4.33, 1.85),
+        ],
         lowpass: (7901.0, 0.777),
         off_axis_db: 4.0,
         proximity: 0.22,
@@ -154,7 +174,12 @@ impl MicProfile {
         pattern: Pattern::Figure8,
         family: Family::Ribbon,
         highpass: (17.5, 0.528),
-        peaks: [pk(60.0, 1.85, 1.12), pk(3435.0, 0.52, 0.54), pk(3568.0, 0.57, 0.55), pk(14960.0, -1.07, 2.28)],
+        peaks: [
+            pk(60.0, 1.85, 1.12),
+            pk(3435.0, 0.52, 0.54),
+            pk(3568.0, 0.57, 0.55),
+            pk(14960.0, -1.07, 2.28),
+        ],
         lowpass: (39870.0, 0.454),
         off_axis_db: 0.5,
         proximity: 1.0,
@@ -168,7 +193,12 @@ impl MicProfile {
         pattern: Pattern::Hypercardioid,
         family: Family::Ribbon,
         highpass: (81.6, 0.495),
-        peaks: [pk(183.0, 2.63, 1.06), pk(4086.0, 1.53, 0.60), pk(6787.0, 1.17, 1.90), pk(12352.0, -0.84, 2.84)],
+        peaks: [
+            pk(183.0, 2.63, 1.06),
+            pk(4086.0, 1.53, 0.60),
+            pk(6787.0, 1.17, 1.90),
+            pk(12352.0, -0.84, 2.84),
+        ],
         lowpass: (17406.0, 0.768),
         off_axis_db: 2.0,
         proximity: 1.2,
@@ -182,7 +212,12 @@ impl MicProfile {
         pattern: Pattern::Figure8,
         family: Family::Ribbon,
         highpass: (27.6, 0.798),
-        peaks: [pk(125.0, 0.37, 0.40), pk(3178.0, 0.40, 0.68), pk(9646.0, -0.19, 8.00), pk(12057.0, 0.37, 6.23)],
+        peaks: [
+            pk(125.0, 0.37, 0.40),
+            pk(3178.0, 0.40, 0.68),
+            pk(9646.0, -0.19, 8.00),
+            pk(12057.0, 0.37, 6.23),
+        ],
         lowpass: (16653.0, 0.723),
         off_axis_db: 1.0,
         proximity: 1.0,
@@ -196,7 +231,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::FetCondenser,
         highpass: (7.6, 0.300),
-        peaks: [pk(69.0, 0.39, 1.14), pk(4783.0, -0.38, 1.45), pk(9215.0, 0.76, 2.24), pk(9216.0, 0.76, 2.24)],
+        peaks: [
+            pk(69.0, 0.39, 1.14),
+            pk(4783.0, -0.38, 1.45),
+            pk(9215.0, 0.76, 2.24),
+            pk(9216.0, 0.76, 2.24),
+        ],
         lowpass: (14432.0, 0.861),
         off_axis_db: 6.0,
         proximity: 0.5,
@@ -210,7 +250,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::FetCondenser,
         highpass: (16.5, 0.655),
-        peaks: [pk(60.0, 0.15, 0.97), pk(2741.0, 0.18, 1.00), pk(11414.0, 0.26, 3.60), pk(11856.0, 0.29, 5.78)],
+        peaks: [
+            pk(60.0, 0.15, 0.97),
+            pk(2741.0, 0.18, 1.00),
+            pk(11414.0, 0.26, 3.60),
+            pk(11856.0, 0.29, 5.78),
+        ],
         lowpass: (15475.0, 1.018),
         off_axis_db: 4.0,
         proximity: 0.5,
@@ -224,7 +269,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::TubeCondenser,
         highpass: (8.6, 0.300),
-        peaks: [pk(113.0, 0.23, 2.09), pk(5840.0, 0.39, 0.51), pk(8516.0, 0.46, 3.49), pk(15183.0, 0.38, 7.56)],
+        peaks: [
+            pk(113.0, 0.23, 2.09),
+            pk(5840.0, 0.39, 0.51),
+            pk(8516.0, 0.46, 3.49),
+            pk(15183.0, 0.38, 7.56),
+        ],
         lowpass: (12711.0, 1.156),
         off_axis_db: 6.0,
         proximity: 0.5,
@@ -238,7 +288,12 @@ impl MicProfile {
         pattern: Pattern::Cardioid,
         family: Family::FetCondenser,
         highpass: (32.8, 0.663),
-        peaks: [pk(121.0, 0.53, 0.40), pk(7621.0, -0.72, 1.21), pk(13464.0, 1.10, 2.99), pk(15111.0, 1.03, 3.63)],
+        peaks: [
+            pk(121.0, 0.53, 0.40),
+            pk(7621.0, -0.72, 1.21),
+            pk(13464.0, 1.10, 2.99),
+            pk(15111.0, 1.03, 3.63),
+        ],
         lowpass: (10637.0, 1.274),
         off_axis_db: 6.0,
         proximity: 0.5,
@@ -283,13 +338,21 @@ impl MicPlacement {
 
     pub fn clamped(self) -> Self {
         Self {
-            position: if self.position.is_finite() { self.position.clamp(0.0, 1.0) } else { 0.0 },
+            position: if self.position.is_finite() {
+                self.position.clamp(0.0, 1.0)
+            } else {
+                0.0
+            },
             distance: if self.distance.is_finite() {
                 self.distance.clamp(Self::MIN_DISTANCE, Self::MAX_DISTANCE)
             } else {
                 Self::MIN_DISTANCE
             },
-            angle: if self.angle.is_finite() { self.angle.clamp(0.0, 90.0) } else { 0.0 },
+            angle: if self.angle.is_finite() {
+                self.angle.clamp(0.0, 90.0)
+            } else {
+                0.0
+            },
         }
     }
 }

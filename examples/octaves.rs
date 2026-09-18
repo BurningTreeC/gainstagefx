@@ -45,7 +45,9 @@ fn pluck(seconds: f64) -> Vec<f64> {
     let mut out = vec![0.0; n];
     let mut seed = 12345u64;
     let mut noise = || {
-        seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         ((seed >> 33) as f64 / (1u64 << 31) as f64) - 1.0
     };
     for hz in [82.41, 123.47, 164.81] {
@@ -85,7 +87,10 @@ fn balance(preset: &Preset, input: &[f64]) -> Vec<f64> {
         }
     }
     let total: f64 = bands.iter().map(|b| b.energy).sum();
-    bands.iter().map(|b| 10.0 * (b.energy / total).log10()).collect()
+    bands
+        .iter()
+        .map(|b| 10.0 * (b.energy / total).log10())
+        .collect()
 }
 
 fn row(name: &str, v: &[f64]) {
@@ -109,7 +114,11 @@ fn main() {
     println!("{:>9}", "low/hi");
     let only: Vec<String> = std::env::args().skip(1).collect();
     for p in PRESETS {
-        if !only.is_empty() && !only.iter().any(|o| p.group.contains(o.as_str()) || p.name.contains(o.as_str())) {
+        if !only.is_empty()
+            && !only
+                .iter()
+                .any(|o| p.group.contains(o.as_str()) || p.name.contains(o.as_str()))
+        {
             continue;
         }
         row(p.name, &balance(p, &input));

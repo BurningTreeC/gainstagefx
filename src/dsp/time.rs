@@ -362,12 +362,7 @@ fn repeat_cycle_edge(here: f64, reference: f64, there: f64) -> bool {
 }
 
 #[inline]
-fn repeat_cycle_pair_matches(
-    old_here: f64,
-    old_reference: f64,
-    here: f64,
-    reference: f64,
-) -> bool {
+fn repeat_cycle_pair_matches(old_here: f64, old_reference: f64, here: f64, reference: f64) -> bool {
     fn close(a: f64, b: f64) -> bool {
         let scale = a.abs().max(b.abs()).max(1.0e-12);
         (a - b).abs() <= scale * REPEAT_CYCLE_MATCH_REL
@@ -390,14 +385,69 @@ fn search_trial_improves_with_progress(
     }
 
     let window = reference - here;
-    window > 0.0
-        && there < reference
-        && reference - there > window * min_progress
+    window > 0.0 && there < reference && reference - there > window * min_progress
 }
 
 #[inline]
 fn search_trial_improves(here: f64, reference: f64, there: f64) -> bool {
     search_trial_improves_with_progress(here, reference, there, NONMONOTONE_MIN_PROGRESS)
+}
+
+/// Pick the next damping length from a quadratic model of the exact residual
+/// norm along a Newton direction.  For `phi(lambda) = ||F(x + lambda p)||^2`
+/// and an exact Newton direction `J p = -F`, `phi'(0) = -2 phi(0)`.  One
+/// rejected residual evaluation is therefore enough to fit the quadratic and
+/// estimate its minimiser without another Jacobian or factorisation.
+///
+/// Keep the interpolation deliberately safeguarded: every rejection shrinks
+/// by at least two and by at most ten, and a circuit may not go below the same
+/// shortest step its configured dyadic search already allowed.  A bad/nonfinite
+/// model therefore degenerates to the old half-step backtrack.
+#[inline]
+fn quadratic_backtrack_lambda(here: f64, there: f64, lambda: f64, floor: f64) -> f64 {
+    let half = lambda * 0.5;
+    if !here.is_finite()
+        || !there.is_finite()
+        || !lambda.is_finite()
+        || here <= 0.0
+        || lambda <= 0.0
+    {
+        return half.max(floor);
+    }
+
+    let denominator = there - here + 2.0 * here * lambda;
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return half.max(floor);
+    }
+
+    let proposed = here * lambda * lambda / denominator;
+    if !proposed.is_finite() || proposed <= 0.0 {
+        return half.max(floor);
+    }
+
+    let upper = half;
+    if upper <= floor {
+        return floor;
+    }
+    let lower = (lambda * 0.1).max(floor);
+    proposed.clamp(lower, upper)
+}
+
+#[cfg(test)]
+#[test]
+fn quadratic_backtracking_is_safeguarded_and_can_skip_dyadic_trials() {
+    // A wildly bad full step predicts a much shorter candidate, but never
+    // below the configured 1/8 Twin search floor.
+    assert_eq!(quadratic_backtrack_lambda(1.0, 100.0, 1.0, 0.125), 0.125);
+    // A modest rejection stays inside the safeguard interval rather than
+    // inventing a longer step.
+    let next = quadratic_backtrack_lambda(1.0, 2.0, 1.0, 0.125);
+    assert!((0.125..=0.5).contains(&next));
+    // Non-finite merit falls straight back to ordinary halving.
+    assert_eq!(
+        quadratic_backtrack_lambda(1.0, f64::INFINITY, 1.0, 0.125),
+        0.5
+    );
 }
 
 #[inline]
@@ -513,7 +563,11 @@ fn repeat_cycle_guard_requires_recurrence_of_same_pair() {
     let second_return = 0.680_487_432_007_531_6;
 
     assert!(repeat_cycle_edge(first_here, first_reference, first_return));
-    assert!(repeat_cycle_edge(second_here, second_reference, second_return));
+    assert!(repeat_cycle_edge(
+        second_here,
+        second_reference,
+        second_return
+    ));
     assert!(repeat_cycle_pair_matches(
         first_here,
         first_reference,
@@ -562,8 +616,7 @@ fn late_continuation_rejection(
     ordinary_stuck: bool,
     stuck_only: bool,
 ) -> bool {
-    target_passes >= min_target_passes
-        && (ordinary_stuck || (!stuck_only && line_search_failed))
+    target_passes >= min_target_passes && (ordinary_stuck || (!stuck_only && line_search_failed))
 }
 
 #[cfg(test)]
@@ -577,7 +630,13 @@ fn stuck_only_continuation_ignores_recoverable_line_search_fallbacks() {
     assert!(!late_continuation_rejection(late, late, true, false, true));
     assert!(late_continuation_rejection(late, late, false, true, true));
     // Never steer early, even for a stuck step.
-    assert!(!late_continuation_rejection(late - 1, late, true, true, true));
+    assert!(!late_continuation_rejection(
+        late - 1,
+        late,
+        true,
+        true,
+        true
+    ));
 }
 
 #[cfg(test)]
@@ -589,25 +648,13 @@ fn continuation_min_target_pass_delays_fallback_steering_without_disabling_it() 
     // A recoverable fallback that would steer under production remains on the
     // exact target until the configured delayed threshold is reached.
     assert!(late_continuation_rejection(
-        production,
-        production,
-        true,
-        false,
-        false,
+        production, production, true, false, false,
     ));
     assert!(!late_continuation_rejection(
-        production,
-        delayed,
-        true,
-        false,
-        false,
+        production, delayed, true, false, false,
     ));
     assert!(late_continuation_rejection(
-        delayed,
-        delayed,
-        true,
-        false,
-        false,
+        delayed, delayed, true, false, false,
     ));
 
     // A genuine stuck step obeys the same minimum-pass gate.
@@ -619,11 +666,7 @@ fn continuation_min_target_pass_delays_fallback_steering_without_disabling_it() 
         false,
     ));
     assert!(late_continuation_rejection(
-        delayed,
-        delayed,
-        false,
-        true,
-        false,
+        delayed, delayed, false, true, false,
     ));
 }
 
@@ -770,10 +813,7 @@ fn repeat_cycle_guard_leaves_slaughter_twin_slow_drift_to_restart() {
 #[cfg(test)]
 #[inline]
 fn deep_rescue_is_strong(here: f64, accepted_merit: f64) -> bool {
-    here.is_finite()
-        && accepted_merit.is_finite()
-        && here > 0.0
-        && accepted_merit <= here * 0.5
+    here.is_finite() && accepted_merit.is_finite() && here > 0.0 && accepted_merit <= here * 0.5
 }
 
 #[cfg(test)]
@@ -1274,6 +1314,14 @@ pub struct Simulation {
     unsettled_solver_trace_len: usize,
     #[cfg(test)]
     test_disable_continuation_deepening: bool,
+    /// Test-only A/B switch for the Twin-specific handoff from smooth valve
+    /// grid limiting to the global line search. Production always enables it.
+    #[cfg(test)]
+    test_disable_limiter_global_search: bool,
+    /// Test-only A/B switch for safeguarded quadratic backtracking. Production
+    /// always enables it on the Twin reduced line-search path.
+    #[cfg(test)]
+    test_disable_quadratic_backtracking: bool,
     /// Test-only cost experiment: ordinary late source continuation is allowed
     /// only after `iterate()` returns `Pass::Stuck`. A recoverable late
     /// line-search fallback stays on the exact target instead of paying for a
@@ -1488,7 +1536,10 @@ impl Simulation {
                 | Part::Transconductor { .. }
                 | Part::Core { .. }
                 | Part::OpAmp { .. }
-                | Part::Adjustable { kind: Adjust::RealtimeResistor, .. } => device_count += 1,
+                | Part::Adjustable {
+                    kind: Adjust::RealtimeResistor,
+                    ..
+                } => device_count += 1,
                 _ => {}
             }
         }
@@ -1660,6 +1711,16 @@ impl Simulation {
             )
             .is_some(),
             #[cfg(test)]
+            test_disable_limiter_global_search: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_LIMITER_GLOBAL_SEARCH",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_quadratic_backtracking: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_QUADRATIC_BACKTRACKING",
+            )
+            .is_some(),
+            #[cfg(test)]
             test_continuation_stuck_only: std::env::var_os(
                 "GAINSTAGEFX_TEST_CONTINUATION_STUCK_ONLY",
             )
@@ -1680,15 +1741,11 @@ impl Simulation {
             cycle_here: 0.0,
             cycle_reference: 0.0,
             #[cfg(test)]
-            test_weak_deep_recovery: std::env::var_os(
-                "GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY",
-            )
-            .is_some(),
+            test_weak_deep_recovery: std::env::var_os("GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY")
+                .is_some(),
             #[cfg(test)]
-            test_last_settled_restart: std::env::var_os(
-                "GAINSTAGEFX_TEST_LAST_SETTLED_RESTART",
-            )
-            .is_some(),
+            test_last_settled_restart: std::env::var_os("GAINSTAGEFX_TEST_LAST_SETTLED_RESTART")
+                .is_some(),
             #[cfg(test)]
             test_last_settled_restart_passes: std::env::var(
                 "GAINSTAGEFX_TEST_LAST_SETTLED_RESTART_PASSES",
@@ -1711,8 +1768,7 @@ impl Simulation {
             #[cfg(test)]
             last_search_accepted_merit: 0.0,
             #[cfg(test)]
-            test_trace_search_geometry: std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED")
-                .is_some(),
+            test_trace_search_geometry: std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some(),
             #[cfg(test)]
             last_search_reference: 0.0,
             #[cfg(test)]
@@ -1823,6 +1879,30 @@ impl Simulation {
         if self.unsettled_solver_trace_len < UNSETTLED_TRACE_CAPACITY {
             self.unsettled_solver_trace[self.unsettled_solver_trace_len] = trace;
             self.unsettled_solver_trace_len += 1;
+        }
+    }
+
+    #[inline(always)]
+    fn limiter_global_search_enabled(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_limiter_global_search
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    #[inline]
+    fn quadratic_backtracking_enabled(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_quadratic_backtracking
+        }
+        #[cfg(not(test))]
+        {
+            true
         }
     }
 
@@ -2152,7 +2232,12 @@ impl Simulation {
                             1.0 / (ohms * (1.0 - f)),
                         );
                     }
-                    Part::Input { node, series, bias: at, source: which } => {
+                    Part::Input {
+                        node,
+                        series,
+                        bias: at,
+                        source: which,
+                    } => {
                         let g = 1.0 / series;
                         stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
@@ -2312,19 +2397,28 @@ impl Simulation {
                         limit,
                     } => {
                         if !keep_devices {
-                            self.devices.push(AnyDevice::Transconductor(Transconductor::new(
-                                plus, minus, out, reference, gm, limit,
-                            )));
+                            self.devices
+                                .push(AnyDevice::Transconductor(Transconductor::new(
+                                    plus, minus, out, reference, gm, limit,
+                                )));
                         }
                     }
-                    Part::Core { a, b, spec } => {
+                    Part::Core {
+                        a,
+                        b,
+                        spec,
+                        antialias,
+                    } => {
                         // The only device that has to be told the rate: it
                         // integrates the voltage across it, so its answer
                         // depends on how long a sample lasts.
                         if !keep_devices {
                             let rate = self.rate;
-                            self.devices
-                                .push(AnyDevice::Core(Core::new(a, b, spec, rate)));
+                            self.devices.push(AnyDevice::Core(if antialias {
+                                Core::new_antialiased(a, b, spec, rate)
+                            } else {
+                                Core::new(a, b, spec, rate)
+                            }));
                         }
                     }
                     Part::LinearOpAmp { out, plus, minus } => {
@@ -2973,6 +3067,42 @@ impl Simulation {
         mapping_ok
     }
 
+    /// Build only the nonlinear-boundary entries of a line-search candidate.
+    /// A reduced merit probe never reads internal Schur-eliminated nodes, so
+    /// touching the full 31/37-unknown Twin vector on every rejected trial is
+    /// wasted work. The accepted step materialises the full vector once.
+    #[inline]
+    fn build_reduced_trial_point(&mut self, dc: bool, lambda: f64) -> bool {
+        let partition = if dc {
+            self.nonlinear_partition_dc.as_ref()
+        } else {
+            self.nonlinear_partition.as_ref()
+        };
+        let Some(partition) = partition else {
+            return false;
+        };
+        let mut finite = true;
+        for &at in partition.boundary_nodes() {
+            let value = self.voltage[at] + lambda * self.scratch[at];
+            self.point[at] = value;
+            finite &= value.is_finite();
+        }
+        finite
+    }
+
+    #[inline]
+    fn build_full_trial_point(&mut self, lambda: f64) -> bool {
+        let mut finite = true;
+        for ((point, &voltage), &delta) in
+            self.point.iter_mut().zip(&self.voltage).zip(&self.scratch)
+        {
+            let value = voltage + lambda * delta;
+            *point = value;
+            finite &= value.is_finite();
+        }
+        finite
+    }
+
     /// Reduced line-search trial residual and merit. A trial point is judged
     /// but never solved, so forming nonlinear Jacobian/tangent coefficients is
     /// pure overhead. The immutable Schur-linear contribution is evaluated
@@ -2986,11 +3116,8 @@ impl Simulation {
             self.nonlinear_partition.as_ref()
         }?;
         let n = partition.boundary_len();
-        let map = partition.begin_residual(
-            &self.fixed_rhs,
-            point,
-            &mut self.trial_residual[..n],
-        )?;
+        let map =
+            partition.begin_residual(&self.fixed_rhs, point, &mut self.trial_residual[..n])?;
         let (exact, mapping_ok) = {
             let mut residual = ResidualStamper {
                 residual: &mut self.trial_residual[..n],
@@ -2999,7 +3126,7 @@ impl Simulation {
                 limiting: false,
                 junction_held: false,
             };
-            for device in &mut self.devices {
+            for device in &self.devices {
                 device.trial_residual(&mut residual, point);
                 // Junction-held merit is deliberately unusable. Stop the
                 // device walk immediately rather than evaluating equations
@@ -3196,6 +3323,25 @@ impl Simulation {
     fn iterate(&mut self, dc: bool, search: bool) -> Pass {
         let n = self.n;
 
+        // The Twin power stage previously paid for two globalization schemes
+        // in series on a hard sample: first a valve-grid step limiter walked
+        // toward the predicted point for several Newton passes, and only after
+        // the correction stopped shrinking did the global line search take
+        // over.  The local limiter changes the Newton linearisation; the line
+        // search instead damps the exact Newton direction.  When a smooth
+        // triode/pentode grid limiter would hold this pass, go directly to the
+        // existing line search rather than spend passes walking to the same
+        // basin first.  `late_continuation` is intentionally Twin-power-only.
+        let limiter_requests_global_search = !dc
+            && !search
+            && self.late_continuation
+            && self.limiter_global_search_enabled()
+            && self
+                .devices
+                .iter()
+                .any(|device| device.step_limiter_would_hold(&self.voltage));
+        let search = search || limiter_requests_global_search;
+
         // Linearise where the solve is now.
         //
         // Re-centred every pass rather than inherited from the step that got
@@ -3213,9 +3359,8 @@ impl Simulation {
         // The production Schur path stamps nonlinear devices directly into
         // the small reduced boundary system. Full MNA is retained for
         // structure-watch diagnostics and as a numerical fallback only.
-        let mut reduced_direct = reduced_candidate
-            && !self.watching
-            && self.build_current_reduced(dc, !search);
+        let mut reduced_direct =
+            reduced_candidate && !self.watching && self.build_current_reduced(dc, !search);
         if !reduced_direct {
             self.build_current(dc, !search, false);
         }
@@ -3238,7 +3383,11 @@ impl Simulation {
         // noise is not enough (see `search_trial_improves`). The reference
         // rolls forward, is reset every sample, and never changes the full
         // correction/device convergence test below. DC keeps its old search.
-        let reference = if dc { here } else { here.max(self.search_merit) };
+        let reference = if dc {
+            here
+        } else {
+            here.max(self.search_merit)
+        };
         #[cfg(test)]
         {
             self.last_search_here = here;
@@ -3280,14 +3429,16 @@ impl Simulation {
         // and a half passes on real playing, and the search is only turned on
         // at eight or on the first pass that fails to shrink its correction.
         //
-        // Safe because `relinearise` is only ever called from inside the
-        // search block, and that block is only reached when `search` is true
-        // here -- so `self.saved` is always populated on the passes that can
-        // read it.
-        if search {
+        // Full-MNA/watch-mode trials still mutate devices, so those paths
+        // snapshot eagerly. Reduced residual probes are read-only; their rare
+        // defensive full-MNA fallback snapshots lazily immediately before the
+        // first operation that can mutate a device.
+        let mut search_state_saved = false;
+        if search && !(reduced_direct && !self.watching) {
             for (device, saved) in self.devices.iter().zip(self.saved.iter_mut()) {
                 *saved = device.linearisation();
             }
+            search_state_saved = true;
         }
 
         // Solve the Newton linearisation. The direct reduced path fuses full
@@ -3461,10 +3612,19 @@ impl Simulation {
         }
 
         let mut lambda = 1.0;
+        // Preserve each circuit's existing shortest allowed trial.  Twin uses
+        // four trials, so its old dyadic floor was 1/8; the generic six-trial
+        // path bottoms at 1/32. Polynomial interpolation may skip directly
+        // toward that floor but may not search deeper than the old policy.
+        let search_floor = (0.5f64)
+            .powi(self.backtracks.saturating_sub(1) as i32)
+            .max(MIN_LAMBDA);
         let mut taken = false;
         let mut best_lambda = 1.0;
         let mut best_merit = f64::INFINITY;
         let mut cycle_rejected = false;
+        let mut accepted_pure_reduced = false;
+        let mut devices_dirty = false;
         #[cfg(test)]
         let mut accepted_merit = 0.0;
         // `point` is both the device linearisation point and the candidate
@@ -3479,17 +3639,16 @@ impl Simulation {
         // Structure-watch mode deliberately retains the exhaustive full build.
         let mut first_trial = true;
         for _ in 0..self.backtracks {
-            let mut finite = true;
-            for ((point, &voltage), &delta) in self
-                .point
-                .iter_mut()
-                .zip(&self.voltage)
-                .zip(&self.scratch)
-            {
-                let value = voltage + lambda * delta;
-                *point = value;
-                finite &= value.is_finite();
-            }
+            // The exact Schur merit reads only nonlinear-boundary unknowns.
+            // Build those on the hot reduced path; full-MNA diagnostics and
+            // defensive fallbacks still materialise every unknown.
+            let mut pure_reduced_trial = reduced_direct && !self.watching;
+            let mut interpolated_next = None;
+            let finite = if pure_reduced_trial {
+                self.build_reduced_trial_point(dc, lambda)
+            } else {
+                self.build_full_trial_point(lambda)
+            };
             if finite {
                 // Re-linearise where the step lands and ask whether the
                 // circuit is any closer to satisfying itself there.
@@ -3501,7 +3660,20 @@ impl Simulation {
                             // boundary contains every nonlinear terminal, but
                             // if that invariant is ever violated do not judge
                             // a trial against stale full-MNA storage.
+                            pure_reduced_trial = false;
+                            if !self.build_full_trial_point(lambda) {
+                                break;
+                            }
+                            if !search_state_saved {
+                                for (device, saved) in
+                                    self.devices.iter().zip(self.saved.iter_mut())
+                                {
+                                    *saved = device.linearisation();
+                                }
+                                search_state_saved = true;
+                            }
                             self.build_point_full(dc);
+                            devices_dirty = true;
                             None
                         }
                     }
@@ -3513,6 +3685,7 @@ impl Simulation {
                     } else {
                         self.restamp_trial(dc);
                     }
+                    devices_dirty = true;
                     None
                 };
                 first_trial = false;
@@ -3538,6 +3711,26 @@ impl Simulation {
                     best_lambda = lambda;
                 }
                 let improves = search_trial_improves(here, reference, there);
+                // On the Twin's exact Schur path use the rejected residual to
+                // fit a safeguarded quadratic along this same Newton ray. PETSc
+                // and other production Newton solvers use polynomial
+                // backtracking for this reason: halving is robust but often
+                // spends multiple function evaluations walking past the useful
+                // damping length.  The acceptance test itself is unchanged.
+                if self.late_continuation
+                    && self.quadratic_backtracking_enabled()
+                    && reduced_direct
+                    && pure_reduced_trial
+                    && !dc
+                    && !improves
+                {
+                    interpolated_next = Some(quadratic_backtrack_lambda(
+                        here,
+                        there,
+                        lambda,
+                        search_floor,
+                    ));
+                }
                 let improves = if improves
                     && self.late_continuation
                     && !dc
@@ -3570,6 +3763,7 @@ impl Simulation {
                 };
                 if improves {
                     taken = true;
+                    accepted_pure_reduced = pure_reduced_trial;
                     #[cfg(test)]
                     {
                         accepted_merit = there;
@@ -3579,14 +3773,19 @@ impl Simulation {
             }
             // Refused. Put every device back where it was, so the next,
             // shorter trial is measured from the same place this one was.
-            for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
-                device.relinearise(*saved);
+            // Reduced residual probes are read-only, so the overwhelmingly
+            // common Twin/HM/MT path has nothing to restore here.
+            if devices_dirty {
+                for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                    device.relinearise(*saved);
+                }
+                devices_dirty = false;
             }
             self.backtrack_count += 1;
-            lambda *= 0.5;
-            if lambda < MIN_LAMBDA {
+            if lambda <= search_floor {
                 break;
             }
+            lambda = interpolated_next.unwrap_or(lambda * 0.5).max(search_floor);
         }
 
         #[cfg(test)]
@@ -3607,11 +3806,8 @@ impl Simulation {
             let mut probe_lambda = 0.5f64.powi(self.backtracks as i32);
             while self.last_search_trial_count < SEARCH_TRACE_TRIALS {
                 let mut finite = true;
-                for ((point, &voltage), &delta) in self
-                    .point
-                    .iter_mut()
-                    .zip(&self.voltage)
-                    .zip(&self.scratch)
+                for ((point, &voltage), &delta) in
+                    self.point.iter_mut().zip(&self.voltage).zip(&self.scratch)
                 {
                     let value = voltage + probe_lambda * delta;
                     *point = value;
@@ -3621,11 +3817,25 @@ impl Simulation {
                     break;
                 }
 
+                let mut probe_devices_dirty = false;
                 let reduced_there = if reduced_direct && !self.watching {
                     match self.reduced_trial_merit(dc) {
                         Some(merit) => Some(merit),
                         None => {
+                            // The ordinary reduced probe is read-only and did
+                            // not require a saved device state. Only this rare
+                            // full-MNA diagnostic fallback mutates devices, so
+                            // capture the state lazily before it does.
+                            if !search_state_saved {
+                                for (device, saved) in
+                                    self.devices.iter().zip(self.saved.iter_mut())
+                                {
+                                    *saved = device.linearisation();
+                                }
+                                search_state_saved = true;
+                            }
                             self.build_point_full(dc);
+                            probe_devices_dirty = true;
                             None
                         }
                     }
@@ -3635,12 +3845,15 @@ impl Simulation {
                     } else {
                         self.restamp_trial(dc);
                     }
+                    probe_devices_dirty = true;
                     None
                 };
                 let exact_probe = self.exact;
                 if !exact_probe {
-                    for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
-                        device.relinearise(*saved);
+                    if probe_devices_dirty {
+                        for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                            device.relinearise(*saved);
+                        }
                     }
                     break;
                 }
@@ -3651,8 +3864,10 @@ impl Simulation {
                 self.last_search_trial_exact[slot] = true;
                 self.last_search_trial_count += 1;
 
-                for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
-                    device.relinearise(*saved);
+                if probe_devices_dirty {
+                    for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                        device.relinearise(*saved);
+                    }
                 }
                 probe_lambda *= 0.5;
             }
@@ -3679,8 +3894,10 @@ impl Simulation {
             // the 5150 oscillate through its iteration allowance on attacks.
             // If no finite exact merit was measured, retain the full step.
             self.fallbacks += 1;
-            for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
-                device.relinearise(*saved);
+            if devices_dirty {
+                for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                    device.relinearise(*saved);
+                }
             }
             if dc || best_lambda == 1.0 {
                 self.voltage.copy_from_slice(&self.guess);
@@ -3697,7 +3914,22 @@ impl Simulation {
             self.last_search_accepted_lambda = lambda;
             self.last_search_accepted_merit = accepted_merit;
         }
-        self.voltage.copy_from_slice(&self.point);
+        if accepted_pure_reduced {
+            // The probe itself deliberately did not mutate any device. Commit
+            // the winner once so limiter, op-amp rail and core state are the
+            // same state the old mutating trial left for continuation logic.
+            for device in &mut self.devices {
+                device.commit_trial_state(&self.point);
+            }
+            // Materialise the eliminated/internal entries once, preserving the
+            // exact arithmetic expression the old full candidate loop used.
+            for (voltage, &delta) in self.voltage.iter_mut().zip(&self.scratch) {
+                let value = *voltage + lambda * delta;
+                *voltage = value;
+            }
+        } else {
+            self.voltage.copy_from_slice(&self.point);
+        }
         Pass::Moved
     }
 
@@ -3901,8 +4133,7 @@ impl Simulation {
                 let production_recovery_enabled = {
                     #[cfg(test)]
                     {
-                        !self.test_last_settled_restart
-                            && !self.test_post_restart_continuation
+                        !self.test_last_settled_restart && !self.test_post_restart_continuation
                     }
                     #[cfg(not(test))]
                     {
@@ -4016,9 +4247,11 @@ impl Simulation {
                 #[cfg(test)]
                 let mut tail_trace_trial_count = [0usize; TAIL_TRACE_PASSES];
                 #[cfg(test)]
-                let mut tail_trace_trial_lambdas = [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
+                let mut tail_trace_trial_lambdas =
+                    [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
                 #[cfg(test)]
-                let mut tail_trace_trial_merits = [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
+                let mut tail_trace_trial_merits =
+                    [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
                 #[cfg(test)]
                 let mut tail_trace_moved_before = [0.0f64; TAIL_TRACE_PASSES];
                 #[cfg(test)]
@@ -4111,8 +4344,7 @@ impl Simulation {
                         && normal_backtracks < CONTINUATION_BACKTRACKS
                         && self.continuation_deepening_enabled()
                         && used_passes < ceiling
-                        && used_passes
-                            .saturating_add(CONTINUATION_DEEPENING_TAIL_PASSES)
+                        && used_passes.saturating_add(CONTINUATION_DEEPENING_TAIL_PASSES)
                             >= ceiling;
                     if deep_continuation_search {
                         self.backtracks = CONTINUATION_BACKTRACKS;
@@ -4122,7 +4354,11 @@ impl Simulation {
                         }
                     }
                     #[cfg(test)]
-                    let deep_moved_before = if deep_continuation_search { before } else { 0.0 };
+                    let deep_moved_before = if deep_continuation_search {
+                        before
+                    } else {
+                        0.0
+                    };
                     let pass = self.iterate(false, search);
                     self.backtracks = normal_backtracks;
                     target_passes += 1;
@@ -4236,8 +4472,7 @@ impl Simulation {
                     }
                     if deep_continuation_search
                         && !line_search_failed
-                        && self.backtrack_count - backtracks_before
-                            >= normal_backtracks as u64
+                        && self.backtrack_count - backtracks_before >= normal_backtracks as u64
                     {
                         // A 1/16 or 1/32 trial beat the exact-target merit.
                         // Production retains the measured v14 policy: any
@@ -4303,8 +4538,7 @@ impl Simulation {
 
                     if matches!(pass, Pass::Settled) {
                         settled = true;
-                        let exact_tail_rescue =
-                            exhausted_exact_tail && used_passes > ceiling;
+                        let exact_tail_rescue = exhausted_exact_tail && used_passes > ceiling;
                         if exact_tail_rescue {
                             self.continuation_actual_rescues += 1;
                             if continuation_from_stuck.is_none() {
@@ -4326,11 +4560,9 @@ impl Simulation {
                     #[cfg(not(test))]
                     let continuation_stuck_only = false;
                     #[cfg(test)]
-                    let continuation_min_target_passes =
-                        self.test_continuation_min_target_passes;
+                    let continuation_min_target_passes = self.test_continuation_min_target_passes;
                     #[cfg(not(test))]
-                    let continuation_min_target_passes =
-                        LATE_CONTINUATION_MIN_TARGET_PASSES;
+                    let continuation_min_target_passes = LATE_CONTINUATION_MIN_TARGET_PASSES;
                     let late_rejection = late_continuation_rejection(
                         target_passes,
                         continuation_min_target_passes,
@@ -4339,9 +4571,7 @@ impl Simulation {
                         continuation_stuck_only,
                     );
 
-                    if continuation_from_stuck.is_none()
-                        && used_passes < ceiling
-                        && late_rejection
+                    if continuation_from_stuck.is_none() && used_passes < ceiling && late_rejection
                     {
                         #[cfg(test)]
                         {
@@ -4495,7 +4725,8 @@ impl Simulation {
                     self.continuation_attempts += 1;
                     continuation_from_stuck = Some(false);
 
-                    self.post_restart_saved_voltage.copy_from_slice(&self.voltage);
+                    self.post_restart_saved_voltage
+                        .copy_from_slice(&self.voltage);
                     for (device, saved) in self
                         .devices
                         .iter()
@@ -4631,7 +4862,8 @@ impl Simulation {
                     // failed-sample containment path must see. Saving after a
                     // failed restart is too late: that restart may already have
                     // gone non-finite.
-                    self.post_restart_saved_voltage.copy_from_slice(&self.voltage);
+                    self.post_restart_saved_voltage
+                        .copy_from_slice(&self.voltage);
                     for (device, saved) in self
                         .devices
                         .iter()

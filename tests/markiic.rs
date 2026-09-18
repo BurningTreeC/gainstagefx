@@ -235,5 +235,8 @@ fn the_lead_master_turns_the_lead_channel_up() {
         measure::run(t, (RATE / 2.0) as usize, |x| sim.process(x)).gain_db()
     };
     let (low, rest, high) = (level(0.1), level(markiic::LEAD_MASTER_REST), level(1.0));
-    assert!(low < rest - 6.0 && rest < high, "{low:.1} {rest:.1} {high:.1}");
+    assert!(
+        low < rest - 6.0 && rest < high,
+        "{low:.1} {rest:.1} {high:.1}"
+    );
 }

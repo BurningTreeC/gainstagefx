@@ -20,7 +20,11 @@ fn main() {
         let mut sim = Simulation::new(c, 48_000.0);
         sim.find_operating_point();
         let ik = sim.voltage_at(k) / 1_500.0;
-        println!("V1 half at {volts} V: {:.3} mA, equivalent {:.0} ohm", ik * 1e3, volts / ik);
+        println!(
+            "V1 half at {volts} V: {:.3} mA, equivalent {:.0} ohm",
+            ik * 1e3,
+            volts / ik
+        );
     }
     let c = ac30::build(10_000.0, 1_000_000.0).unwrap();
     let names = ["n4", "n42", "v1_p", "v1_k", "tb_p", "tb_k", "cf"];
@@ -37,13 +41,17 @@ fn main() {
     let idx: Vec<_> = names.iter().map(|n| c.unknown_named(n)).collect();
     let mut sim = Simulation::new(c, 48_000.0);
     println!("power settled {}", sim.find_operating_point());
-    let v: Vec<f64> = idx.iter().map(|i| i.map(|i| sim.voltage_at(i)).unwrap_or(f64::NAN)).collect();
+    let v: Vec<f64> = idx
+        .iter()
+        .map(|i| i.map(|i| sim.voltage_at(i)).unwrap_or(f64::NAN))
+        .collect();
     for (n, x) in names.iter().zip(&v) {
         println!("  {n:<6} {x:.2} V");
     }
     let cathode = v[4];
     let total = cathode / spec.cathode_bias;
-    let inverter = (spec.pi_supply - v[0]) / spec.pi_plate_driven + (spec.pi_supply - v[1]) / spec.pi_plate_other;
+    let inverter = (spec.pi_supply - v[0]) / spec.pi_plate_driven
+        + (spec.pi_supply - v[1]) / spec.pi_plate_other;
     println!(
         "  inverter idle {:.2} mA -> {:.0} V behind R11 22k from {HT} V",
         inverter * 1e3,

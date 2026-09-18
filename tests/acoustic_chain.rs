@@ -8,7 +8,7 @@ use gainstagefx::acoustics::mic::{MicPlacement, MicProfile};
 use gainstagefx::acoustics::speaker::SpeakerProfile;
 use gainstagefx::acoustics::stage::MicSlot;
 use gainstagefx::voice::{
-    AcousticSettings, CabinetChoice, Cabinet, Chain, Gain, PowerAmp, Settings, SpeakerChoice, Tone,
+    AcousticSettings, Cabinet, CabinetChoice, Chain, Gain, PowerAmp, Settings, SpeakerChoice, Tone,
     NOMINAL_DBFS,
 };
 
@@ -21,7 +21,11 @@ fn physical(cab: &'static CabinetProfile) -> AcousticSettings {
         cabinet: CabinetChoice::Model(cab),
         speaker: SpeakerChoice::Matched,
         mic_a: MicSlot::Profile(&MicProfile::DYNAMIC_57),
-        place_a: MicPlacement { position: 0.3, distance: 0.025, angle: 10.0 },
+        place_a: MicPlacement {
+            position: 0.3,
+            distance: 0.025,
+            angle: 10.0,
+        },
         ..AcousticSettings::default()
     }
 }
@@ -115,15 +119,25 @@ fn physical_path_is_finite_level_matched_and_differs_by_driver() {
         ..physical(&CabinetProfile::BRIT_V30)
     });
     let ratio_db = 20.0 * (v30 / legacy).log10();
-    assert!(ratio_db.abs() < 12.0, "physical vs legacy Stack: {ratio_db} dB");
-    let difference: f64 = a.iter().zip(&b).map(|(x, y)| (x - y).abs()).sum::<f64>() / a.len() as f64;
-    assert!(difference > 1e-3 * v30, "driver changes the sound: {difference} vs {jensen}");
+    assert!(
+        ratio_db.abs() < 12.0,
+        "physical vs legacy Stack: {ratio_db} dB"
+    );
+    let difference: f64 =
+        a.iter().zip(&b).map(|(x, y)| (x - y).abs()).sum::<f64>() / a.len() as f64;
+    assert!(
+        difference > 1e-3 * v30,
+        "driver changes the sound: {difference} vs {jensen}"
+    );
 }
 
 #[test]
 fn no_power_stage_drives_the_speaker_directly() {
     let mut chain = Chain::new(48_000.0);
-    for (gain, power_amp) in [(Gain::Screamer, PowerAmp::Matched), (Gain::Boogie, PowerAmp::Bypass)] {
+    for (gain, power_amp) in [
+        (Gain::Screamer, PowerAmp::Matched),
+        (Gain::Boogie, PowerAmp::Bypass),
+    ] {
         chain.apply(&Settings {
             gain,
             power_amp,
@@ -183,7 +197,11 @@ fn dormant_channel_wakes_identically_and_then_diverges_independently() {
         tone: Tone::Off,
         acoustic: AcousticSettings {
             mic_b: MicSlot::Profile(&MicProfile::RIBBON_121),
-            place_b: MicPlacement { position: 0.8, distance: 0.3, angle: 30.0 },
+            place_b: MicPlacement {
+                position: 0.8,
+                distance: 0.3,
+                angle: 30.0,
+            },
             ..physical(&CabinetProfile::AMERICAN_OPEN_212)
         },
         ..Settings::default()
@@ -232,7 +250,10 @@ fn live_switching_and_automation_is_bounded_and_allocation_free() {
         MicSlot::Profile(&MicProfile::FET_CONDENSER_47),
     ];
     let mut k = 0usize;
-    chain.apply(&Settings { gain: Gain::Boogie, ..Settings::default() });
+    chain.apply(&Settings {
+        gain: Gain::Boogie,
+        ..Settings::default()
+    });
     chain.find_operating_point();
     assert_no_heap(|| {
         for block in 0..240 {
@@ -240,7 +261,11 @@ fn live_switching_and_automation_is_bounded_and_allocation_free() {
                 cabinet: cabs[block / 20 % cabs.len()],
                 speaker: speakers[block / 30 % speakers.len()],
                 mic_a: mics[block / 15 % mics.len()],
-                mic_b: if block % 40 < 20 { MicSlot::Off } else { mics[block % 3] },
+                mic_b: if block % 40 < 20 {
+                    MicSlot::Off
+                } else {
+                    mics[block % 3]
+                },
                 place_a: MicPlacement {
                     position: (block as f64 * 0.13).fract(),
                     distance: 0.01 + (block as f64 * 0.071).fract() * 0.9,
@@ -253,7 +278,11 @@ fn live_switching_and_automation_is_bounded_and_allocation_free() {
             };
             chain.apply(&Settings {
                 gain: Gain::Boogie,
-                power_amp: if block % 50 < 25 { PowerAmp::Matched } else { PowerAmp::BritEL34 },
+                power_amp: if block % 50 < 25 {
+                    PowerAmp::Matched
+                } else {
+                    PowerAmp::BritEL34
+                },
                 acoustic,
                 ..Settings::default()
             });
@@ -345,17 +374,27 @@ fn cabinet_bypass_is_no_box_and_speaker_bypass_is_the_di() {
     let (di, di_radiating) = render(CabinetChoice::Bypass, SpeakerChoice::Bypass);
     let (baffle, baffle_radiating) = render(CabinetChoice::Bypass, SpeakerChoice::Matched);
 
-    assert!(!legacy_radiating && !di_radiating, "neither drives a speaker");
-    assert_eq!(legacy, di, "the speaker row's Bypass is the legacy resistor load exactly");
-
-    assert!(baffle_radiating, "cabinet Bypass still radiates: it is a driver with no box");
-    let rms = |x: &[f64]| (x.iter().map(|v| v * v).sum::<f64>() / x.len() as f64).sqrt();
-    let difference = rms(
-        &legacy
-            .iter()
-            .zip(&baffle)
-            .map(|(a, b)| a - b)
-            .collect::<Vec<_>>(),
+    assert!(
+        !legacy_radiating && !di_radiating,
+        "neither drives a speaker"
     );
-    assert!(difference > 0.2 * rms(&legacy), "an open baffle is a sound, not a bypass: {difference}");
+    assert_eq!(
+        legacy, di,
+        "the speaker row's Bypass is the legacy resistor load exactly"
+    );
+
+    assert!(
+        baffle_radiating,
+        "cabinet Bypass still radiates: it is a driver with no box"
+    );
+    let rms = |x: &[f64]| (x.iter().map(|v| v * v).sum::<f64>() / x.len() as f64).sqrt();
+    let difference = rms(&legacy
+        .iter()
+        .zip(&baffle)
+        .map(|(a, b)| a - b)
+        .collect::<Vec<_>>());
+    assert!(
+        difference > 0.2 * rms(&legacy),
+        "an open baffle is a sound, not a bypass: {difference}"
+    );
 }

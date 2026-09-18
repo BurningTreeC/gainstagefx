@@ -126,7 +126,14 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // the British competition did not have in 1969.
     net.resistor("t_w", "master_top", 22_000.0)
         .rest(MASTER, MASTER_REST)
-        .pot("master_top", "v3_g", "gnd", 220_000.0, Taper::Linear, MASTER);
+        .pot(
+            "master_top",
+            "v3_g",
+            "gnd",
+            220_000.0,
+            Taper::Linear,
+            MASTER,
+        );
 
     // --- V3a and the driver ---------------------------------------------------------
     // The last gain stage, and then the cathode follower that is the reason this

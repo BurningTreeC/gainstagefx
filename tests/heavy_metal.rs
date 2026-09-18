@@ -1,5 +1,5 @@
 //! The Heavy Metal, against Boss's drawing and the published analyses of it.
-use gainstagefx::circuits::heavy_metal::{self, DIST, HIGH, LEVEL, LOW, LEVEL_REST};
+use gainstagefx::circuits::heavy_metal::{self, DIST, HIGH, LEVEL, LEVEL_REST, LOW};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
 
@@ -97,15 +97,25 @@ fn the_dist_control_turns_the_gain_up() {
 #[test]
 fn colour_mix_moves_the_two_ends_separately() {
     let at_hz = |controls: &[(usize, f64)], hz: f64| {
-        20.0 * at(controls, hz, 0.02).fundamental().magnitude().max(1e-12).log10()
+        20.0 * at(controls, hz, 0.02)
+            .fundamental()
+            .magnitude()
+            .max(1e-12)
+            .log10()
     };
     let low_up = at_hz(&[(LOW, 1.0), (HIGH, 0.0)], 80.0);
     let low_down = at_hz(&[(LOW, 0.0), (HIGH, 0.0)], 80.0);
     let high_up = at_hz(&[(LOW, 0.0), (HIGH, 1.0)], 1_100.0);
     let high_down = at_hz(&[(LOW, 0.0), (HIGH, 0.0)], 1_100.0);
     println!("80 Hz: {low_down:.1} -> {low_up:.1};  1.1 kHz: {high_down:.1} -> {high_up:.1}");
-    assert!(low_up > low_down + 3.0, "L does not lift 80 Hz: {low_down} -> {low_up}");
-    assert!(high_up > high_down + 3.0, "H does not lift 1.1 kHz: {high_down} -> {high_up}");
+    assert!(
+        low_up > low_down + 3.0,
+        "L does not lift 80 Hz: {low_down} -> {low_up}"
+    );
+    assert!(
+        high_up > high_down + 3.0,
+        "H does not lift 1.1 kHz: {high_down} -> {high_up}"
+    );
     // ...and each one does more where it lives than where the other does.
     let low_at_high = at_hz(&[(LOW, 1.0), (HIGH, 0.0)], 1_100.0) - high_down;
     assert!(
@@ -176,7 +186,10 @@ fn distortion_sweep_stays_finite_and_settled() {
                 * ((std::f64::consts::TAU * 82.4 * t).sin() * 0.65
                     + (std::f64::consts::TAU * 123.5 * t).sin() * 0.35);
             let y = s.process(x);
-            assert!(y.is_finite(), "DIST {position:.3}: non-finite output at sample {k}");
+            assert!(
+                y.is_finite(),
+                "DIST {position:.3}: non-finite output at sample {k}"
+            );
             peak = peak.max(y.abs());
         }
 
@@ -194,8 +207,17 @@ fn distortion_sweep_stays_finite_and_settled() {
             passes as f64 / solves as f64,
         );
 
-        assert_eq!(unsettled, 0, "DIST {position:.3}: unsettled nonlinear solves");
-        assert_eq!(nonfinite, 0, "DIST {position:.3}: non-finite Newton corrections");
-        assert!(peak < 20.0, "DIST {position:.3}: implausible runaway output {peak}");
+        assert_eq!(
+            unsettled, 0,
+            "DIST {position:.3}: unsettled nonlinear solves"
+        );
+        assert_eq!(
+            nonfinite, 0,
+            "DIST {position:.3}: non-finite Newton corrections"
+        );
+        assert!(
+            peak < 20.0,
+            "DIST {position:.3}: implausible runaway output {peak}"
+        );
     }
 }

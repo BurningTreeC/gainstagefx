@@ -97,7 +97,12 @@ mod resize {
 
     impl CountingHost {
         fn new(state: Arc<nih_plug_vizia::ViziaState>, accepts: bool) -> Self {
-            Self { state, accepts, resizes: AtomicUsize::new(0), observed: Mutex::new(Vec::new()) }
+            Self {
+                state,
+                accepts,
+                resizes: AtomicUsize::new(0),
+                observed: Mutex::new(Vec::new()),
+            }
         }
     }
 
@@ -107,7 +112,10 @@ mod resize {
         }
         fn request_resize(&self) -> bool {
             self.resizes.fetch_add(1, Ordering::Relaxed);
-            self.observed.lock().unwrap().push(self.state.user_scale_factor());
+            self.observed
+                .lock()
+                .unwrap()
+                .push(self.state.user_scale_factor());
             self.accepts
         }
         unsafe fn raw_begin_set_parameter(&self, _: ParamPtr) {}
@@ -198,7 +206,11 @@ mod resize {
         let previous_size = params.editor_state.scaled_logical_size();
         let host = CountingHost::new(params.editor_state.clone(), false);
 
-        assert!(!gainstagefx::editor::apply_scale(&params.editor_state, &host, 2.0));
+        assert!(!gainstagefx::editor::apply_scale(
+            &params.editor_state,
+            &host,
+            2.0
+        ));
         assert_eq!(*host.observed.lock().unwrap(), [2.0]);
         assert_eq!(params.editor_state.scaled_logical_size(), previous_size);
         let restored = GainStageParams::default();

@@ -63,17 +63,32 @@ fn free_air_impedance_tracks_the_manufacturer_curves() {
     let cases: [Case; 3] = [
         (
             &SpeakerProfile::AMERICAN_VINTAGE_12,
-            [(1_000.0, 8.9), (5_000.0, 15.9), (10_000.0, 22.8), (300.0, 7.0)],
+            [
+                (1_000.0, 8.9),
+                (5_000.0, 15.9),
+                (10_000.0, 22.8),
+                (300.0, 7.0),
+            ],
             (79.6, 38.2),
         ),
         (
             &SpeakerProfile::AMERICAN_CERAMIC,
-            [(1_000.0, 12.3), (5_000.0, 22.1), (10_000.0, 32.8), (300.0, 7.7)],
+            [
+                (1_000.0, 12.3),
+                (5_000.0, 22.1),
+                (10_000.0, 32.8),
+                (300.0, 7.7),
+            ],
             (106.2, 42.4),
         ),
         (
             &SpeakerProfile::AMERICAN_ALNICO,
-            [(1_000.0, 10.5), (5_000.0, 20.5), (10_000.0, 30.2), (300.0, 7.2)],
+            [
+                (1_000.0, 10.5),
+                (5_000.0, 20.5),
+                (10_000.0, 30.2),
+                (300.0, 7.2),
+            ],
             (89.3, 33.9),
         ),
     ];
@@ -97,8 +112,16 @@ fn free_air_impedance_tracks_the_manufacturer_curves() {
             }
             hz *= 1.005;
         }
-        assert!((best_hz / peak_hz - 1.0).abs() < 0.10, "{} peak at {best_hz}", profile.id);
-        assert!((best / peak_ohms - 1.0).abs() < 0.12, "{} peak {best}", profile.id);
+        assert!(
+            (best_hz / peak_hz - 1.0).abs() < 0.10,
+            "{} peak at {best_hz}",
+            profile.id
+        );
+        assert!(
+            (best / peak_ohms - 1.0).abs() < 0.12,
+            "{} peak {best}",
+            profile.id
+        );
     }
 }
 
@@ -120,7 +143,10 @@ fn a_sealed_box_raises_resonance_by_its_compliance_ratio() {
         }
         hz *= 1.002;
     }
-    assert!((best_hz / expected - 1.0).abs() < 0.03, "{best_hz} vs {expected}");
+    assert!(
+        (best_hz / expected - 1.0).abs() < 0.03,
+        "{best_hz} vs {expected}"
+    );
     // Midband stays near Re and the top climbs inductively.
     assert!(v.impedance(300.0).magnitude() < 1.5 * p.re);
     assert!(v.impedance(10_000.0).magnitude() > 2.0 * p.re);
@@ -152,7 +178,10 @@ fn voltage_driven_speaker_matches_ac_and_survives_value_changes() {
                 peak = peak.max(y.abs());
             }
         }
-        assert!((peak / expected - 1.0).abs() < 0.02, "{hz} Hz: {peak} vs {expected}");
+        assert!(
+            (peak / expected - 1.0).abs() < 0.02,
+            "{hz} Hz: {peak} vs {expected}"
+        );
     }
     // Swap the driver mid-stream: one rebuild, state carried, no allocation.
     assert_no_heap(|| {
@@ -160,7 +189,9 @@ fn voltage_driven_speaker_matches_ac_and_survives_value_changes() {
             if k == 2_400 {
                 slots.apply(&mut sim, &b);
             }
-            assert!(sim.process((TAU * 200.0 * k as f64 / rate).sin()).is_finite());
+            assert!(sim
+                .process((TAU * 200.0 * k as f64 / rate).sin())
+                .is_finite());
         }
     });
     assert_eq!(sim.value(0), Some(b.re));
@@ -197,7 +228,11 @@ fn every_power_stage_responds_to_the_speaker_impedance() {
         &PowerSpec::DR103_EL34,
         &PowerSpec::RECTO_6L6,
     ] {
-        let values = LoadValues::new(&SpeakerProfile::BRIT_V30, &mounting, power::speaker_scale(spec));
+        let values = LoadValues::new(
+            &SpeakerProfile::BRIT_V30,
+            &mounting,
+            power::speaker_scale(spec),
+        );
         let mut resistive = Simulation::new(power::build(spec, 10_000.0).unwrap(), rate);
         let (circuit, _) = power::build_with_speaker(spec, 10_000.0, &values).unwrap();
         let mut loaded = Simulation::new(circuit, rate);
@@ -254,7 +289,8 @@ fn speaker_loaded_power_is_bounded_and_settles_under_abuse() {
         for (profile, mounting) in &loads {
             let values = LoadValues::new(profile, mounting, power::speaker_scale(spec));
             for rate in [48_000.0, 192_000.0] {
-                for (amplitude, hz) in [(0.5, 82.0), (40.0, 82.0), (80.0, 1_000.0), (40.0, 7_000.0)] {
+                for (amplitude, hz) in [(0.5, 82.0), (40.0, 82.0), (80.0, 1_000.0), (40.0, 7_000.0)]
+                {
                     let (circuit, _) = power::build_with_speaker(spec, 10_000.0, &values).unwrap();
                     let mut sim = Simulation::new(circuit, rate);
                     sim.find_operating_point();
@@ -266,7 +302,8 @@ fn speaker_loaded_power_is_bounded_and_settles_under_abuse() {
                         peak = peak.max(y.abs());
                     }
                     let (_, _, unsettled, _) = sim.statistics();
-                    let label = format!("{} {} {rate} {amplitude} V {hz} Hz", spec.name, profile.id);
+                    let label =
+                        format!("{} {} {rate} {amplitude} V {hz} Hz", spec.name, profile.id);
                     // Legacy resistive stages also need fallbacks on this input; one
                     // unsettled sample in a thousand is the bound, not a blow-up.
                     assert!(unsettled as usize <= n / 1_000, "{label}: {unsettled}");

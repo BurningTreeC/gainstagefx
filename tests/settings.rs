@@ -46,6 +46,8 @@ fn every_control_reaches_the_circuit() {
     let base = Settings {
         mains: 1.0,
         tone_sweep: 0.5,
+        hm2_colour_lo: 0.5,
+        hm2_colour_hi: 0.5,
         power_amp: Default::default(),
         acoustic: Default::default(),
         pedal: Default::default(),
@@ -223,8 +225,46 @@ fn twin_low_input_is_the_stock_lower_sensitivity_jack() {
     );
 }
 
-use gainstagefx::voice::Amplifier;
+#[test]
+fn heavy_metal_colour_mix_is_separate_from_the_generic_stack() {
+    let base = Settings {
+        gain: Gain::Hm2,
+        tone: Tone::Off,
+        cabinet: Cabinet::Off,
+        drive: 0.7,
+        hm2_colour_lo: 0.5,
+        hm2_colour_hi: 0.5,
+        oversampling: 1,
+        ..Settings::default()
+    };
+    let reference = render(&base);
 
+    let generic = render(&Settings {
+        bass: 0.05,
+        treble: 0.95,
+        ..base
+    });
+    let generic_difference = difference(&generic, &reference);
+    assert!(
+        generic_difference < 1e-10,
+        "with the plugin stack off, generic Bass/Treble leaked into HM-2 Colour Mix: {:.6}%",
+        generic_difference * 100.0
+    );
+
+    let coloured = render(&Settings {
+        hm2_colour_lo: 0.05,
+        hm2_colour_hi: 0.95,
+        ..base
+    });
+    let colour_difference = difference(&coloured, &reference);
+    assert!(
+        colour_difference > 0.01,
+        "the dedicated Heavy Metal Colour controls do not reach the circuit: {:.6}%",
+        colour_difference * 100.0
+    );
+}
+
+use gainstagefx::voice::Amplifier;
 
 /// Twin-only controls must never alias control numbers in another circuit.
 ///

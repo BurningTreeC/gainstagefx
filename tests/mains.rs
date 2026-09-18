@@ -15,7 +15,10 @@ fn lowering_the_mains_lowers_every_rail_in_proportion() {
     let nodes = ["v1n", "v2n", "pin"];
     let rails = |scale: f64| {
         let circuit = plexi::build(10_000.0, 1_000_000.0).unwrap();
-        let idx: Vec<usize> = nodes.iter().map(|n| circuit.unknown_named(n).unwrap()).collect();
+        let idx: Vec<usize> = nodes
+            .iter()
+            .map(|n| circuit.unknown_named(n).unwrap())
+            .collect();
         let mut s = Simulation::new(circuit, RATE);
         s.set_supply_scale(scale);
         assert!(s.find_operating_point());
@@ -43,15 +46,20 @@ fn a_variac_makes_the_power_stage_give_way_sooner() {
         );
         s.set_supply_scale(scale);
         s.find_operating_point();
-        let m = measure::run(Tone::near(RATE, 16_384, 220.0, 8.0), (RATE / 5.0) as usize, |x| {
-            s.process(x)
-        });
+        let m = measure::run(
+            Tone::near(RATE, 16_384, 220.0, 8.0),
+            (RATE / 5.0) as usize,
+            |x| s.process(x),
+        );
         (m.gain_db(), m.thd_percent())
     };
     let (wall_db, wall_thd) = driven(1.0);
     let (variac_db, variac_thd) = driven(0.7);
     println!("wall {wall_db:.1} dB {wall_thd:.1} %, variac {variac_db:.1} dB {variac_thd:.1} %");
-    assert!(variac_thd > wall_thd * 1.4, "{variac_thd} against {wall_thd}");
+    assert!(
+        variac_thd > wall_thd * 1.4,
+        "{variac_thd} against {wall_thd}"
+    );
     assert!(variac_db < wall_db, "and it is quieter");
 }
 
@@ -75,7 +83,8 @@ fn the_chain_carries_the_setting_and_stays_stable() {
         chain.find_operating_point();
         let mut sum = 0.0;
         for k in 0..48_000 {
-            let y = chain.process(amplitude * (k as f64 * std::f64::consts::TAU * 110.0 / 48_000.0).sin());
+            let y = chain
+                .process(amplitude * (k as f64 * std::f64::consts::TAU * 110.0 / 48_000.0).sin());
             assert!(y.is_finite());
             if k >= 24_000 {
                 sum += y * y;
@@ -86,6 +95,9 @@ fn the_chain_carries_the_setting_and_stays_stable() {
     let wall = rms(1.0);
     let variac = rms(0.7);
     println!("wall {:.4}, variac {:.4}", wall, variac);
-    assert!(variac < wall, "a variac is quieter: {variac} against {wall}");
+    assert!(
+        variac < wall,
+        "a variac is quieter: {variac} against {wall}"
+    );
     assert!(variac > wall * 0.2, "but not by everything: {variac}");
 }

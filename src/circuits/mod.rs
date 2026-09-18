@@ -1,5 +1,6 @@
 //! The catalogue, as netlists.
 
+pub mod ac30;
 pub mod american312;
 pub mod bigmuff;
 pub mod brit800;
@@ -15,7 +16,6 @@ pub mod jfet;
 pub mod markiic;
 pub mod metal_zone;
 pub mod neve;
-pub mod ac30;
 pub mod plexi;
 pub mod power;
 pub mod preamp;
@@ -24,7 +24,7 @@ pub mod rodent;
 pub mod round_fuzz;
 pub mod studio;
 pub mod tone;
-pub mod tube610;
 pub mod ts808;
+pub mod tube610;
 pub mod twin;
 pub mod valve;

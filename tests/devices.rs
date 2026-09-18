@@ -288,14 +288,30 @@ fn a_rectifier_valve_drops_by_the_two_thirds_power() {
         );
         let mut sim = Simulation::new(circuit, 48_000.0);
         assert!(sim.find_operating_point());
-        (sim.voltage_at(raw) - sim.voltage_at(ht), sim.voltage_at(ht) / (400.0 / amps))
+        (
+            sim.voltage_at(raw) - sim.voltage_at(ht),
+            sim.voltage_at(ht) / (400.0 / amps),
+        )
     };
     let (small, i_small) = drop_at(0.05);
     let (large, i_large) = drop_at(0.25);
-    println!("{:.1} V at {:.0} mA, {:.1} V at {:.0} mA", small, i_small * 1e3, large, i_large * 1e3);
+    println!(
+        "{:.1} V at {:.0} mA, {:.1} V at {:.0} mA",
+        small,
+        i_small * 1e3,
+        large,
+        i_large * 1e3
+    );
     // The data sheet figure at the current it is quoted for.
-    assert!((large - spec.drop_volts).abs() < 4.0, "{large} against {}", spec.drop_volts);
+    assert!(
+        (large - spec.drop_volts).abs() < 4.0,
+        "{large} against {}",
+        spec.drop_volts
+    );
     // And five times the current is 5^(2/3) = 2.92 times the drop.
     let ratio = large / small;
-    assert!((ratio - (i_large / i_small).powf(2.0 / 3.0)).abs() < 0.3, "{ratio}");
+    assert!(
+        (ratio - (i_large / i_small).powf(2.0 / 3.0)).abs() < 0.3,
+        "{ratio}"
+    );
 }

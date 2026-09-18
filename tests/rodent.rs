@@ -34,8 +34,15 @@ fn the_op_amp_model_has_the_lm308s_speed() {
         fastest = fastest.max((y - previous) * rate);
         previous = y;
     }
-    assert!((previous - start - 3.0).abs() < 0.05, "settles to the step: {}", previous - start);
-    assert!(fastest < rodent::SLEW * 1.1 && fastest > rodent::SLEW * 0.8, "slewed at {fastest} V/s");
+    assert!(
+        (previous - start - 3.0).abs() < 0.05,
+        "settles to the step: {}",
+        previous - start
+    );
+    assert!(
+        fastest < rodent::SLEW * 1.1 && fastest > rodent::SLEW * 0.8,
+        "slewed at {fastest} V/s"
+    );
 
     let mut net = Netlist::new("gain of 101");
     net.supply("vref", 1.0, 4.5)
@@ -43,7 +50,9 @@ fn the_op_amp_model_has_the_lm308s_speed() {
         .capacitor("src", "in", 1e-3)
         .resistor("in", "vref", 1e6);
     rodent::lm308(&mut net, "u", "in", "m", "out");
-    net.resistor("out", "m", 100_000.0).resistor("m", "vref", 1_000.0).resistor("out", "vref", 10_000.0);
+    net.resistor("out", "m", 100_000.0)
+        .resistor("m", "vref", 1_000.0)
+        .resistor("out", "vref", 10_000.0);
     let amp = net.build("out").unwrap();
     let low = measure(&amp, RATE, &[], 100.0, 1e-4).gain_db();
     let corner = measure(&amp, RATE, &[], rodent::GBW_HZ / 101.0, 1e-4).gain_db();
@@ -72,10 +81,29 @@ fn distortion_sweeps_the_gain_and_the_op_amp_runs_out_of_bandwidth() {
 fn the_filter_darkens_as_it_turns_up() {
     let pedal = rodent::build(10_000.0, 470_000.0).unwrap();
     let tilt = |filter: f64| {
-        measure(&pedal, RATE, &[(DISTORTION, 0.0), (FILTER, filter)], 5_000.0, 1e-3).gain_db()
-            - measure(&pedal, RATE, &[(DISTORTION, 0.0), (FILTER, filter)], 300.0, 1e-3).gain_db()
+        measure(
+            &pedal,
+            RATE,
+            &[(DISTORTION, 0.0), (FILTER, filter)],
+            5_000.0,
+            1e-3,
+        )
+        .gain_db()
+            - measure(
+                &pedal,
+                RATE,
+                &[(DISTORTION, 0.0), (FILTER, filter)],
+                300.0,
+                1e-3,
+            )
+            .gain_db()
     };
-    assert!(tilt(1.0) < tilt(0.0) - 12.0, "{} vs {}", tilt(1.0), tilt(0.0));
+    assert!(
+        tilt(1.0) < tilt(0.0) - 12.0,
+        "{} vs {}",
+        tilt(1.0),
+        tilt(0.0)
+    );
 }
 
 /// Distortion pulled from full to nothing while a note rings: the op-amp goes
@@ -95,7 +123,11 @@ fn distortion_can_be_turned_down_while_playing() {
     let mut out = Vec::new();
     for b in 0..300 {
         // Down to almost nothing after a quarter of a second, then creeping up.
-        let d = if b < 94 { 1.0 } else { 0.0005 + 0.0002 * (b - 94) as f64 };
+        let d = if b < 94 {
+            1.0
+        } else {
+            0.0005 + 0.0002 * (b - 94) as f64
+        };
         sim.set_control(DISTORTION, d);
         for i in 0..block {
             let t = (b * block + i) as f64 / rate;
@@ -104,10 +136,18 @@ fn distortion_can_be_turned_down_while_playing() {
         }
     }
     let (solves, passes, unsettled, _) = sim.statistics();
-    assert!(unsettled <= 4, "{unsettled} of {solves} solves did not settle");
-    assert!((passes as f64 / solves as f64) < 4.0, "{} passes a solve", passes as f64 / solves as f64);
+    assert!(
+        unsettled <= 4,
+        "{unsettled} of {solves} solves did not settle"
+    );
+    assert!(
+        (passes as f64 / solves as f64) < 4.0,
+        "{} passes a solve",
+        passes as f64 / solves as f64
+    );
     // And it is still playing: the last tenth of a second is not a frozen value.
     let tail = &out[out.len() - 4_800..];
-    let spread = tail.iter().fold(f64::MIN, |m, v| m.max(*v)) - tail.iter().fold(f64::MAX, |m, v| m.min(*v));
+    let spread =
+        tail.iter().fold(f64::MIN, |m, v| m.max(*v)) - tail.iter().fold(f64::MAX, |m, v| m.min(*v));
     assert!(spread > 1e-3, "output frozen: spread {spread}");
 }

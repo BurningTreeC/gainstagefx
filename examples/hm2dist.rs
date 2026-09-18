@@ -17,7 +17,14 @@ const POSITIONS: &[f64] = &[0.0, 0.01, 0.025, 0.05, 0.10, 0.25, 0.50, 0.75, 1.0]
 fn main() {
     println!(
         "{:<8}{:>11}{:>13}{:>12}{:>13}{:>11}{:>12}{:>10}",
-        "DIST", "% realtime", "passes/solve", "unsettled", "backtracks", "fallbacks", "nonfinite", "peak"
+        "DIST",
+        "% realtime",
+        "passes/solve",
+        "unsettled",
+        "backtracks",
+        "fallbacks",
+        "nonfinite",
+        "peak"
     );
 
     for &position in POSITIONS {

@@ -149,7 +149,8 @@ fn tap_impl(
     // 4.5 V +- 4 V and one clipping at 0 V +- 4 V do the same thing to a
     // signal, and the solver is far happier with the second. The same
     // construction `heavy_metal` and `rodent` use, and for the same reason.
-    net.capacitor("s1", "pre", 1e-6).resistor("pre", "gnd", 1_000_000.0);
+    net.capacitor("s1", "pre", 1e-6)
+        .resistor("pre", "gnd", 1_000_000.0);
 
     // --- the hump, op-amp 3b ------------------------------------------------------------
     // A non-inverting stage whose gain leg is a resonant shunt: at 953 Hz the
@@ -181,7 +182,14 @@ fn tap_impl(
         // A rheostat with its wiper tied to `b`, so what is in circuit is the
         // a-to-wiper leg, `R x (1 - f)`. A forward taper would run the control
         // backwards; the reverse one puts the gain up as the knob goes up.
-        .pot("dist_w", "u3a_m", "u3a_m", 250_000.0, Taper::ReverseAudio, DIST) // VR01
+        .pot(
+            "dist_w",
+            "u3a_m",
+            "u3a_m",
+            250_000.0,
+            Taper::ReverseAudio,
+            DIST,
+        ) // VR01
         .capacitor("u3a", "u3a_m", 47e-12) // C028
         .resistor("u3a_m", "gnd", 1_000.0); // R051
 
@@ -230,14 +238,28 @@ fn tap_impl(
         .capacitor("u4a", "boost", 10e-12); // C018
 
     // VR03a Low: the 106 Hz resonance.
-    net.pot("boost", "w_low", "cut", 100_000.0, Taper::Symmetric { span: 150.0 }, LOW);
+    net.pot(
+        "boost",
+        "w_low",
+        "cut",
+        100_000.0,
+        Taper::Symmetric { span: 150.0 },
+        LOW,
+    );
     leg(&mut net, "w_low", "blow", LOW_BAND);
 
     // VR03b High: a shelf rather than a resonance -- R061 2.2 k and C044 .01
     // let everything above about 7 kHz through the track and nothing below it.
-    net.pot("boost", "w_high", "cut", 100_000.0, Taper::Symmetric { span: 150.0 }, HIGH)
-        .capacitor("w_high", "bhigh", 0.01e-6) // C044
-        .resistor("bhigh", "gnd", 2_200.0); // R061
+    net.pot(
+        "boost",
+        "w_high",
+        "cut",
+        100_000.0,
+        Taper::Symmetric { span: 150.0 },
+        HIGH,
+    )
+    .capacitor("w_high", "bhigh", 0.01e-6) // C044
+    .resistor("bhigh", "gnd", 2_200.0); // R061
 
     // VR02b Middle, over a Wien network whose corner the Mid Freq knob sweeps.
     //
@@ -329,8 +351,10 @@ mod partition_tests {
 
     fn worst_difference(candidate: Circuit) -> (usize, usize, f64) {
         let mut partitioned = Simulation::new(candidate, 48_000.0);
-        let mut reference =
-            Simulation::new(build_full_newton_reference(10_000.0, 470_000.0).unwrap(), 48_000.0);
+        let mut reference = Simulation::new(
+            build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
+            48_000.0,
+        );
         configure(&mut partitioned);
         configure(&mut reference);
 
@@ -360,8 +384,14 @@ mod partition_tests {
     fn production_mt2_partitions_only_safe_mid_gyrator_follower() {
         let (before, after, worst) = worst_difference(build(10_000.0, 470_000.0).unwrap());
         assert_eq!(before, 25, "unexpected MT-2 reference Newton boundary");
-        assert_eq!(after, 22, "production MT-2 should remove only the mid gyrator follower from Newton");
-        assert!(worst < 1e-8, "production MT-2 mid-gyrator partition changed response: {worst:e}");
+        assert_eq!(
+            after, 22,
+            "production MT-2 should remove only the mid gyrator follower from Newton"
+        );
+        assert!(
+            worst < 1e-8,
+            "production MT-2 mid-gyrator partition changed response: {worst:e}"
+        );
     }
 
     #[test]
@@ -415,14 +445,8 @@ mod partition_tests {
             ("mid_gyrator_follower", (false, false, true)),
             ("u4b_plus_mid_gyrator", (true, false, true)),
         ] {
-            let circuit = build_partition_candidate(
-                10_000.0,
-                470_000.0,
-                flags.0,
-                flags.1,
-                flags.2,
-            )
-            .unwrap();
+            let circuit =
+                build_partition_candidate(10_000.0, 470_000.0, flags.0, flags.1, flags.2).unwrap();
             let (before, after, worst) = worst_difference(circuit);
             println!(
                 "MT-2 candidate={name:<22} boundary={before}->{after} worst_abs_error={worst:e}"
@@ -462,11 +486,7 @@ mod partition_tests {
                     for &volts in &INPUTS {
                         let mut candidate = Simulation::new(
                             build_partition_candidate(
-                                10_000.0,
-                                470_000.0,
-                                flags.0,
-                                flags.1,
-                                flags.2,
+                                10_000.0, 470_000.0, flags.0, flags.1, flags.2,
                             )
                             .unwrap(),
                             48_000.0,
@@ -491,8 +511,8 @@ mod partition_tests {
                         for k in 0..4_096 {
                             let t = k as f64 / 48_000.0;
                             let x = volts * (std::f64::consts::TAU * hz * t).sin();
-                            case_worst = case_worst
-                                .max((candidate.process(x) - reference.process(x)).abs());
+                            case_worst =
+                                case_worst.max((candidate.process(x) - reference.process(x)).abs());
                         }
                         if case_worst > worst {
                             worst = case_worst;
@@ -501,14 +521,8 @@ mod partition_tests {
                     }
                 }
             }
-            let circuit = build_partition_candidate(
-                10_000.0,
-                470_000.0,
-                flags.0,
-                flags.1,
-                flags.2,
-            )
-            .unwrap();
+            let circuit =
+                build_partition_candidate(10_000.0, 470_000.0, flags.0, flags.1, flags.2).unwrap();
             let reference = Simulation::new(
                 build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
                 48_000.0,
@@ -528,5 +542,4 @@ mod partition_tests {
             );
         }
     }
-
 }

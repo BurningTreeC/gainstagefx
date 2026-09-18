@@ -389,13 +389,21 @@ fn input(cx: &mut Context) {
 
     // The pedal, between the guitar and the circuit. Its knobs are its own, so
     // a pedal in front of an amplifier keeps both sets of controls.
-    label(cx, "pedal", body_x() + 30.0, top + 84.0, 9.5, 76.0, 0x7e8a96);
+    label(
+        cx,
+        "pedal",
+        body_x() + 30.0,
+        top + 84.0,
+        9.5,
+        76.0,
+        0x7e8a96,
+    );
     DropButton::new(cx, Panel::params, |p| &p.pedal, Choice::Pedal, true)
-    .position_type(PositionType::SelfDirected)
-    .left(Pixels(body_x() + 76.0))
-    .top(Pixels(top + 74.0))
-    .width(Pixels(200.0))
-    .height(Pixels(20.0));
+        .position_type(PositionType::SelfDirected)
+        .left(Pixels(body_x() + 76.0))
+        .top(Pixels(top + 74.0))
+        .width(Pixels(200.0))
+        .height(Pixels(20.0));
     // A pedal's knobs are the ones that pedal has. Most have three; the Heavy
     // Metal has four and the Metal Zone six, and a Metal Zone with three of its
     // controls missing is not that pedal. Each tone knob is labelled with what
@@ -418,12 +426,25 @@ fn input(cx: &mut Context) {
             // Three knobs keep the spacing they have always had; a wider row
             // closes up to stay inside the panel.
             let count = shown.len().max(1) + 2;
-            let step = if count <= 3 { 86.0 } else { 370.0 / (count - 1) as f32 };
+            let step = if count <= 3 {
+                86.0
+            } else {
+                370.0 / (count - 1) as f32
+            };
             placement_knob(cx, x0, y, 11.0, "drive", |p| &p.pedal_drive, live, percent);
             if shown.is_empty() {
                 // A fuzz with no tone control greys its Tone knob rather than
                 // leaving one that turns nothing.
-                placement_knob(cx, x0 + step, y, 11.0, "tone", |p| &p.pedal_tone, false, percent);
+                placement_knob(
+                    cx,
+                    x0 + step,
+                    y,
+                    11.0,
+                    "tone",
+                    |p| &p.pedal_tone,
+                    false,
+                    percent,
+                );
             }
             for (slot, &(index, label)) in shown.iter().enumerate() {
                 let x = x0 + step * (slot + 1) as f32;
@@ -435,7 +456,16 @@ fn input(cx: &mut Context) {
                 }
             }
             let last = x0 + step * (count - 1) as f32;
-            placement_knob(cx, last, y, 11.0, "level", |p| &p.pedal_level, live, percent);
+            placement_knob(
+                cx,
+                last,
+                y,
+                11.0,
+                "level",
+                |p| &p.pedal_level,
+                live,
+                percent,
+            );
         },
     );
 }
@@ -477,7 +507,15 @@ fn circuit(cx: &mut Context) {
         Panel::params.map(|p| p.circuit.value().has_amplifier()),
         move |cx, live| {
             let live = live.get(cx);
-            grid.dropdown(cx, 1, 1, "amplifier", |p| &p.amplifier, Choice::Amplifier, live);
+            grid.dropdown(
+                cx,
+                1,
+                1,
+                "amplifier",
+                |p| &p.amplifier,
+                Choice::Amplifier,
+                live,
+            );
         },
     );
 
@@ -485,7 +523,15 @@ fn circuit(cx: &mut Context) {
     // rather than part of a circuit: a transformer belongs after a distortion
     // pedal exactly as much as after a console channel.
     grid.dropdown(cx, 0, 2, "iron", |p| &p.iron, Choice::Iron, true);
-    grid.dropdown(cx, 1, 2, "power amp", |p| &p.power_amp, Choice::PowerAmp, true);
+    grid.dropdown(
+        cx,
+        1,
+        2,
+        "power amp",
+        |p| &p.power_amp,
+        Choice::PowerAmp,
+        true,
+    );
 
     // What the amplifier is plugged into. A variac is how a rig was wired
     // rather than something anybody sweeps, so it sits with the selections and
@@ -960,6 +1006,9 @@ pub struct ToneKnobs {
     /// A fourth tone knob, for a circuit with a control of its own past bass,
     /// middle and treble, and what it is called. Only the Metal Zone has one.
     pub sweep: Option<&'static str>,
+    /// The Heavy Metal's dedicated Colour Mix pair. These are deliberately
+    /// separate from the generic Bass/Treble stack controls.
+    pub colour_mix: Option<[&'static str; 2]>,
 }
 
 // Written out rather than derived: vizia's derive asks every field to be
@@ -993,6 +1042,10 @@ impl ToneKnobs {
             names: ["BASS", "MID", if sole { "TONE" } else { "TREBLE" }],
             extras: circuit.has_reverb_and_tremolo(),
             sweep: circuit.voice().own_sweep().map(|(_, name)| name),
+            colour_mix: circuit
+                .voice()
+                .own_colour_mix()
+                .map(|((_, low), (_, high))| [low, high]),
         }
     }
 }
@@ -1049,6 +1102,17 @@ fn tone(cx: &mut Context) {
                 .top(Pixels(top + 40.0));
             label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
         }
+        if let Some(names) = state.colour_mix {
+            let controls: [ToKnob; 2] = [|p| &p.hm2_colour_lo, |p| &p.hm2_colour_hi];
+            for (i, (to_param, name)) in controls.into_iter().zip(names).enumerate() {
+                let x = body_x() + 46.0 + (3 + i) as f32 * 84.0;
+                Knob::new(cx, Panel::params, to_param, 18.0, true)
+                    .position_type(PositionType::SelfDirected)
+                    .left(Pixels(x - 18.0))
+                    .top(Pixels(top + 40.0));
+                label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
+            }
+        }
         for (i, to_param) in knobs.into_iter().enumerate() {
             let live = state.live[i];
             let x = body_x() + 46.0 + i as f32 * 84.0;
@@ -1095,7 +1159,10 @@ fn tone(cx: &mut Context) {
     // Two paragraphs, one a row: the top three knobs are the tone stack, the
     // bottom three are the Twin's reverb and tremolo, and the text sits beside
     // the row it is about.
-    let x = body_x() + 340.0;
+    // Circuit-specific controls occupy columns four and five: MT-2 uses the
+    // fourth for Mid Freq and HM-2 uses both for Colour Low/High. Keep the
+    // explanatory copy to their right instead of letting controls sit on it.
+    let x = body_x() + 555.0;
     for (i, line) in [
         "A passive stack only ever cuts. The",
         "scooping voicing has a resonant leg,",
@@ -1220,19 +1287,79 @@ fn cabinet(cx: &mut Context) {
             let x = |i: usize| body_x() + step * (i as f32 + 0.5);
             let y = top + 116.0;
             let r = 15.0;
-            placement_knob(cx, x(0), y, r, "A position", |p| &p.mic_a_position, a, percent);
-            placement_knob(cx, x(1), y, r, "A distance", |p| &p.mic_a_distance, a, centimetres);
+            placement_knob(
+                cx,
+                x(0),
+                y,
+                r,
+                "A position",
+                |p| &p.mic_a_position,
+                a,
+                percent,
+            );
+            placement_knob(
+                cx,
+                x(1),
+                y,
+                r,
+                "A distance",
+                |p| &p.mic_a_distance,
+                a,
+                centimetres,
+            );
             placement_knob(cx, x(2), y, r, "A angle", |p| &p.mic_a_angle, a, degrees);
-            placement_knob(cx, x(3), y, r, "B position", |p| &p.mic_b_position, b, percent);
-            placement_knob(cx, x(4), y, r, "B distance", |p| &p.mic_b_distance, b, centimetres);
+            placement_knob(
+                cx,
+                x(3),
+                y,
+                r,
+                "B position",
+                |p| &p.mic_b_position,
+                b,
+                percent,
+            );
+            placement_knob(
+                cx,
+                x(4),
+                y,
+                r,
+                "B distance",
+                |p| &p.mic_b_distance,
+                b,
+                centimetres,
+            );
             placement_knob(cx, x(5), y, r, "B angle", |p| &p.mic_b_angle, b, degrees);
             placement_knob(cx, x(6), y, r, "blend", |p| &p.mic_blend, b, percent);
 
             let row_y = top + 170.0;
-            label(cx, "B polarity", body_x() + 30.0, row_y + 10.0, 9.5, 76.0, dim(b));
-            selector(cx, left, row_y, 140.0, |p| &p.mic_b_invert, vec!["Normal", "Invert"], b);
+            label(
+                cx,
+                "B polarity",
+                body_x() + 30.0,
+                row_y + 10.0,
+                9.5,
+                76.0,
+                dim(b),
+            );
+            selector(
+                cx,
+                left,
+                row_y,
+                140.0,
+                |p| &p.mic_b_invert,
+                vec!["Normal", "Invert"],
+                b,
+            );
             label(cx, "time", left + 180.0, row_y + 10.0, 9.5, 56.0, dim(b));
-            selector(cx, left + 208.0, row_y, 160.0, |p| &p.mic_align, vec!["Physical", "Aligned"], b);
+            selector(
+                cx,
+                left + 208.0,
+                row_y,
+                160.0,
+                |p| &p.mic_align,
+                vec!["Physical", "Aligned"],
+                b,
+            );
         },
     );
 }
@@ -1267,7 +1394,15 @@ fn placement_knob<F>(
         .position_type(PositionType::SelfDirected)
         .left(Pixels(x - radius))
         .top(Pixels(y - radius));
-    label(cx, name, x, y + radius + 10.0, 9.5, 76.0, if live { 0x9aa6b0 } else { 0x5a636b });
+    label(
+        cx,
+        name,
+        x,
+        y + radius + 10.0,
+        9.5,
+        76.0,
+        if live { 0x9aa6b0 } else { 0x5a636b },
+    );
     Label::new(
         cx,
         Panel::params.map(move |p| {
@@ -1303,7 +1438,9 @@ pub fn cabinet_summary(p: &GainStageParams) -> String {
         CabinetChoice::Legacy => String::from("resistor load, baked cabinet filter"),
         CabinetChoice::Bypass if speaker == SpeakerModel::Bypass => String::from("power stage DI"),
         CabinetChoice::Bypass => String::from("driver on an open baffle"),
-        CabinetChoice::Model(_) if speaker == SpeakerModel::Bypass => String::from("power stage DI"),
+        CabinetChoice::Model(_) if speaker == SpeakerModel::Bypass => {
+            String::from("power stage DI")
+        }
         CabinetChoice::Model(cab) => {
             let driver = match speaker.voice() {
                 SpeakerChoice::Model(profile) => profile.name,

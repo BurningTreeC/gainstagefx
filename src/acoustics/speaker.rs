@@ -109,7 +109,11 @@ impl SpeakerProfile {
         bl: 14.706,
         sd: 490.9e-4,
         breakup: Breakup {
-            peaks: [pk(897.0, 4.17, 1.94), pk(2454.0, 10.62, 1.26), pk(3871.0, 11.82, 2.44)],
+            peaks: [
+                pk(897.0, 4.17, 1.94),
+                pk(2454.0, 10.62, 1.26),
+                pk(3871.0, 11.82, 2.44),
+            ],
             lowpass_hz: 5128.0,
             lowpass_q: 0.50,
         },
@@ -131,7 +135,11 @@ impl SpeakerProfile {
         bl: 9.902,
         sd: 490.9e-4,
         breakup: Breakup {
-            peaks: [pk(986.0, 4.51, 2.52), pk(2489.0, 12.0, 1.22), pk(3811.0, 12.0, 2.42)],
+            peaks: [
+                pk(986.0, 4.51, 2.52),
+                pk(2489.0, 12.0, 1.22),
+                pk(3811.0, 12.0, 2.42),
+            ],
             lowpass_hz: 5478.0,
             lowpass_q: 0.50,
         },
@@ -153,7 +161,11 @@ impl SpeakerProfile {
         bl: 10.874,
         sd: 490.9e-4,
         breakup: Breakup {
-            peaks: [pk(1266.0, -5.07, 3.53), pk(2205.0, 12.0, 0.99), pk(3510.0, 9.25, 1.45)],
+            peaks: [
+                pk(1266.0, -5.07, 3.53),
+                pk(2205.0, 12.0, 0.99),
+                pk(3510.0, 9.25, 1.45),
+            ],
             lowpass_hz: 7263.0,
             lowpass_q: 0.50,
         },
@@ -175,7 +187,11 @@ impl SpeakerProfile {
         bl: 5.53,
         sd: 490.9e-4,
         breakup: Breakup {
-            peaks: [pk(2011.0, 9.06, 0.88), pk(2011.0, 9.06, 0.88), pk(3734.0, 7.49, 1.64)],
+            peaks: [
+                pk(2011.0, 9.06, 0.88),
+                pk(2011.0, 9.06, 0.88),
+                pk(3734.0, 7.49, 1.64),
+            ],
             lowpass_hz: 7304.0,
             lowpass_q: 1.22,
         },
@@ -197,7 +213,11 @@ impl SpeakerProfile {
         bl: 5.83,
         sd: 330.1e-4,
         breakup: Breakup {
-            peaks: [pk(1058.0, 5.48, 2.22), pk(2526.0, 11.32, 0.91), pk(4093.0, 12.0, 1.07)],
+            peaks: [
+                pk(1058.0, 5.48, 2.22),
+                pk(2526.0, 11.32, 0.91),
+                pk(4093.0, 12.0, 1.07),
+            ],
             lowpass_hz: 7553.0,
             lowpass_q: 1.20,
         },
@@ -219,7 +239,11 @@ impl SpeakerProfile {
         bl: 10.46,
         sd: 490.9e-4,
         breakup: Breakup {
-            peaks: [pk(1108.0, 8.94, 1.81), pk(2092.0, 12.0, 2.12), pk(3497.0, 10.45, 1.27)],
+            peaks: [
+                pk(1108.0, 8.94, 1.81),
+                pk(2092.0, 12.0, 2.12),
+                pk(3497.0, 10.45, 1.27),
+            ],
             lowpass_hz: 5829.0,
             lowpass_q: 2.13,
         },
@@ -241,7 +265,11 @@ impl SpeakerProfile {
         bl: 10.62,
         sd: 490.9e-4,
         breakup: Breakup {
-            peaks: [pk(1006.0, 8.69, 2.44), pk(2436.0, 10.7, 1.71), pk(3632.0, 12.0, 1.45)],
+            peaks: [
+                pk(1006.0, 8.69, 2.44),
+                pk(2436.0, 10.7, 1.71),
+                pk(3632.0, 12.0, 1.45),
+            ],
             lowpass_hz: 6156.0,
             lowpass_q: 1.54,
         },
@@ -340,7 +368,8 @@ impl LoadValues {
         let cms = profile.cms();
         let (lbox, rbox) = match mounting.volume_per_driver {
             Some(volume) if volume > 0.0 => {
-                let cab = volume / (RHO * SPEED_OF_SOUND * SPEED_OF_SOUND * profile.sd * profile.sd);
+                let cab =
+                    volume / (RHO * SPEED_OF_SOUND * SPEED_OF_SOUND * profile.sd * profile.sd);
                 let lbox = k * bl2 * cab;
                 // Series loss giving the stated Q at the loaded resonance.
                 let ctotal = cms * cab / (cms + cab);

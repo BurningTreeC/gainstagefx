@@ -13,7 +13,15 @@ const RATE: f64 = 96_000.0;
 /// a 150 ohm source, and about 1 % at its 0 dBm maximum level at 30 Hz.
 #[test]
 fn the_input_transformer_meets_its_data_sheet() {
-    let t = transformer(150.0, 20.0, a312::INPUT_CORE, a312::INPUT_RATIO, 800.0, 50e-12, 1e9);
+    let t = transformer(
+        150.0,
+        20.0,
+        a312::INPUT_CORE,
+        a312::INPUT_RATIO,
+        800.0,
+        50e-12,
+        1e9,
+    );
     let mid = measure(&t, RATE, &[], 1_000.0, 1e-3).gain_db();
     // 150 ohm to 10 k: 18.2 dB of voltage gain.
     assert!((mid - 18.2).abs() < 0.5, "{mid}");

@@ -89,7 +89,9 @@ impl Window {
     }
 
     fn name(&self, index: usize) -> Option<&'static str> {
-        self.range().contains(&index).then(|| self.names[index - self.offset])
+        self.range()
+            .contains(&index)
+            .then(|| self.names[index - self.offset])
     }
 }
 
@@ -157,9 +159,19 @@ impl Choice {
                 let split = topologies();
                 let total = names.len();
                 if self == Choice::Topology {
-                    Window { names: names[..split].to_vec(), offset: 0, total, first: 0 }
+                    Window {
+                        names: names[..split].to_vec(),
+                        offset: 0,
+                        total,
+                        first: 0,
+                    }
                 } else {
-                    Window { names: names[split..].to_vec(), offset: split, total, first: 0 }
+                    Window {
+                        names: names[split..].to_vec(),
+                        offset: split,
+                        total,
+                        first: 0,
+                    }
                 }
             }
             Choice::PowerAmp => whole(all(&PowerAmp::ALL, PowerAmp::name), 0),
@@ -506,27 +518,30 @@ struct Row {
 
 impl Row {
     fn build_into(cx: &mut Context, choice: Choice, index: usize, name: &'static str) {
-        Self { index, hovered: false }
-            .build(cx, move |cx| {
-                Label::new(cx, name)
-                    .width(Stretch(1.0))
-                    .height(Stretch(1.0))
-                    .child_left(Pixels(10.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
-                    .font_size(11.0)
-                    .color(Panel::params.map(move |p| {
-                        if choice.current(p) == index {
-                            Color::rgb(0xff, 0xb2, 0x6a)
-                        } else {
-                            Color::rgb(0xc9, 0xd2, 0xd8)
-                        }
-                    }))
-                    .hoverable(false);
-            })
-            .width(Stretch(1.0))
-            .height(Pixels(ROW_H));
+        Self {
+            index,
+            hovered: false,
+        }
+        .build(cx, move |cx| {
+            Label::new(cx, name)
+                .width(Stretch(1.0))
+                .height(Stretch(1.0))
+                .child_left(Pixels(10.0))
+                .child_top(Stretch(1.0))
+                .child_bottom(Stretch(1.0))
+                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                .font_size(11.0)
+                .color(Panel::params.map(move |p| {
+                    if choice.current(p) == index {
+                        Color::rgb(0xff, 0xb2, 0x6a)
+                    } else {
+                        Color::rgb(0xc9, 0xd2, 0xd8)
+                    }
+                }))
+                .hoverable(false);
+        })
+        .width(Stretch(1.0))
+        .height(Pixels(ROW_H));
     }
 }
 

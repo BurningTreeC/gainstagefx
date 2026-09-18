@@ -540,9 +540,9 @@ impl PowerSpec {
         // C1 and C2, 120 pF from each plate. The sheet has one per plate to
         // ground; plate to plate is the same shape at half the value.
         pi_plate_cap: 60e-12,
-        couple: 0.047e-6,     // C31, C32
-        grid_leak: 220_000.0, // R222, R223
-        stopper: 750.0,       // 1k5 per valve, two a side
+        couple: 0.047e-6,       // C31, C32
+        grid_leak: 220_000.0,   // R222, R223
+        stopper: 750.0,         // 1k5 per valve, two a side
         screen_resistor: 500.0, // 1k per valve
         tubes_per_side: 2.0,
         tube: PentodeSpec::T6L6GC,
@@ -584,7 +584,7 @@ impl PowerSpec {
     /// Every other value is the Rev F spec above. What changes is the supply:
     /// two 5U4GB instead of a bridge, so the rail sits lower and gives way under
     /// a chord instead of holding. See `docs/models/cali_rectifier.md`.
-pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
+    pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
         name: "Recto 6L6, valve rectifier",
         // The red channel's master is in the preamplifier, where the sheet has it.
         master: 1_000_000.0,
@@ -606,9 +606,9 @@ pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
         // C1 and C2, 120 pF from each plate. The sheet has one per plate to
         // ground; plate to plate is the same shape at half the value.
         pi_plate_cap: 60e-12,
-        couple: 0.047e-6,     // C31, C32
-        grid_leak: 220_000.0, // R222, R223
-        stopper: 750.0,       // 1k5 per valve, two a side
+        couple: 0.047e-6,       // C31, C32
+        grid_leak: 220_000.0,   // R222, R223
+        stopper: 750.0,         // 1k5 per valve, two a side
         screen_resistor: 500.0, // 1k per valve
         tubes_per_side: 2.0,
         tube: PentodeSpec::T6L6GC,
@@ -659,7 +659,7 @@ pub const RECTO_6L6_TUBE: PowerSpec = PowerSpec {
         // VR7, marked ULTRA POST. Two thirds up, which is a loud room.
         master: 1_000_000.0,
         master_rest: 0.66,
-        pi_couple: 0.022e-6,        // C49
+        pi_couple: 0.022e-6, // C49
         driver_volts: 0.0,
         pi_stopper: 100_000.0,      // R48
         pi_leak_upper: 1_000_000.0, // R50
@@ -1000,8 +1000,14 @@ fn assemble(
     let master_node = if twin_supply {
         "in"
     } else {
-        net.rest(MASTER, spec.master_rest)
-            .pot("in", "master", "gnd", spec.master, Taper::Audio, MASTER);
+        net.rest(MASTER, spec.master_rest).pot(
+            "in",
+            "master",
+            "gnd",
+            spec.master,
+            Taper::Audio,
+            MASTER,
+        );
         "master"
     };
     // How the inverter's grids get their direct voltage, which is most of what
@@ -1021,8 +1027,11 @@ fn assemble(
     if direct {
         net.resistor(master_node, "pi_a", spec.pi_leak_upper);
     } else {
-        net.capacitor(master_node, "pi_a", spec.pi_couple)
-            .resistor("pi_a", "pi_b", spec.pi_leak_upper);
+        net.capacitor(master_node, "pi_a", spec.pi_couple).resistor(
+            "pi_a",
+            "pi_b",
+            spec.pi_leak_upper,
+        );
     }
     let driven_grid = if spec.pi_stopper > 0.0 {
         net.resistor("pi_a", "pi_g1", spec.pi_stopper);
@@ -1050,10 +1059,18 @@ fn assemble(
     };
     // The second grid comes off the same place the first one does: the leak
     // junction when there is one, the driver when there is not.
-    net.resistor(if direct { master_node } else { "pi_b" }, "pi_g2", spec.pi_leak_lower);
+    net.resistor(
+        if direct { master_node } else { "pi_b" },
+        "pi_g2",
+        spec.pi_leak_lower,
+    );
     // Where the tail lands: a node of its own when a feedback loop comes back to
     // it, ground when there is no loop to bring back.
-    let tail = if spec.pi_tail_lower > 0.0 { "tail" } else { "gnd" };
+    let tail = if spec.pi_tail_lower > 0.0 {
+        "tail"
+    } else {
+        "gnd"
+    };
     if spec.pi_tail > 0.0 {
         net.resistor(cathode_top, tail, spec.pi_tail);
     }
@@ -1062,7 +1079,11 @@ fn assemble(
     }
     // And what the undriven grid is tied to, which is that node when there is a
     // tail resistor and the cathodes themselves when there is not.
-    let tail = if spec.pi_tail > 0.0 { tail } else { cathode_top };
+    let tail = if spec.pi_tail > 0.0 {
+        tail
+    } else {
+        cathode_top
+    };
     let cathode = "pi_k";
     if spec.pi_cross > 0.0 {
         net.capacitor(tail, "pi_g2", spec.pi_cross);
@@ -1162,7 +1183,14 @@ fn assemble(
             .resistor(&node, leak_return, spec.grid_leak)
             .resistor(&node, &grid, spec.stopper)
             .resistor("scr", &screen, spec.screen_resistor)
-            .pentode(plate, &grid, cathode, &screen, spec.tubes_per_side, spec.tube);
+            .pentode(
+                plate,
+                &grid,
+                cathode,
+                &screen,
+                spec.tubes_per_side,
+                spec.tube,
+            );
     }
     // The cut control, across the two grids it has just built.
     if spec.cut_pot > 0.0 {
@@ -1265,9 +1293,16 @@ fn assemble(
             .inductor("m", "pl_b", half);
     }
     net.transformer("pl_a", "ht", "sec", "gnd", each)
-        .transformer("ht", "pl_b", "sec", "gnd", each)
-        .core("sec", "gnd", secondary_core)
-        .inductor("sec", "spk", spec.leakage);
+        .transformer("ht", "pl_b", "sec", "gnd", each);
+    if twin_supply {
+        // The Twin's low-frequency output-transformer saturation is the one
+        // measured source of audible 48 kHz fold-back. Antialias only this
+        // nonlinear excess branch; the 31-unknown power solve stays at 1x.
+        net.core_antialiased("sec", "gnd", secondary_core);
+    } else {
+        net.core("sec", "gnd", secondary_core);
+    }
+    net.inductor("sec", "spk", spec.leakage);
     // The load, in the same place in the part order either way: the resistive
     // netlist has to stay exactly the one every calibration was measured on.
     let slots = match load {

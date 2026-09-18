@@ -28,7 +28,8 @@ use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerPr
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, distortion_plus, dr103,
-    evh5150, heavy_metal, iron, markiic, metal_zone, neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    evh5150, heavy_metal, iron, markiic, metal_zone, neve, plexi, power, preamp, rectifier, rodent,
+    round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -341,12 +342,9 @@ impl Gain {
             // The Rodent's is a **filter**: it runs the other way, and
             // `tone_runs_backwards` is how the knob is made to agree with it.
             Gain::Rat => Some((usize::MAX, usize::MAX, rodent::FILTER)),
-            // The Heavy Metal's Colour Mix is a pair, and the Metal Zone has a
-            // three band equaliser with a sweep. The panel has bass, middle and
-            // treble, so they take the ones that map: the Colour Mix low and
-            // high on bass and treble, and the Metal Zone's three bands on all
-            // three. Its Mid Freq is reachable only from the pedal slot.
-            Gain::Hm2 => Some((heavy_metal::LOW, usize::MAX, heavy_metal::HIGH)),
+            // The Heavy Metal's Colour Mix has dedicated plugin parameters.
+            // Do not multiplex them onto Bass/Treble: those three remain the
+            // optional plugin tone stack and the HM-2 pair is independent.
             Gain::Mt2 => Some((metal_zone::LOW, metal_zone::MIDDLE, metal_zone::HIGH)),
             Gain::Neve => None,
             _ => None,
@@ -370,6 +368,18 @@ impl Gain {
     pub fn own_sweep(self) -> Option<(usize, &'static str)> {
         match self {
             Gain::Mt2 => Some((metal_zone::MID_FREQ, "MID FREQ")),
+            _ => None,
+        }
+    }
+
+    /// The Heavy Metal circuit's dedicated Colour Mix pair. These are not the
+    /// plugin's generic Bass/Treble controls and must keep separate state.
+    pub fn own_colour_mix(self) -> Option<((usize, &'static str), (usize, &'static str))> {
+        match self {
+            Gain::Hm2 => Some((
+                (heavy_metal::LOW, "COLOUR LO"),
+                (heavy_metal::HIGH, "COLOUR HI"),
+            )),
             _ => None,
         }
     }
@@ -869,8 +879,21 @@ struct PedalControls {
 }
 
 /// A pedal with one tone control, which is most of them.
-const fn one_tone(control: usize, label: &'static str, inverted: bool) -> [Option<ToneKnob>; PEDAL_TONES] {
-    [Some(ToneKnob { control, label, inverted }), None, None, None]
+const fn one_tone(
+    control: usize,
+    label: &'static str,
+    inverted: bool,
+) -> [Option<ToneKnob>; PEDAL_TONES] {
+    [
+        Some(ToneKnob {
+            control,
+            label,
+            inverted,
+        }),
+        None,
+        None,
+        None,
+    ]
 }
 
 /// A pedal with none.
@@ -1000,8 +1023,16 @@ impl Pedal {
             6 => PedalControls {
                 drive: heavy_metal::DIST,
                 tones: [
-                    Some(ToneKnob { control: heavy_metal::LOW, label: "colour lo", inverted: false }),
-                    Some(ToneKnob { control: heavy_metal::HIGH, label: "colour hi", inverted: false }),
+                    Some(ToneKnob {
+                        control: heavy_metal::LOW,
+                        label: "colour lo",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: heavy_metal::HIGH,
+                        label: "colour hi",
+                        inverted: false,
+                    }),
                     None,
                     None,
                 ],
@@ -1012,10 +1043,26 @@ impl Pedal {
             _ => PedalControls {
                 drive: metal_zone::DIST,
                 tones: [
-                    Some(ToneKnob { control: metal_zone::LOW, label: "low", inverted: false }),
-                    Some(ToneKnob { control: metal_zone::MIDDLE, label: "middle", inverted: false }),
-                    Some(ToneKnob { control: metal_zone::MID_FREQ, label: "mid freq", inverted: false }),
-                    Some(ToneKnob { control: metal_zone::HIGH, label: "high", inverted: false }),
+                    Some(ToneKnob {
+                        control: metal_zone::LOW,
+                        label: "low",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: metal_zone::MIDDLE,
+                        label: "middle",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: metal_zone::MID_FREQ,
+                        label: "mid freq",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: metal_zone::HIGH,
+                        label: "high",
+                        inverted: false,
+                    }),
                 ],
                 level: metal_zone::LEVEL,
             },
@@ -1026,7 +1073,9 @@ impl Pedal {
     /// pedals keep the calibration of the catalogue voice they share a netlist
     /// with; the newer ones take a guitar's level directly.
     fn input_volts(slot: usize) -> f64 {
-        let of = |gain: Gain| CALIBRATION[voice_index(gain, Diode::Silicon, Amplifier::Valve)].drive_volts;
+        let of = |gain: Gain| {
+            CALIBRATION[voice_index(gain, Diode::Silicon, Amplifier::Valve)].drive_volts
+        };
         match slot {
             0 | 2 => of(Gain::Screamer),
             1 => of(Gain::Muff),
@@ -1052,7 +1101,12 @@ impl PedalSettings {
     /// A pedal with every tone control in the middle, which is what a knob the
     /// caller does not care about should be.
     pub fn centred(pedal: Pedal, drive: f64, level: f64) -> Self {
-        Self { pedal, drive, level, ..Self::default() }
+        Self {
+            pedal,
+            drive,
+            level,
+            ..Self::default()
+        }
     }
 }
 
@@ -1347,6 +1401,14 @@ pub const IRON_VOLTS: f64 = 96.0;
 /// to be, and because it leaves the top of the travel with somewhere to go.
 pub const IRON_REFERENCE_DRIVE: f64 = 0.75;
 
+/// The AB763 channel Volume position used only to calibrate the Twin's fixed
+/// digital output conversion.  Unlike a generic distortion Drive control, the
+/// Twin's Drive parameter *is* the physical 1 MΩ channel Volume pot, so moving
+/// it must be allowed to change level naturally.  Freezing the post-circuit
+/// make-up here keeps the circuit calibration anchored without cancelling the
+/// knob's real gain law.
+pub const TWIN_VOLUME_CALIBRATION_REFERENCE: f64 = 0.24;
+
 /// The tone section, which can be out of circuit entirely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tone {
@@ -1585,7 +1647,6 @@ impl Delay {
     }
 }
 
-
 /// The middle of the Master knob: the position each circuit was voiced at.
 pub const MASTER_MIDDLE: f64 = 0.5;
 
@@ -1747,7 +1808,6 @@ struct LevelAccumulator {
     nonfinite: u64,
 }
 
-
 #[cfg(test)]
 impl Default for LevelAccumulator {
     fn default() -> Self {
@@ -1879,6 +1939,9 @@ pub struct Settings {
     pub mains: f64,
     /// A circuit's own fourth control, where it has one. See `Gain::own_sweep`.
     pub tone_sweep: f64,
+    /// Heavy Metal Colour Mix low/high. Ignored by every other circuit.
+    pub hm2_colour_lo: f64,
+    pub hm2_colour_hi: f64,
 }
 
 impl Default for Settings {
@@ -1907,6 +1970,8 @@ impl Default for Settings {
             oversampling: 2,
             mains: 1.0,
             tone_sweep: 0.5,
+            hm2_colour_lo: 0.5,
+            hm2_colour_hi: 0.5,
         }
     }
 }
@@ -2459,7 +2524,8 @@ impl Chain {
             if let Some(profile) = speaker {
                 let mounting = a.mounting();
                 for (model, loaded) in PowerModel::ALL.iter().zip(self.loaded.iter_mut()) {
-                    let values = LoadValues::new(profile, &mounting, power::speaker_scale(model.spec()));
+                    let values =
+                        LoadValues::new(profile, &mounting, power::speaker_scale(model.spec()));
                     loaded.slots.apply(&mut loaded.sim, &values);
                     loaded.sim.reset_deferred();
                 }
@@ -2514,7 +2580,10 @@ impl Chain {
             for (knob, &value) in controls.tones.iter().zip(s.tone.iter()) {
                 let Some(knob) = knob else { continue };
                 let value = value.clamp(0.0, 1.0);
-                sim.set_control(knob.control, if knob.inverted { 1.0 - value } else { value });
+                sim.set_control(
+                    knob.control,
+                    if knob.inverted { 1.0 - value } else { value },
+                );
             }
             let rest = sim
                 .resting_position(controls.level)
@@ -2763,8 +2832,22 @@ impl Chain {
         self.pedal_hand_off = self.into / self.pedal_into;
         // The Master knob's lift rides with the make-up, because that is what
         // it is: the same output gain, turned by hand. See `master_lift`.
+        //
+        // The Twin is deliberately different. Its Drive parameter is the real
+        // AB763 1 MΩ channel Volume pot. Applying the drive-dependent make-up
+        // curve here used to cancel that pot almost exactly: the guitar stayed
+        // near one loudness while the make-up swung by roughly 76 dB end to
+        // end, and the large low-volume boost exaggerated tremolo/noise and
+        // switching transients. Keep one fixed calibration conversion for the
+        // Twin instead, and let the modelled pot determine the actual level.
         let trim = self.power_trim();
-        self.out_of_target = 10f64.powf(calibration.make_up_db_at(self.drive) / 20.0) / self.into
+        let make_up_drive = if self.voice == Gain::Twin {
+            TWIN_VOLUME_CALIBRATION_REFERENCE
+        } else {
+            self.drive
+        };
+        self.out_of_target = 10f64.powf(calibration.make_up_db_at(make_up_drive) / 20.0)
+            / self.into
             * self.master_lift
             * trim;
         // What the make-up would be with the Drive control at its reference
@@ -2777,9 +2860,12 @@ impl Chain {
     ///
     /// One, at the reference position; more above it, less below.
     ///
-    /// The make-up holds the output level constant whatever the Drive knob is
-    /// doing -- that is its whole job -- so anything sitting behind it is
-    /// handed the same level at every setting and is never driven any harder.
+    /// For the gain-normalised voices the make-up holds the output level
+    /// roughly constant while Drive moves, so anything sitting behind it is
+    /// handed about the same level. The Twin is intentionally excluded: its
+    /// Drive parameter is the physical channel Volume pot and its make-up is
+    /// fixed at `TWIN_VOLUME_CALIBRATION_REFERENCE`, so Twin Volume is allowed
+    /// to change level like the hardware.
     /// The power stage was moved in front of the make-up for exactly that
     /// reason and the comment there says so; the iron was left behind it and
     /// the same argument was never applied. Reported from a DAW as the Iron
@@ -2808,7 +2894,15 @@ impl Chain {
 
     /// The three tone knobs, sent to whichever stack is actually in the path:
     /// the circuit's own where it has one, the plugin's otherwise.
-    fn set_tone_knobs(&mut self, bass: f64, mid: f64, treble: f64, sweep: f64) {
+    fn set_tone_knobs(
+        &mut self,
+        bass: f64,
+        mid: f64,
+        treble: f64,
+        sweep: f64,
+        hm2_colour_lo: f64,
+        hm2_colour_hi: f64,
+    ) {
         let voice = voice_at(self.gain).0;
         if let Some((b, m, t)) = voice.own_tone() {
             let backwards = voice.tone_runs_backwards();
@@ -2821,6 +2915,10 @@ impl Chain {
         }
         if let Some((which, _)) = voice.own_sweep() {
             self.gains[self.gain].set_control(which, sweep.clamp(0.0, 1.0));
+        }
+        if let Some(((low, _), (high, _))) = voice.own_colour_mix() {
+            self.gains[self.gain].set_control(low, hm2_colour_lo.clamp(0.0, 1.0));
+            self.gains[self.gain].set_control(high, hm2_colour_hi.clamp(0.0, 1.0));
         }
         self.set_tone(crate::circuits::tone::BASS, bass);
         self.set_tone(crate::circuits::tone::MID, mid);
@@ -3005,7 +3103,10 @@ impl Chain {
         let reverb_return = SolverHealth::default();
 
         SolverBreakdown {
-            pedal: self.pedal.map(|i| health(&self.pedals[i])).unwrap_or_default(),
+            pedal: self
+                .pedal
+                .map(|i| health(&self.pedals[i]))
+                .unwrap_or_default(),
             line: if self.voice == Gain::Neve {
                 health(&self.line)
             } else {
@@ -3096,7 +3197,14 @@ impl Chain {
         self.set_cabinet(s.cabinet);
         self.set_oversampling(s.oversampling);
         self.set_drive(s.drive);
-        self.set_tone_knobs(s.bass, s.mid, s.treble, s.tone_sweep);
+        self.set_tone_knobs(
+            s.bass,
+            s.mid,
+            s.treble,
+            s.tone_sweep,
+            s.hm2_colour_lo,
+            s.hm2_colour_hi,
+        );
         self.set_reverb_and_tremolo(s);
     }
 
@@ -3227,7 +3335,9 @@ impl Chain {
             gain.set_realtime_value(twin::LDR_SLOT, ldr);
             #[cfg(test)]
             if let Some(trace) = twin_level_trace.as_mut() {
-                trace.transformer_secondary.push(self.twin_tank_drive_previous);
+                trace
+                    .transformer_secondary
+                    .push(self.twin_tank_drive_previous);
                 trace.tank_pickup.push(tank_pickup);
                 trace.wet_mix.push(tank_pickup);
             }
@@ -3239,7 +3349,11 @@ impl Chain {
         let twin_v4b_grid = self.twin_v4b_grid;
         let mut next_twin_tank_drive = self.twin_tank_drive_previous;
         let mut pedal = self.pedal.map(|i| &mut self.pedals[i]);
-        let input_scale = if pedal.is_some() { self.pedal_into } else { self.into };
+        let input_scale = if pedal.is_some() {
+            self.pedal_into
+        } else {
+            self.into
+        };
         let hand_off = self.pedal_hand_off;
         let mut y = self.over.process(x * input_scale, &mut |v| {
             // The pedal, when there is one, between the guitar and the circuit:
@@ -3419,16 +3533,10 @@ impl Chain {
         if low {
             sim.set_value(twin::INPUT_SERIES_SLOT, twin::INPUT_LOW_SERIES_OHMS);
             sim.set_value(twin::INPUT_JACK_LOAD_SLOT, twin::INPUT_OPEN_OHMS);
-            sim.set_value(
-                twin::INPUT_GRID_SHUNT_SLOT,
-                twin::INPUT_LOW_GRID_SHUNT_OHMS,
-            );
+            sim.set_value(twin::INPUT_GRID_SHUNT_SLOT, twin::INPUT_LOW_GRID_SHUNT_OHMS);
         } else {
             sim.set_value(twin::INPUT_SERIES_SLOT, twin::INPUT_HIGH_SERIES_OHMS);
-            sim.set_value(
-                twin::INPUT_JACK_LOAD_SLOT,
-                twin::INPUT_HIGH_JACK_LOAD_OHMS,
-            );
+            sim.set_value(twin::INPUT_JACK_LOAD_SLOT, twin::INPUT_HIGH_JACK_LOAD_OHMS);
             sim.set_value(twin::INPUT_GRID_SHUNT_SLOT, twin::INPUT_OPEN_OHMS);
         }
     }
@@ -3439,7 +3547,11 @@ impl Chain {
         if self.voice == Gain::Twin {
             self.gains[self.gain].set_value(
                 twin::BRIGHT_CAP_SLOT,
-                if bright { twin::BRIGHT_CAP_FARADS } else { twin::BRIGHT_OFF_FARADS },
+                if bright {
+                    twin::BRIGHT_CAP_FARADS
+                } else {
+                    twin::BRIGHT_OFF_FARADS
+                },
             );
         }
     }
@@ -3509,12 +3621,16 @@ impl Chain {
     /// operating-point hunt to perform.
     pub fn needs_operating_point(&self) -> bool {
         self.gains[self.gain].needs_operating_point()
-            || self.pedal.is_some_and(|i| self.pedals[i].needs_operating_point())
+            || self
+                .pedal
+                .is_some_and(|i| self.pedals[i].needs_operating_point())
             || self
                 .iron
                 .is_some_and(|i| self.irons[i].needs_operating_point())
             || (self.voice == Gain::Neve && self.line.needs_operating_point())
-            || self.active_power().is_some_and(|s| s.needs_operating_point())
+            || self
+                .active_power()
+                .is_some_and(|s| s.needs_operating_point())
             || (self.active_driven() && self.driven.sim.needs_operating_point())
     }
 
@@ -3569,11 +3685,17 @@ impl Chain {
     /// whose operating point is shared through `operating_point()` above.
     /// These legacy accessors remain for the plugin's channel-sharing call
     /// surface and intentionally report no separate simulation.
-    pub fn reverb_driver_operating_point(&self) -> Option<&[f64]> { None }
+    pub fn reverb_driver_operating_point(&self) -> Option<&[f64]> {
+        None
+    }
     pub fn share_reverb_driver_operating_point_from(&mut self, _op: &[f64]) {}
-    pub fn reverb_operating_point(&self) -> Option<&[f64]> { None }
+    pub fn reverb_operating_point(&self) -> Option<&[f64]> {
+        None
+    }
     pub fn share_reverb_operating_point_from(&mut self, _op: &[f64]) {}
-    pub fn twin_mix_operating_point(&self) -> Option<&[f64]> { None }
+    pub fn twin_mix_operating_point(&self) -> Option<&[f64]> {
+        None
+    }
     pub fn share_twin_mix_operating_point_from(&mut self, _op: &[f64]) {}
 
     /// Hunts only the operating points that are actually pending.

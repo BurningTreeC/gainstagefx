@@ -222,7 +222,11 @@ impl Tremolo {
         } else {
             0.0
         };
-        let coefficient = if target > self.lit { self.fall } else { self.rise };
+        let coefficient = if target > self.lit {
+            self.fall
+        } else {
+            self.rise
+        };
         self.lit = target + (self.lit - target) * coefficient;
         DARK_OHMS * (self.lit * LOG_CELL_RATIO).exp()
     }
@@ -277,12 +281,18 @@ mod tests {
         let mut previous = trem.resistance(0.4, 0.0);
         for _ in 0..48_000 {
             let gain = trem.attenuation(0.4, 0.0);
-            assert!((gain - 1.0).abs() < 2e-15, "zero Intensity must not modulate");
+            assert!(
+                (gain - 1.0).abs() < 2e-15,
+                "zero Intensity must not modulate"
+            );
             let now = trem.resistance(0.4, 0.0);
             changed |= (now - previous).abs() > 1e-6;
             previous = now;
         }
-        assert!(changed, "the optical oscillator must keep running at zero Intensity");
+        assert!(
+            changed,
+            "the optical oscillator must keep running at zero Intensity"
+        );
     }
 
     #[test]
@@ -292,7 +302,11 @@ mod tests {
         for sample in 0..100_000 {
             let a = low.resistance(0.63, 0.0);
             let b = high.resistance(0.63, 1.0);
-            assert_eq!(a.to_bits(), b.to_bits(), "cell trajectory changed at sample {sample}");
+            assert_eq!(
+                a.to_bits(),
+                b.to_bits(),
+                "cell trajectory changed at sample {sample}"
+            );
         }
     }
 
@@ -306,8 +320,14 @@ mod tests {
             min = min.min(gain);
             max = max.max(gain);
         }
-        assert!(max > 0.97, "dark cell should return close to the stock load: {max}");
-        assert!(min < 0.55, "lit cell should produce deep AB763 tremolo: {min}");
+        assert!(
+            max > 0.97,
+            "dark cell should return close to the stock load: {max}"
+        );
+        assert!(
+            min < 0.55,
+            "lit cell should produce deep AB763 tremolo: {min}"
+        );
     }
 
     #[test]
@@ -332,7 +352,11 @@ mod tests {
                 phase -= 1.0;
             }
             let drive = (std::f64::consts::TAU * phase).sin();
-            struck = if struck { drive > QUENCH } else { drive > STRIKE };
+            struck = if struck {
+                drive > QUENCH
+            } else {
+                drive > STRIKE
+            };
             let target = if struck {
                 ((drive - QUENCH) / (1.0 - QUENCH)).clamp(0.0, 1.0)
             } else {

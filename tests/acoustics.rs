@@ -17,7 +17,11 @@ fn db(x: f64) -> f64 {
 #[test]
 fn biquads_match_their_analog_prototypes_in_the_audible_band() {
     for rate in [44_100.0, 48_000.0, 96_000.0] {
-        for (fc, gain, q) in [(900.0, 4.2, 1.9), (2_454.0, 10.6, 1.26), (11_129.0, 1.76, 3.75)] {
+        for (fc, gain, q) in [
+            (900.0, 4.2, 1.9),
+            (2_454.0, 10.6, 1.26),
+            (11_129.0, 1.76, 3.75),
+        ] {
             let b = Biquad::peaking(rate, fc, gain, q);
             for f in [100.0, 1_000.0, 3_000.0, 8_000.0, 12_000.0] {
                 let err = db(b.magnitude(rate, f)) - analog::peaking_db(f, fc, gain, q);
@@ -82,14 +86,23 @@ struct Rig {
 }
 
 impl Rig {
-    fn new(rate: f64, cab: Option<&'static CabinetProfile>, speaker: &'static SpeakerProfile, mic: MicSlot) -> Self {
+    fn new(
+        rate: f64,
+        cab: Option<&'static CabinetProfile>,
+        speaker: &'static SpeakerProfile,
+        mic: MicSlot,
+    ) -> Self {
         let mut stage = AcousticStage::new(rate);
         stage.configure(cab, speaker, mic, MicSlot::Off);
         Self { stage, rate }
     }
 
     fn place(&mut self, position: f64, distance: f64, angle: f64) -> &mut Self {
-        let p = MicPlacement { position, distance, angle };
+        let p = MicPlacement {
+            position,
+            distance,
+            angle,
+        };
         self.stage.set_placement(p, p, 0.0, false, false);
         self.stage.reset();
         self
@@ -101,7 +114,9 @@ impl Rig {
         let n = (self.rate * 0.25) as usize + (self.rate * 8.0 / hz) as usize;
         let mut peak: f64 = 0.0;
         for k in 0..n {
-            let y = self.stage.process(0.1 * (TAU * hz * k as f64 / self.rate).sin());
+            let y = self
+                .stage
+                .process(0.1 * (TAU * hz * k as f64 / self.rate).sin());
             if k > n * 3 / 4 {
                 peak = peak.max(y.abs());
             }
@@ -114,18 +129,34 @@ const SM57: MicSlot = MicSlot::Profile(&MicProfile::DYNAMIC_57);
 
 #[test]
 fn centre_is_brighter_than_edge_without_a_treble_knob() {
-    let mut r = Rig::new(48_000.0, Some(&CabinetProfile::CLOSED_112), &SpeakerProfile::BRIT_V30, SM57);
+    let mut r = Rig::new(
+        48_000.0,
+        Some(&CabinetProfile::CLOSED_112),
+        &SpeakerProfile::BRIT_V30,
+        SM57,
+    );
     let centre = (r.place(0.0, 0.025, 0.0).level(500.0), r.level(5_000.0));
     let edge = (r.place(1.0, 0.025, 0.0).level(500.0), r.level(5_000.0));
     let darkening = (centre.1 - centre.0) - (edge.1 - edge.0);
-    assert!((3.0..12.0).contains(&darkening), "edge darker by {darkening} dB");
-    assert!((centre.0 - edge.0).abs() < 3.0, "low mids barely move: {centre:?} {edge:?}");
+    assert!(
+        (3.0..12.0).contains(&darkening),
+        "edge darker by {darkening} dB"
+    );
+    assert!(
+        (centre.0 - edge.0).abs() < 3.0,
+        "low mids barely move: {centre:?} {edge:?}"
+    );
 }
 
 #[test]
 fn distance_lowers_level_and_proximity_and_ribbons_have_more_of_it() {
     let tilt = |mic: MicSlot| {
-        let mut r = Rig::new(48_000.0, Some(&CabinetProfile::CLOSED_112), &SpeakerProfile::BRIT_V30, mic);
+        let mut r = Rig::new(
+            48_000.0,
+            Some(&CabinetProfile::CLOSED_112),
+            &SpeakerProfile::BRIT_V30,
+            mic,
+        );
         let close = r.place(0.2, 0.01, 0.0).level(100.0) - r.level(1_000.0);
         let close_1k = r.level(1_000.0);
         let far = r.place(0.2, 0.6, 0.0).level(100.0) - r.level(1_000.0);
@@ -138,7 +169,10 @@ fn distance_lowers_level_and_proximity_and_ribbons_have_more_of_it() {
     assert!(sm57_level > 3.0, "farther is quieter: {sm57_level}");
     assert!(ideal_level > 3.0);
     assert!(sm57_bass > 1.0, "proximity: {sm57_bass}");
-    assert!(ribbon_bass > sm57_bass + 2.0, "ribbon {ribbon_bass} vs dynamic {sm57_bass}");
+    assert!(
+        ribbon_bass > sm57_bass + 2.0,
+        "ribbon {ribbon_bass} vs dynamic {sm57_bass}"
+    );
     // An omni pressure transducer has no proximity; only geometry (array, baffle) remains.
     assert!(ideal_bass < sm57_bass, "omni {ideal_bass}");
 }
@@ -146,7 +180,12 @@ fn distance_lowers_level_and_proximity_and_ribbons_have_more_of_it() {
 #[test]
 fn angle_is_microphone_specific() {
     let darken = |mic: MicSlot| {
-        let mut r = Rig::new(48_000.0, Some(&CabinetProfile::CLOSED_112), &SpeakerProfile::BRIT_V30, mic);
+        let mut r = Rig::new(
+            48_000.0,
+            Some(&CabinetProfile::CLOSED_112),
+            &SpeakerProfile::BRIT_V30,
+            mic,
+        );
         let on = r.place(0.0, 0.3, 0.0).level(8_000.0) - r.level(1_000.0);
         let off = r.place(0.0, 0.3, 45.0).level(8_000.0) - r.level(1_000.0);
         on - off
@@ -154,9 +193,17 @@ fn angle_is_microphone_specific() {
     let dynamic = darken(SM57);
     let ribbon = darken(MicSlot::Profile(&MicProfile::RIBBON_121));
     assert!(dynamic > 0.3, "SM57 off-axis darker: {dynamic}");
-    assert!(ribbon < dynamic, "ribbon stays more consistent: {ribbon} vs {dynamic}");
+    assert!(
+        ribbon < dynamic,
+        "ribbon stays more consistent: {ribbon} vs {dynamic}"
+    );
     // A figure-8 turned side-on to a single source nulls it.
-    let mut r = Rig::new(48_000.0, Some(&CabinetProfile::CLOSED_112), &SpeakerProfile::BRIT_V30, MicSlot::Profile(&MicProfile::RIBBON_121));
+    let mut r = Rig::new(
+        48_000.0,
+        Some(&CabinetProfile::CLOSED_112),
+        &SpeakerProfile::BRIT_V30,
+        MicSlot::Profile(&MicProfile::RIBBON_121),
+    );
     let null = r.place(0.0, 0.8, 0.0).level(1_000.0) - r.place(0.0, 0.8, 90.0).level(1_000.0);
     assert!(null > 15.0, "figure-8 side null: {null}");
 }
@@ -173,7 +220,12 @@ fn condenser_extends_further_than_dynamic() {
 #[test]
 fn a_4x12_is_not_a_louder_1x12() {
     let shape = |cab: &'static CabinetProfile| {
-        let mut r = Rig::new(48_000.0, Some(cab), &SpeakerProfile::BRIT_V30, MicSlot::Ideal);
+        let mut r = Rig::new(
+            48_000.0,
+            Some(cab),
+            &SpeakerProfile::BRIT_V30,
+            MicSlot::Ideal,
+        );
         r.place(0.0, 1.0, 0.0);
         [150.0, 1_000.0, 2_500.0, 4_000.0].map(|f| r.level(f))
     };
@@ -184,7 +236,10 @@ fn a_4x12_is_not_a_louder_1x12() {
     // At a metre, four cones add up at low frequencies and interfere and beam at high
     // ones, so the array's bass-to-treble balance differs from the single cone's.
     let tilt = |s: [f64; 4]| s[0] - s[3];
-    assert!(tilt(four) > tilt(one) + 3.0, "array tilt: {one:?} vs {four:?}");
+    assert!(
+        tilt(four) > tilt(one) + 3.0,
+        "array tilt: {one:?} vs {four:?}"
+    );
     let spread = (0..3).map(|i| (a[i] - b[i]).abs()).fold(0.0, f64::max);
     assert!(spread > 3.0, "{a:?} vs {b:?}");
 }
@@ -192,7 +247,12 @@ fn a_4x12_is_not_a_louder_1x12() {
 #[test]
 fn an_open_back_cancels_low_frequencies_a_closed_box_does_not() {
     let bass = |cab: &'static CabinetProfile| {
-        let mut r = Rig::new(48_000.0, Some(cab), &SpeakerProfile::AMERICAN_CERAMIC, MicSlot::Ideal);
+        let mut r = Rig::new(
+            48_000.0,
+            Some(cab),
+            &SpeakerProfile::AMERICAN_CERAMIC,
+            MicSlot::Ideal,
+        );
         r.place(0.0, 1.0, 0.0).level(70.0) - r.level(1_000.0)
     };
     let open = bass(&CabinetProfile::AMERICAN_OPEN_112);
@@ -204,8 +264,17 @@ fn an_open_back_cancels_low_frequencies_a_closed_box_does_not() {
 fn dual_microphones_keep_physical_delay_and_polarity_works() {
     let rate = 48_000.0;
     let mut stage = AcousticStage::new(rate);
-    stage.configure(Some(&CabinetProfile::BRIT_CLOSED), &SpeakerProfile::BRIT_T75, SM57, SM57);
-    let near = MicPlacement { position: 0.3, distance: 0.02, angle: 0.0 };
+    stage.configure(
+        Some(&CabinetProfile::BRIT_CLOSED),
+        &SpeakerProfile::BRIT_T75,
+        SM57,
+        SM57,
+    );
+    let near = MicPlacement {
+        position: 0.3,
+        distance: 0.02,
+        angle: 0.0,
+    };
     // Identical microphones at identical places, inverted and blended equally: silence.
     stage.set_placement(near, near, 0.5, true, false);
     stage.reset();
@@ -215,13 +284,19 @@ fn dual_microphones_keep_physical_delay_and_polarity_works() {
     }
     assert!(peak < 1e-9, "{peak}");
     // Moving B back by 30 cm delays it by about 42 samples unless aligned.
-    let far = MicPlacement { distance: 0.32, ..near };
+    let far = MicPlacement {
+        distance: 0.32,
+        ..near
+    };
     stage.set_placement(near, far, 0.5, false, false);
     stage.reset();
     let expected = 0.30 / 343.0 * rate;
     let (b_first, _) = stage.relative_delays(1);
     assert_eq!(stage.relative_delays(0).0, 0.0);
-    assert!((b_first / expected - 1.0).abs() < 0.05, "{b_first} vs {expected}");
+    assert!(
+        (b_first / expected - 1.0).abs() < 0.05,
+        "{b_first} vs {expected}"
+    );
     stage.set_placement(near, far, 0.5, false, true);
     stage.reset();
     assert_eq!(stage.relative_delays(1).0, 0.0, "aligned");
@@ -230,11 +305,22 @@ fn dual_microphones_keep_physical_delay_and_polarity_works() {
 #[test]
 fn close_placement_adds_no_latency() {
     let mut stage = AcousticStage::new(48_000.0);
-    stage.configure(Some(&CabinetProfile::CLOSED_112), &SpeakerProfile::BRIT_V30, MicSlot::Ideal, MicSlot::Off);
-    let p = MicPlacement { position: 0.0, distance: 0.02, angle: 0.0 };
+    stage.configure(
+        Some(&CabinetProfile::CLOSED_112),
+        &SpeakerProfile::BRIT_V30,
+        MicSlot::Ideal,
+        MicSlot::Off,
+    );
+    let p = MicPlacement {
+        position: 0.0,
+        distance: 0.02,
+        angle: 0.0,
+    };
     stage.set_placement(p, p, 0.0, false, false);
     stage.reset();
-    let response: Vec<f64> = (0..64).map(|k| stage.process(if k == 0 { 1.0 } else { 0.0 })).collect();
+    let response: Vec<f64> = (0..64)
+        .map(|k| stage.process(if k == 0 { 1.0 } else { 0.0 }))
+        .collect();
     let first = response.iter().position(|y| y.abs() > 1e-6).unwrap();
     assert_eq!(first, 0, "{response:?}");
 }
@@ -244,7 +330,12 @@ fn automation_is_smooth_bounded_and_allocation_free_at_every_rate() {
     for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
         for cab in CabinetProfile::ALL {
             let mut stage = AcousticStage::new(rate);
-            stage.configure(Some(cab), cab.default_speaker, SM57, MicSlot::Profile(&MicProfile::RIBBON_121));
+            stage.configure(
+                Some(cab),
+                cab.default_speaker,
+                SM57,
+                MicSlot::Profile(&MicProfile::RIBBON_121),
+            );
             let mut seed = 0x9e3779b9u32;
             let mut rand = move || {
                 seed ^= seed << 13;
@@ -256,8 +347,16 @@ fn automation_is_smooth_bounded_and_allocation_free_at_every_rate() {
             let mut worst_step: f64 = 0.0;
             assert_no_heap(|| {
                 for block in 0..200 {
-                    let a = MicPlacement { position: rand(), distance: 0.01 + rand() * 0.99, angle: rand() * 90.0 };
-                    let b = MicPlacement { position: rand(), distance: 0.01 + rand() * 0.99, angle: rand() * 90.0 };
+                    let a = MicPlacement {
+                        position: rand(),
+                        distance: 0.01 + rand() * 0.99,
+                        angle: rand() * 90.0,
+                    };
+                    let b = MicPlacement {
+                        position: rand(),
+                        distance: 0.01 + rand() * 0.99,
+                        angle: rand() * 90.0,
+                    };
                     stage.set_placement(a, b, rand(), block % 7 == 0, block % 5 == 0);
                     for k in 0..128 {
                         let x = 0.25 * (TAU * 220.0 * (block * 128 + k) as f64 / rate).sin();
@@ -279,7 +378,12 @@ fn automation_is_smooth_bounded_and_allocation_free_at_every_rate() {
 fn placement_response_does_not_depend_on_sample_rate() {
     let mut reference = None;
     for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
-        let mut r = Rig::new(rate, Some(&CabinetProfile::BRIT_V30), &SpeakerProfile::BRIT_V30, SM57);
+        let mut r = Rig::new(
+            rate,
+            Some(&CabinetProfile::BRIT_V30),
+            &SpeakerProfile::BRIT_V30,
+            SM57,
+        );
         r.place(0.4, 0.05, 15.0);
         let levels = [200.0, 1_000.0, 3_000.0, 6_000.0].map(|f| r.level(f));
         match reference {

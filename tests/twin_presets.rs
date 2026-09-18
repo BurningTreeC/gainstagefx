@@ -153,7 +153,7 @@ fn completed_ab763_presets_hold_their_calibrated_voicing() {
     assert!((throb.reverb - 0.38).abs() < 1e-6);
     assert!((throb.speed - 0.40).abs() < 1e-6);
     assert!((throb.intensity - 0.94).abs() < 1e-6);
-    assert!((throb.output_trim - (-1.5)).abs() < 1e-6);
+    assert!((throb.output_trim - 2.1).abs() < 1e-6);
 
     let clean_thd = core_thd(clean);
     let throb_thd = core_thd(throb);
@@ -161,10 +161,8 @@ fn completed_ab763_presets_hold_their_calibrated_voicing() {
     let throb_reverb = reverb_ratio_db(throb);
     let throb_depth = tremolo_depth_db(throb);
 
-    let clean_rms = output_rms_before_trim(clean)
-        * 10f64.powf(clean.output_trim as f64 / 20.0);
-    let throb_rms = output_rms_before_trim(throb)
-        * 10f64.powf(throb.output_trim as f64 / 20.0);
+    let clean_rms = output_rms_before_trim(clean) * 10f64.powf(clean.output_trim as f64 / 20.0);
+    let throb_rms = output_rms_before_trim(throb) * 10f64.powf(throb.output_trim as f64 / 20.0);
     let relative_level_db = 20.0 * (throb_rms.max(1e-15) / clean_rms.max(1e-15)).log10();
 
     println!(

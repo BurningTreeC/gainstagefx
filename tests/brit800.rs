@@ -5,12 +5,17 @@ use allocations::assert_no_heap;
 use gainstagefx::circuits::brit800::{self, BASS, MIDDLE, TREBLE, VOLUME};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::voice::{Chain, Gain, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS,
+};
 
 const RATE: f64 = 96_000.0;
 
 fn sim(at: &str) -> Simulation {
-    let mut sim = Simulation::new(brit800::tap(10_000.0, 1_000_000.0, at).expect("builds"), RATE);
+    let mut sim = Simulation::new(
+        brit800::tap(10_000.0, 1_000_000.0, at).expect("builds"),
+        RATE,
+    );
     for control in [VOLUME, TREBLE, BASS, MIDDLE] {
         sim.set_control(control, 0.5);
     }
@@ -55,7 +60,10 @@ fn the_operating_point_agrees_with_the_drawings_voltage_table() {
         // A generic ECC83 fit against one measured amplifier's averages: ten per
         // cent for the plates and rails, thirty for the small cathode voltages.
         let limit = if *expected < 10.0 { 0.3 } else { 0.1 };
-        assert!(error < limit, "{name}: {got:.2} V against the table's {expected} V");
+        assert!(
+            error < limit,
+            "{name}: {got:.2} V against the table's {expected} V"
+        );
     }
 }
 
@@ -63,7 +71,9 @@ fn the_operating_point_agrees_with_the_drawings_voltage_table() {
 fn silence_in_is_silence_out() {
     let mut s = sim("out");
     assert!(s.find_operating_point());
-    let worst = (0..(RATE as usize / 4)).map(|_| s.process(0.0).abs()).fold(0.0, f64::max);
+    let worst = (0..(RATE as usize / 4))
+        .map(|_| s.process(0.0).abs())
+        .fold(0.0, f64::max);
     assert!(worst < 0.05, "{worst}");
 }
 
@@ -76,7 +86,9 @@ fn the_stack_controls_go_the_way_they_are_labelled() {
         at(&[(control, 1.0)], hz, small).gain_db() - at(&[(control, 0.0)], hz, small).gain_db()
     };
     let (treble, bass, middle) = (span(TREBLE, 4_000.0), span(BASS, 80.0), span(MIDDLE, 600.0));
-    println!("treble {treble:.1} dB at 4 k, bass {bass:.1} dB at 80 Hz, middle {middle:.1} dB at 600 Hz");
+    println!(
+        "treble {treble:.1} dB at 4 k, bass {bass:.1} dB at 80 Hz, middle {middle:.1} dB at 600 Hz"
+    );
     assert!(treble > 6.0, "{treble}");
     assert!(bass > 6.0, "{bass}");
     assert!(middle > 3.0, "{middle}");
@@ -90,17 +102,29 @@ fn the_preamp_volume_sets_the_gain_and_the_bright_cap_works() {
     let high = at(&[(VOLUME, 1.0)], 1_000.0, 0.001).gain_db();
     assert!(high - low > 30.0, "{low:.1} to {high:.1} dB");
     let tilt = |volume: f64| {
-        at(&[(VOLUME, volume)], 5_000.0, 0.001).gain_db() - at(&[(VOLUME, volume)], 200.0, 0.001).gain_db()
+        at(&[(VOLUME, volume)], 5_000.0, 0.001).gain_db()
+            - at(&[(VOLUME, volume)], 200.0, 0.001).gain_db()
     };
-    assert!(tilt(0.2) > tilt(1.0) + 3.0, "{} vs {}", tilt(0.2), tilt(1.0));
+    assert!(
+        tilt(0.2) > tilt(1.0) + 3.0,
+        "{} vs {}",
+        tilt(0.2),
+        tilt(1.0)
+    );
     let driven = at(&[(VOLUME, 1.0)], 220.0, 0.122);
-    println!("{:.1} % distortion at a guitar's level", driven.thd_percent());
+    println!(
+        "{:.1} % distortion at a guitar's level",
+        driven.thd_percent()
+    );
     assert!(driven.thd_percent() > 15.0, "{}", driven.thd_percent());
 }
 
 #[test]
 fn matched_is_the_brit_el34_and_the_chain_stays_realtime_safe() {
-    assert_eq!(PowerAmp::Matched.resolved(Gain::Brit800), Some(PowerModel::BritEL34));
+    assert_eq!(
+        PowerAmp::Matched.resolved(Gain::Brit800),
+        Some(PowerModel::BritEL34)
+    );
     let settings = Settings {
         gain: Gain::Brit800,
         drive: 0.8,

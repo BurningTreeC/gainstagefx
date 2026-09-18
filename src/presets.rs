@@ -12,8 +12,7 @@
 use nih_plug::prelude::Enum;
 
 use crate::params::{
-    Mains,
-    Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, MicModel, Oversampling, PedalModel,
+    Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, Mains, MicModel, Oversampling, PedalModel,
     PowerAmp, SpeakerModel, ToneStack,
 };
 
@@ -34,6 +33,11 @@ pub struct Preset {
     /// A circuit's own fourth control, where it has one; noon otherwise.
     /// See `voice::Gain::own_sweep`.
     pub tone_sweep: f32,
+    /// The Heavy Metal circuit's Colour Mix pair. These are separate from the
+    /// plugin's generic Bass/Treble stack controls and rest at noon for every
+    /// other circuit.
+    pub hm2_colour_lo: f32,
+    pub hm2_colour_hi: f32,
     pub power_amp: PowerAmp,
     /// Speaker, cabinet and microphones. `CabModel::Legacy` keeps the old baked
     /// `cabinet` filter; see `Chain::set_acoustic`.
@@ -116,6 +120,8 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         pedal_tone_d: 0.5,
         pedal_level: 0.5,
         tone_sweep: 0.5,
+        hm2_colour_lo: 0.5,
+        hm2_colour_hi: 0.5,
         power_amp: PowerAmp::Matched,
         cab_model: CabModel::Legacy,
         speaker: SpeakerModel::Matched,
@@ -437,7 +443,9 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.3,
         mic_a_distance: 0.03,
         oversampling: Oversampling::Off,
-        output_trim: -5.0,
+        // Twin Volume now changes real amplifier level. Preserve this preset
+        // at its previously calibrated loudness with one fixed preset trim.
+        output_trim: -12.0,
         ..base("Overdrive", "Green Overdrive")
     },
     // Little drive and a lot of level, into a British master-volume amplifier
@@ -677,10 +685,11 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_distance: 0.04,
         oversampling: Oversampling::Off,
-        // Optical modulation raises the untrimmed RMS by about 1.49 dB
-        // against Blackface Clean. The panel is stepped in tenths, so -1.5 dB
-        // is the nearest user-representable level match.
-        output_trim: -1.5,
+        // The Twin no longer normalises channel Volume dynamically. At this
+        // 0.17 setting the fixed 0.24 calibration reference is 3.64 dB lower
+        // than the old drive-following make-up. +2.1 dB keeps the shipped
+        // preset at the same calibrated level relative to Blackface Clean.
+        output_trim: 2.1,
         ..base("Amplifier", "Blackface Throb")
     },
     Preset {
@@ -1053,7 +1062,7 @@ pub const PRESETS: &[Preset] = &[
         // An HM-2 with everything at ten into a clean amplifier is the loudest
         // thing in the catalogue; this is the trim that keeps it level with the
         // rest. Measured with `examples/presetlevel.rs`.
-        output_trim: -9.0,
+        output_trim: -11.5,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Swedish Death '90")
     },
@@ -1341,6 +1350,9 @@ pub const PRESETS: &[Preset] = &[
         mic_a_distance: 0.03,
         mic_a_angle: 0.0,
         oversampling: Oversampling::Off,
+        // Preserve the shipped level after making Twin Volume a real level
+        // control instead of a gain-normalised Drive control.
+        output_trim: -14.2,
         ..base("Blues", "Texas Storm '83")
     },
 ];
@@ -1421,7 +1433,21 @@ impl Preset {
             bass: self.bass as f64,
             mid: self.mid as f64,
             treble: self.treble as f64,
-            tone_sweep: self.tone_sweep as f64,
+            tone_sweep: if self.circuit == Circuit::Mt2 {
+                self.tone_sweep as f64
+            } else {
+                0.5
+            },
+            hm2_colour_lo: if self.circuit == Circuit::Hm2 {
+                self.hm2_colour_lo as f64
+            } else {
+                0.5
+            },
+            hm2_colour_hi: if self.circuit == Circuit::Hm2 {
+                self.hm2_colour_hi as f64
+            } else {
+                0.5
+            },
             twin_low_input: self.twin_low_input,
             twin_bright: self.twin_bright,
             reverb: self.reverb as f64,
@@ -1439,7 +1465,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 48] {
+    pub fn dials(&self) -> [(&'static str, f32); 50] {
         [
             ("in_trim", self.input_trim),
             (
@@ -1455,6 +1481,8 @@ impl Preset {
             ("pedal_tone_d", self.pedal_tone_d),
             ("pedal_level", self.pedal_level),
             ("tone_sweep", self.tone_sweep),
+            ("hm2_colour_lo", self.hm2_colour_lo),
+            ("hm2_colour_hi", self.hm2_colour_hi),
             ("circuit", self.circuit.to_index() as f32),
             ("power_amp", self.power_amp.to_index() as f32),
             ("mains", self.mains.to_index() as f32),
@@ -1491,14 +1519,10 @@ impl Preset {
             ("intensity", self.intensity),
             ("mix", self.mix),
             ("out_trim", self.output_trim),
-            (
-                "oversampling",
-                self.oversampling.to_index() as f32,
-            ),
+            ("oversampling", self.oversampling.to_index() as f32),
         ]
     }
 }
-
 
 /// What the strip shows when no preset has been loaded.
 ///
@@ -1680,6 +1704,34 @@ fn model_ids(values: &BTreeMap<String, f32>, params: &impl Params) -> BTreeMap<S
         .collect()
 }
 
+/// Resolve the circuit stored in a normalized value map using the real host
+/// parameter. Keeping this conversion in one place avoids assuming that enum
+/// normalized values or list lengths will stay fixed forever.
+fn circuit_in(values: &BTreeMap<String, f32>, params: &impl Params) -> Option<Circuit> {
+    let value = *values.get("circuit")?;
+    let (_, ptr, _) = params
+        .param_map()
+        .into_iter()
+        .find(|(id, _, _)| id == "circuit")?;
+    // SAFETY: the pointer belongs to `params` for the duration of this call.
+    let index = unsafe { ptr.preview_plain(value) }.round().max(0.0) as usize;
+    Circuit::ALL.get(index).copied()
+}
+
+/// Circuit-private controls must never be latent state carried by an unrelated
+/// preset. Neutralize them unless their owning circuit is the one being saved
+/// or loaded. The values here are normalized and all three parameters are
+/// linear 0..1 controls, so 0.5 is exactly noon.
+fn isolate_circuit_controls(values: &mut BTreeMap<String, f32>, circuit: Circuit) {
+    if circuit != Circuit::Mt2 {
+        values.insert("tone_sweep".into(), 0.5);
+    }
+    if circuit != Circuit::Hm2 {
+        values.insert("hm2_colour_lo".into(), 0.5);
+        values.insert("hm2_colour_hi".into(), 0.5);
+    }
+}
+
 /// Upgrade routing defaults and resolve saved stable IDs on the UI/state thread.
 /// Older enum lists remain unchanged, so their normalized legacy values still load.
 pub fn migrate(preset: &mut Stored, params: &impl Params) {
@@ -1717,6 +1769,23 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
             }
         }
     }
+
+    // Heavy Metal originally borrowed the generic Bass/Treble parameters for
+    // its Colour Mix. Preserve the sound of an old HM-2 user preset by copying
+    // those two values into the new dedicated controls on first migration.
+    // Keep Bass/Treble too: if the plugin stack was also enabled, the old
+    // preset drove both layers from the same knobs and should still do so.
+    let circuit = circuit_in(&preset.values, params).unwrap_or(Circuit::Crunch);
+    if circuit == Circuit::Hm2 {
+        let low = preset.values.get("bass").copied().unwrap_or(0.5);
+        let high = preset.values.get("treble").copied().unwrap_or(0.5);
+        preset.values.entry("hm2_colour_lo".into()).or_insert(low);
+        preset.values.entry("hm2_colour_hi".into()).or_insert(high);
+    } else {
+        preset.values.entry("hm2_colour_lo".into()).or_insert(0.5);
+        preset.values.entry("hm2_colour_hi".into()).or_insert(0.5);
+    }
+    isolate_circuit_controls(&mut preset.values, circuit);
     preset.model_ids = model_ids(&preset.values, params);
 }
 
@@ -1754,10 +1823,13 @@ pub fn same(live: &BTreeMap<String, f32>, saved: &BTreeMap<String, f32>) -> bool
 
 /// Take the current panel settings as a preset.
 pub fn capture(params: &impl Params, name: &str) -> Stored {
+    let mut values = live_values(params);
+    let circuit = circuit_in(&values, params).unwrap_or(Circuit::Crunch);
+    isolate_circuit_controls(&mut values, circuit);
     Stored {
-        model_ids: model_ids(&live_values(params), params),
+        model_ids: model_ids(&values, params),
         name: name.trim().to_string(),
-        values: live_values(params),
+        values,
         built_in: false,
         group: SAVED,
     }

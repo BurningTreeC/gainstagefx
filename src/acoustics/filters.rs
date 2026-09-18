@@ -154,8 +154,14 @@ impl Biquad {
         let w = 2.0 * PI * hz / rate;
         let (c1, s1) = (w.cos(), -w.sin());
         let (c2, s2) = ((2.0 * w).cos(), -(2.0 * w).sin());
-        let num = (self.b0 + self.b1 * c1 + self.b2 * c2, self.b1 * s1 + self.b2 * s2);
-        let den = (1.0 + self.a1 * c1 + self.a2 * c2, self.a1 * s1 + self.a2 * s2);
+        let num = (
+            self.b0 + self.b1 * c1 + self.b2 * c2,
+            self.b1 * s1 + self.b2 * s2,
+        );
+        let den = (
+            1.0 + self.a1 * c1 + self.a2 * c2,
+            self.a1 * s1 + self.a2 * s2,
+        );
         let d = den.0 * den.0 + den.1 * den.1;
         (
             (num.0 * den.0 + num.1 * den.1) / d,
@@ -304,7 +310,8 @@ impl DelayLine {
         let f = delay - i as f64;
         if i == 0 {
             let (y0, y1, y2) = (self.at(0), self.at(1), self.at(2));
-            return y0 * (f - 1.0) * (f - 2.0) * 0.5 - y1 * f * (f - 2.0) + y2 * f * (f - 1.0) * 0.5;
+            return y0 * (f - 1.0) * (f - 2.0) * 0.5 - y1 * f * (f - 2.0)
+                + y2 * f * (f - 1.0) * 0.5;
         }
         // Samples at i-1, i, i+1, i+2 back; interpolate at i + f, i.e. u = f + 1.
         let (ym1, y0, y1, y2) = (self.at(i - 1), self.at(i), self.at(i + 1), self.at(i + 2));

@@ -176,7 +176,11 @@ impl std::fmt::Debug for MicSlot {
 /// and held beyond. Consistent with the SM57's published polars (about half the 90 degree
 /// extra loss at 45 degrees). Zero loss is a wire.
 fn off_axis_corner(off_db: f64, cos_psi: f64) -> f64 {
-    let weight = if cos_psi >= 0.0 { 1.0 - cos_psi * cos_psi } else { 1.0 };
+    let weight = if cos_psi >= 0.0 {
+        1.0 - cos_psi * cos_psi
+    } else {
+        1.0
+    };
     let loss = off_db * weight;
     if loss < 1e-3 {
         return f64::INFINITY;
@@ -240,8 +244,16 @@ impl AcousticStage {
         align: bool,
     ) {
         let (a, b) = (a.clamped(), b.clamped());
-        let blend = if blend.is_finite() { blend.clamp(0.0, 1.0) } else { 0.5 };
-        if self.placements != [a, b] || self.invert != invert || self.align != align || self.blend.target != blend {
+        let blend = if blend.is_finite() {
+            blend.clamp(0.0, 1.0)
+        } else {
+            0.5
+        };
+        if self.placements != [a, b]
+            || self.invert != invert
+            || self.align != align
+            || self.blend.target != blend
+        {
             self.placements = [a, b];
             self.invert = invert;
             self.align = align;
@@ -277,7 +289,10 @@ impl AcousticStage {
     /// The shortest and longest relative propagation delay of a microphone, samples.
     pub fn relative_delays(&self, mic: usize) -> (f64, f64) {
         let paths = &self.mics[mic].paths[..self.mics[mic].count];
-        let shortest = paths.iter().map(|p| p.delay.target).fold(f64::INFINITY, f64::min);
+        let shortest = paths
+            .iter()
+            .map(|p| p.delay.target)
+            .fold(f64::INFINITY, f64::min);
         let longest = paths.iter().map(|p| p.delay.target).fold(0.0, f64::max);
         (shortest, longest)
     }
@@ -290,7 +305,12 @@ impl AcousticStage {
         }
         self.voicing[3] = Biquad::lowpass(rate, b.lowpass_hz, b.lowpass_q);
         let at = 600.0;
-        self.voicing_norm = 1.0 / self.voicing.iter().map(|bq| bq.magnitude(rate, at)).product::<f64>();
+        self.voicing_norm = 1.0
+            / self
+                .voicing
+                .iter()
+                .map(|bq| bq.magnitude(rate, at))
+                .product::<f64>();
 
         self.enclosure_on = false;
         if let Some(cab) = self.cabinet.filter(|c| !c.is_open()) {
@@ -316,7 +336,12 @@ impl AcousticStage {
                     bq.set_peaking(rate, peak.hz, peak.gain_db, peak.q);
                 }
                 mic.eq[5] = Biquad::lowpass(rate, p.lowpass.0, p.lowpass.1);
-                mic.eq_norm = 1.0 / mic.eq.iter().map(|bq| bq.magnitude(rate, 1_000.0)).product::<f64>();
+                mic.eq_norm = 1.0
+                    / mic
+                        .eq
+                        .iter()
+                        .map(|bq| bq.magnitude(rate, 1_000.0))
+                        .product::<f64>();
                 mic.cubic = p.family.cubic();
                 mic.quadratic = p.family.quadratic();
             }
@@ -340,7 +365,9 @@ impl AcousticStage {
         let target = drivers[0];
         let outward = if target.0 > 0.0 { 1.0 } else { -1.0 };
         let geometric = |length: f64| {
-            ((radius * radius + REFERENCE_DISTANCE * REFERENCE_DISTANCE) / (radius * radius + length * length)).sqrt()
+            ((radius * radius + REFERENCE_DISTANCE * REFERENCE_DISTANCE)
+                / (radius * radius + length * length))
+                .sqrt()
         };
 
         let mut minimum = [f64::INFINITY; 2];
@@ -354,7 +381,10 @@ impl AcousticStage {
                 MicSlot::Ideal => None,
                 MicSlot::Profile(p) => Some(p),
             };
-            let (pa, pb) = profile.map(|p| p.pattern).unwrap_or(Pattern::Omni).coefficients();
+            let (pa, pb) = profile
+                .map(|p| p.pattern)
+                .unwrap_or(Pattern::Omni)
+                .coefficients();
             let depth = profile.map(|p| p.capsule_depth).unwrap_or(0.0);
             let at = (
                 target.0 + outward * placement.position * radius,
@@ -367,7 +397,13 @@ impl AcousticStage {
 
             let mut count = 0;
             let mut nearest = f64::INFINITY;
-            let push = |path: &mut Path, delay: f64, omni: f64, gradient: f64, directivity: f64, off: f64, diffraction: f64| {
+            let push = |path: &mut Path,
+                        delay: f64,
+                        omni: f64,
+                        gradient: f64,
+                        directivity: f64,
+                        off: f64,
+                        diffraction: f64| {
                 path.absolute = delay;
                 path.omni.aim(omni, snap);
                 path.gradient.aim(gradient, snap);
@@ -382,13 +418,18 @@ impl AcousticStage {
                 // taken from the centre.
                 let (dx, dy) = (at.0 - x, at.1 - y);
                 let lateral = dx.hypot(dy);
-                let pull = if lateral > radius { radius / lateral } else { 1.0 };
+                let pull = if lateral > radius {
+                    radius / lateral
+                } else {
+                    1.0
+                };
                 let v = (x + dx * pull - at.0, y + dy * pull - at.1, -at.2);
                 let length = (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt().max(0.005);
                 nearest = nearest.min(length);
                 let to_centre = (lateral * lateral + at.2 * at.2).sqrt().max(0.005);
                 let sin_theta = (lateral / to_centre).clamp(0.0, 1.0);
-                let cos_psi = ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / length).clamp(-1.0, 1.0);
+                let cos_psi =
+                    ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / length).clamp(-1.0, 1.0);
                 let directivity = if sin_theta > 1e-6 {
                     PISTON_X * c / (TAU * hf_radius * sin_theta)
                 } else {
@@ -396,7 +437,15 @@ impl AcousticStage {
                 };
                 let off = off_axis_corner(off_db, cos_psi);
                 let g = geometric(length);
-                push(&mut mic.paths[count], length / c * rate, pa * g, pb * g * cos_psi, directivity, off, f64::INFINITY);
+                push(
+                    &mut mic.paths[count],
+                    length / c * rate,
+                    pa * g,
+                    pb * g * cos_psi,
+                    directivity,
+                    off,
+                    f64::INFINITY,
+                );
                 count += 1;
             }
             if let Some(cab) = cabinet.filter(|cab| cab.is_open()) {
@@ -405,16 +454,29 @@ impl AcousticStage {
                 let (w, h) = (cab.width / 2.0, cab.height / 2.0);
                 let (_, _, inside) = cab.internal();
                 for &(x, y) in drivers {
-                    let edges = [(x + w, (-w, y)), (w - x, (w, y)), (h - y, (x, h)), (y + h, (x, -h))];
-                    let (edge, point) = edges
-                        .iter()
-                        .copied()
-                        .fold((f64::INFINITY, (0.0, 0.0)), |best, e| if e.0 < best.0 { e } else { best });
+                    let edges = [
+                        (x + w, (-w, y)),
+                        (w - x, (w, y)),
+                        (h - y, (x, h)),
+                        (y + h, (x, -h)),
+                    ];
+                    let (edge, point) =
+                        edges
+                            .iter()
+                            .copied()
+                            .fold((f64::INFINITY, (0.0, 0.0)), |best, e| {
+                                if e.0 < best.0 {
+                                    e
+                                } else {
+                                    best
+                                }
+                            });
                     let v = (point.0 - at.0, point.1 - at.1, -at.2);
                     let front = (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt().max(0.005);
                     let around = inside + edge;
                     let length = around + front;
-                    let cos_psi = ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / front).clamp(-1.0, 1.0);
+                    let cos_psi =
+                        ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / front).clamp(-1.0, 1.0);
                     let off = off_axis_corner(off_db, cos_psi);
                     // At low frequencies the box air and the opening pass nearly the
                     // whole rear volume velocity: a dipole. A partly closed back still
@@ -424,12 +486,23 @@ impl AcousticStage {
                     // shorter than the way round. ESTIMATED corner c / (pi L): a lower one
                     // puts a low-pass phase lag on the bass the dipole is meant to cancel.
                     let diffraction = c / (std::f64::consts::PI * around);
-                    push(&mut mic.paths[count], length / c * rate, pa * g, pb * g * cos_psi, f64::INFINITY, off, diffraction);
+                    push(
+                        &mut mic.paths[count],
+                        length / c * rate,
+                        pa * g,
+                        pb * g * cos_psi,
+                        f64::INFINITY,
+                        off,
+                        diffraction,
+                    );
                     count += 1;
                 }
             }
             mic.count = count;
-            minimum[m] = mic.paths[..count].iter().map(|p| p.absolute).fold(f64::INFINITY, f64::min);
+            minimum[m] = mic.paths[..count]
+                .iter()
+                .map(|p| p.absolute)
+                .fold(f64::INFINITY, f64::min);
 
             // Proximity: the gradient term's near-field rise, from a source no smaller
             // than the cone that radiates it.
@@ -439,7 +512,8 @@ impl AcousticStage {
                 let r = (nearest * nearest + (0.7 * radius).powi(2)).sqrt();
                 let wp = profile.map(|p| p.proximity).unwrap_or(0.0) * c / r;
                 let fp = wp / TAU;
-                mic.proximity.set_leaky_integrator(rate, fp / PROXIMITY_CEILING, PROXIMITY_CEILING);
+                mic.proximity
+                    .set_leaky_integrator(rate, fp / PROXIMITY_CEILING, PROXIMITY_CEILING);
             }
 
             // Baffle step: close to the baffle the cone radiates into a half space;
@@ -447,7 +521,8 @@ impl AcousticStage {
             match cabinet {
                 Some(cab) => {
                     let far = placement.distance / (placement.distance + cab.width / 2.0);
-                    mic.baffle.set_low_shelf(rate, cab.baffle_step_hz(), -6.0 * far);
+                    mic.baffle
+                        .set_low_shelf(rate, cab.baffle_step_hz(), -6.0 * far);
                 }
                 None => mic.baffle = Biquad::IDENTITY,
             }

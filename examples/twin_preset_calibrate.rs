@@ -309,8 +309,14 @@ fn main() {
     let (clean_rms, clean_peak) = output_rms(clean, clean_drive, clean_reverb, 0.0);
     let (throb_rms, throb_peak) = output_rms(throb, throb_drive, throb_reverb, throb_intensity);
     let throb_compensation_db = 20.0 * (clean_rms.max(1e-15) / throb_rms.max(1e-15)).log10();
-    println!("Blackface Clean: rms={:.6}, peak={:.6}", clean_rms, clean_peak);
-    println!("Blackface Throb: rms={:.6}, peak={:.6}, suggested output_trim relative to Clean={:+.2} dB", throb_rms, throb_peak, throb_compensation_db);
+    println!(
+        "Blackface Clean: rms={:.6}, peak={:.6}",
+        clean_rms, clean_peak
+    );
+    println!(
+        "Blackface Throb: rms={:.6}, peak={:.6}, suggested output_trim relative to Clean={:+.2} dB",
+        throb_rms, throb_peak, throb_compensation_db
+    );
 
     println!();
     println!("=== recommended preset fields ===");

@@ -126,7 +126,12 @@ pub fn solve(circuit: &Circuit, controls: &[f64], hz: f64) -> C {
                 stamp(&mut y, wiper, b, C::real(1.0 / (ohms * f)));
                 stamp(&mut y, a, wiper, C::real(1.0 / (ohms * (1.0 - f))));
             }
-            Part::Input { node, series, source, .. } => {
+            Part::Input {
+                node,
+                series,
+                source,
+                ..
+            } => {
                 // Every input port contributes its source impedance. Only the
                 // primary port is excited for the ordinary transfer function;
                 // auxiliary ports are AC-grounded through their own source

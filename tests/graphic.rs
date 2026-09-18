@@ -60,7 +60,10 @@ fn every_slider_cuts_and_boosts_its_own_band() {
         let (down, up) = (at(cut, centre) - base, at(boost, centre) - base);
         assert!(down < -8.0, "{centre:.0} Hz cuts only {down:.1} dB");
         assert!(up > 8.0, "{centre:.0} Hz boosts only {up:.1} dB");
-        assert!((up + down).abs() < 2.0, "{centre:.0} Hz: {down:.1} / {up:+.1} dB");
+        assert!(
+            (up + down).abs() < 2.0,
+            "{centre:.0} Hz: {down:.1} / {up:+.1} dB"
+        );
         let far = (band + 2) % 5;
         let mut other = flat;
         other[far] = 1.0;
@@ -83,8 +86,15 @@ fn the_centre_position_is_flat() {
         .collect();
     let high = levels.iter().cloned().fold(f64::MIN, f64::max);
     let low = levels.iter().cloned().fold(f64::MAX, f64::min);
-    assert!(high - low < 1.0, "centred, the equaliser tilts by {:.1} dB", high - low);
-    assert!(high.abs() < 1.0, "centred, the equaliser is not unity: {high:.1} dB");
+    assert!(
+        high - low < 1.0,
+        "centred, the equaliser tilts by {:.1} dB",
+        high - low
+    );
+    assert!(
+        high.abs() < 1.0,
+        "centred, the equaliser is not unity: {high:.1} dB"
+    );
 }
 
 /// A quarter of the travel does a real part of the job, rather than the whole
@@ -96,6 +106,9 @@ fn a_quarter_of_the_travel_is_worth_decibels() {
         let mut quarter = flat;
         quarter[band] = 0.75;
         let lift = at(quarter, centre) - at(flat, centre);
-        assert!((3.0..9.0).contains(&lift), "{centre:.0} Hz at three quarters: {lift:.1} dB");
+        assert!(
+            (3.0..9.0).contains(&lift),
+            "{centre:.0} Hz at three quarters: {lift:.1} dB"
+        );
     }
 }

@@ -133,7 +133,10 @@ fn legacy_matched_output_is_preserved() {
     let mut error = 0.0_f64;
     let mut energy = 0.0_f64;
     let (expected_samples, rest) = bytes.as_chunks::<4>();
-    assert!(rest.is_empty(), "the fixture is not a whole number of samples");
+    assert!(
+        rest.is_empty(),
+        "the fixture is not a whole number of samples"
+    );
     // Which runs settled when the fixture was captured. A run is compared only
     // if it settled *both* then and now: if it fell back at capture the stored
     // samples came from the fallback and no other machine will reproduce them,
@@ -143,7 +146,11 @@ fn legacy_matched_output_is_preserved() {
         "/tests/fixtures/legacy-matched.settled"
     ))
     .expect("the settled mask is captured beside the samples");
-    assert_eq!(captured_settled.len(), settled.len(), "the settled mask is the wrong length");
+    assert_eq!(
+        captured_settled.len(),
+        settled.len(),
+        "the settled mask is the wrong length"
+    );
 
     let guarded_runs = settled.len() * 2 / VOICES.len();
     let fell_back = settled

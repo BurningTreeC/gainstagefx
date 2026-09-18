@@ -13,7 +13,10 @@ const RATE: f64 = 96_000.0;
 #[test]
 fn it_biases_where_a_good_one_is_set() {
     let c = round_fuzz::build(10_000.0, 470_000.0).unwrap();
-    let (c1, c2) = (c.unknown_named("c1").unwrap(), c.unknown_named("c2").unwrap());
+    let (c1, c2) = (
+        c.unknown_named("c1").unwrap(),
+        c.unknown_named("c2").unwrap(),
+    );
     let mut sim = Simulation::new(c, RATE);
     assert!(sim.find_operating_point());
     let (q1, q2) = (sim.voltage_at(c1), sim.voltage_at(c2));
@@ -27,7 +30,12 @@ fn it_biases_where_a_good_one_is_set() {
 fn fuzz_adds_gain_and_saturation() {
     let c = round_fuzz::build(10_000.0, 470_000.0).unwrap();
     let small = |f: f64| measure(&c, RATE, &[(FUZZ, f)], 1_000.0, 0.002).gain_db();
-    assert!(small(1.0) > small(0.0) + 15.0, "{} {}", small(0.0), small(1.0));
+    assert!(
+        small(1.0) > small(0.0) + 15.0,
+        "{} {}",
+        small(0.0),
+        small(1.0)
+    );
     let driven = measure(&c, RATE, &[(FUZZ, 1.0)], 220.0, 0.122).thd_percent();
     assert!(driven > 30.0, "{driven}");
 }
@@ -38,5 +46,10 @@ fn fuzz_adds_gain_and_saturation() {
 fn a_quiet_note_clips_asymmetrically() {
     let c = round_fuzz::build(10_000.0, 470_000.0).unwrap();
     let m = measure(&c, RATE, &[(FUZZ, 0.5)], 220.0, 0.01);
-    assert!(m.harmonic_percent(2) > m.harmonic_percent(3), "2nd {} 3rd {}", m.harmonic_percent(2), m.harmonic_percent(3));
+    assert!(
+        m.harmonic_percent(2) > m.harmonic_percent(3),
+        "2nd {} 3rd {}",
+        m.harmonic_percent(2),
+        m.harmonic_percent(3)
+    );
 }

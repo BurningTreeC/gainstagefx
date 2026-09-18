@@ -19,7 +19,8 @@ struct ThreadTimespec {
 
 #[cfg(target_os = "linux")]
 unsafe extern "C" {
-    fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut ThreadTimespec) -> std::os::raw::c_int;
+    fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut ThreadTimespec)
+        -> std::os::raw::c_int;
 }
 
 #[cfg(target_os = "linux")]
@@ -207,13 +208,20 @@ fn material(k: usize) -> f32 {
     (0.12 * (k as f64 * 0.057).sin() + 0.04 * (k as f64 * 0.213).sin()) as f32
 }
 
-
 #[test]
 fn negotiated_layout_builds_exactly_one_chain_per_host_channel() {
     let mono = initialized(Circuit::Clean, true, 48_000.0);
     let stereo = initialized(Circuit::Clean, false, 48_000.0);
-    assert_eq!(mono.channels.len(), 1, "mono layout must own exactly one chain");
-    assert_eq!(stereo.channels.len(), 2, "stereo layout must own exactly two chains");
+    assert_eq!(
+        mono.channels.len(),
+        1,
+        "mono layout must own exactly one chain"
+    );
+    assert_eq!(
+        stereo.channels.len(),
+        2,
+        "stereo layout must own exactly two chains"
+    );
 }
 
 #[test]
@@ -227,12 +235,21 @@ fn mono_layout_processes_exactly_one_chain() {
         assert!(samples.iter().all(|sample| sample.is_finite()));
     }
     assert!(mono.channels[0].solver_health().solves > before);
-    assert_eq!(mono.channels.len(), 1, "mono processing must never create a hidden right chain");
+    assert_eq!(
+        mono.channels.len(),
+        1,
+        "mono processing must never create a hidden right chain"
+    );
 }
 
 #[test]
 fn stereo_host_buffer_processes_exact_dual_mono_once() {
-    for circuit in [Circuit::Boogie, Circuit::Peavey, Circuit::Twin, Circuit::Crunch] {
+    for circuit in [
+        Circuit::Boogie,
+        Circuit::Peavey,
+        Circuit::Twin,
+        Circuit::Crunch,
+    ] {
         let mut stereo = initialized(circuit, false, 48_000.0);
         assert_eq!(stereo.channels.len(), 2);
         let left_before = stereo.channels[0].solver_health().solves;
@@ -241,7 +258,12 @@ fn stereo_host_buffer_processes_exact_dual_mono_once() {
             let mut left = std::array::from_fn::<_, 64, _>(|i| material(block * 64 + i));
             let mut right = left;
             process(&mut stereo, &mut left, Some(&mut right));
-            assert_eq!(left, right, "dual-mono output diverged for {}", circuit.name());
+            assert_eq!(
+                left,
+                right,
+                "dual-mono output diverged for {}",
+                circuit.name()
+            );
         }
         assert!(stereo.channels[0].solver_health().solves > left_before);
         assert_eq!(
@@ -276,7 +298,10 @@ fn first_different_stereo_block_wakes_right_chain_and_latches_stereo() {
     let mut right = left;
     right[17] = -right[17];
     process(&mut stereo, &mut left, Some(&mut right));
-    assert!(stereo.stereo_seen, "first differing block did not latch stereo");
+    assert!(
+        stereo.stereo_seen,
+        "first differing block did not latch stereo"
+    );
     assert!(
         stereo.channels[1].solver_health().solves > right_before,
         "right chain did not run on the first differing stereo block"
@@ -292,7 +317,12 @@ fn first_different_stereo_block_wakes_right_chain_and_latches_stereo() {
 
 #[test]
 fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
-    for circuit in [Circuit::Boogie, Circuit::Peavey, Circuit::Twin, Circuit::Crunch] {
+    for circuit in [
+        Circuit::Boogie,
+        Circuit::Peavey,
+        Circuit::Twin,
+        Circuit::Crunch,
+    ] {
         let mut auto = initialized(circuit, false, 48_000.0);
         let mut reference = initialized(circuit, false, 48_000.0);
         // Force the reference to process two independent chains from the first
@@ -314,10 +344,24 @@ fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
             process(&mut auto, &mut auto_left, Some(&mut auto_right));
             process(&mut reference, &mut ref_left, Some(&mut ref_right));
 
-            assert_eq!(auto_left, ref_left, "left mismatch for {} at block {block}", circuit.name());
-            assert_eq!(auto_right, ref_right, "right mismatch for {} at block {block}", circuit.name());
+            assert_eq!(
+                auto_left,
+                ref_left,
+                "left mismatch for {} at block {block}",
+                circuit.name()
+            );
+            assert_eq!(
+                auto_right,
+                ref_right,
+                "right mismatch for {} at block {block}",
+                circuit.name()
+            );
         }
-        assert!(auto.stereo_seen, "{} never latched stereo after divergence", circuit.name());
+        assert!(
+            auto.stereo_seen,
+            "{} never latched stereo after divergence",
+            circuit.name()
+        );
     }
 }
 
@@ -342,7 +386,13 @@ fn stereo_layout_processes_both_chains_for_one_sided_input() {
 
 #[test]
 fn mono_matches_each_side_of_identical_stereo() {
-    for circuit in [Circuit::Clean, Circuit::Boogie, Circuit::Peavey, Circuit::Twin, Circuit::Crunch] {
+    for circuit in [
+        Circuit::Clean,
+        Circuit::Boogie,
+        Circuit::Peavey,
+        Circuit::Twin,
+        Circuit::Crunch,
+    ] {
         let mut mono = initialized(circuit, true, 48_000.0);
         let mut stereo = initialized(circuit, false, 48_000.0);
         for block in 0..16 {
@@ -352,7 +402,12 @@ fn mono_matches_each_side_of_identical_stereo() {
             let mut right = source;
             process(&mut mono, &mut mono_samples, None);
             process(&mut stereo, &mut left, Some(&mut right));
-            assert_eq!(mono_samples, left, "mono != stereo left for {}", circuit.name());
+            assert_eq!(
+                mono_samples,
+                left,
+                "mono != stereo left for {}",
+                circuit.name()
+            );
             assert_eq!(left, right, "stereo L/R mismatch for {}", circuit.name());
         }
     }
@@ -516,11 +571,7 @@ fn realtime_recording() {
             ProbeLayout::AutoDualMono,
             &mut stereo_duplicated_output,
         );
-        print_realtime_pass(
-            circuit,
-            "live_paced_auto_dual_mono",
-            &stereo_duplicated,
-        );
+        print_realtime_pass(circuit, "live_paced_auto_dual_mono", &stereo_duplicated);
 
         let mut stereo_left_only_output = vec![0.0f32; frames];
         let stereo_left_only = run_realtime_pass(
@@ -561,13 +612,15 @@ fn realtime_recording() {
         if live_mono.max_meter_db < TARGET_METER_DB - 0.25 {
             failures.push(format!(
                 "{}: live_paced_mono only reached {:.2} dB on the input meter",
-                circuit.name(), live_mono.max_meter_db
+                circuit.name(),
+                live_mono.max_meter_db
             ));
         }
         if live_mono.right_solves != 0 {
             failures.push(format!(
                 "{}: mono layout unexpectedly has right-channel solves ({})",
-                circuit.name(), live_mono.right_solves
+                circuit.name(),
+                live_mono.right_solves
             ));
         }
         if stereo_duplicated_output != live_mono_output {
@@ -579,7 +632,8 @@ fn realtime_recording() {
         if stereo_duplicated.right_solves != 0 {
             failures.push(format!(
                 "{}: exact dual-mono signal unexpectedly ran the right chain ({})",
-                circuit.name(), stereo_duplicated.right_solves
+                circuit.name(),
+                stereo_duplicated.right_solves
             ));
         }
         if live_mono.cpu_compute_misses != 0 {
@@ -606,7 +660,8 @@ fn realtime_recording() {
             if result.max_meter_db < TARGET_METER_DB - 0.25 {
                 failures.push(format!(
                     "{}: {mode} only reached {:.2} dB on the input meter",
-                    circuit.name(), result.max_meter_db
+                    circuit.name(),
+                    result.max_meter_db
                 ));
             }
         }
@@ -688,10 +743,8 @@ fn twin_realtime_recording_solver_trace() {
     let target_peak_dbfs = NOMINAL_DBFS as f32 + TARGET_METER_DB;
     let input_trim_db = target_peak_dbfs - input_peak_dbfs;
 
-    let weak_deep_recovery =
-        std::env::var_os("GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY").is_some();
-    let last_settled_restart =
-        std::env::var_os("GAINSTAGEFX_TEST_LAST_SETTLED_RESTART").is_some();
+    let weak_deep_recovery = std::env::var_os("GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY").is_some();
+    let last_settled_restart = std::env::var_os("GAINSTAGEFX_TEST_LAST_SETTLED_RESTART").is_some();
     println!(
         "twin_solver_trace,recording={path},start_seconds={:.3},seconds={:.3},input_trim_db={input_trim_db:.2},low_residual_confirmation=true,repeat_cycle_guard=true,weak_deep_recovery={weak_deep_recovery},last_settled_restart={last_settled_restart}",
         offset as f64 / rate as f64,
@@ -952,9 +1005,8 @@ fn run_realtime_pass(
         if live_paced && callback_finish > deadline {
             deadline_misses += 1;
             first_deadline_miss.get_or_insert(block);
-            max_finish_late_us = max_finish_late_us.max(
-                callback_finish.duration_since(deadline).as_secs_f64() * 1e6,
-            );
+            max_finish_late_us = max_finish_late_us
+                .max(callback_finish.duration_since(deadline).as_secs_f64() * 1e6);
         }
         max_meter_db = max_meter_db.max(plugin.meters.input_db());
         let begin = block * BLOCK;
@@ -986,9 +1038,8 @@ fn run_realtime_pass(
     {
         let power_before = solver_before.power.solves;
         for trace in plugin.channels[0].unsettled_power_solver_trace() {
-            let relative_sample = trace
-                .solve
-                .saturating_sub(power_before.saturating_add(1)) as usize;
+            let relative_sample =
+                trace.solve.saturating_sub(power_before.saturating_add(1)) as usize;
             let tail_unknown_names = std::array::from_fn::<_, 8, _>(|i| {
                 if i < trace.tail_trace_count {
                     plugin.channels[0]
@@ -1057,9 +1108,8 @@ fn run_realtime_pass(
             .iter()
             .filter(|trace| trace.last_settled_restart_attempted)
         {
-            let relative_sample = trace
-                .solve
-                .saturating_sub(power_before.saturating_add(1)) as usize;
+            let relative_sample =
+                trace.solve.saturating_sub(power_before.saturating_add(1)) as usize;
             println!(
                 "realtime_solver_restart,solve={},relative_sample={},block={},frame={},input={:.17e},last_input={:.17e},used_passes={},target_passes={},restart_passes={},restart_backtracks={},restart_fallbacks={},restart_settled={},moved={:.17e},search_merit={:.17e}",
                 trace.solve,
@@ -1226,7 +1276,10 @@ fn read_mono_pcm24(path: &str) -> (u32, Vec<f32>) {
     assert_eq!(data.len() % 3, 0);
     (
         rate,
-        data.as_chunks::<3>().0.iter().map(|b| {
+        data.as_chunks::<3>()
+            .0
+            .iter()
+            .map(|b| {
                 let value = i32::from_le_bytes([0, b[0], b[1], b[2]]) >> 8;
                 value as f32 / 8_388_608.0
             })

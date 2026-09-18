@@ -6,7 +6,9 @@ use gainstagefx::circuits::{dr103, power};
 use gainstagefx::dsp::time::Simulation;
 fn main() {
     let c = dr103::build(10_000.0, 1_000_000.0).unwrap();
-    let names = ["n3", "n1", "v1_p", "v1_k", "v2_p", "v2_k", "cf1", "v3_p", "out"];
+    let names = [
+        "n3", "n1", "v1_p", "v1_k", "v2_p", "v2_k", "cf1", "v3_p", "out",
+    ];
     let idx: Vec<_> = names.iter().map(|n| c.unknown_named(n).unwrap()).collect();
     let mut sim = Simulation::new(c, 48_000.0);
     println!("preamp settled {}", sim.find_operating_point());
@@ -19,7 +21,10 @@ fn main() {
     let idx: Vec<_> = names.iter().map(|n| c.unknown_named(n)).collect();
     let mut sim = Simulation::new(c, 48_000.0);
     println!("power settled {}", sim.find_operating_point());
-    let v: Vec<f64> = idx.iter().map(|i| i.map(|i| sim.voltage_at(i)).unwrap_or(f64::NAN)).collect();
+    let v: Vec<f64> = idx
+        .iter()
+        .map(|i| i.map(|i| sim.voltage_at(i)).unwrap_or(f64::NAN))
+        .collect();
     for (n, x) in names.iter().zip(&v) {
         println!("  {n:<6} {x:.1} V");
     }
@@ -35,17 +40,41 @@ fn main() {
     // Small-signal gain of the preamplifier, against the Brit 800's.
     use gainstagefx::dsp::measure::{self, Tone};
     for (name, circuit, drive_control, controls) in [
-        ("DR103", gainstagefx::circuits::dr103::build(10_000.0, 1_000_000.0).unwrap(), dr103::VOLUME, vec![(dr103::TREBLE, 0.5), (dr103::BASS, 0.5), (dr103::MIDDLE, 0.5), (dr103::MASTER, 0.5)]),
-        ("Brit 800", gainstagefx::circuits::brit800::build(10_000.0, 1_000_000.0).unwrap(), gainstagefx::circuits::brit800::VOLUME, vec![(gainstagefx::circuits::brit800::TREBLE, 0.5), (gainstagefx::circuits::brit800::BASS, 0.5), (gainstagefx::circuits::brit800::MIDDLE, 0.5)]),
+        (
+            "DR103",
+            gainstagefx::circuits::dr103::build(10_000.0, 1_000_000.0).unwrap(),
+            dr103::VOLUME,
+            vec![
+                (dr103::TREBLE, 0.5),
+                (dr103::BASS, 0.5),
+                (dr103::MIDDLE, 0.5),
+                (dr103::MASTER, 0.5),
+            ],
+        ),
+        (
+            "Brit 800",
+            gainstagefx::circuits::brit800::build(10_000.0, 1_000_000.0).unwrap(),
+            gainstagefx::circuits::brit800::VOLUME,
+            vec![
+                (gainstagefx::circuits::brit800::TREBLE, 0.5),
+                (gainstagefx::circuits::brit800::BASS, 0.5),
+                (gainstagefx::circuits::brit800::MIDDLE, 0.5),
+            ],
+        ),
     ] {
         for drive in [0.25, 0.5, 1.0] {
             let mut sim = Simulation::new(circuit.clone(), 96_000.0);
-            for (c, v) in &controls { sim.set_control(*c, *v); }
+            for (c, v) in &controls {
+                sim.set_control(*c, *v);
+            }
             sim.set_control(drive_control, drive);
             sim.find_operating_point();
             let tone = Tone::near(96_000.0, 16_384, 220.0, 1e-4);
             let m = measure::run(tone, 19_200, |x| sim.process(x));
-            println!("  {name} at drive {drive}: {:.1} dB small signal", m.gain_db());
+            println!(
+                "  {name} at drive {drive}: {:.1} dB small signal",
+                m.gain_db()
+            );
         }
     }
 
@@ -60,12 +89,21 @@ fn main() {
         print!("  {label:<14}");
         for f in hz {
             let mut sim = Simulation::new(dr103::build(10_000.0, 1_000_000.0).unwrap(), 96_000.0);
-            for (c, v) in [(dr103::VOLUME, 0.5), (dr103::TREBLE, 0.5), (dr103::BASS, bass), (dr103::MIDDLE, mid), (dr103::MASTER, 0.5)] {
+            for (c, v) in [
+                (dr103::VOLUME, 0.5),
+                (dr103::TREBLE, 0.5),
+                (dr103::BASS, bass),
+                (dr103::MIDDLE, mid),
+                (dr103::MASTER, 0.5),
+            ] {
                 sim.set_control(c, v);
             }
             sim.find_operating_point();
             let tone = Tone::near(96_000.0, 16_384, f, 1e-4);
-            print!("{:8.1}", measure::run(tone, 19_200, |x| sim.process(x)).gain_db());
+            print!(
+                "{:8.1}",
+                measure::run(tone, 19_200, |x| sim.process(x)).gain_db()
+            );
         }
         println!();
     }

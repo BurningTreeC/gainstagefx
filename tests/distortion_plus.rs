@@ -63,7 +63,12 @@ fn the_germanium_diodes_clip_where_the_analysis_says() {
 #[test]
 fn a_guitar_into_it_comes_out_distorted() {
     let m = at(&[(DISTORTION, 0.8)], 220.0, 0.122);
-    println!("{:.1} % distortion, 2nd {:.1} %, 3rd {:.1} %", m.thd_percent(), m.harmonic_percent(2), m.harmonic_percent(3));
+    println!(
+        "{:.1} % distortion, 2nd {:.1} %, 3rd {:.1} %",
+        m.thd_percent(),
+        m.harmonic_percent(2),
+        m.harmonic_percent(3)
+    );
     assert!(m.thd_percent() > 30.0, "{}", m.thd_percent());
 }
 

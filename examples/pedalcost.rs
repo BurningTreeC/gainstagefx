@@ -19,7 +19,12 @@ fn cost(pedal: Pedal, gain: Gain, over: usize) -> f64 {
         drive: 0.8,
         tone: Tone::Off,
         oversampling: over,
-        pedal: PedalSettings { pedal, drive: 0.7, level: 0.5, ..PedalSettings::default() },
+        pedal: PedalSettings {
+            pedal,
+            drive: 0.7,
+            level: 0.5,
+            ..PedalSettings::default()
+        },
         ..Settings::default()
     });
     chain.settle();
@@ -43,11 +48,24 @@ fn cost(pedal: Pedal, gain: Gain, over: usize) -> f64 {
 
 fn main() {
     println!("per cent of one channel's realtime budget at 48 kHz\n");
-    println!("{:<14}{:>12}{:>16}{:>16}", "pedal", "into Clean", "Cali IIC+ 1x", "Cali IIC+ 2x");
-    println!("{:<14}{:>12.1}{:>16.1}{:>16.1}", "none",
-        cost(Pedal::None, Gain::Clean, 1), cost(Pedal::None, Gain::Boogie, 1), cost(Pedal::None, Gain::Boogie, 2));
+    println!(
+        "{:<14}{:>12}{:>16}{:>16}",
+        "pedal", "into Clean", "Cali IIC+ 1x", "Cali IIC+ 2x"
+    );
+    println!(
+        "{:<14}{:>12.1}{:>16.1}{:>16.1}",
+        "none",
+        cost(Pedal::None, Gain::Clean, 1),
+        cost(Pedal::None, Gain::Boogie, 1),
+        cost(Pedal::None, Gain::Boogie, 2)
+    );
     for pedal in Pedal::ALL.iter().copied().filter(|p| *p != Pedal::None) {
-        println!("{:<14}{:>12.1}{:>16.1}{:>16.1}", format!("{pedal:?}"),
-            cost(pedal, Gain::Clean, 1), cost(pedal, Gain::Boogie, 1), cost(pedal, Gain::Boogie, 2));
+        println!(
+            "{:<14}{:>12.1}{:>16.1}{:>16.1}",
+            format!("{pedal:?}"),
+            cost(pedal, Gain::Clean, 1),
+            cost(pedal, Gain::Boogie, 1),
+            cost(pedal, Gain::Boogie, 2)
+        );
     }
 }

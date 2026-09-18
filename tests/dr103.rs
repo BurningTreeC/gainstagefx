@@ -7,7 +7,9 @@ use gainstagefx::circuits::dr103::{self, BASS, MASTER, MIDDLE, TREBLE, VOLUME};
 use gainstagefx::circuits::power::{self, PowerSpec};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::voice::{Chain, Gain, Level, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, Level, PowerAmp, PowerModel, Settings, Tone as Stack, NOMINAL_DBFS,
+};
 
 const RATE: f64 = 96_000.0;
 
@@ -30,15 +32,29 @@ fn at(controls: &[(usize, f64)], hz: f64, volts: f64) -> measure::Measured {
 fn the_operating_point_matches_the_sheets_one_voltage_and_the_driver() {
     let pre = dr103::build(10_000.0, 1_000_000.0).unwrap();
     let names = ["v2_p", "cf2", "v1_p", "v3_p"];
-    let nodes: Vec<usize> = names.iter().map(|n| pre.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = names
+        .iter()
+        .map(|n| pre.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(pre, RATE);
     assert!(s.find_operating_point());
     let v: Vec<f64> = nodes.iter().map(|&n| s.voltage_at(n)).collect();
-    println!("V2a plate {:.1} V, driver {:.1} V, V1b plate {:.1} V, V3a plate {:.1} V", v[0], v[1], v[2], v[3]);
+    println!(
+        "V2a plate {:.1} V, driver {:.1} V, V1b plate {:.1} V, V3a plate {:.1} V",
+        v[0], v[1], v[2], v[3]
+    );
     // The drawing's own figure, within the tolerance a generic ECC83 fit earns.
-    assert!((v[0] - 140.0).abs() < 14.0, "V2a plate {:.1} V against the sheet's 140 V", v[0]);
+    assert!(
+        (v[0] - 140.0).abs() < 14.0,
+        "V2a plate {:.1} V against the sheet's 140 V",
+        v[0]
+    );
     // And the constant the power stage is handed.
-    assert!((v[1] - dr103::DRIVER_VOLTS).abs() < 3.0, "driver {:.1} V", v[1]);
+    assert!(
+        (v[1] - dr103::DRIVER_VOLTS).abs() < 3.0,
+        "driver {:.1} V",
+        v[1]
+    );
 }
 
 /// The inverter is direct-coupled: no capacitor between the driver and the
@@ -49,10 +65,16 @@ fn the_operating_point_matches_the_sheets_one_voltage_and_the_driver() {
 fn the_inverter_is_direct_coupled_and_sits_where_the_analysis_says() {
     let spec = &PowerSpec::DR103_EL34;
     assert_eq!(spec.pi_couple, 0.0, "no coupling capacitor");
-    assert!(spec.driver_volts > 50.0, "and the driver's volts are stated");
+    assert!(
+        spec.driver_volts > 50.0,
+        "and the driver's volts are stated"
+    );
     let amp = power::build(spec, 10_000.0).unwrap();
     let names = ["pi_a", "pi_k", "pi_p1", "pi_p2", "ht"];
-    let nodes: Vec<usize> = names.iter().map(|n| amp.unknown_named(n).unwrap()).collect();
+    let nodes: Vec<usize> = names
+        .iter()
+        .map(|n| amp.unknown_named(n).unwrap())
+        .collect();
     let mut s = Simulation::new(amp, RATE);
     assert!(s.find_operating_point());
     let v: Vec<f64> = nodes.iter().map(|&n| s.voltage_at(n)).collect();
@@ -66,7 +88,11 @@ fn the_inverter_is_direct_coupled_and_sits_where_the_analysis_says() {
         current * 1e3
     );
     assert!((-3.0..-0.5).contains(&bias), "bias {bias}");
-    assert!(((v[2] - v[1]) - 285.0).abs() < 60.0, "plate to cathode {:.0} V", v[2] - v[1]);
+    assert!(
+        ((v[2] - v[1]) - 285.0).abs() < 60.0,
+        "plate to cathode {:.0} V",
+        v[2] - v[1]
+    );
     assert!((1.0e-3..2.2e-3).contains(&current), "{current}");
 }
 
@@ -80,7 +106,9 @@ fn the_drivers_volts_stay_in_the_preamplifier() {
     let mut s = Simulation::new(circuit, RATE);
     assert!(s.find_operating_point());
     assert!((s.voltage_at(cathode) - dr103::DRIVER_VOLTS).abs() < 3.0);
-    let worst = (0..(RATE as usize / 4)).map(|_| s.process(0.0).abs()).fold(0.0, f64::max);
+    let worst = (0..(RATE as usize / 4))
+        .map(|_| s.process(0.0).abs())
+        .fold(0.0, f64::max);
     assert!(worst < 0.05, "{worst}");
 }
 
@@ -112,7 +140,10 @@ fn the_stack_controls_go_the_way_they_are_labelled() {
 /// where the drawing has it, and the panel's Master knob turns it.
 #[test]
 fn the_master_volume_is_in_the_preamplifier() {
-    assert_eq!(Gain::DR103.level_control(), Some(Level::Circuit(dr103::MASTER)));
+    assert_eq!(
+        Gain::DR103.level_control(),
+        Some(Level::Circuit(dr103::MASTER))
+    );
     let quiet = at(&[(MASTER, 0.1)], 1_000.0, 0.001).gain_db();
     let loud = at(&[(MASTER, 1.0)], 1_000.0, 0.001).gain_db();
     println!("master: {quiet:.1} dB to {loud:.1} dB");
@@ -129,7 +160,10 @@ fn the_brilliant_channel_throws_the_bass_away_before_it_is_amplified() {
 
 #[test]
 fn matched_is_the_dr103_stage_and_the_chain_stays_realtime_safe() {
-    assert_eq!(PowerAmp::Matched.resolved(Gain::DR103), Some(PowerModel::DR103EL34));
+    assert_eq!(
+        PowerAmp::Matched.resolved(Gain::DR103),
+        Some(PowerModel::DR103EL34)
+    );
     let settings = Settings {
         gain: Gain::DR103,
         drive: 0.6,
@@ -154,6 +188,9 @@ fn matched_is_the_dr103_stage_and_the_chain_stays_realtime_safe() {
         });
         let work = chain.solver_breakdown().saturating_delta(before);
         assert!(work.gain.solves > 0 && work.power.solves > 0, "{rate}");
-        assert!(work.power.unsettled == 0 && work.gain.unsettled == 0, "{rate}: {work:?}");
+        assert!(
+            work.power.unsettled == 0 && work.gain.unsettled == 0,
+            "{rate}: {work:?}"
+        );
     }
 }

@@ -117,7 +117,14 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         // geometrically, which puts the gain at about 12, 21 and 32 dB at the
         // quarters of a range that runs from 3.5 to 46.5 -- an even sweep, which
         // is what the pot in the pedal is for.
-        .pot("minus", "r3", "r3", 1_000_000.0, Taper::Log { span: 0.01 }, DISTORTION) // RV1
+        .pot(
+            "minus",
+            "r3",
+            "r3",
+            1_000_000.0,
+            Taper::Log { span: 0.01 },
+            DISTORTION,
+        ) // RV1
         .resistor("r3", "c3", 4_700.0) // R3
         .capacitor("c3", "gnd", 47e-9); // C3
 

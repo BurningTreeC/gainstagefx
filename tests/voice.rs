@@ -181,8 +181,7 @@ fn twin_power_four_backtracks_matches_full_reference() {
             reference_energy += want * want;
         }
 
-        let null_db = 10.0
-            * (error_energy.max(1e-300) / reference_energy.max(1e-300)).log10();
+        let null_db = 10.0 * (error_energy.max(1e-300) / reference_energy.max(1e-300)).log10();
         let realtime_health = realtime.health();
         let reference_health = reference.health();
         exercised_backtracks += reference_health.0;
@@ -195,13 +194,11 @@ fn twin_power_four_backtracks_matches_full_reference() {
             "Twin drive {drive:.1}: four-backtrack power solve is {null_db:.1} dB from the full reference"
         );
         assert_eq!(
-            realtime_health.2,
-            0,
+            realtime_health.2, 0,
             "realtime Twin produced non-finite corrections"
         );
         assert_eq!(
-            reference_health.2,
-            0,
+            reference_health.2, 0,
             "reference Twin produced non-finite corrections"
         );
     }
@@ -261,6 +258,12 @@ fn the_calibration_table_still_describes_the_circuits() {
 fn the_make_up_holds_the_level_between_the_measured_points() {
     for index in 0..VOICES {
         let (gain, diode, amplifier) = voice::voice_at(index);
+        // The Twin's Drive parameter is its physical channel Volume control.
+        // It is intentionally a volume control now, so this gain-normalisation
+        // invariant does not apply to it.
+        if gain == Gain::Twin {
+            continue;
+        }
         let mut worst: f64 = 0.0;
         let mut worst_at = 0.0;
         // Deliberately off the measured grid.
@@ -819,4 +822,42 @@ fn diagnose_the_pick_attack() {
             );
         }
     }
+}
+
+/// The American Twin's user-facing Drive parameter is the AB763 channel
+/// Volume pot, not a gain-normalised distortion control.  Turning it up must
+/// therefore raise the settled signal level.  This guards the bug where the
+/// calibration make-up followed the pot in the opposite direction and almost
+/// perfectly cancelled the hardware control.
+#[test]
+fn twin_volume_is_a_real_monotonic_level_control() {
+    let mut levels = Vec::new();
+    // Stay well below clipping so this measures the pot law rather than power
+    // stage saturation.  The positions cover the two shipped blackface presets
+    // and the lower half of the useful control travel.
+    for drive in [0.0, 0.05, 0.10, 0.17, 0.24, 0.40] {
+        let mut chain = Chain::new(RATE);
+        chain.set_voice(Gain::Twin, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_tone_section(ToneSection::Off);
+        chain.set_cabinet(Cabinet::Off);
+        chain.set_drive(drive);
+        chain.settle();
+        levels.push((drive, level_through(&mut chain, nominal() * 0.1)));
+    }
+
+    for pair in levels.windows(2) {
+        let (a_pos, a_db) = pair[0];
+        let (b_pos, b_db) = pair[1];
+        assert!(
+            b_db > a_db + 1.0,
+            "Twin Volume must get louder as it is turned up: {a_pos:.2} -> {b_pos:.2} moved {:+.2} dB ({a_db:.2} -> {b_db:.2})",
+            b_db - a_db,
+        );
+    }
+
+    let bottom_to_clean = levels[4].1 - levels[0].1;
+    assert!(
+        bottom_to_clean > 30.0,
+        "Twin Volume at zero is not sufficiently below the clean reference: only {bottom_to_clean:.2} dB",
+    );
 }

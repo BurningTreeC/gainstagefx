@@ -14,7 +14,15 @@ const RATE: f64 = 96_000.0;
 /// its +8 dBm maximum level at 30 Hz.
 #[test]
 fn the_input_transformer_meets_utcs_rating() {
-    let t = transformer(50.0, 16.0, t610::INPUT_CORE, t610::INPUT_RATIO, 3_900.0, 40e-12, 1_200_000.0);
+    let t = transformer(
+        50.0,
+        16.0,
+        t610::INPUT_CORE,
+        t610::INPUT_RATIO,
+        3_900.0,
+        40e-12,
+        1_200_000.0,
+    );
     let mid = measure(&t, RATE, &[], 1_000.0, 1e-3).gain_db();
     for hz in [30.0, 20_000.0] {
         let rel = measure(&t, RATE, &[], hz, 1e-3).gain_db() - mid;

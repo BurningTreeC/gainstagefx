@@ -5,7 +5,9 @@ use gainstagefx::circuits::{power, rectifier};
 use gainstagefx::dsp::time::Simulation;
 fn main() {
     let c = rectifier::build(10_000.0, 1_000_000.0).unwrap();
-    let names = ["d", "e", "c", "v1_p", "v1_k", "v2_p", "v2b_p", "v2b_k", "v3_p", "cf"];
+    let names = [
+        "d", "e", "c", "v1_p", "v1_k", "v2_p", "v2b_p", "v2b_k", "v3_p", "cf",
+    ];
     let idx: Vec<_> = names.iter().map(|n| c.unknown_named(n).unwrap()).collect();
     let mut sim = Simulation::new(c, 48_000.0);
     println!("preamp settled {}", sim.find_operating_point());
@@ -27,5 +29,10 @@ fn main() {
         "  inverter plates {:.0} / {:.0} V (sheet: 280 V), cathodes {:.0} V (sheet: 30 V)",
         v[0], v[1], v[2]
     );
-    println!("  6L6 {:.1} mA and {:.1} W a valve at {:.0} V", total * 1e3 / 4.0, total / 4.0 * v[3], v[3]);
+    println!(
+        "  6L6 {:.1} mA and {:.1} W a valve at {:.0} V",
+        total * 1e3 / 4.0,
+        total / 4.0 * v[3],
+        v[3]
+    );
 }
