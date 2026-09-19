@@ -1,8 +1,2 @@
 [alias]
 xtask = "run --package xtask --release --"
-
-[build]
-rustc-wrapper = "sccache"
-
-[target.'cfg(target_os = "linux")']
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
