@@ -3118,13 +3118,13 @@ impl Simulation {
                     if !nonlinear_reduction_worthwhile(n, candidate.len()) {
                         continue;
                     }
-                    let mut transient = ReducedNonlinear::new_with_active_rhs(
+                    let transient = ReducedNonlinear::new_with_active_rhs(
                         &self.base,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
-                    let mut dc_partition = ReducedNonlinear::new_with_active_rhs(
+                    let dc_partition = ReducedNonlinear::new_with_active_rhs(
                         &self.base_dc,
                         &self.partition_zero_rhs,
                         &candidate,
