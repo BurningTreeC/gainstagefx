@@ -433,6 +433,149 @@ fn quadratic_backtrack_lambda(here: f64, there: f64, lambda: f64, floor: f64) ->
     proposed.clamp(lower, upper)
 }
 
+/// Reuse useful damping information across consecutive line-search passes.
+///
+/// Starting every difficult Twin pass from lambda=1 repeats residual probes
+/// that the preceding pass has just shown to be too aggressive. Re-expand by
+/// a factor of two so a shortened step can recover toward full Newton quickly,
+/// while never starting below the configured search floor.
+#[inline]
+fn line_search_warm_start_lambda(previous: f64, floor: f64) -> f64 {
+    if !previous.is_finite() || previous <= 0.0 || !floor.is_finite() || floor <= 0.0 {
+        return 1.0;
+    }
+    (previous * 2.0).clamp(floor, 1.0)
+}
+
+/// Whether the input slope is smooth enough for the ordinary one-sample
+/// voltage extrapolator to remain a useful Newton starting point.
+///
+/// The predictor assumes the next source step resembles the previous one. On
+/// the Twin attack trace the over-budget blocks coincide with large source
+/// curvature: continuing the old voltage slope through a source reversal or a
+/// >2x slope jump makes both the gain and power solves spend many passes
+/// walking back from a deliberately bad starting point. Keep the proven
+/// predictor on locally smooth audio and start from the last settled voltage
+/// only when that assumption is visibly false.
+///
+/// This is a numerical starting-point policy only. It does not change the
+/// circuit equations, convergence tolerance, source value or committed state.
+#[inline]
+fn predictor_input_slope_is_consistent(current: f64, last: f64, earlier: f64) -> bool {
+    const MIN_RATIO: f64 = 0.5;
+    const MAX_RATIO: f64 = 2.0;
+    const QUIET: f64 = 1.0e-12;
+
+    if !current.is_finite() || !last.is_finite() || !earlier.is_finite() {
+        return false;
+    }
+
+    let previous_step = last - earlier;
+    let current_step = current - last;
+    if previous_step.abs() <= QUIET {
+        return current_step.abs() <= QUIET;
+    }
+
+    let ratio = current_step / previous_step;
+    ratio.is_finite() && (MIN_RATIO..=MAX_RATIO).contains(&ratio)
+}
+
+/// Scale the previous settled-state movement by the source's own local secant.
+///
+/// V3.4 proved that blindly extending `V[n-1] - V[n-2]` is expensive whenever
+/// the source trajectory bends. A binary keep/drop gate fixes the worst cases,
+/// but throws away useful direction information on reversals and decelerations.
+///
+/// Treat the last two settled samples as a secant parameterised by source
+/// voltage. The current source-step ratio says how much of the previous state
+/// movement is worth carrying into the next Newton starting point:
+///
+/// - equal source steps => 1.0, exactly the old predictor;
+/// - a smaller same-direction step => a proportionally smaller state step;
+/// - a reversal => a bounded step back along the settled state secant;
+/// - a >2x source jump, non-finite value or first edge out of a flat source =>
+///   0.0, i.e. start from the last settled state as V3.4 already does.
+///
+/// Never extrapolate farther than one previous state step in either direction.
+/// That makes this strictly no more aggressive than the pre-V3.4 predictor.
+#[inline]
+fn predictor_source_scale(current: f64, last: f64, earlier: f64) -> f64 {
+    const MAX_SOURCE_RATIO: f64 = 2.0;
+    const QUIET: f64 = 1.0e-12;
+
+    if !current.is_finite() || !last.is_finite() || !earlier.is_finite() {
+        return 0.0;
+    }
+
+    let previous_step = last - earlier;
+    let current_step = current - last;
+    if previous_step.abs() <= QUIET {
+        // With a flat source on both samples, keep the ordinary state predictor:
+        // the reactive circuit can still be moving even when its source is not.
+        return if current_step.abs() <= QUIET {
+            1.0
+        } else {
+            0.0
+        };
+    }
+
+    let ratio = current_step / previous_step;
+    if !ratio.is_finite() || ratio.abs() > MAX_SOURCE_RATIO {
+        return 0.0;
+    }
+
+    ratio.clamp(-1.0, 1.0)
+}
+
+#[cfg(test)]
+#[test]
+fn line_search_warm_start_reexpands_but_stays_bounded() {
+    assert_eq!(line_search_warm_start_lambda(1.0, 0.125), 1.0);
+    assert_eq!(line_search_warm_start_lambda(0.5, 0.125), 1.0);
+    assert_eq!(line_search_warm_start_lambda(0.25, 0.125), 0.5);
+    assert_eq!(line_search_warm_start_lambda(0.125, 0.125), 0.25);
+    assert_eq!(line_search_warm_start_lambda(0.01, 0.125), 0.125);
+    assert_eq!(line_search_warm_start_lambda(f64::NAN, 0.125), 1.0);
+}
+
+#[cfg(test)]
+#[test]
+fn input_curvature_predictor_gate_keeps_smooth_slopes_and_rejects_attacks() {
+    // Constant and gently changing same-direction slopes keep the predictor.
+    assert!(predictor_input_slope_is_consistent(3.0, 2.0, 1.0));
+    assert!(predictor_input_slope_is_consistent(2.5, 2.0, 1.0));
+    assert!(predictor_input_slope_is_consistent(4.0, 2.0, 1.0));
+
+    // A source reversal, sudden acceleration or sudden deceleration starts
+    // Newton from the last settled voltage instead of extending stale motion.
+    assert!(!predictor_input_slope_is_consistent(1.5, 2.0, 1.0));
+    assert!(!predictor_input_slope_is_consistent(5.0, 2.0, 1.0));
+    assert!(!predictor_input_slope_is_consistent(2.25, 2.0, 1.0));
+
+    // Silence remains predictable, while the first real edge out of silence
+    // deliberately suppresses extrapolation.
+    assert!(predictor_input_slope_is_consistent(0.0, 0.0, 0.0));
+    assert!(!predictor_input_slope_is_consistent(1.0e-3, 0.0, 0.0));
+}
+
+#[cfg(test)]
+#[test]
+fn source_scaled_predictor_follows_bounded_input_secant() {
+    // Equal source steps are exactly the historical one-sample predictor.
+    assert_eq!(predictor_source_scale(3.0, 2.0, 1.0), 1.0);
+    // A smaller source step carries only the matching fraction of state motion.
+    assert_eq!(predictor_source_scale(2.25, 2.0, 1.0), 0.25);
+    // A source reversal predicts back along the settled state secant.
+    assert_eq!(predictor_source_scale(1.5, 2.0, 1.0), -0.5);
+    // Acceleration is bounded to the old predictor's one-state-step reach.
+    assert_eq!(predictor_source_scale(4.0, 2.0, 1.0), 1.0);
+    // A very large jump and the first edge out of a flat source stay at V[n-1].
+    assert_eq!(predictor_source_scale(5.0, 2.0, 1.0), 0.0);
+    assert_eq!(predictor_source_scale(1.0e-3, 0.0, 0.0), 0.0);
+    // A flat source can still have moving reactive state, so retain prediction.
+    assert_eq!(predictor_source_scale(0.0, 0.0, 0.0), 1.0);
+}
+
 #[cfg(test)]
 #[test]
 fn quadratic_backtracking_is_safeguarded_and_can_skip_dyadic_trials() {
@@ -608,6 +751,7 @@ fn post_restart_continuation_collects_cycle_geometry_without_trace() {
     assert!(collect_post_restart_cycle_geometry(true, true));
 }
 
+#[cfg(test)]
 #[inline]
 fn late_continuation_rejection(
     target_passes: usize,
@@ -617,6 +761,109 @@ fn late_continuation_rejection(
     stuck_only: bool,
 ) -> bool {
     target_passes >= min_target_passes && (ordinary_stuck || (!stuck_only && line_search_failed))
+}
+
+/// Decide whether an eligible late rejection has persisted long enough to
+/// justify source continuation.
+///
+/// A genuine `Pass::Stuck` is still an immediate continuation trigger. A
+/// recoverable line-search fallback is cheaper: the solver has already kept
+/// the best finite trial and returned `Pass::Moved`. V3/V3.1 steered source
+/// after one such fallback, which made the Twin's tail spend thousands of
+/// midpoint solves that usually only confirmed a basin the exact-target solve
+/// could recover on its next pass.
+///
+/// Production therefore requires two consecutive *eligible late* line-search
+/// fallbacks. Any successful intervening pass clears the arm. `single_fallback`
+/// is test-only A/B plumbing that reproduces the V3.1 policy.
+#[inline]
+fn persistent_late_continuation_rejection(
+    target_passes: usize,
+    min_target_passes: usize,
+    line_search_failed: bool,
+    ordinary_stuck: bool,
+    stuck_only: bool,
+    armed: &mut bool,
+    single_fallback: bool,
+) -> bool {
+    if target_passes < min_target_passes {
+        *armed = false;
+        return false;
+    }
+
+    if ordinary_stuck {
+        *armed = false;
+        return true;
+    }
+
+    if stuck_only || !line_search_failed {
+        *armed = false;
+        return false;
+    }
+
+    if single_fallback || *armed {
+        true
+    } else {
+        *armed = true;
+        false
+    }
+}
+
+/// Decide whether a smooth valve-grid limiter should hand the current pass to
+/// the global line search.
+///
+/// V3 handed off on the very first limiter encounter. That cut average work,
+/// but Ultra Lead telemetry showed more source-continuation entries and a
+/// worse p99/max tail. One ordinary limiter correction is cheap and often
+/// enough to move the predicted point back into the Newton basin. Production
+/// therefore defers exactly the first limiter handoff of a Twin power solve;
+/// a second limiter encounter uses the exact-Newton/global-search path.
+///
+/// `immediate` is test-only A/B plumbing for reproducing the V3 policy.
+#[inline]
+fn limiter_global_search_handoff(
+    limiter_would_hold: bool,
+    already_searching: bool,
+    armed: &mut bool,
+    immediate: bool,
+) -> bool {
+    if already_searching || !limiter_would_hold {
+        return false;
+    }
+    if immediate || *armed {
+        true
+    } else {
+        *armed = true;
+        false
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn first_limiter_handoff_is_deferred_once_per_solve() {
+    let mut armed = false;
+
+    assert!(!limiter_global_search_handoff(
+        true, false, &mut armed, false
+    ));
+    assert!(armed);
+    assert!(limiter_global_search_handoff(
+        true, false, &mut armed, false
+    ));
+
+    // An already-active line search owns the pass; the preflight adds nothing.
+    assert!(!limiter_global_search_handoff(
+        true, true, &mut armed, false
+    ));
+
+    let mut immediate_armed = false;
+    assert!(limiter_global_search_handoff(
+        true,
+        false,
+        &mut immediate_armed,
+        true,
+    ));
+    assert!(!immediate_armed);
 }
 
 #[cfg(test)]
@@ -636,6 +883,68 @@ fn stuck_only_continuation_ignores_recoverable_line_search_fallbacks() {
         true,
         true,
         true
+    ));
+}
+
+#[cfg(test)]
+#[test]
+fn persistent_late_fallback_requires_two_consecutive_rejections() {
+    let late = LATE_CONTINUATION_MIN_TARGET_PASSES;
+    let mut armed = false;
+
+    // First recoverable late fallback only arms the midpoint rescue.
+    assert!(!persistent_late_continuation_rejection(
+        late, late, true, false, false, &mut armed, false,
+    ));
+    assert!(armed);
+
+    // A second consecutive fallback is persistent enough to steer source.
+    assert!(persistent_late_continuation_rejection(
+        late + 1,
+        late,
+        true,
+        false,
+        false,
+        &mut armed,
+        false,
+    ));
+
+    // Any successful intervening pass clears the arm.
+    assert!(!persistent_late_continuation_rejection(
+        late + 2,
+        late,
+        false,
+        false,
+        false,
+        &mut armed,
+        false,
+    ));
+    assert!(!armed);
+    assert!(!persistent_late_continuation_rejection(
+        late + 3,
+        late,
+        true,
+        false,
+        false,
+        &mut armed,
+        false,
+    ));
+
+    // A genuinely stuck pass remains an immediate rescue trigger.
+    assert!(persistent_late_continuation_rejection(
+        late, late, false, true, false, &mut armed, false,
+    ));
+
+    // Test-only A/B mode reproduces V3.1's single-fallback trigger.
+    let mut immediate = false;
+    assert!(persistent_late_continuation_rejection(
+        late,
+        late,
+        true,
+        false,
+        false,
+        &mut immediate,
+        true,
     ));
 }
 
@@ -1206,12 +1515,15 @@ pub struct Simulation {
     /// produced -- and letting Newton walk from there, rather than from a
     /// number that has been exaggerated by the extrapolation.
     last_was_unsettled: bool,
-    /// Input of the last sample whose nonlinear solve actually settled.
+    /// Inputs of the last two samples whose nonlinear solve actually settled.
     /// Late source continuation must start from the same source value whose
     /// reactive/device state was committed, never from an unsettled sample.
+    /// The Twin-only predictor gate also compares their source slope with the
+    /// current sample before deciding whether voltage extrapolation is useful.
     last_input: f64,
+    earlier_input: f64,
     /// Per-circuit numerical policy. Disabled by default; the voice catalogue
-    /// currently enables it only for the Twin power stage.
+    /// currently enables it on the Twin gain and power simulations.
     late_continuation: bool,
     /// The answer before that, so the next sample can be started from where
     /// the last two were heading rather than from where the last one was.
@@ -1246,9 +1558,9 @@ pub struct Simulation {
     fallbacks: u64,
     /// Newton corrections that came back non-finite.
     nonfinite: u64,
-    /// Kept in the telemetry schema so benchmark columns remain comparable to
-    /// the first continuation experiment. The tight mechanism never suppresses
-    /// the proven extrapolating predictor, so this counter remains zero.
+    /// Twin gain/power samples where a source-slope discontinuity suppressed
+    /// the ordinary voltage extrapolator and Newton started from the last
+    /// settled state instead. Retained in the existing telemetry column.
     attack_predictor_suppressions: u64,
     /// Late one-step continuation telemetry.
     continuation_attempts: u64,
@@ -1264,6 +1576,10 @@ pub struct Simulation {
     /// How short a step this circuit's line search will try. See
     /// `set_backtracks`.
     backtracks: usize,
+    /// Initial damping length for the next consecutive searched pass on the
+    /// same source RHS. Reset to one whenever `prepare_rhs()` changes the RHS
+    /// or a pass returns to plain Newton.
+    search_lambda_hint: f64,
     /// Zero right-hand side used while constructing/refactoring the cached
     /// linear partition. Stored here so a later rebuild never allocates a
     /// throwaway `vec![0.0; n]` on the audio thread.
@@ -1318,10 +1634,27 @@ pub struct Simulation {
     /// grid limiting to the global line search. Production always enables it.
     #[cfg(test)]
     test_disable_limiter_global_search: bool,
+    /// Test-only A/B switch restoring V3's immediate limiter-to-global-search
+    /// handoff. Production V3.1 defers exactly the first limiter encounter.
+    #[cfg(test)]
+    test_immediate_limiter_global_search: bool,
     /// Test-only A/B switch for safeguarded quadratic backtracking. Production
     /// always enables it on the Twin reduced line-search path.
     #[cfg(test)]
     test_disable_quadratic_backtracking: bool,
+    /// Test-only A/B switch for V3.3's within-solve line-search warm start.
+    /// Production keeps the bounded warm start enabled on Twin gain and power.
+    #[cfg(test)]
+    test_disable_line_search_warm_start: bool,
+    /// Test-only A/B switch for V3.4's Twin input-curvature predictor gate.
+    /// Production suppresses extrapolation only when consecutive source slopes
+    /// reverse or differ by more than 2x.
+    #[cfg(test)]
+    test_disable_input_curvature_predictor_gate: bool,
+    /// Test-only A/B switch for V3.5's bounded source-scaled state predictor.
+    /// When disabled, production falls back exactly to V3.4's binary gate.
+    #[cfg(test)]
+    test_disable_source_scaled_predictor: bool,
     /// Test-only cost experiment: ordinary late source continuation is allowed
     /// only after `iterate()` returns `Pass::Stuck`. A recoverable late
     /// line-search fallback stays on the exact target instead of paying for a
@@ -1329,6 +1662,8 @@ pub struct Simulation {
     /// independent and remains available.
     #[cfg(test)]
     test_continuation_stuck_only: bool,
+    #[cfg(test)]
+    test_single_late_rejection_continuation: bool,
     /// Test-only continuation cost sweep. Production begins ordinary late
     /// source continuation at `LATE_CONTINUATION_MIN_TARGET_PASSES`; this may
     /// delay that gate without changing the 32-pass last-settled/staged rescue.
@@ -1460,6 +1795,7 @@ impl Simulation {
         self.recent_move.copy_from_slice(&source.recent_move);
         self.last_was_unsettled = source.last_was_unsettled;
         self.last_input = source.last_input;
+        self.earlier_input = source.earlier_input;
         self.last_settled_linearisation
             .copy_from_slice(&source.last_settled_linearisation);
         self.last_settled_linearisation_valid = source.last_settled_linearisation_valid;
@@ -1663,6 +1999,7 @@ impl Simulation {
             recent_move: vec![0.0; n],
             last_was_unsettled: false,
             last_input: 0.0,
+            earlier_input: 0.0,
             late_continuation: false,
             earlier: vec![0.0; n],
             exact: true,
@@ -1689,6 +2026,7 @@ impl Simulation {
             continuation_actual_rescues: 0,
             moved: f64::INFINITY,
             backtracks: MAX_BACKTRACKS,
+            search_lambda_hint: 1.0,
             partition_zero_rhs: vec![0.0; n],
             partition_initialized: false,
             linear_partition: None,
@@ -1716,13 +2054,38 @@ impl Simulation {
             )
             .is_some(),
             #[cfg(test)]
+            test_immediate_limiter_global_search: std::env::var_os(
+                "GAINSTAGEFX_TEST_IMMEDIATE_LIMITER_GLOBAL_SEARCH",
+            )
+            .is_some(),
+            #[cfg(test)]
             test_disable_quadratic_backtracking: std::env::var_os(
                 "GAINSTAGEFX_TEST_DISABLE_QUADRATIC_BACKTRACKING",
             )
             .is_some(),
             #[cfg(test)]
+            test_disable_line_search_warm_start: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_LINE_SEARCH_WARM_START",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_input_curvature_predictor_gate: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_INPUT_CURVATURE_PREDICTOR_GATE",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_source_scaled_predictor: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_SOURCE_SCALED_PREDICTOR",
+            )
+            .is_some(),
+            #[cfg(test)]
             test_continuation_stuck_only: std::env::var_os(
                 "GAINSTAGEFX_TEST_CONTINUATION_STUCK_ONLY",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_single_late_rejection_continuation: std::env::var_os(
+                "GAINSTAGEFX_TEST_SINGLE_LATE_REJECTION_CONTINUATION",
             )
             .is_some(),
             #[cfg(test)]
@@ -1894,11 +2257,42 @@ impl Simulation {
         }
     }
 
+    #[inline(always)]
+    fn immediate_limiter_global_search(&self) -> bool {
+        #[cfg(test)]
+        {
+            self.test_immediate_limiter_global_search
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
+
+    #[inline(always)]
+    fn valve_grid_limiter_would_hold(&self) -> bool {
+        self.devices
+            .iter()
+            .any(|device| device.step_limiter_would_hold(&self.voltage))
+    }
+
     #[inline]
     fn quadratic_backtracking_enabled(&self) -> bool {
         #[cfg(test)]
         {
             !self.test_disable_quadratic_backtracking
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    #[inline]
+    fn line_search_warm_start_enabled(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_line_search_warm_start
         }
         #[cfg(not(test))]
         {
@@ -2035,6 +2429,7 @@ impl Simulation {
         self.earlier.copy_from_slice(&self.voltage);
         self.last_was_unsettled = false;
         self.last_input = 0.0;
+        self.earlier_input = 0.0;
         // The supplied node voltages do not carry the other simulation's
         // device limiter/linearisation bookkeeping. Let the first local
         // Newton stamp establish that state before it can become a rollback
@@ -2794,6 +3189,36 @@ impl Simulation {
         self.late_continuation = enabled;
     }
 
+    #[inline(always)]
+    fn input_curvature_predictor_gate_enabled(&self) -> bool {
+        if !self.late_continuation {
+            return false;
+        }
+        #[cfg(test)]
+        {
+            !self.test_disable_input_curvature_predictor_gate
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    #[inline(always)]
+    fn source_scaled_predictor_enabled(&self) -> bool {
+        if !self.input_curvature_predictor_gate_enabled() {
+            return false;
+        }
+        #[cfg(test)]
+        {
+            !self.test_disable_source_scaled_predictor
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
     /// Cap the Newton passes a sample may take. See `ceiling`.
     ///
     /// Clamped to `PASS_FLOOR` at the bottom, so no caller -- and no bug in a
@@ -2901,6 +3326,7 @@ impl Simulation {
         self.earlier.copy_from_slice(&self.voltage);
         self.last_was_unsettled = false;
         self.last_input = 0.0;
+        self.earlier_input = 0.0;
         if settled {
             for (saved, device) in self
                 .last_settled_linearisation
@@ -2920,6 +3346,10 @@ impl Simulation {
     /// Cache the input, supply and reactive-history contributions once per
     /// solve. Newton trials change device stamps, never these contributions.
     fn prepare_rhs(&mut self, input: f64, dc: bool) {
+        // A new source RHS starts a new Newton problem. Damping learned on the
+        // previous RHS is not evidence about this one.
+        self.search_lambda_hint = 1.0;
+
         // Only these positions can ever contain source/bias/reactive history.
         // Inactive entries remain permanently zero from construction, so a
         // reduced solve does not need an O(n) full-vector rebuild each sample.
@@ -3321,6 +3751,15 @@ impl Simulation {
     /// and the extra stamp is worth paying for because the alternative is
     /// thirty-two passes and a held sample.
     fn iterate(&mut self, dc: bool, search: bool) -> Pass {
+        self.iterate_with_limiter_handoff(dc, search, true)
+    }
+
+    fn iterate_with_limiter_handoff(
+        &mut self,
+        dc: bool,
+        search: bool,
+        allow_limiter_handoff: bool,
+    ) -> Pass {
         let n = self.n;
 
         // The Twin power stage previously paid for two globalization schemes
@@ -3329,18 +3768,23 @@ impl Simulation {
         // the correction stopped shrinking did the global line search take
         // over.  The local limiter changes the Newton linearisation; the line
         // search instead damps the exact Newton direction.  When a smooth
-        // triode/pentode grid limiter would hold this pass, go directly to the
-        // existing line search rather than spend passes walking to the same
-        // basin first.  `late_continuation` is intentionally Twin-power-only.
-        let limiter_requests_global_search = !dc
+        // triode/pentode grid limiter would hold this pass, V3 may hand the
+        // correction to the existing line search rather than spend many passes
+        // walking to the same basin. V3.1's caller defers that handoff exactly
+        // once per Twin power solve; all other call sites preserve immediate
+        // V3 behavior. `late_continuation` is intentionally Twin-power-only.
+        let limiter_requests_global_search = allow_limiter_handoff
+            && !dc
             && !search
             && self.late_continuation
             && self.limiter_global_search_enabled()
-            && self
-                .devices
-                .iter()
-                .any(|device| device.step_limiter_would_hold(&self.voltage));
+            && self.valve_grid_limiter_would_hold();
         let search = search || limiter_requests_global_search;
+        if !search && self.late_continuation {
+            // Only consecutive searched passes share a hint. A successful
+            // return to plain Newton means the old damping evidence is stale.
+            self.search_lambda_hint = 1.0;
+        }
 
         // Linearise where the solve is now.
         //
@@ -3601,24 +4045,28 @@ impl Simulation {
             return Pass::Settled;
         }
 
-        // Not there yet, so the step has to earn its place. The full one
-        // first, and almost always the one taken: Newton converges
-        // quadratically near the answer and a shortened step throws that
-        // away, so the common path must not pay for the search at all -- one
-        // trial, accepted, and done.
+        // Not there yet, so the step has to earn its place. A fresh search
+        // starts with the full Newton step, and almost always takes it. On the
+        // Twin's difficult tail only, consecutive searched passes may reuse a
+        // bounded damping hint from the preceding pass so we do not re-probe
+        // step lengths that were just shown to be too aggressive.
         if !search {
             self.voltage.copy_from_slice(&self.guess);
             return Pass::Moved;
         }
 
-        let mut lambda = 1.0;
-        // Preserve each circuit's existing shortest allowed trial.  Twin uses
+        // Preserve each circuit's existing shortest allowed trial. Twin uses
         // four trials, so its old dyadic floor was 1/8; the generic six-trial
         // path bottoms at 1/32. Polynomial interpolation may skip directly
         // toward that floor but may not search deeper than the old policy.
         let search_floor = (0.5f64)
             .powi(self.backtracks.saturating_sub(1) as i32)
             .max(MIN_LAMBDA);
+        let mut lambda = if self.late_continuation && !dc && self.line_search_warm_start_enabled() {
+            self.search_lambda_hint.clamp(search_floor, 1.0)
+        } else {
+            1.0
+        };
         let mut taken = false;
         let mut best_lambda = 1.0;
         let mut best_merit = f64::INFINITY;
@@ -3894,6 +4342,9 @@ impl Simulation {
             // the 5150 oscillate through its iteration allowance on attacks.
             // If no finite exact merit was measured, retain the full step.
             self.fallbacks += 1;
+            if self.late_continuation && !dc && self.line_search_warm_start_enabled() {
+                self.search_lambda_hint = line_search_warm_start_lambda(best_lambda, search_floor);
+            }
             if devices_dirty {
                 for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
                     device.relinearise(*saved);
@@ -3907,6 +4358,10 @@ impl Simulation {
                 }
             }
             return Pass::Moved;
+        }
+
+        if self.late_continuation && !dc && self.line_search_warm_start_enabled() {
+            self.search_lambda_hint = line_search_warm_start_lambda(lambda, search_floor);
         }
 
         #[cfg(test)]
@@ -4040,7 +4495,34 @@ impl Simulation {
             // into one walk without changing any arithmetic or state order.
             // On the predictable path each element still observes the old
             // voltage/earlier pair before either is updated.
-            if self.predictable && !self.last_was_unsettled {
+            let predictor_scale = if self.predictable && !self.last_was_unsettled {
+                if self.source_scaled_predictor_enabled() {
+                    predictor_source_scale(input, self.last_input, self.earlier_input)
+                } else if self.input_curvature_predictor_gate_enabled() {
+                    if predictor_input_slope_is_consistent(
+                        input,
+                        self.last_input,
+                        self.earlier_input,
+                    ) {
+                        1.0
+                    } else {
+                        0.0
+                    }
+                } else {
+                    1.0
+                }
+            } else {
+                0.0
+            };
+            let suppress_predictor = self.predictable
+                && !self.last_was_unsettled
+                && self.input_curvature_predictor_gate_enabled()
+                && predictor_scale == 0.0;
+            if suppress_predictor {
+                self.attack_predictor_suppressions += 1;
+            }
+
+            if self.predictable && !self.last_was_unsettled && predictor_scale != 0.0 {
                 for ((voltage, earlier), recent) in self
                     .voltage
                     .iter_mut()
@@ -4051,7 +4533,7 @@ impl Simulation {
                     let previous = *earlier;
                     *recent = (last - previous).abs();
                     *earlier = last;
-                    *voltage = 2.0 * last - previous;
+                    *voltage = last + predictor_scale * (last - previous);
                 }
             } else {
                 for ((&voltage, earlier), recent) in self
@@ -4111,6 +4593,14 @@ impl Simulation {
                 let mut used_passes = 0usize;
                 let mut target_passes = 0usize;
                 let mut continuation_from_stuck = None;
+                // A recoverable late line-search fallback must repeat before
+                // source continuation is worth a midpoint solve. Genuine
+                // `Pass::Stuck` still continues immediately.
+                let mut late_rejection_armed = false;
+                // V3.1 lets the first smooth valve-grid limiter correction run
+                // locally before handing a repeated large step to the global
+                // line search. This is per exact-target solve and allocation-free.
+                let mut limiter_handoff_armed = false;
                 let mut source_changed = false;
                 // A deep continuation step that actually beats the exact-target
                 // merit opens a useful Newton basin.  Once that happens, stop
@@ -4359,7 +4849,18 @@ impl Simulation {
                     } else {
                         0.0
                     };
-                    let pass = self.iterate(false, search);
+                    let limiter_would_hold = !search
+                        && self.late_continuation
+                        && self.limiter_global_search_enabled()
+                        && self.valve_grid_limiter_would_hold();
+                    let allow_limiter_handoff = limiter_global_search_handoff(
+                        limiter_would_hold,
+                        search,
+                        &mut limiter_handoff_armed,
+                        self.immediate_limiter_global_search(),
+                    );
+                    let pass =
+                        self.iterate_with_limiter_handoff(false, search, allow_limiter_handoff);
                     self.backtracks = normal_backtracks;
                     target_passes += 1;
                     let line_search_failed = self.fallbacks > fallbacks_before;
@@ -4563,12 +5064,19 @@ impl Simulation {
                     let continuation_min_target_passes = self.test_continuation_min_target_passes;
                     #[cfg(not(test))]
                     let continuation_min_target_passes = LATE_CONTINUATION_MIN_TARGET_PASSES;
-                    let late_rejection = late_continuation_rejection(
+                    #[cfg(test)]
+                    let single_late_rejection_continuation =
+                        self.test_single_late_rejection_continuation;
+                    #[cfg(not(test))]
+                    let single_late_rejection_continuation = false;
+                    let late_rejection = persistent_late_continuation_rejection(
                         target_passes,
                         continuation_min_target_passes,
                         line_search_failed,
                         ordinary_stuck,
                         continuation_stuck_only,
+                        &mut late_rejection_armed,
+                        single_late_rejection_continuation,
                     );
 
                     if continuation_from_stuck.is_none() && used_passes < ceiling && late_rejection
@@ -5254,6 +5762,7 @@ impl Simulation {
         // Keep the continuation source synchronized with the dynamic state
         // committed above. An unsettled sample advances neither.
         if self.late_continuation && !failed {
+            self.earlier_input = self.last_input;
             self.last_input = input;
         }
         self.voltage[self.circuit.output]
@@ -5300,6 +5809,7 @@ impl Simulation {
         self.guess.fill(0.0);
         self.last_was_unsettled = false;
         self.last_input = 0.0;
+        self.earlier_input = 0.0;
         self.aux_values.fill(0.0);
         self.last_settled_linearisation_valid = false;
         self.exact = true;
