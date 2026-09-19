@@ -676,6 +676,32 @@ pub struct Triode {
     delta: f64,
     /// Whether the limiter held the last step back.
     clamped: bool,
+    /// Current-path intermediates from the most recent reduced line-search
+    /// candidate. A winning candidate becomes the next Newton linearisation
+    /// point, so the following stamp can derive its analytic slopes without
+    /// repeating sqrt/exp/ln1p/powf. Rejected trials do no derivative work.
+    trial_eval: Option<TriodeEval>,
+}
+
+#[derive(Clone, Copy)]
+struct TriodeEval {
+    vpk: f64,
+    vgk: f64,
+    ip: f64,
+    root: f64,
+    soft: f64,
+    exp_inner: f64,
+    e1: f64,
+    powered: f64,
+    soft_is_linear: bool,
+    active: bool,
+}
+
+impl TriodeEval {
+    #[inline]
+    fn matches(self, vpk: f64, vgk: f64) -> bool {
+        self.vpk.to_bits() == vpk.to_bits() && self.vgk.to_bits() == vgk.to_bits()
+    }
 }
 
 impl Triode {
@@ -692,6 +718,7 @@ impl Triode {
             vgk: -1.0,
             delta: 0.0,
             clamped: false,
+            trial_eval: None,
         }
     }
 
@@ -714,6 +741,90 @@ impl Triode {
         } else {
             2.0 * e1.powf(s.ex) * self.inv_kg1
         }
+    }
+
+    /// Current-only evaluation that also retains the intermediates already
+    /// paid for by a reduced line-search residual. No derivative arithmetic is
+    /// done here: rejected trials therefore keep the original transcendental
+    /// workload, while an accepted trial can form the next Newton slopes
+    /// without repeating sqrt/exp/ln1p/powf.
+    #[inline]
+    fn plate_trial_eval(&self, vpk: f64, vgk: f64) -> TriodeEval {
+        let s = &self.spec;
+        if vpk <= 0.0 {
+            return TriodeEval {
+                vpk,
+                vgk,
+                ip: 0.0,
+                root: 0.0,
+                soft: 0.0,
+                exp_inner: 0.0,
+                e1: 0.0,
+                powered: 0.0,
+                soft_is_linear: false,
+                active: false,
+            };
+        }
+        let root = (s.kvb + vpk * vpk).sqrt();
+        let inner = s.kp * (self.inv_mu + vgk / root);
+        let (soft, exp_inner, soft_is_linear) = if inner > 30.0 {
+            (inner, 0.0, true)
+        } else {
+            let e = inner.exp();
+            (e.ln_1p(), e, false)
+        };
+        let e1 = vpk * self.inv_kp * soft;
+        if e1 <= 0.0 {
+            return TriodeEval {
+                vpk,
+                vgk,
+                ip: 0.0,
+                root,
+                soft,
+                exp_inner,
+                e1,
+                powered: 0.0,
+                soft_is_linear,
+                active: false,
+            };
+        }
+        let powered = e1.powf(s.ex);
+        let ip = 2.0 * powered * self.inv_kg1;
+        TriodeEval {
+            vpk,
+            vgk,
+            ip,
+            root,
+            soft,
+            exp_inner,
+            e1,
+            powered,
+            soft_is_linear,
+            active: true,
+        }
+    }
+
+    #[inline]
+    fn plate_slopes_from_trial(&self, evaluation: TriodeEval) -> (f64, f64, f64) {
+        if !evaluation.active {
+            return (evaluation.ip, 0.0, 0.0);
+        }
+        let sigma = if evaluation.soft_is_linear {
+            1.0
+        } else {
+            evaluation.exp_inner / (1.0 + evaluation.exp_inner)
+        };
+        let d_ip =
+            2.0 * self.spec.ex * evaluation.powered * self.inv_kg1 / evaluation.e1;
+        let d_e1_vpk = evaluation.soft * self.inv_kp
+            - evaluation.vpk * evaluation.vpk * evaluation.vgk * sigma
+                / (evaluation.root * evaluation.root * evaluation.root);
+        let d_e1_vgk = evaluation.vpk * sigma / evaluation.root;
+        (
+            evaluation.ip,
+            d_ip * d_e1_vpk,
+            d_ip * d_e1_vgk,
+        )
     }
 
     /// Grid current. Nothing until the grid goes positive, then it conducts
@@ -788,6 +899,7 @@ impl Device for Triode {
         self.vgk = saved.at[1];
         self.delta = saved.at[2];
         self.clamped = saved.clamped;
+        self.trial_eval = None;
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
@@ -803,7 +915,10 @@ impl Device for Triode {
         self.vpk = vpk;
         self.vgk = vgk;
 
-        let (ip, slope_p, gm) = self.plate_with_slopes(vpk, vgk);
+        let (ip, slope_p, gm) = match self.trial_eval.take() {
+            Some(cached) if cached.matches(vpk, vgk) => self.plate_slopes_from_trial(cached),
+            _ => self.plate_with_slopes(vpk, vgk),
+        };
         let rp = slope_p.max(1e-12);
 
         s.conductance(self.p, self.k, rp);
@@ -865,6 +980,37 @@ pub struct Pentode {
     vsk: f64,
     delta: f64,
     clamped: bool,
+    /// Current-path intermediates from the most recent reduced line-search
+    /// candidate. The residual probe already pays for the softplus, power law
+    /// and plate knee; if that point wins, the next Newton stamp derives the
+    /// analytic slopes from those exact intermediates.
+    trial_eval: Option<PentodeEval>,
+}
+
+#[derive(Clone, Copy)]
+struct PentodeEval {
+    vpk: f64,
+    vgk: f64,
+    vsk: f64,
+    ip: f64,
+    ig2: f64,
+    soft: f64,
+    exp_inner: f64,
+    e1: f64,
+    plate_base: f64,
+    screen_base: f64,
+    knee: f64,
+    soft_is_linear: bool,
+    active: bool,
+}
+
+impl PentodeEval {
+    #[inline]
+    fn matches(self, vpk: f64, vgk: f64, vsk: f64) -> bool {
+        self.vpk.to_bits() == vpk.to_bits()
+            && self.vgk.to_bits() == vgk.to_bits()
+            && self.vsk.to_bits() == vsk.to_bits()
+    }
 }
 
 impl Pentode {
@@ -886,6 +1032,7 @@ impl Pentode {
             vsk: 0.0,
             delta: 0.0,
             clamped: false,
+            trial_eval: None,
         }
     }
 
@@ -963,6 +1110,115 @@ impl Pentode {
         (ip, ig2)
     }
 
+    /// Current-only pentode evaluation for reduced line-search trials. It
+    /// retains only intermediates the original current formula already had to
+    /// compute; analytic slopes are derived later only if this exact point is
+    /// used as the next Newton linearisation.
+    #[inline]
+    fn split_trial_eval(&self, vpk: f64, vgk: f64, vsk: f64) -> PentodeEval {
+        if vsk <= 0.0 || vpk <= 0.0 {
+            return PentodeEval {
+                vpk,
+                vgk,
+                vsk,
+                ip: 0.0,
+                ig2: 0.0,
+                soft: 0.0,
+                exp_inner: 0.0,
+                e1: 0.0,
+                plate_base: 0.0,
+                screen_base: 0.0,
+                knee: 0.0,
+                soft_is_linear: false,
+                active: false,
+            };
+        }
+        let c = &self.spec;
+        let inner = c.kp * (self.inv_mu + vgk / vsk);
+        let (soft, exp_inner, soft_is_linear) = if inner > 30.0 {
+            (inner, 0.0, true)
+        } else {
+            let e = inner.exp();
+            (e.ln_1p(), e, false)
+        };
+        let e1 = vsk * self.inv_kp * soft;
+        if e1 <= 0.0 {
+            return PentodeEval {
+                vpk,
+                vgk,
+                vsk,
+                ip: 0.0,
+                ig2: 0.0,
+                soft,
+                exp_inner,
+                e1,
+                plate_base: 0.0,
+                screen_base: 0.0,
+                knee: 0.0,
+                soft_is_linear,
+                active: false,
+            };
+        }
+        let powered = e1.powf(c.ex);
+        let plate_base = powered * self.inv_kg1;
+        let screen_base = powered * self.inv_kg2;
+        let knee = (vpk * self.inv_kvb).atan();
+        PentodeEval {
+            vpk,
+            vgk,
+            vsk,
+            ip: self.count * plate_base * knee,
+            ig2: self.count * screen_base,
+            soft,
+            exp_inner,
+            e1,
+            plate_base,
+            screen_base,
+            knee,
+            soft_is_linear,
+            active: true,
+        }
+    }
+
+    #[inline]
+    fn split_slopes_from_trial(
+        &self,
+        evaluation: PentodeEval,
+    ) -> (f64, f64, f64, f64, f64, f64, f64) {
+        if !evaluation.active {
+            return (
+                evaluation.ip,
+                evaluation.ig2,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            );
+        }
+        let sigma = if evaluation.soft_is_linear {
+            1.0
+        } else {
+            evaluation.exp_inner / (1.0 + evaluation.exp_inner)
+        };
+        let vpk_ratio = evaluation.vpk * self.inv_kvb;
+        let d_knee = self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio);
+        let d_e1_vgk = sigma;
+        let d_e1_vsk =
+            evaluation.soft * self.inv_kp - evaluation.vgk * sigma / evaluation.vsk;
+        let d_plate = self.spec.ex * evaluation.plate_base / evaluation.e1;
+        let d_screen = self.spec.ex * evaluation.screen_base / evaluation.e1;
+        (
+            evaluation.ip,
+            evaluation.ig2,
+            self.count * evaluation.plate_base * d_knee,
+            self.count * d_plate * d_e1_vgk * evaluation.knee,
+            self.count * d_plate * d_e1_vsk * evaluation.knee,
+            self.count * d_screen * d_e1_vgk,
+            self.count * d_screen * d_e1_vsk,
+        )
+    }
+
     /// Grid current. Nothing until the grid goes positive, then it conducts
     /// like the junction it is. A power tube's grid draws far harder than a
     /// preamp triode's, and what it does to the coupling capacitor in front of
@@ -999,6 +1255,7 @@ impl Device for Pentode {
         self.vsk = saved.at[2];
         self.delta = saved.at[3];
         self.clamped = saved.clamped;
+        self.trial_eval = None;
     }
 
     fn stamp(&mut self, st: &mut Stamper, v: &[f64]) {
@@ -1019,7 +1276,12 @@ impl Device for Pentode {
         self.vgk = vgk;
         self.vsk = vsk;
 
-        let (ip, ig2, gp, gm, gs, gm2, gs2) = self.split_with_slopes(vpk, vgk, vsk);
+        let (ip, ig2, gp, gm, gs, gm2, gs2) = match self.trial_eval.take() {
+            Some(cached) if cached.matches(vpk, vgk, vsk) => {
+                self.split_slopes_from_trial(cached)
+            }
+            _ => self.split_with_slopes(vpk, vgk, vsk),
+        };
 
         // Plate branch: its own conductance, plus the two transconductances
         // that say how the grid and the screen move it.
@@ -1367,6 +1629,25 @@ pub struct Core {
     half_step: f64,
     /// Whether the limiter held the last step back.
     clamped: bool,
+    /// Nonlinear magnetising evaluation from the last reduced line-search
+    /// candidate.  `antialiased_magnetising()` already computes the slope and
+    /// discards it; retaining it lets an accepted candidate feed the next
+    /// Newton stamp without evaluating the ADAA/core curve twice.
+    trial_eval: Option<CoreEval>,
+}
+
+#[derive(Clone, Copy)]
+struct CoreEval {
+    flux: f64,
+    current: f64,
+    slope: f64,
+}
+
+impl CoreEval {
+    #[inline]
+    fn matches(self, flux: f64) -> bool {
+        self.flux.to_bits() == flux.to_bits()
+    }
 }
 
 impl Core {
@@ -1401,11 +1682,13 @@ impl Core {
             delta: 0.0,
             clamped: false,
             half_step: 0.5 / rate,
+            trial_eval: None,
         }
     }
 
     pub fn set_rate(&mut self, rate: f64) {
         self.half_step = 0.5 / rate;
+        self.trial_eval = None;
     }
 
     /// Magnetising current for a flux linkage.
@@ -1554,6 +1837,7 @@ impl Device for Core {
         self.flux = saved.at[1];
         self.delta = saved.at[2];
         self.clamped = saved.clamped;
+        self.trial_eval = None;
     }
 
     fn stamp(&mut self, s: &mut Stamper, v: &[f64]) {
@@ -1580,7 +1864,20 @@ impl Device for Core {
         let flux = history + self.half_step * volts;
         self.flux = flux;
 
-        let (i, slope) = self.antialiased_magnetising_with_slope(flux);
+        let evaluation = match self.trial_eval.take() {
+            Some(cached) if cached.matches(flux) => cached,
+            _ => {
+                let (current, slope) = self.antialiased_magnetising_with_slope(flux);
+                CoreEval {
+                    flux,
+                    current,
+                    slope,
+                }
+            }
+        };
+        let CoreEval {
+            current: i, slope, ..
+        } = evaluation;
         // d(current)/d(volts) is d(current)/d(flux) times the half step, which
         // is what the integration contributes. Use the exact derivative of
         // this same current curve: differencing nearby flux values both loses
@@ -1602,6 +1899,7 @@ impl Device for Core {
     fn advance(&mut self) {
         self.last_flux = self.flux;
         self.last_volts = self.volts;
+        self.trial_eval = None;
     }
 }
 
@@ -1944,17 +2242,29 @@ impl Device for VariableResistor {
 
 /// Device evaluation used only by Schur-reduced line-search merit probes.
 ///
-/// A rejected reduced trial must not perturb device state. Keeping these probes
-/// read-only removes the old save/restore walk from every backtrack while
-/// evaluating exactly the same residual equation from the same pre-trial
-/// linearisation state. The one accepted trial commits that state separately.
+/// A rejected reduced trial must not perturb physical device state. These
+/// probes may update only an ephemeral evaluation cache; limiter/history/
+/// linearisation state remains untouched. That keeps rejected probes free of
+/// the old save/restore walk while letting an accepted point reuse the exact
+/// same nonlinear evaluation in the immediately following Newton stamp. The
+/// accepted trial still commits physical state separately.
 trait TrialResidual {
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]);
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        cache_eval: bool,
+    );
 }
 
 impl TrialResidual for Diode {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         let wanted = across(v, self.a, self.k);
         let old = self.voltage;
         let scale = self.scale;
@@ -1989,7 +2299,12 @@ impl TrialResidual for Diode {
 
 impl TrialResidual for Rectifier {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         let wanted = across(v, self.a, self.k);
         let (guess, _) = limit(wanted, self.voltage, 25.0);
 
@@ -2011,7 +2326,12 @@ impl TrialResidual for Rectifier {
 
 impl TrialResidual for Triode {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        cache_eval: bool,
+    ) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let raw = across(v, self.g, self.k);
         let vgk = if r.limiting {
@@ -2019,14 +2339,28 @@ impl TrialResidual for Triode {
         } else {
             raw
         };
-        r.current(self.p, self.k, self.plate(vpk, vgk));
+        let ip = if cache_eval {
+            let evaluation = self.plate_trial_eval(vpk, vgk);
+            let ip = evaluation.ip;
+            self.trial_eval = Some(evaluation);
+            ip
+        } else {
+            self.trial_eval = None;
+            self.plate(vpk, vgk)
+        };
+        r.current(self.p, self.k, ip);
         r.current(self.g, self.k, self.grid(vgk));
     }
 }
 
 impl TrialResidual for Pentode {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        cache_eval: bool,
+    ) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let vsk = across(v, self.s, self.k).max(0.0);
         let raw = across(v, self.g, self.k);
@@ -2036,27 +2370,37 @@ impl TrialResidual for Pentode {
             raw
         };
 
-        let (ip, ig2) = if vsk <= 0.0 || vpk <= 0.0 {
-            (0.0, 0.0)
+        let (ip, ig2) = if cache_eval {
+            let evaluation = self.split_trial_eval(vpk, vgk, vsk);
+            let currents = (evaluation.ip, evaluation.ig2);
+            self.trial_eval = Some(evaluation);
+            currents
         } else {
-            let c = &self.spec;
-            let inner = c.kp * (self.inv_mu + vgk / vsk);
-            let soft = if inner > 30.0 {
-                inner
-            } else {
-                inner.exp().ln_1p()
-            };
-            let e1 = vsk * self.inv_kp * soft;
-            if e1 <= 0.0 {
+            self.trial_eval = None;
+            // This is deliberately the pre-cache residual path. The test-only
+            // A/B switch must restore the old line-search workload exactly.
+            if vsk <= 0.0 || vpk <= 0.0 {
                 (0.0, 0.0)
             } else {
-                let powered = e1.powf(c.ex);
-                let plate_base = powered * self.inv_kg1;
-                let screen_base = powered * self.inv_kg2;
-                (
-                    self.count * plate_base * (vpk * self.inv_kvb).atan(),
-                    self.count * screen_base,
-                )
+                let c = &self.spec;
+                let inner = c.kp * (self.inv_mu + vgk / vsk);
+                let soft = if inner > 30.0 {
+                    inner
+                } else {
+                    inner.exp().ln_1p()
+                };
+                let e1 = vsk * self.inv_kp * soft;
+                if e1 <= 0.0 {
+                    (0.0, 0.0)
+                } else {
+                    let powered = e1.powf(c.ex);
+                    let plate_base = powered * self.inv_kg1;
+                    let screen_base = powered * self.inv_kg2;
+                    (
+                        self.count * plate_base * (vpk * self.inv_kvb).atan(),
+                        self.count * screen_base,
+                    )
+                }
             }
         };
         r.current(self.p, self.k, ip);
@@ -2067,7 +2411,12 @@ impl TrialResidual for Pentode {
 
 impl TrialResidual for Jfet {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         let raw_vgs = across(v, self.g, self.s);
         let raw_vds = across(v, self.d, self.s);
         let vgs = if r.limiting {
@@ -2086,7 +2435,12 @@ impl TrialResidual for Jfet {
 
 impl TrialResidual for Bipolar {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         let (vbe_now, vbc_now) = if self.pnp {
             (across(v, self.e, self.b), across(v, self.c, self.b))
         } else {
@@ -2119,7 +2473,12 @@ impl TrialResidual for Bipolar {
 
 impl TrialResidual for OpAmp {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         let output = across(v, self.out, self.reference);
         let error = across(v, self.plus, self.minus);
         let was = self.clamped;
@@ -2159,7 +2518,12 @@ impl TrialResidual for OpAmp {
 
 impl TrialResidual for Core {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        cache_eval: bool,
+    ) {
         let raw = across(v, self.a, self.b);
         let volts = if r.limiting {
             let scale = self.spec.knee / (2.0 * self.half_step * self.spec.sharpness);
@@ -2169,14 +2533,30 @@ impl TrialResidual for Core {
         };
         let history = self.last_flux + self.half_step * self.last_volts;
         let flux = history + self.half_step * volts;
-
-        r.current(self.a, self.b, self.antialiased_magnetising(flux));
+        let current = if cache_eval {
+            let (current, slope) = self.antialiased_magnetising_with_slope(flux);
+            self.trial_eval = Some(CoreEval {
+                flux,
+                current,
+                slope,
+            });
+            current
+        } else {
+            self.trial_eval = None;
+            self.antialiased_magnetising(flux)
+        };
+        r.current(self.a, self.b, current);
     }
 }
 
 impl TrialResidual for Transconductor {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         let difference = across(v, self.plus, self.minus);
         r.current(self.reference, self.out, self.current(difference));
     }
@@ -2184,7 +2564,12 @@ impl TrialResidual for Transconductor {
 
 impl TrialResidual for VariableResistor {
     #[inline]
-    fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        _cache_eval: bool,
+    ) {
         r.current(self.a, self.b, across(v, self.a, self.b) / self.ohms);
     }
 }
@@ -2270,19 +2655,30 @@ impl AnyDevice {
     }
 
     /// Evaluate only the nonlinear residual for a line-search trial point.
+    ///
+    /// Valve/core variants may also retain an ephemeral full evaluation for
+    /// the immediately following Newton stamp.  That cache is not physical
+    /// device state: rejected trials still leave limiter/history state alone,
+    /// and a cached value is consumed only when its terminal point matches
+    /// bit-for-bit.
     #[inline]
-    pub(crate) fn trial_residual(&self, r: &mut ResidualStamper<'_>, v: &[f64]) {
+    pub(crate) fn trial_residual(
+        &mut self,
+        r: &mut ResidualStamper<'_>,
+        v: &[f64],
+        cache_eval: bool,
+    ) {
         match self {
-            Self::Diode(d) => d.trial_residual(r, v),
-            Self::Rectifier(x) => x.trial_residual(r, v),
-            Self::Triode(t) => t.trial_residual(r, v),
-            Self::Pentode(p) => p.trial_residual(r, v),
-            Self::Jfet(j) => j.trial_residual(r, v),
-            Self::Bipolar(b) => b.trial_residual(r, v),
-            Self::OpAmp(o) => o.trial_residual(r, v),
-            Self::Core(c) => c.trial_residual(r, v),
-            Self::Transconductor(t) => t.trial_residual(r, v),
-            Self::VariableResistor(vr) => vr.trial_residual(r, v),
+            Self::Diode(d) => d.trial_residual(r, v, cache_eval),
+            Self::Rectifier(x) => x.trial_residual(r, v, cache_eval),
+            Self::Triode(t) => t.trial_residual(r, v, cache_eval),
+            Self::Pentode(p) => p.trial_residual(r, v, cache_eval),
+            Self::Jfet(j) => j.trial_residual(r, v, cache_eval),
+            Self::Bipolar(b) => b.trial_residual(r, v, cache_eval),
+            Self::OpAmp(o) => o.trial_residual(r, v, cache_eval),
+            Self::Core(c) => c.trial_residual(r, v, cache_eval),
+            Self::Transconductor(t) => t.trial_residual(r, v, cache_eval),
+            Self::VariableResistor(vr) => vr.trial_residual(r, v, cache_eval),
         }
     }
 
@@ -2525,7 +2921,9 @@ impl Device for AnyDevice {
 
 #[cfg(test)]
 mod optimization_tests {
-    use super::{powi_small, AnyDevice, Core, Pentode, Stamper, Triode, GROUND};
+    use super::{
+        powi_small, AnyDevice, Core, Device, Pentode, ResidualStamper, Stamper, Triode, GROUND,
+    };
     use crate::dsp::netlist::{CoreSpec, PentodeSpec, TriodeSpec};
 
     #[test]
@@ -2584,6 +2982,123 @@ mod optimization_tests {
             unreachable!();
         };
         assert_eq!(pentode_state.vgk, -30.0);
+    }
+
+    fn stamp_device(device: &mut AnyDevice, voltage: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        let n = voltage.len();
+        let mut matrix = vec![0.0; n * n];
+        let mut rhs = vec![0.0; n];
+        let mut stamper = Stamper {
+            matrix: &mut matrix,
+            rhs: &mut rhs,
+            n,
+            map: None,
+            mapping_failed: false,
+            limiting: false,
+            junction_held: false,
+        };
+        device.stamp(&mut stamper, voltage);
+        (matrix, rhs)
+    }
+
+    fn trial_residual_bits(
+        device: &mut AnyDevice,
+        voltage: &[f64],
+        cache_eval: bool,
+    ) -> Vec<u64> {
+        let n = voltage.len();
+        let map: Vec<usize> = (0..n).collect();
+        let mut residual = vec![0.0; n];
+        let mut stamper = ResidualStamper {
+            residual: &mut residual,
+            map: &map,
+            mapping_failed: false,
+            limiting: false,
+            junction_held: false,
+        };
+        device.trial_residual(&mut stamper, voltage, cache_eval);
+        assert!(!stamper.mapping_failed);
+        assert!(!stamper.junction_held);
+        residual.into_iter().map(f64::to_bits).collect()
+    }
+
+    fn stamp_bits(device: &mut AnyDevice, voltage: &[f64]) -> (Vec<u64>, Vec<u64>) {
+        let (matrix, rhs) = stamp_device(device, voltage);
+        (
+            matrix.into_iter().map(f64::to_bits).collect(),
+            rhs.into_iter().map(f64::to_bits).collect(),
+        )
+    }
+
+    #[test]
+    fn accepted_trial_device_cache_is_bit_exact_for_twin_nonlinear_devices() {
+        let triode_voltage = [180.0, -0.7];
+        let mut triode_cached = AnyDevice::Triode(Triode::new(0, 1, GROUND, TriodeSpec::ECC81));
+        let mut triode_fresh = AnyDevice::Triode(Triode::new(0, 1, GROUND, TriodeSpec::ECC81));
+        let mut triode_legacy = AnyDevice::Triode(Triode::new(0, 1, GROUND, TriodeSpec::ECC81));
+        assert_eq!(
+            trial_residual_bits(&mut triode_cached, &triode_voltage, true),
+            trial_residual_bits(&mut triode_legacy, &triode_voltage, false),
+        );
+        assert_eq!(
+            stamp_bits(&mut triode_cached, &triode_voltage),
+            stamp_bits(&mut triode_fresh, &triode_voltage),
+        );
+
+        let pentode_voltage = [310.0, -24.0, 405.0];
+        let mut pentode_cached = AnyDevice::Pentode(Pentode::new(
+            0,
+            1,
+            GROUND,
+            2,
+            2.0,
+            PentodeSpec::T6L6GC,
+        ));
+        let mut pentode_fresh = AnyDevice::Pentode(Pentode::new(
+            0,
+            1,
+            GROUND,
+            2,
+            2.0,
+            PentodeSpec::T6L6GC,
+        ));
+        let mut pentode_legacy = AnyDevice::Pentode(Pentode::new(
+            0,
+            1,
+            GROUND,
+            2,
+            2.0,
+            PentodeSpec::T6L6GC,
+        ));
+        assert_eq!(
+            trial_residual_bits(&mut pentode_cached, &pentode_voltage, true),
+            trial_residual_bits(&mut pentode_legacy, &pentode_voltage, false),
+        );
+        assert_eq!(
+            stamp_bits(&mut pentode_cached, &pentode_voltage),
+            stamp_bits(&mut pentode_fresh, &pentode_voltage),
+        );
+
+        let core_spec = CoreSpec {
+            henry: 0.8,
+            knee: 0.04,
+            sharpness: 6.0,
+        };
+        let core_voltage = [28.0];
+        let mut core_cached =
+            AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
+        let mut core_fresh =
+            AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
+        let mut core_legacy =
+            AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
+        assert_eq!(
+            trial_residual_bits(&mut core_cached, &core_voltage, true),
+            trial_residual_bits(&mut core_legacy, &core_voltage, false),
+        );
+        assert_eq!(
+            stamp_bits(&mut core_cached, &core_voltage),
+            stamp_bits(&mut core_fresh, &core_voltage),
+        );
     }
 
     #[test]
