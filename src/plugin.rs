@@ -340,7 +340,7 @@ impl Budget {
     /// across the block rather than concentrated in a few long solves.
     ///
     /// So a ceiling either sits above where the solve finishes -- saving
-    /// nothing, which is what 32/24/18/12 against a floor of twelve did -- or
+    /// nothing, which is what 32/24/18/12 against the old floor of twelve did -- or
     /// it sits below, and then it *costs*: a solve that would have converged
     /// in three passes instead runs to the cap without converging, spends the
     /// whole allowance, and leaves the next sample a worse place to predict
@@ -393,10 +393,10 @@ impl Budget {
         // the budget saved nothing and cost the clock reads -- with it armed
         // the Twin Reverb went from 0.7 % of callbacks missed to 4.1 %.
         //
-        // Eight is the first step because it is still above every voice's
-        // normal finish, so a block that is only slightly late loses nothing.
-        // Below that the steps are where a solve that has stopped converging
-        // gets cut off. The floor is `Simulation`'s, not this one's.
+        // These are the historical experimental steps. The iteration budget is
+        // disabled, and `Simulation` now clamps any such request to its 32-pass
+        // caller-safety floor. Keep the arithmetic here for the measurements
+        // and tests, but do not mistake these raw values for an applied ceiling.
         match over {
             o if o < 1.0 => 32,
             o if o < 1.25 => 8,

@@ -1,13 +1,22 @@
 //! Measures the make-up correction for power overrides and prints it as Rust.
 //!
 //! Each voice's calibration was measured on its own path. With a different
-//! output stage behind it the level moves by up to twenty decibels. This measures
-//! that change with the trim itself disabled (the table below starts at zero) at
-//! the calibration drive, on the tone-off, legacy-cabinet-off path, and prints
-//! the table `Chain::power_trim` divides out.
+//! output stage behind it the level can move by tens of decibels. This measures
+//! that change at the calibration drive, on the tone-off,
+//! legacy-cabinet-off path, and prints the table `Chain::power_trim` divides out.
 //!
-//! Run with `cargo run --release --example powertrim > src/power_trim.rs`, starting
-//! from an all-zero table (the example refuses to measure through a non-zero one).
+//! The currently checked-in trim is allowed to be non-zero. For an existing table
+//! entry `T`, the measured residual is `raw_delta - T`, because `power_trim()` is a
+//! pure post-circuit gain of `-T` dB. Therefore the new calibration is exactly
+//! `T + residual`. This lets the generator self-correct after circuit changes and
+//! avoids temporarily replacing the source table with zeros.
+//!
+//! IMPORTANT: never redirect Cargo directly onto `src/power_trim.rs`: the shell
+//! truncates the source file before Cargo compiles the example. Generate to a
+//! temporary file, validate it, and only then replace the source, for example:
+//!
+//! `cargo run --release --example powertrim > /tmp/power_trim.rs`
+//! `mv /tmp/power_trim.rs src/power_trim.rs`
 
 use gainstagefx::voice::{Chain, Gain, PowerAmp, Settings, Tone, NOMINAL_DBFS, POWER_TRIM_DB};
 
@@ -45,10 +54,6 @@ pub fn level(gain: Gain, power_amp: PowerAmp) -> f64 {
 }
 
 fn main() {
-    assert!(
-        POWER_TRIM_DB.iter().flatten().all(|v| *v == 0.0),
-        "reset src/power_trim.rs to zeros before re-measuring"
-    );
     let overrides = [
         PowerAmp::Bypass,
         PowerAmp::Cali6L6,
@@ -70,11 +75,44 @@ fn main() {
     // a circuit fails to compile instead of indexing past the end of this table
     // at runtime -- which is what it did when six were appended at once.
     println!("pub const POWER_TRIM_DB: [[f64; 10]; crate::voice::GAINS] = [");
-    for gain in Gain::ALL {
+    for (row_index, gain) in Gain::ALL.into_iter().enumerate() {
         let reference = level(gain, PowerAmp::Matched);
+        assert!(
+            reference.is_finite() && reference > 0.0,
+            "{} matched reference level is not finite and positive: {reference}",
+            gain.name()
+        );
         let row: Vec<String> = overrides
             .iter()
-            .map(|p| format!("{:.2}", 20.0 * (level(gain, *p) / reference).log10()))
+            .enumerate()
+            .map(|(column, p)| {
+                let overridden = level(gain, *p);
+                assert!(
+                    overridden.is_finite() && overridden > 0.0,
+                    "{} / {p:?} level is not finite and positive: {overridden}",
+                    gain.name()
+                );
+
+                // `level()` includes the currently checked-in power trim. If D is
+                // the raw level change and T is the current table entry, then the
+                // measured residual is R = D - T because `power_trim()` applies
+                // -T dB after the circuit. Therefore D = T + R. This recovers the
+                // raw calibration without ever needing an all-zero source table.
+                let old = POWER_TRIM_DB[row_index][column];
+                let residual = 20.0 * (overridden / reference).log10();
+                let calibrated = old + residual;
+                assert!(
+                    calibrated.is_finite(),
+                    "{} / {p:?} produced a non-finite calibration",
+                    gain.name()
+                );
+                eprintln!(
+                    "{:<20} {:<24?} old={old:+7.2} dB residual={residual:+7.2} dB new={calibrated:+7.2} dB",
+                    gain.name(),
+                    p
+                );
+                format!("{calibrated:.2}")
+            })
             .collect();
         println!("    [{}], // {}", row.join(", "), gain.name());
     }

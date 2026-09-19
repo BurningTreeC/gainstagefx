@@ -1,5 +1,53 @@
 //! Exact condensation of internal circuit unknowns onto boundary unknowns.
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReducedSolveProfile {
+    pub dense_solve_ns: u64,
+    pub recovery_ns: u64,
+    pub calls: u64,
+}
+
+#[cfg(test)]
+impl ReducedSolveProfile {
+    pub fn saturating_delta(self, before: Self) -> Self {
+        Self {
+            dense_solve_ns: self.dense_solve_ns.saturating_sub(before.dense_solve_ns),
+            recovery_ns: self.recovery_ns.saturating_sub(before.recovery_ns),
+            calls: self.calls.saturating_sub(before.calls),
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[inline(always)]
+fn test_thread_cpu_time_ns() -> u64 {
+    #[repr(C)]
+    struct Timespec {
+        tv_sec: std::os::raw::c_long,
+        tv_nsec: std::os::raw::c_long,
+    }
+    unsafe extern "C" {
+        fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut Timespec) -> std::os::raw::c_int;
+    }
+    const CLOCK_THREAD_CPUTIME_ID: std::os::raw::c_int = 3;
+    let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    let result = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
+    if result == 0 {
+        (ts.tv_sec as u64)
+            .saturating_mul(1_000_000_000)
+            .saturating_add(ts.tv_nsec as u64)
+    } else {
+        0
+    }
+}
+
+#[cfg(all(test, not(target_os = "linux")))]
+#[inline(always)]
+fn test_thread_cpu_time_ns() -> u64 {
+    0
+}
+
 #[derive(Clone, Debug)]
 pub struct Condensed {
     boundary: Vec<usize>,
@@ -366,9 +414,18 @@ pub struct ReducedNonlinear {
     /// every pass is identical repeated work. `prepare_rhs` computes it once.
     internal_rhs_base: Vec<f64>,
     /// Rebuild-time internal response `inv(A_ii) * A_ib`, row-major i x b.
-    /// Recovery is therefore only `x_i = base_i - response_i * x_b` on each
-    /// Newton pass: O(i*b) instead of another O(i^2) inverse mat-vec.
+    /// Kept for the test-only legacy recovery path and for direct equivalence
+    /// checks against the previous implementation.
     internal_boundary_response: Vec<f64>,
+    /// The same response, transposed to boundary-major b x i. Recovery walks
+    /// one boundary voltage at a time and updates every independent internal
+    /// node contiguously. Each internal node still sees boundary columns in
+    /// exactly the same order as the row-major dot product, but the hot inner
+    /// loop no longer carries a floating-point dependency between iterations.
+    internal_boundary_response_by_boundary: Vec<f64>,
+    /// Persistent contiguous recovery workspace. This is scratch only and is
+    /// fully overwritten from `internal_rhs_base` on every Newton pass.
+    internal_recovery_work: Vec<f64>,
     /// Fixed-RHS contributors that land in the internal block, represented as
     /// precomputed response columns. `prepare_rhs` therefore combines only the
     /// source/reactive histories that can actually be nonzero instead of doing
@@ -387,6 +444,38 @@ pub struct ReducedNonlinear {
     /// passive/internal block numerically.
     refresh_work: Vec<f64>,
     valid: bool,
+    #[cfg(test)]
+    test_disable_reciprocal_pivots: bool,
+    #[cfg(test)]
+    test_disable_boundary_major_recovery: bool,
+    #[cfg(test)]
+    test_disable_fixed_13_dense_solve: bool,
+    #[cfg(test)]
+    test_disable_precondensed_13_stamp_base: bool,
+    #[cfg(test)]
+    test_profile_enabled: bool,
+    #[cfg(test)]
+    test_profile: ReducedSolveProfile,
+}
+
+#[inline(always)]
+fn recover_boundary_major_in_place(
+    work: &mut [f64],
+    base: &[f64],
+    response_by_boundary: &[f64],
+    boundary_solution: &[f64],
+) {
+    let i = base.len();
+    let b = boundary_solution.len();
+    debug_assert_eq!(work.len(), i);
+    debug_assert_eq!(response_by_boundary.len(), i * b);
+    work.copy_from_slice(base);
+    for (column, &boundary_voltage) in boundary_solution.iter().enumerate() {
+        let response = &response_by_boundary[column * i..(column + 1) * i];
+        for (value, &coefficient) in work.iter_mut().zip(response) {
+            *value -= coefficient * boundary_voltage;
+        }
+    }
 }
 
 impl ReducedNonlinear {
@@ -400,6 +489,8 @@ impl ReducedNonlinear {
         self.merit_linear.copy_from_slice(&source.merit_linear);
         self.internal_boundary_response
             .copy_from_slice(&source.internal_boundary_response);
+        self.internal_boundary_response_by_boundary
+            .copy_from_slice(&source.internal_boundary_response_by_boundary);
         self.internal_rhs_responses
             .copy_from_slice(&source.internal_rhs_responses);
         self.boundary_rhs_responses
@@ -485,6 +576,8 @@ impl ReducedNonlinear {
             rhs_internal_correction: vec![0.0; b],
             internal_rhs_base: vec![0.0; i],
             internal_boundary_response: vec![0.0; i * b],
+            internal_boundary_response_by_boundary: vec![0.0; b * i],
+            internal_recovery_work: vec![0.0; i],
             active_rhs_nodes,
             active_internal_local,
             internal_rhs_responses: vec![0.0; active * i],
@@ -494,6 +587,30 @@ impl ReducedNonlinear {
             pivot_planned: false,
             refresh_work: vec![0.0; 2 * i * i],
             valid: true,
+            #[cfg(test)]
+            test_disable_reciprocal_pivots: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_REDUCED_LU_RECIPROCAL",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_boundary_major_recovery: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_BOUNDARY_MAJOR_RECOVERY",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_fixed_13_dense_solve: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_FIXED_13_DENSE_SOLVE",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_precondensed_13_stamp_base: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_PRECONDENSED_13_STAMP_BASE",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_profile_enabled: false,
+            #[cfg(test)]
+            test_profile: ReducedSolveProfile::default(),
         };
         result.update_internal_boundary_response();
         result.update_coupling();
@@ -514,6 +631,75 @@ impl ReducedNonlinear {
 
     pub fn internal_len(&self) -> usize {
         self.condensed.internal.len()
+    }
+
+    #[inline]
+    fn use_reciprocal_pivots(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_reciprocal_pivots
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    #[inline]
+    fn use_boundary_major_recovery(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_boundary_major_recovery
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    #[inline]
+    fn use_fixed_13_dense_solve(&self) -> bool {
+        #[cfg(test)]
+        {
+            !self.test_disable_fixed_13_dense_solve
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    /// The Twin/American-6L6 nonlinear boundary is exactly 13 unknowns. For
+    /// that hot path the fixed Schur subtraction can be moved to rebuild/sample
+    /// preparation time: `merit_linear` already contains
+    /// `A_bb - A_bi inv(A_ii) A_ib`. Nonlinear devices then stamp the same
+    /// equations directly on top. The RHS deliberately keeps the legacy
+    /// post-stamp correction order. This changes only matrix floating-point
+    /// evaluation order relative to the legacy post-stamp subtraction.
+    #[inline]
+    fn use_precondensed_13_stamp_base(&self) -> bool {
+        if self.condensed.boundary.len() != 13 {
+            return false;
+        }
+        #[cfg(test)]
+        {
+            !self.test_disable_precondensed_13_stamp_base
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
+    #[cfg(test)]
+    pub fn set_test_phase_profile(&mut self, enabled: bool) {
+        self.test_profile_enabled = enabled && cfg!(target_os = "linux");
+        self.test_profile = ReducedSolveProfile::default();
+    }
+
+    #[cfg(test)]
+    pub fn test_phase_profile(&self) -> ReducedSolveProfile {
+        self.test_profile
     }
 
     /// Recompute the passive/internal reduction for the same topology without
@@ -540,6 +726,8 @@ impl ReducedNonlinear {
             || self.rhs_internal_correction.len() != b
             || self.internal_rhs_base.len() != i
             || self.internal_boundary_response.len() != i * b
+            || self.internal_boundary_response_by_boundary.len() != b * i
+            || self.internal_recovery_work.len() != i
             || self.internal_rhs_responses.len() != self.active_rhs_nodes.len() * i
             || self.boundary_rhs_responses.len() != self.active_rhs_nodes.len() * b
             || self.pivot_plan.len() != b
@@ -684,7 +872,15 @@ impl ReducedNonlinear {
         if !self.valid || !self.rhs_prepared || fixed_rhs.len() != self.node_to_boundary.len() {
             return None;
         }
-        self.reduced_matrix.copy_from_slice(&self.boundary_base);
+        if self.use_precondensed_13_stamp_base() {
+            // `merit_linear` is the exact fixed Schur matrix cached at rebuild
+            // time. Starting here removes the otherwise repeated 13x13 coupling
+            // subtraction after every nonlinear stamp. Keep RHS preparation in
+            // its legacy order so this optimization is matrix-only.
+            self.reduced_matrix.copy_from_slice(&self.merit_linear);
+        } else {
+            self.reduced_matrix.copy_from_slice(&self.boundary_base);
+        }
         for (value, &global) in self.reduced_rhs.iter_mut().zip(&self.condensed.boundary) {
             *value = fixed_rhs[global];
         }
@@ -744,9 +940,13 @@ impl ReducedNonlinear {
 
     /// Complete the Schur system after direct nonlinear device stamping.
     pub fn finish_stamp(&mut self) {
-        for (value, &coupling) in self.reduced_matrix.iter_mut().zip(&self.coupling) {
-            *value -= coupling;
+        if !self.use_precondensed_13_stamp_base() {
+            for (value, &coupling) in self.reduced_matrix.iter_mut().zip(&self.coupling) {
+                *value -= coupling;
+            }
         }
+        // Deliberately retain the legacy RHS arithmetic order even on the
+        // precondensed matrix path.
         for (value, &correction) in self
             .reduced_rhs
             .iter_mut()
@@ -766,6 +966,19 @@ impl ReducedNonlinear {
     /// and RHS entry, then the same row/column accumulation order.
     #[inline]
     pub fn merit_unfinished_stamp(&self, full: &[f64]) -> f64 {
+        if self.use_precondensed_13_stamp_base() {
+            let b = self.condensed.boundary.len();
+            let mut total = 0.0;
+            for row in 0..b {
+                let reduced_rhs = self.reduced_rhs[row] - self.rhs_internal_correction[row];
+                let mut residual = -reduced_rhs;
+                for (column, &global) in self.condensed.boundary.iter().enumerate() {
+                    residual += self.reduced_matrix[row * b + column] * full[global];
+                }
+                total += residual * residual;
+            }
+            return total;
+        }
         let b = self.condensed.boundary.len();
         let mut total = 0.0;
         for row in 0..b {
@@ -814,15 +1027,44 @@ impl ReducedNonlinear {
             return None;
         }
         let b = self.condensed.boundary.len();
-        if !solve_dense_planned(
-            &mut self.reduced_matrix,
-            &mut self.reduced_rhs,
-            b,
-            &mut self.pivot_plan,
-            &mut self.pivot_planned,
-        ) {
+        #[cfg(test)]
+        let solve_started = self
+            .test_profile_enabled
+            .then(test_thread_cpu_time_ns);
+        let reciprocal_pivots = self.use_reciprocal_pivots();
+        let solved = if b == 13 && self.use_fixed_13_dense_solve() {
+            solve_dense_planned_fixed::<13>(
+                &mut self.reduced_matrix,
+                &mut self.reduced_rhs,
+                &mut self.pivot_plan,
+                &mut self.pivot_planned,
+                reciprocal_pivots,
+            )
+        } else {
+            solve_dense_planned(
+                &mut self.reduced_matrix,
+                &mut self.reduced_rhs,
+                b,
+                &mut self.pivot_plan,
+                &mut self.pivot_planned,
+                reciprocal_pivots,
+            )
+        };
+        #[cfg(test)]
+        if let Some(started) = solve_started {
+            self.test_profile.dense_solve_ns = self
+                .test_profile
+                .dense_solve_ns
+                .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
+            self.test_profile.calls = self.test_profile.calls.saturating_add(1);
+        }
+        if !solved {
             return None;
         }
+        #[cfg(test)]
+        let recovery_started = self
+            .test_profile_enabled
+            .then(test_thread_cpu_time_ns);
         let mut moved = 0.0f64;
         for (index, &node) in self.condensed.boundary.iter().enumerate() {
             let value = self.reduced_rhs[index];
@@ -834,19 +1076,45 @@ impl ReducedNonlinear {
             delta[node] = d;
             moved = moved.max(d.abs() / (tolerance + relative * current[node].abs()));
         }
-        for (row, &node) in self.condensed.internal.iter().enumerate() {
-            let response = &self.internal_boundary_response[row * b..(row + 1) * b];
-            let mut value = self.internal_rhs_base[row];
-            for (&coefficient, &boundary_voltage) in response.iter().zip(&self.reduced_rhs) {
-                value -= coefficient * boundary_voltage;
+        if self.use_boundary_major_recovery() {
+            recover_boundary_major_in_place(
+                &mut self.internal_recovery_work,
+                &self.internal_rhs_base,
+                &self.internal_boundary_response_by_boundary,
+                &self.reduced_rhs,
+            );
+            for (row, &node) in self.condensed.internal.iter().enumerate() {
+                let value = self.internal_recovery_work[row];
+                if !value.is_finite() {
+                    return None;
+                }
+                full[node] = value;
+                let d = value - current[node];
+                delta[node] = d;
+                moved = moved.max(d.abs() / (tolerance + relative * current[node].abs()));
             }
-            if !value.is_finite() {
-                return None;
+        } else {
+            for (row, &node) in self.condensed.internal.iter().enumerate() {
+                let response = &self.internal_boundary_response[row * b..(row + 1) * b];
+                let mut value = self.internal_rhs_base[row];
+                for (&coefficient, &boundary_voltage) in response.iter().zip(&self.reduced_rhs) {
+                    value -= coefficient * boundary_voltage;
+                }
+                if !value.is_finite() {
+                    return None;
+                }
+                full[node] = value;
+                let d = value - current[node];
+                delta[node] = d;
+                moved = moved.max(d.abs() / (tolerance + relative * current[node].abs()));
             }
-            full[node] = value;
-            let d = value - current[node];
-            delta[node] = d;
-            moved = moved.max(d.abs() / (tolerance + relative * current[node].abs()));
+        }
+        #[cfg(test)]
+        if let Some(started) = recovery_started {
+            self.test_profile.recovery_ns = self
+                .test_profile
+                .recovery_ns
+                .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
         }
         Some(moved)
     }
@@ -887,12 +1155,14 @@ impl ReducedNonlinear {
         {
             *value = rhs[boundary] - correction;
         }
+        let reciprocal_pivots = self.use_reciprocal_pivots();
         if !solve_dense_planned(
             &mut self.reduced_matrix,
             &mut self.reduced_rhs,
             b,
             &mut self.pivot_plan,
             &mut self.pivot_planned,
+            reciprocal_pivots,
         ) {
             return false;
         }
@@ -904,13 +1174,25 @@ impl ReducedNonlinear {
         for (index, &node) in self.condensed.boundary.iter().enumerate() {
             full[node] = self.reduced_rhs[index];
         }
-        for (row, &node) in self.condensed.internal.iter().enumerate() {
-            let response = &self.internal_boundary_response[row * b..(row + 1) * b];
-            let mut value = self.internal_rhs_base[row];
-            for (&coefficient, &boundary_voltage) in response.iter().zip(&self.reduced_rhs) {
-                value -= coefficient * boundary_voltage;
+        if self.use_boundary_major_recovery() {
+            recover_boundary_major_in_place(
+                &mut self.internal_recovery_work,
+                &self.internal_rhs_base,
+                &self.internal_boundary_response_by_boundary,
+                &self.reduced_rhs,
+            );
+            for (row, &node) in self.condensed.internal.iter().enumerate() {
+                full[node] = self.internal_recovery_work[row];
             }
-            full[node] = value;
+        } else {
+            for (row, &node) in self.condensed.internal.iter().enumerate() {
+                let response = &self.internal_boundary_response[row * b..(row + 1) * b];
+                let mut value = self.internal_rhs_base[row];
+                for (&coefficient, &boundary_voltage) in response.iter().zip(&self.reduced_rhs) {
+                    value -= coefficient * boundary_voltage;
+                }
+                full[node] = value;
+            }
         }
         true
     }
@@ -966,6 +1248,7 @@ impl ReducedNonlinear {
                         * self.condensed.internal_to_boundary[k * b + column];
                 }
                 self.internal_boundary_response[row * b + column] = value;
+                self.internal_boundary_response_by_boundary[column * i + row] = value;
             }
         }
     }
@@ -986,10 +1269,168 @@ impl ReducedNonlinear {
     }
 }
 
+/// Fixed-size specialization of the same reduced dense solve. Keeping the
+/// boundary dimension in the type lets LLVM see the Twin's exact 13x13 trip
+/// counts and remove dynamic loop/bounds machinery without changing pivoting,
+/// arithmetic order, or the solved equations. The generic solver remains as a
+/// test-switch fallback and for all other boundary sizes.
+#[inline]
+fn solve_dense_planned_fixed<const N: usize>(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    plan: &mut [usize],
+    planned: &mut bool,
+    reciprocal_pivots: bool,
+) -> bool {
+    if matrix.len() != N * N || rhs.len() < N || plan.len() < N {
+        return false;
+    }
+    let replay = *planned;
+    let mut searching = !replay;
+    let mut sound = true;
+    for column in 0..N {
+        let mut pivot = if searching {
+            let mut best = column;
+            let mut largest = matrix[column * N + column].abs();
+            for row in (column + 1)..N {
+                let candidate = matrix[row * N + column].abs();
+                if candidate > largest {
+                    largest = candidate;
+                    best = row;
+                }
+            }
+            plan[column] = best;
+            best
+        } else {
+            plan[column]
+        };
+        if pivot < column || pivot >= N {
+            searching = true;
+            sound = false;
+            pivot = column;
+            let mut largest = matrix[column * N + column].abs();
+            for row in (column + 1)..N {
+                let candidate = matrix[row * N + column].abs();
+                if candidate > largest {
+                    largest = candidate;
+                    pivot = row;
+                }
+            }
+            plan[column] = pivot;
+        }
+        if pivot != column {
+            let a = column * N;
+            let b = pivot * N;
+            for offset in column..N {
+                matrix.swap(a + offset, b + offset);
+            }
+            rhs.swap(column, pivot);
+        }
+
+        let mut diagonal = matrix[column * N + column];
+        if !searching && (diagonal.abs() < 1e-30 || !diagonal.is_finite()) {
+            searching = true;
+            sound = false;
+            let mut best = column;
+            let mut largest = diagonal.abs();
+            for row in (column + 1)..N {
+                let candidate = matrix[row * N + column].abs();
+                if candidate > largest {
+                    largest = candidate;
+                    best = row;
+                }
+            }
+            if best != column {
+                let a = column * N;
+                let b = best * N;
+                for offset in column..N {
+                    matrix.swap(a + offset, b + offset);
+                }
+                rhs.swap(column, best);
+            }
+            plan[column] = best;
+            diagonal = matrix[column * N + column];
+        }
+        if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+            *planned = false;
+            return false;
+        }
+
+        let pivot_scale = if reciprocal_pivots {
+            let inverse = 1.0 / diagonal;
+            matrix[column * N + column] = inverse;
+            inverse
+        } else {
+            diagonal
+        };
+
+        let ceiling = diagonal.abs();
+        let (above, below) = matrix.split_at_mut((column + 1) * N);
+        let pivot_row = &above[column * N..];
+        let (rhs_above, rhs_below) = rhs[..N].split_at_mut(column + 1);
+        let pivot_rhs = rhs_above[column];
+        for (row, value) in below.chunks_exact_mut(N).zip(rhs_below) {
+            let entry = row[column];
+            if entry == 0.0 {
+                continue;
+            }
+            if !searching && entry.abs() > ceiling * 16.0 {
+                sound = false;
+            }
+            let factor = if reciprocal_pivots {
+                entry * pivot_scale
+            } else {
+                entry / pivot_scale
+            };
+            for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..]) {
+                *target -= factor * source;
+            }
+            *value -= factor * pivot_rhs;
+        }
+    }
+    for row in (0..N).rev() {
+        let mut value = rhs[row];
+        for (&coefficient, &known) in matrix[row * N + row + 1..(row + 1) * N]
+            .iter()
+            .zip(&rhs[row + 1..N])
+        {
+            value -= coefficient * known;
+        }
+        let diagonal = matrix[row * N + row];
+        if !diagonal.is_finite()
+            || (!reciprocal_pivots && diagonal.abs() < 1e-30)
+            || (reciprocal_pivots && diagonal == 0.0)
+        {
+            *planned = false;
+            return false;
+        }
+        rhs[row] = if reciprocal_pivots {
+            value * diagonal
+        } else {
+            value / diagonal
+        };
+        if !rhs[row].is_finite() {
+            *planned = false;
+            return false;
+        }
+    }
+    // Match the generic solver's learned-plan lifecycle exactly. A replay can
+    // remain numerically solvable while still being a poor pivot sequence
+    // (for example when a below-pivot entry grows far beyond the replayed
+    // diagonal). In that case `sound` is cleared and the next solve must learn
+    // a fresh plan. Keeping the stale plan was the fixed-13 production bug.
+    *planned = if replay { sound } else { true };
+    true
+}
+
 /// Dense partial-pivoting solve for a reduced boundary system with a learned
 /// swap sequence. The first solve searches exactly as before and records each
 /// pivot row; subsequent solves replay those swaps and only validate the chosen
-/// diagonal. A failed replay returns false so the caller can take full MNA.
+/// diagonal. The production path reuses one reciprocal per pivot across every
+/// row elimination and back substitution, avoiding dozens of repeated FP
+/// divisions on the Twin's 13x13 boundary. A test-only switch retains the old
+/// division sequence for same-build A/B. A failed replay returns false so the
+/// caller can take full MNA.
 #[inline]
 fn solve_dense_planned(
     matrix: &mut [f64],
@@ -997,6 +1438,7 @@ fn solve_dense_planned(
     n: usize,
     plan: &mut [usize],
     planned: &mut bool,
+    reciprocal_pivots: bool,
 ) -> bool {
     if matrix.len() != n * n || rhs.len() < n || plan.len() < n {
         return false;
@@ -1074,6 +1516,22 @@ fn solve_dense_planned(
             return false;
         }
 
+        // Every elimination below this column divides by the same pivot. On
+        // the Twin's exact 13x13 Schur boundary that is up to 12+11+...+1 =
+        // 78 serial FP divisions per Newton pass, plus 13 more during back
+        // substitution. Compute one reciprocal per pivot instead and reuse it
+        // for both elimination and the later diagonal solve. This changes only
+        // floating-point evaluation order, never the LU equations or pivot
+        // sequence; the test switch keeps the previous division path available
+        // for same-build A/B and the full-reference null test guards drift.
+        let pivot_scale = if reciprocal_pivots {
+            let inverse = 1.0 / diagonal;
+            matrix[column * n + column] = inverse;
+            inverse
+        } else {
+            diagonal
+        };
+
         let ceiling = diagonal.abs();
         let (above, below) = matrix.split_at_mut((column + 1) * n);
         let pivot_row = &above[column * n..];
@@ -1088,7 +1546,11 @@ fn solve_dense_planned(
                 // Still an exact LU; just relearn the pivot sequence next pass.
                 sound = false;
             }
-            let factor = entry / diagonal;
+            let factor = if reciprocal_pivots {
+                entry * pivot_scale
+            } else {
+                entry / pivot_scale
+            };
             for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..]) {
                 *target -= factor * source;
             }
@@ -1104,11 +1566,18 @@ fn solve_dense_planned(
             value -= coefficient * known;
         }
         let diagonal = matrix[row * n + row];
-        if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+        if !diagonal.is_finite()
+            || (!reciprocal_pivots && diagonal.abs() < 1e-30)
+            || (reciprocal_pivots && diagonal == 0.0)
+        {
             *planned = false;
             return false;
         }
-        rhs[row] = value / diagonal;
+        rhs[row] = if reciprocal_pivots {
+            value * diagonal
+        } else {
+            value / diagonal
+        };
         if !rhs[row].is_finite() {
             *planned = false;
             return false;
@@ -1351,7 +1820,294 @@ fn inverse(matrix: &[f64], n: usize) -> Option<Vec<f64>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{condense, ReducedLinear, ReducedNonlinear};
+    use super::{
+        condense, recover_boundary_major_in_place, solve_dense_planned,
+        solve_dense_planned_fixed, ReducedLinear, ReducedNonlinear,
+    };
+
+    #[test]
+    fn boundary_major_recovery_matches_row_major_bit_for_bit() {
+        const INTERNAL: usize = 18;
+        const BOUNDARY: usize = 13;
+        let base: Vec<f64> = (0..INTERNAL)
+            .map(|row| ((row * 11 + 7) as f64).sin() * 0.75)
+            .collect();
+        let boundary: Vec<f64> = (0..BOUNDARY)
+            .map(|column| ((column * 5 + 3) as f64).cos() * 1.3)
+            .collect();
+        let mut row_major = vec![0.0; INTERNAL * BOUNDARY];
+        let mut boundary_major = vec![0.0; BOUNDARY * INTERNAL];
+        for row in 0..INTERNAL {
+            for column in 0..BOUNDARY {
+                let coefficient =
+                    (((row * 19 + column * 23 + 5) % 31) as f64 - 15.0) * 0.0078125;
+                row_major[row * BOUNDARY + column] = coefficient;
+                boundary_major[column * INTERNAL + row] = coefficient;
+            }
+        }
+
+        let mut legacy = vec![0.0; INTERNAL];
+        for row in 0..INTERNAL {
+            let mut value = base[row];
+            for column in 0..BOUNDARY {
+                value -= row_major[row * BOUNDARY + column] * boundary[column];
+            }
+            legacy[row] = value;
+        }
+
+        let mut transposed = vec![0.0; INTERNAL];
+        recover_boundary_major_in_place(&mut transposed, &base, &boundary_major, &boundary);
+        for (&candidate, &reference) in transposed.iter().zip(&legacy) {
+            assert_eq!(candidate.to_bits(), reference.to_bits());
+        }
+    }
+
+    #[test]
+    fn fixed_13_dense_solve_matches_generic_bit_for_bit() {
+        const N: usize = 13;
+        let mut original = vec![0.0; N * N];
+        for row in 0..N {
+            for column in 0..N {
+                let distance = row.abs_diff(column) as f64;
+                let signed = (((row * 29 + column * 13 + 7) % 23) as f64 - 11.0) * 0.019;
+                original[row * N + column] = if row == column {
+                    2.75 + 0.11 * row as f64
+                } else {
+                    signed / (1.0 + distance)
+                };
+            }
+        }
+        original[5 * N] = 4.75;
+        original[10 * N + 6] = -5.25;
+        let original_rhs: Vec<f64> = (0..N)
+            .map(|index| ((index * 9 + 4) as f64).cos() * 1.9)
+            .collect();
+
+        for reciprocal in [false, true] {
+            let mut generic_plan: Vec<usize> = (0..N).collect();
+            let mut fixed_plan = generic_plan.clone();
+            let mut generic_planned = false;
+            let mut fixed_planned = false;
+
+            let mut generic_matrix = original.clone();
+            let mut fixed_matrix = original.clone();
+            let mut generic_rhs = original_rhs.clone();
+            let mut fixed_rhs = original_rhs.clone();
+            assert!(solve_dense_planned(
+                &mut generic_matrix,
+                &mut generic_rhs,
+                N,
+                &mut generic_plan,
+                &mut generic_planned,
+                reciprocal,
+            ));
+            assert!(solve_dense_planned_fixed::<N>(
+                &mut fixed_matrix,
+                &mut fixed_rhs,
+                &mut fixed_plan,
+                &mut fixed_planned,
+                reciprocal,
+            ));
+            assert_eq!(fixed_plan, generic_plan);
+            assert_eq!(fixed_planned, generic_planned);
+            for (&candidate, &reference) in fixed_matrix.iter().zip(&generic_matrix) {
+                assert_eq!(candidate.to_bits(), reference.to_bits());
+            }
+            for (&candidate, &reference) in fixed_rhs.iter().zip(&generic_rhs) {
+                assert_eq!(candidate.to_bits(), reference.to_bits());
+            }
+
+            let mut replay_matrix = original.clone();
+            for row in 0..N {
+                replay_matrix[row * N + row] *= 1.0 + (row as f64 + 1.0) * 1e-5;
+            }
+            let replay_rhs: Vec<f64> = original_rhs
+                .iter()
+                .enumerate()
+                .map(|(index, &value)| value + (index as f64 - 6.0) * 1e-6)
+                .collect();
+            let mut generic_matrix = replay_matrix.clone();
+            let mut fixed_matrix = replay_matrix;
+            let mut generic_rhs = replay_rhs.clone();
+            let mut fixed_rhs = replay_rhs;
+            assert!(solve_dense_planned(
+                &mut generic_matrix,
+                &mut generic_rhs,
+                N,
+                &mut generic_plan,
+                &mut generic_planned,
+                reciprocal,
+            ));
+            assert!(solve_dense_planned_fixed::<N>(
+                &mut fixed_matrix,
+                &mut fixed_rhs,
+                &mut fixed_plan,
+                &mut fixed_planned,
+                reciprocal,
+            ));
+            assert_eq!(fixed_plan, generic_plan);
+            assert_eq!(fixed_planned, generic_planned);
+            for (&candidate, &reference) in fixed_matrix.iter().zip(&generic_matrix) {
+                assert_eq!(candidate.to_bits(), reference.to_bits());
+            }
+            for (&candidate, &reference) in fixed_rhs.iter().zip(&generic_rhs) {
+                assert_eq!(candidate.to_bits(), reference.to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_13_dense_solve_invalidates_an_unsound_replayed_plan() {
+        const N: usize = 13;
+        let mut original = vec![0.0; N * N];
+        for row in 0..N {
+            original[row * N + row] = 2.0 + row as f64 * 0.1;
+            if row + 1 < N {
+                original[(row + 1) * N + row] = 0.01;
+            }
+        }
+        let original_rhs: Vec<f64> = (0..N).map(|index| index as f64 * 0.25 - 1.0).collect();
+
+        for reciprocal in [false, true] {
+            let mut generic_plan: Vec<usize> = (0..N).collect();
+            let mut fixed_plan = generic_plan.clone();
+            let mut generic_planned = false;
+            let mut fixed_planned = false;
+
+            // First solve learns the same identity pivot plan in both paths.
+            let mut generic_matrix = original.clone();
+            let mut fixed_matrix = original.clone();
+            let mut generic_rhs = original_rhs.clone();
+            let mut fixed_rhs = original_rhs.clone();
+            assert!(solve_dense_planned(
+                &mut generic_matrix,
+                &mut generic_rhs,
+                N,
+                &mut generic_plan,
+                &mut generic_planned,
+                reciprocal,
+            ));
+            assert!(solve_dense_planned_fixed::<N>(
+                &mut fixed_matrix,
+                &mut fixed_rhs,
+                &mut fixed_plan,
+                &mut fixed_planned,
+                reciprocal,
+            ));
+            assert!(generic_planned);
+            assert!(fixed_planned);
+            assert_eq!(fixed_plan, generic_plan);
+
+            // Keep the replayed diagonal finite but make the entry below the
+            // first pivot >16x larger. The solve remains exact/finite, but the
+            // replay is deliberately marked unsound so the *next* pass must
+            // relearn pivots. This is the state transition the original
+            // fixed-13 unit test did not exercise.
+            let mut replay = original.clone();
+            replay[N] = replay[0].abs() * 32.0;
+            let replay_rhs: Vec<f64> = original_rhs
+                .iter()
+                .enumerate()
+                .map(|(index, &value)| value + index as f64 * 1e-6)
+                .collect();
+            let mut generic_matrix = replay.clone();
+            let mut fixed_matrix = replay;
+            let mut generic_rhs = replay_rhs.clone();
+            let mut fixed_rhs = replay_rhs;
+            assert!(solve_dense_planned(
+                &mut generic_matrix,
+                &mut generic_rhs,
+                N,
+                &mut generic_plan,
+                &mut generic_planned,
+                reciprocal,
+            ));
+            assert!(solve_dense_planned_fixed::<N>(
+                &mut fixed_matrix,
+                &mut fixed_rhs,
+                &mut fixed_plan,
+                &mut fixed_planned,
+                reciprocal,
+            ));
+            assert_eq!(fixed_plan, generic_plan);
+            assert_eq!(fixed_planned, generic_planned);
+            assert!(!generic_planned, "unsound replay must invalidate the pivot plan");
+            for (&candidate, &reference) in fixed_matrix.iter().zip(&generic_matrix) {
+                assert_eq!(candidate.to_bits(), reference.to_bits());
+            }
+            for (&candidate, &reference) in fixed_rhs.iter().zip(&generic_rhs) {
+                assert_eq!(candidate.to_bits(), reference.to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn reciprocal_pivot_dense_solve_matches_division_path() {
+        // Twin-sized dense boundary with deliberately nontrivial off-diagonal
+        // coupling. The reciprocal path is allowed to round differently, but
+        // must solve the same linear system to far below the plugin's Newton
+        // tolerances and must learn the same pivot sequence.
+        const N: usize = 13;
+        let mut original = vec![0.0; N * N];
+        for row in 0..N {
+            for column in 0..N {
+                let distance = row.abs_diff(column) as f64;
+                let signed = (((row * 17 + column * 11 + 3) % 19) as f64 - 9.0) * 0.013;
+                original[row * N + column] = if row == column {
+                    3.0 + 0.17 * row as f64
+                } else {
+                    signed / (1.0 + distance)
+                };
+            }
+        }
+        // Force a couple of row choices away from the diagonal so this also
+        // covers learned partial pivoting instead of a diagonal-only toy.
+        original[4 * N] = 4.25;
+        original[9 * N + 5] = -5.0;
+        let original_rhs: Vec<f64> = (0..N)
+            .map(|index| ((index * 7 + 5) as f64).sin() * 1.7)
+            .collect();
+
+        let mut divided_matrix = original.clone();
+        let mut divided_rhs = original_rhs.clone();
+        let mut divided_plan: Vec<usize> = (0..N).collect();
+        let mut divided_planned = false;
+        assert!(solve_dense_planned(
+            &mut divided_matrix,
+            &mut divided_rhs,
+            N,
+            &mut divided_plan,
+            &mut divided_planned,
+            false,
+        ));
+
+        let mut reciprocal_matrix = original.clone();
+        let mut reciprocal_rhs = original_rhs.clone();
+        let mut reciprocal_plan: Vec<usize> = (0..N).collect();
+        let mut reciprocal_planned = false;
+        assert!(solve_dense_planned(
+            &mut reciprocal_matrix,
+            &mut reciprocal_rhs,
+            N,
+            &mut reciprocal_plan,
+            &mut reciprocal_planned,
+            true,
+        ));
+
+        assert_eq!(reciprocal_plan, divided_plan);
+        for (&reciprocal, &divided) in reciprocal_rhs.iter().zip(&divided_rhs) {
+            let scale = 1.0 + divided.abs();
+            assert!((reciprocal - divided).abs() <= 2e-13 * scale);
+        }
+        for row in 0..N {
+            let predicted = original[row * N..(row + 1) * N]
+                .iter()
+                .zip(&reciprocal_rhs)
+                .map(|(&coefficient, &value)| coefficient * value)
+                .sum::<f64>();
+            assert!((predicted - original_rhs[row]).abs() < 2e-12);
+        }
+    }
 
     #[test]
     fn condensation_matches_full_three_node_system() {
@@ -1466,6 +2222,106 @@ mod tests {
         // no pivot. The caller must keep the original full-MNA path instead.
         let matrix = [4.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!(ReducedNonlinear::new(&matrix, &[0.0; 3], &[0]).is_none());
+    }
+
+    #[test]
+    fn precondensed_13_stamp_matches_legacy_schur_system() {
+        const B: usize = 13;
+        const N: usize = 15;
+        let boundary: Vec<usize> = (0..B).collect();
+        let mut base = vec![0.0; N * N];
+        for row in 0..N {
+            base[row * N + row] = 6.0 + row as f64 * 0.17;
+            if row + 1 < N {
+                base[row * N + row + 1] = -0.07;
+                base[(row + 1) * N + row] = 0.05;
+            }
+        }
+        // Give both internal nodes nontrivial connections to every boundary
+        // node so the Schur coupling is dense and the test exercises all 169
+        // fixed boundary coefficients.
+        for column in 0..B {
+            let scale = column as f64 + 1.0;
+            base[column * N + 13] += 0.013 * scale;
+            base[13 * N + column] -= 0.009 * scale;
+            base[column * N + 14] -= 0.007 * scale;
+            base[14 * N + column] += 0.011 * scale;
+        }
+        base[13 * N + 14] = 0.12;
+        base[14 * N + 13] = -0.08;
+
+        let zero = vec![0.0; N];
+        let fixed_rhs: Vec<f64> = (0..N)
+            .map(|index| ((index * 7 + 3) as f64).sin() * 0.75)
+            .collect();
+        let mut precondensed = ReducedNonlinear::new(&base, &zero, &boundary).unwrap();
+        let mut legacy = precondensed.clone();
+        precondensed.test_disable_precondensed_13_stamp_base = false;
+        legacy.test_disable_precondensed_13_stamp_base = true;
+        assert!(precondensed.prepare_rhs(&fixed_rhs));
+        assert!(legacy.prepare_rhs(&fixed_rhs));
+
+        {
+            let (matrix, rhs, _) = precondensed.begin_stamp(&fixed_rhs).unwrap();
+            for slot in [0usize, 1, 14, 57, 88, 120, 168] {
+                matrix[slot] += (slot as f64 + 1.0) * 0.001_25;
+            }
+            rhs[0] += 0.125;
+            rhs[5] -= 0.031_25;
+            rhs[12] += 0.062_5;
+        }
+        {
+            let (matrix, rhs, _) = legacy.begin_stamp(&fixed_rhs).unwrap();
+            for slot in [0usize, 1, 14, 57, 88, 120, 168] {
+                matrix[slot] += (slot as f64 + 1.0) * 0.001_25;
+            }
+            rhs[0] += 0.125;
+            rhs[5] -= 0.031_25;
+            rhs[12] += 0.062_5;
+        }
+        precondensed.finish_stamp();
+        legacy.finish_stamp();
+
+        for (&candidate, &reference) in precondensed
+            .reduced_matrix
+            .iter()
+            .zip(&legacy.reduced_matrix)
+        {
+            let scale = candidate.abs().max(reference.abs()).max(1.0);
+            assert!((candidate - reference).abs() <= scale * 8.0 * f64::EPSILON);
+        }
+        for (&candidate, &reference) in precondensed.reduced_rhs.iter().zip(&legacy.reduced_rhs) {
+            assert_eq!(candidate.to_bits(), reference.to_bits());
+        }
+
+        // Both materialised systems must also solve to the same boundary and
+        // recovered internal state far below Newton's production tolerance.
+        let mut fast_full = vec![0.0; N];
+        let mut legacy_full = vec![0.0; N];
+        let current = vec![0.0; N];
+        let mut fast_delta = vec![0.0; N];
+        let mut legacy_delta = vec![0.0; N];
+        assert!(precondensed
+            .solve_stamped_with_delta(
+                &mut fast_full,
+                &current,
+                &mut fast_delta,
+                1e-6,
+                1e-6,
+            )
+            .is_some());
+        assert!(legacy
+            .solve_stamped_with_delta(
+                &mut legacy_full,
+                &current,
+                &mut legacy_delta,
+                1e-6,
+                1e-6,
+            )
+            .is_some());
+        for (&candidate, &reference) in fast_full.iter().zip(&legacy_full) {
+            assert!((candidate - reference).abs() <= 1e-12);
+        }
     }
 
     #[test]

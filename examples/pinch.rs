@@ -26,10 +26,10 @@ fn at(gain: Gain, ceiling: usize, volts: f64) -> (f64, f64, u64) {
 }
 
 fn main() {
-    println!("Drive at the stop, 220 Hz. The floor is 12 passes.\n");
+    println!("Drive at the stop, 220 Hz. The floor is 32 passes.\n");
     println!(
         "  {:<12}{:>9}{:>10}{:>10}{:>10}{:>12}",
-        "voice", "volts", "32 THD", "12 THD", "shift", "pinched"
+        "voice", "volts", "64 THD", "32 THD", "shift", "pinched"
     );
     for gain in [
         Gain::Peavey,
@@ -39,8 +39,8 @@ fn main() {
         Gain::Neve,
     ] {
         for volts in [0.122, 0.5, 2.0] {
-            let (_, full, _) = at(gain, 32, volts);
-            let (_, floored, pinched) = at(gain, 12, volts);
+            let (_, full, _) = at(gain, 64, volts);
+            let (_, floored, pinched) = at(gain, 32, volts);
             println!(
                 "  {:<12}{volts:>9.3}{full:>9.1} %{floored:>9.1} %{:>9.1} %{pinched:>12}",
                 gain.name(),

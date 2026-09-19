@@ -3139,6 +3139,12 @@ impl Chain {
             .map(|simulation| simulation.solver_unknown_name(at))
     }
 
+    #[cfg(test)]
+    pub fn power_phase_profile(&self) -> Option<crate::dsp::time::TwinPowerPhaseProfile> {
+        self.active_power()
+            .map(Simulation::twin_power_phase_profile)
+    }
+
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
         let sims = std::iter::once(&self.gains[self.gain])

@@ -98,9 +98,9 @@ fn the_line_search_is_not_carrying_the_solve() {
 ///
 /// BUG-008 recorded what a permanent ceiling of eight did to the 5150's lead
 /// channel: 190, 107 and 428 per cent distortion at three input levels, which
-/// is not a sound but a solve that never converged. Layer 5a lowers the
-/// ceiling deliberately when a block is running out of time, so the number it
-/// can reach has to be bounded somewhere that no caller can get under.
+/// is not a sound but a solve that never converged. The old deadline-budget
+/// experiment is disabled, but this public ceiling remains a useful diagnostic
+/// lever, so it still has to be bounded somewhere no caller can get under.
 #[test]
 fn no_caller_can_starve_the_solve_past_the_floor() {
     use gainstagefx::voice::{Amplifier, Diode};
@@ -115,12 +115,15 @@ fn no_caller_can_starve_the_solve_past_the_floor() {
     let tone = Tone::near(96_000.0, 16_384, 220.0, 2.0);
     let pinched = measure::run(tone, 9_600, |x| sim.process(x));
 
-    sim.set_pass_ceiling(32);
     let netlist =
         voice::build_voice(Gain::Peavey, Diode::Silicon, Amplifier::Valve).expect("builds");
     let mut full = Simulation::new(netlist, 96_000.0);
     full.set_control(Gain::Peavey.drive_control(), 1.0);
     full.find_operating_point();
+    // Compare the safety floor with the solver's full production allowance.
+    // This used to set 32 on `sim` above and then create a fresh `full`, which
+    // only worked accidentally while the default hard ceiling was also 32.
+    full.set_pass_ceiling(64);
     let tone = Tone::near(96_000.0, 16_384, 220.0, 2.0);
     let whole = measure::run(tone, 9_600, |x| full.process(x));
 

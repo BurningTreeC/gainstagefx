@@ -41,6 +41,70 @@ const UNSETTLED_TRACE_CAPACITY: usize = 32;
 const SEARCH_TRACE_TRIALS: usize = 9;
 #[cfg(test)]
 const TAIL_TRACE_PASSES: usize = 8;
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TwinPowerPhaseProfile {
+    pub reduced_stamp_ns: u64,
+    pub reduced_stamp_calls: u64,
+    pub dense_solve_ns: u64,
+    pub reduced_recovery_ns: u64,
+    pub reduced_solve_calls: u64,
+    pub trial_residual_ns: u64,
+    pub trial_residual_calls: u64,
+    pub settled_check_ns: u64,
+    pub settled_checks: u64,
+}
+
+#[cfg(test)]
+impl TwinPowerPhaseProfile {
+    pub fn saturating_delta(self, before: Self) -> Self {
+        Self {
+            reduced_stamp_ns: self.reduced_stamp_ns.saturating_sub(before.reduced_stamp_ns),
+            reduced_stamp_calls: self.reduced_stamp_calls.saturating_sub(before.reduced_stamp_calls),
+            dense_solve_ns: self.dense_solve_ns.saturating_sub(before.dense_solve_ns),
+            reduced_recovery_ns: self
+                .reduced_recovery_ns
+                .saturating_sub(before.reduced_recovery_ns),
+            reduced_solve_calls: self.reduced_solve_calls.saturating_sub(before.reduced_solve_calls),
+            trial_residual_ns: self.trial_residual_ns.saturating_sub(before.trial_residual_ns),
+            trial_residual_calls: self
+                .trial_residual_calls
+                .saturating_sub(before.trial_residual_calls),
+            settled_check_ns: self.settled_check_ns.saturating_sub(before.settled_check_ns),
+            settled_checks: self.settled_checks.saturating_sub(before.settled_checks),
+        }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+#[inline(always)]
+fn test_thread_cpu_time_ns() -> u64 {
+    #[repr(C)]
+    struct Timespec {
+        tv_sec: std::os::raw::c_long,
+        tv_nsec: std::os::raw::c_long,
+    }
+    unsafe extern "C" {
+        fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut Timespec) -> std::os::raw::c_int;
+    }
+    const CLOCK_THREAD_CPUTIME_ID: std::os::raw::c_int = 3;
+    let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    let result = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
+    if result == 0 {
+        (ts.tv_sec as u64)
+            .saturating_mul(1_000_000_000)
+            .saturating_add(ts.tv_nsec as u64)
+    } else {
+        0
+    }
+}
+
+#[cfg(all(test, not(target_os = "linux")))]
+#[inline(always)]
+fn test_thread_cpu_time_ns() -> u64 {
+    0
+}
 const LAST_SETTLED_RESTART_PASSES: usize = 32;
 const POST_RESTART_STAGE_PASSES: usize = 32;
 /// Extra exact-target work permitted only after a full-budget solve has
@@ -253,33 +317,25 @@ const RELATIVE: f64 = 1e-6;
 /// plugin no longer hides solver bursts behind an internal audio FIFO.
 const MAX_ITERATIONS: usize = 64;
 
-/// The fewest passes the work budget may ever leave a sample.
+/// The fewest passes any caller may leave a transient sample.
 ///
-/// Twelve was chosen so it would be "comfortably above where they normally
-/// finish" -- and that sentence is the bug. The work budget's entire job is to
-/// bind on a block that is running late, and a floor above where the solve
-/// normally finishes cannot bind on anything. Measured: with the budget armed
-/// the 5150 went from 5.4 % of callbacks missed to 6.0 %, and the Twin from
-/// 0.7 % to 4.1 %. It could not save a single pass, and it still paid for
-/// reading the clock.
+/// This is a correctness floor, not a realtime work-budget tuning knob. BUG-008
+/// showed why a caller must not be allowed to starve Newton indefinitely: an
+/// eight-pass ceiling left the 5150 lead channel grossly unconverged. More
+/// importantly, the current solver's own measured reference above shows that
+/// the same 5150 drive cases do not return to their converged distortion until
+/// roughly thirty-two passes. A twelve-pass permanent ceiling is therefore no
+/// longer a safe bound: `tests/solver.rs::no_caller_can_starve_the_solve_past_the_floor`
+/// measures 39.5 % THD there against 48.7 % for the full solve.
 ///
-/// BUG-008 is real and is why a floor exists at all: a permanent ceiling of
-/// eight gave the 5150's lead channel 190, 107 and 428 per cent distortion.
-/// But that was measured before the grid limiter and the line search took that
-/// same channel from 7.69 passes a sample to 3.71. The circuits now average
-/// 2.0 to 3.3 on real playing, so four is where a solve that has genuinely
-/// stopped converging gets cut off, not where an ordinary one does.
-///
-/// The floor and the budget's steps are two different numbers for two
-/// different jobs: this one stops a *permanent* starvation from a caller bug,
-/// and `Budget::ceiling` decides how hard to lean on the tail of one late
-/// block. Conflating them is what made the guarantee do nothing.
-///
-/// Twelve stands, because the budget is off -- see `plugin::Budget`. Lowering
-/// this to four so the budget could bite was tried and measured: it made the
-/// misses worse, because a capped solve that fails to converge spends its
-/// whole allowance and hands the next sample a worse place to start from.
-const PASS_FLOOR: usize = 12;
+/// Keep the caller floor at the already measured thirty-two-pass bound. Normal
+/// samples still stop as soon as `iterate()` reports `Settled`, so raising this
+/// minimum does not make ordinary 2-3 pass solves spend 32 passes. It only
+/// prevents an external/experimental caller from imposing a ceiling known to
+/// change the circuit result materially. The ordinary production maximum
+/// remains `MAX_ITERATIONS` (64), with the bounded rescue paths above it
+/// unchanged.
+const PASS_FLOOR: usize = 32;
 
 /// Maximum number of line-search trial lengths, including the full Newton
 /// step.
@@ -1676,6 +1732,13 @@ pub struct Simulation {
     /// stamp. Production enables this exact same-point cache.
     #[cfg(test)]
     test_disable_accepted_trial_device_cache: bool,
+    /// Test-only Linux thread-CPU profiler for the Twin power stage. Disabled
+    /// unless explicitly requested so normal realtime A/B runs pay no clock
+    /// sampling cost.
+    #[cfg(test)]
+    test_profile_twin_power_phases: bool,
+    #[cfg(test)]
+    test_phase_profile: TwinPowerPhaseProfile,
     /// Test-only cost experiment: ordinary late source continuation is allowed
     /// only after `iterate()` returns `Pass::Stuck`. A recoverable late
     /// line-search fallback stays on the exact target instead of paying for a
@@ -2102,6 +2165,14 @@ impl Simulation {
             )
             .is_some(),
             #[cfg(test)]
+            test_profile_twin_power_phases: std::env::var_os(
+                "GAINSTAGEFX_PROFILE_TWIN_POWER_PHASES",
+            )
+            .is_some()
+                && cfg!(target_os = "linux"),
+            #[cfg(test)]
+            test_phase_profile: TwinPowerPhaseProfile::default(),
+            #[cfg(test)]
             test_continuation_stuck_only: std::env::var_os(
                 "GAINSTAGEFX_TEST_CONTINUATION_STUCK_ONLY",
             )
@@ -2255,6 +2326,25 @@ impl Simulation {
     #[cfg(test)]
     pub fn solver_unknown_name(&self, at: usize) -> &str {
         self.circuit.node_name(at)
+    }
+
+    #[cfg(test)]
+    pub fn twin_power_phase_profile(&self) -> TwinPowerPhaseProfile {
+        let mut profile = self.test_phase_profile;
+        if let Some(partition) = self.nonlinear_partition.as_ref() {
+            let reduced = partition.test_phase_profile();
+            profile.dense_solve_ns = reduced.dense_solve_ns;
+            profile.reduced_recovery_ns = reduced.recovery_ns;
+            profile.reduced_solve_calls = reduced.calls;
+        }
+        profile
+    }
+
+    #[cfg(test)]
+    #[inline(always)]
+    fn twin_phase_profile_start(&self) -> Option<u64> {
+        (self.late_continuation && self.test_profile_twin_power_phases)
+            .then(test_thread_cpu_time_ns)
     }
 
     #[cfg(test)]
@@ -3028,18 +3118,28 @@ impl Simulation {
                     if !nonlinear_reduction_worthwhile(n, candidate.len()) {
                         continue;
                     }
-                    let transient = ReducedNonlinear::new_with_active_rhs(
+                    let mut transient = ReducedNonlinear::new_with_active_rhs(
                         &self.base,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
-                    let dc_partition = ReducedNonlinear::new_with_active_rhs(
+                    let mut dc_partition = ReducedNonlinear::new_with_active_rhs(
                         &self.base_dc,
                         &self.partition_zero_rhs,
                         &candidate,
                         &self.rhs_active_nodes,
                     );
+                    #[cfg(test)]
+                    {
+                        let profile = self.late_continuation && self.test_profile_twin_power_phases;
+                        if let Some(partition) = transient.as_mut() {
+                            partition.set_test_phase_profile(profile);
+                        }
+                        if let Some(partition) = dc_partition.as_mut() {
+                            partition.set_test_phase_profile(profile);
+                        }
+                    }
                     if transient.is_some() {
                         self.nonlinear_boundary = candidate;
                         self.nonlinear_partition = transient;
@@ -3222,6 +3322,16 @@ impl Simulation {
     /// the normal predictor or normal early Newton path.
     pub fn set_late_continuation(&mut self, enabled: bool) {
         self.late_continuation = enabled;
+        #[cfg(test)]
+        {
+            let profile = enabled && self.test_profile_twin_power_phases;
+            if let Some(partition) = self.nonlinear_partition.as_mut() {
+                partition.set_test_phase_profile(profile);
+            }
+            if let Some(partition) = self.nonlinear_partition_dc.as_mut() {
+                partition.set_test_phase_profile(profile);
+            }
+        }
     }
 
     #[inline(always)]
@@ -3497,6 +3607,8 @@ impl Simulation {
     /// device unexpectedly references an internal unknown.
     #[inline]
     fn build_current_reduced(&mut self, dc: bool, limiting: bool) -> bool {
+        #[cfg(test)]
+        let profile_started = self.twin_phase_profile_start();
         let voltage = &self.voltage;
         let partition = if dc {
             self.nonlinear_partition_dc.as_mut()
@@ -3529,6 +3641,17 @@ impl Simulation {
             partition.finish_stamp();
         }
         self.exact = exact;
+        #[cfg(test)]
+        if let Some(started) = profile_started {
+            self.test_phase_profile.reduced_stamp_ns = self
+                .test_phase_profile
+                .reduced_stamp_ns
+                .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
+            self.test_phase_profile.reduced_stamp_calls = self
+                .test_phase_profile
+                .reduced_stamp_calls
+                .saturating_add(1);
+        }
         mapping_ok
     }
 
@@ -3577,6 +3700,8 @@ impl Simulation {
     /// first, then each nonlinear device adds only its physical equation.
     #[inline]
     fn reduced_trial_merit(&mut self, dc: bool, allow_cache_eval: bool) -> Option<f64> {
+        #[cfg(test)]
+        let profile_started = self.twin_phase_profile_start();
         // Keep this experiment on the Twin-specific transient path. The cache
         // is exact for every circuit, but the current optimization target is
         // the measured Twin tail and broadening scope would add risk without
@@ -3624,7 +3749,19 @@ impl Simulation {
         if !mapping_ok {
             return None;
         }
-        partition.residual_merit(&self.trial_residual[..n])
+        let merit = partition.residual_merit(&self.trial_residual[..n]);
+        #[cfg(test)]
+        if let Some(started) = profile_started {
+            self.test_phase_profile.trial_residual_ns = self
+                .test_phase_profile
+                .trial_residual_ns
+                .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
+            self.test_phase_profile.trial_residual_calls = self
+                .test_phase_profile
+                .trial_residual_calls
+                .saturating_add(1);
+        }
+        merit
     }
 
     #[inline]
@@ -4090,7 +4227,26 @@ impl Simulation {
         // test in the wrong place, the transformer core -- five unknowns, one
         // device, converging in two passes flat -- reported 7854 failed
         // solves a second.
-        if moved < 1.0 && self.devices.iter().all(|d| d.settled(TOLERANCE)) {
+        let devices_settled = if moved < 1.0 {
+            #[cfg(test)]
+            let profile_started = self.twin_phase_profile_start();
+            let settled = self.devices.iter().all(|d| d.settled(TOLERANCE));
+            #[cfg(test)]
+            if let Some(started) = profile_started {
+                self.test_phase_profile.settled_check_ns = self
+                    .test_phase_profile
+                    .settled_check_ns
+                    .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
+                self.test_phase_profile.settled_checks = self
+                    .test_phase_profile
+                    .settled_checks
+                    .saturating_add(1);
+            }
+            settled
+        } else {
+            false
+        };
+        if moved < 1.0 && devices_settled {
             self.voltage.copy_from_slice(&self.guess);
             return Pass::Settled;
         }

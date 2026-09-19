@@ -871,6 +871,14 @@ fn run_realtime_pass(
 
     plugin.channels[0].reset_twin_level_trace();
     let solver_before = plugin.channels[0].solver_breakdown();
+    let phase_profile_enabled = std::env::var_os("GAINSTAGEFX_PROFILE_TWIN_POWER_PHASES").is_some()
+        && circuit == Circuit::Twin
+        && layout == ProbeLayout::Mono;
+    let phase_profile_before = if phase_profile_enabled {
+        plugin.channels[0].power_phase_profile()
+    } else {
+        None
+    };
     let capacity = input.len().div_ceil(BLOCK);
     let mut times = Vec::with_capacity(capacity);
     let mut cpu_times = Vec::with_capacity(capacity);
@@ -885,6 +893,7 @@ fn run_realtime_pass(
     let mut max_start_late_us = 0.0f64;
     let mut max_finish_late_us = 0.0f64;
     let mut max_meter_db = f32::NEG_INFINITY;
+    let mut phase_slow_blocks = Vec::new();
 
     let mut release = std::time::Instant::now()
         + if live_paced {
@@ -897,6 +906,11 @@ fn run_realtime_pass(
         if live_paced {
             wait_until(release);
         }
+        let block_phase_before = if phase_profile_enabled {
+            plugin.channels[0].power_phase_profile()
+        } else {
+            None
+        };
         let callback_start = std::time::Instant::now();
         let start_late = callback_start.saturating_duration_since(release);
         if live_paced {
@@ -964,6 +978,14 @@ fn run_realtime_pass(
         if cpu_elapsed > callback_budget.as_secs_f64() {
             cpu_compute_misses += 1;
             first_cpu_compute_miss.get_or_insert(block);
+        }
+        if phase_profile_enabled && cpu_elapsed > callback_budget.as_secs_f64() {
+            if let (Some(before), Some(after)) = (
+                block_phase_before,
+                plugin.channels[0].power_phase_profile(),
+            ) {
+                phase_slow_blocks.push((cpu_us, block, after.saturating_delta(before)));
+            }
         }
         if let Some(block_solver_before) = block_solver_before {
             if elapsed > callback_budget.as_secs_f64()
@@ -1141,6 +1163,43 @@ fn run_realtime_pass(
             println!(
                 "twin_level_diagnostics,live_paced={},layout={:?},levels={:?}",
                 live_paced, layout, levels
+            );
+        }
+    }
+    if let (Some(before), Some(after)) = (
+        phase_profile_before,
+        if phase_profile_enabled {
+            plugin.channels[0].power_phase_profile()
+        } else {
+            None
+        },
+    ) {
+        let phase = after.saturating_delta(before);
+        println!(
+            "twin_power_phase_profile,stamp_calls={},stamp_us={:.2},dense_solve_calls={},dense_solve_us={:.2},recovery_us={:.2},trial_calls={},trial_us={:.2},settled_checks={},settled_us={:.2}",
+            phase.reduced_stamp_calls,
+            phase.reduced_stamp_ns as f64 / 1000.0,
+            phase.reduced_solve_calls,
+            phase.dense_solve_ns as f64 / 1000.0,
+            phase.reduced_recovery_ns as f64 / 1000.0,
+            phase.trial_residual_calls,
+            phase.trial_residual_ns as f64 / 1000.0,
+            phase.settled_checks,
+            phase.settled_check_ns as f64 / 1000.0,
+        );
+        phase_slow_blocks.sort_by(|a, b| b.0.total_cmp(&a.0));
+        for (cpu_us, block, phase) in phase_slow_blocks.iter().take(16) {
+            println!(
+                "twin_power_phase_tail,block={block},cpu_us={cpu_us:.2},stamp_calls={},stamp_us={:.2},dense_solve_calls={},dense_solve_us={:.2},recovery_us={:.2},trial_calls={},trial_us={:.2},settled_checks={},settled_us={:.2}",
+                phase.reduced_stamp_calls,
+                phase.reduced_stamp_ns as f64 / 1000.0,
+                phase.reduced_solve_calls,
+                phase.dense_solve_ns as f64 / 1000.0,
+                phase.reduced_recovery_ns as f64 / 1000.0,
+                phase.trial_residual_calls,
+                phase.trial_residual_ns as f64 / 1000.0,
+                phase.settled_checks,
+                phase.settled_check_ns as f64 / 1000.0,
             );
         }
     }
