@@ -3131,15 +3131,18 @@ impl Simulation {
                         &self.rhs_active_nodes,
                     );
                     #[cfg(test)]
-                    {
+                    let (transient, dc_partition) = {
                         let profile = self.late_continuation && self.test_profile_twin_power_phases;
+                        let mut transient = transient;
+                        let mut dc_partition = dc_partition;
                         if let Some(partition) = transient.as_mut() {
                             partition.set_test_phase_profile(profile);
                         }
                         if let Some(partition) = dc_partition.as_mut() {
                             partition.set_test_phase_profile(profile);
                         }
-                    }
+                        (transient, dc_partition)
+                    };
                     if transient.is_some() {
                         self.nonlinear_boundary = candidate;
                         self.nonlinear_partition = transient;
