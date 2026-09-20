@@ -92,6 +92,66 @@ pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
 
+/// The original April 1991 U2a/U2b middle EQ, isolated for circuit validation.
+///
+/// This is not yet connected to the production pedal. The factory Wien network
+/// has its own feedback amplifier; hanging a swept gyrator off the low/high EQ
+/// does not preserve its boost/cut depth. See `docs/models/metal_zone.md` for the
+/// original sheet, port definitions and outstanding integration work.
+///
+/// `MIDDLE` uses the existing estimated symmetric law. `MID_FREQ` here sweeps
+/// electrical gang resistance linearly, from 50 k to zero as the control rises;
+/// it deliberately does not claim a measured law for the factory C-taper pot.
+/// Both op-amps retain their rails. A small-signal AC reference may linearize
+/// them around zero, but a time-domain consumer must retain their headroom.
+pub fn mid_eq_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
+    let mut net = Netlist::new("MT-2 April 1991 isolated middle EQ");
+    net.input("in", source)
+        .capacitor("in", "mid_in", 1e-6) // C011
+        .resistor("mid_in", "u2a_m", 47_000.0) // R038
+        .resistor("u2a", "u2a_m", 47_000.0) // R035
+        .capacitor("u2a", "u2a_m", 100e-12) // C026
+        .opamp("u2a", "u2a_p", "u2a_m", SWING)
+        .resistor("mid_in", "mid_cut", 330.0) // R050, VR02b pin 1
+        .capacitor("u2a", "mid_feedback", 1e-6) // C037
+        .resistor("mid_feedback", "mid_boost", 330.0) // R049, VR02b pin 3
+        .rest(MIDDLE, 0.5)
+        .pot(
+            "mid_boost",
+            "mid_wiper",
+            "mid_cut",
+            100_000.0,
+            Taper::Symmetric { span: 150.0 },
+            MIDDLE,
+        )
+        .opamp("u2b", "mid_wiper", "u2b", SWING)
+        .capacitor("u2b", "mid_series", 0.022e-6) // C036
+        .resistor("mid_series", "mid_gang1", 2_200.0) // R048
+        .rest(MID_FREQ, 0.5)
+        .pot(
+            "mid_gang1",
+            "mid_bridge",
+            "mid_bridge",
+            50_000.0,
+            Taper::Linear,
+            MID_FREQ,
+        )
+        .pot(
+            "mid_bridge",
+            "mid_gang2",
+            "mid_gang2",
+            50_000.0,
+            Taper::Linear,
+            MID_FREQ,
+        )
+        .resistor("mid_gang2", "gnd", 2_200.0) // R062
+        .capacitor("mid_bridge", "gnd", 0.0082e-6) // C043
+        .capacitor("mid_bridge", "u2a_p", 0.1e-6) // C038
+        .resistor("u2a_p", "gnd", 1_000_000.0) // R039, AC-referenced bias
+        .resistor("u2a", "gnd", load);
+    net.build("u2a")
+}
+
 #[cfg(test)]
 pub fn build_full_newton_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap_impl(source, load, "out", false, false, false)

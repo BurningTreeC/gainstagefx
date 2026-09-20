@@ -19,6 +19,14 @@ impl ReducedSolveProfile {
     }
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReducedPivotProfile {
+    pub replays: u64,
+    pub learns: u64,
+    pub invalidations: u64,
+}
+
 #[cfg(all(test, target_os = "linux"))]
 #[inline(always)]
 fn test_thread_cpu_time_ns() -> u64 {
@@ -31,7 +39,10 @@ fn test_thread_cpu_time_ns() -> u64 {
         fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut Timespec) -> std::os::raw::c_int;
     }
     const CLOCK_THREAD_CPUTIME_ID: std::os::raw::c_int = 3;
-    let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut ts = Timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     let result = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
     if result == 0 {
         (ts.tv_sec as u64)
@@ -453,9 +464,17 @@ pub struct ReducedNonlinear {
     #[cfg(test)]
     test_disable_precondensed_13_stamp_base: bool,
     #[cfg(test)]
+    test_disable_fixed_13_stamped_merit: bool,
+    #[cfg(test)]
+    test_disable_fixed_13_trial_residual: bool,
+    #[cfg(test)]
     test_profile_enabled: bool,
     #[cfg(test)]
     test_profile: ReducedSolveProfile,
+    #[cfg(test)]
+    test_pivot_profile_enabled: bool,
+    #[cfg(test)]
+    test_pivot_profile: ReducedPivotProfile,
 }
 
 #[inline(always)]
@@ -476,6 +495,30 @@ fn recover_boundary_major_in_place(
             *value -= coefficient * boundary_voltage;
         }
     }
+}
+
+#[inline(always)]
+fn merit_stamped_fixed_13(matrix: &[f64; 169], rhs: &[f64; 13], voltage: &[f64; 13]) -> f64 {
+    let mut total = 0.0;
+    for row in 0..13 {
+        let base = row * 13;
+        let mut residual = -rhs[row];
+        residual += matrix[base] * voltage[0];
+        residual += matrix[base + 1] * voltage[1];
+        residual += matrix[base + 2] * voltage[2];
+        residual += matrix[base + 3] * voltage[3];
+        residual += matrix[base + 4] * voltage[4];
+        residual += matrix[base + 5] * voltage[5];
+        residual += matrix[base + 6] * voltage[6];
+        residual += matrix[base + 7] * voltage[7];
+        residual += matrix[base + 8] * voltage[8];
+        residual += matrix[base + 9] * voltage[9];
+        residual += matrix[base + 10] * voltage[10];
+        residual += matrix[base + 11] * voltage[11];
+        residual += matrix[base + 12] * voltage[12];
+        total += residual * residual;
+    }
+    total
 }
 
 impl ReducedNonlinear {
@@ -608,9 +651,23 @@ impl ReducedNonlinear {
             )
             .is_some(),
             #[cfg(test)]
+            test_disable_fixed_13_stamped_merit: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_disable_fixed_13_trial_residual: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_FIXED_13_TRIAL_RESIDUAL",
+            )
+            .is_some(),
+            #[cfg(test)]
             test_profile_enabled: false,
             #[cfg(test)]
             test_profile: ReducedSolveProfile::default(),
+            #[cfg(test)]
+            test_pivot_profile_enabled: false,
+            #[cfg(test)]
+            test_pivot_profile: ReducedPivotProfile::default(),
         };
         result.update_internal_boundary_response();
         result.update_coupling();
@@ -691,6 +748,26 @@ impl ReducedNonlinear {
         }
     }
 
+    /// The Twin/American-6L6 line-search current-point merit is evaluated
+    /// hundreds of thousands of times per stress trace. The hot boundary is
+    /// always exactly 13 unknowns, so avoid repeated indirect boundary lookups
+    /// and dynamic-length bounds checks while preserving the generic method's
+    /// floating-point operation order exactly.
+    #[inline]
+    fn use_fixed_13_stamped_merit(&self) -> bool {
+        if self.condensed.boundary.len() != 13 {
+            return false;
+        }
+        #[cfg(test)]
+        {
+            !self.test_disable_fixed_13_stamped_merit
+        }
+        #[cfg(not(test))]
+        {
+            true
+        }
+    }
+
     #[cfg(test)]
     pub fn set_test_phase_profile(&mut self, enabled: bool) {
         self.test_profile_enabled = enabled && cfg!(target_os = "linux");
@@ -700,6 +777,17 @@ impl ReducedNonlinear {
     #[cfg(test)]
     pub fn test_phase_profile(&self) -> ReducedSolveProfile {
         self.test_profile
+    }
+
+    #[cfg(test)]
+    pub fn set_test_pivot_profile(&mut self, enabled: bool) {
+        self.test_pivot_profile_enabled = enabled;
+        self.test_pivot_profile = ReducedPivotProfile::default();
+    }
+
+    #[cfg(test)]
+    pub fn test_pivot_profile(&self) -> ReducedPivotProfile {
+        self.test_pivot_profile
     }
 
     /// Recompute the passive/internal reduction for the same topology without
@@ -913,6 +1001,35 @@ impl ReducedNonlinear {
             return None;
         }
         let b = self.condensed.boundary.len();
+        let fixed_trial_residual = {
+            #[cfg(test)]
+            {
+                !self.test_disable_fixed_13_trial_residual
+            }
+            #[cfg(not(test))]
+            {
+                true
+            }
+        };
+        if b == 13 && fixed_trial_residual {
+            // Each difficult block can evaluate hundreds of trial residuals.
+            // Gather once instead of chasing the boundary map in every row.
+            // Keep the generic row/column sum order: even a reassociation here
+            // can change line-search acceptance near a conduction boundary.
+            let voltage: [f64; 13] =
+                std::array::from_fn(|column| full[self.condensed.boundary[column]]);
+            let matrix: &[f64; 169] = self.merit_linear.as_slice().try_into().ok()?;
+            let base: &[f64; 13] = self.merit_rhs_base.as_slice().try_into().ok()?;
+            let result: &mut [f64; 13] = (&mut residual[..13]).try_into().ok()?;
+            for row in 0..13 {
+                let mut value = base[row];
+                for column in 0..13 {
+                    value += matrix[row * 13 + column] * voltage[column];
+                }
+                result[row] = value;
+            }
+            return Some(&self.node_to_boundary);
+        }
         for row in 0..b {
             let mut value = self.merit_rhs_base[row];
             let coefficients = &self.merit_linear[row * b..(row + 1) * b];
@@ -1001,6 +1118,41 @@ impl ReducedNonlinear {
     #[inline]
     pub fn merit_stamped(&self, full: &[f64]) -> f64 {
         let b = self.condensed.boundary.len();
+        if b == 13 && self.use_fixed_13_stamped_merit() {
+            let boundary: &[usize; 13] = self
+                .condensed
+                .boundary
+                .as_slice()
+                .try_into()
+                .expect("13-node boundary length checked above");
+            let matrix: &[f64; 169] = self
+                .reduced_matrix
+                .as_slice()
+                .try_into()
+                .expect("13x13 reduced matrix");
+            let rhs: &[f64; 13] = self
+                .reduced_rhs
+                .as_slice()
+                .try_into()
+                .expect("13-entry reduced RHS");
+            let boundary_voltage = [
+                full[boundary[0]],
+                full[boundary[1]],
+                full[boundary[2]],
+                full[boundary[3]],
+                full[boundary[4]],
+                full[boundary[5]],
+                full[boundary[6]],
+                full[boundary[7]],
+                full[boundary[8]],
+                full[boundary[9]],
+                full[boundary[10]],
+                full[boundary[11]],
+                full[boundary[12]],
+            ];
+            return merit_stamped_fixed_13(matrix, rhs, &boundary_voltage);
+        }
+
         let mut total = 0.0;
         for row in 0..b {
             let mut residual = -self.reduced_rhs[row];
@@ -1028,10 +1180,10 @@ impl ReducedNonlinear {
         }
         let b = self.condensed.boundary.len();
         #[cfg(test)]
-        let solve_started = self
-            .test_profile_enabled
-            .then(test_thread_cpu_time_ns);
+        let solve_started = self.test_profile_enabled.then(test_thread_cpu_time_ns);
         let reciprocal_pivots = self.use_reciprocal_pivots();
+        #[cfg(test)]
+        let pivot_was_planned = self.pivot_planned;
         let solved = if b == 13 && self.use_fixed_13_dense_solve() {
             solve_dense_planned_fixed::<13>(
                 &mut self.reduced_matrix,
@@ -1058,13 +1210,23 @@ impl ReducedNonlinear {
                 .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
             self.test_profile.calls = self.test_profile.calls.saturating_add(1);
         }
+        #[cfg(test)]
+        if self.test_pivot_profile_enabled {
+            if pivot_was_planned {
+                self.test_pivot_profile.replays = self.test_pivot_profile.replays.saturating_add(1);
+                if !self.pivot_planned {
+                    self.test_pivot_profile.invalidations =
+                        self.test_pivot_profile.invalidations.saturating_add(1);
+                }
+            } else if self.pivot_planned {
+                self.test_pivot_profile.learns = self.test_pivot_profile.learns.saturating_add(1);
+            }
+        }
         if !solved {
             return None;
         }
         #[cfg(test)]
-        let recovery_started = self
-            .test_profile_enabled
-            .then(test_thread_cpu_time_ns);
+        let recovery_started = self.test_profile_enabled.then(test_thread_cpu_time_ns);
         let mut moved = 0.0f64;
         for (index, &node) in self.condensed.boundary.iter().enumerate() {
             let value = self.reduced_rhs[index];
@@ -1821,7 +1983,7 @@ fn inverse(matrix: &[f64], n: usize) -> Option<Vec<f64>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        condense, recover_boundary_major_in_place, solve_dense_planned,
+        condense, merit_stamped_fixed_13, recover_boundary_major_in_place, solve_dense_planned,
         solve_dense_planned_fixed, ReducedLinear, ReducedNonlinear,
     };
 
@@ -1839,8 +2001,7 @@ mod tests {
         let mut boundary_major = vec![0.0; BOUNDARY * INTERNAL];
         for row in 0..INTERNAL {
             for column in 0..BOUNDARY {
-                let coefficient =
-                    (((row * 19 + column * 23 + 5) % 31) as f64 - 15.0) * 0.0078125;
+                let coefficient = (((row * 19 + column * 23 + 5) % 31) as f64 - 15.0) * 0.0078125;
                 row_major[row * BOUNDARY + column] = coefficient;
                 boundary_major[column * INTERNAL + row] = coefficient;
             }
@@ -2031,7 +2192,10 @@ mod tests {
             ));
             assert_eq!(fixed_plan, generic_plan);
             assert_eq!(fixed_planned, generic_planned);
-            assert!(!generic_planned, "unsound replay must invalidate the pivot plan");
+            assert!(
+                !generic_planned,
+                "unsound replay must invalidate the pivot plan"
+            );
             for (&candidate, &reference) in fixed_matrix.iter().zip(&generic_matrix) {
                 assert_eq!(candidate.to_bits(), reference.to_bits());
             }
@@ -2302,25 +2466,111 @@ mod tests {
         let mut fast_delta = vec![0.0; N];
         let mut legacy_delta = vec![0.0; N];
         assert!(precondensed
-            .solve_stamped_with_delta(
-                &mut fast_full,
-                &current,
-                &mut fast_delta,
-                1e-6,
-                1e-6,
-            )
+            .solve_stamped_with_delta(&mut fast_full, &current, &mut fast_delta, 1e-6, 1e-6,)
             .is_some());
         assert!(legacy
-            .solve_stamped_with_delta(
-                &mut legacy_full,
-                &current,
-                &mut legacy_delta,
-                1e-6,
-                1e-6,
-            )
+            .solve_stamped_with_delta(&mut legacy_full, &current, &mut legacy_delta, 1e-6, 1e-6,)
             .is_some());
         for (&candidate, &reference) in fast_full.iter().zip(&legacy_full) {
             assert!((candidate - reference).abs() <= 1e-12);
+        }
+    }
+
+    #[test]
+    fn fixed_13_stamped_merit_matches_generic_bit_for_bit() {
+        let mut matrix = [0.0; 169];
+        for (index, value) in matrix.iter_mut().enumerate() {
+            let row = index / 13;
+            let column = index % 13;
+            *value = if row == column {
+                7.0 + row as f64 * 0.125
+            } else {
+                ((row * 17 + column * 11 + 3) as f64) * 0.000_976_562_5 - 0.75
+            };
+        }
+        let mut rhs = [0.0; 13];
+        let mut voltage = [0.0; 13];
+        for index in 0..13 {
+            rhs[index] = (index as f64 - 6.0) * 0.3125;
+            voltage[index] = ((index * 7 + 5) as f64) * 0.0625 - 2.0;
+        }
+
+        let mut generic = 0.0;
+        for row in 0..13 {
+            let mut residual = -rhs[row];
+            for column in 0..13 {
+                residual += matrix[row * 13 + column] * voltage[column];
+            }
+            generic += residual * residual;
+        }
+
+        let fixed = merit_stamped_fixed_13(&matrix, &rhs, &voltage);
+        assert_eq!(fixed.to_bits(), generic.to_bits());
+    }
+
+    #[test]
+    fn fixed_13_merit_and_trial_residual_preserve_mapped_cancellation_cases() {
+        // Exercise the public dispatch and noncontiguous boundary gather, not
+        // just the arithmetic helper. Mixed scales and nearly cancelling rows
+        // expose reassociation that a single dyadic fixture cannot detect.
+        const N: usize = 31;
+        let mut base = vec![0.0; N * N];
+        for row in 0..N {
+            base[row * N + row] = 1.0;
+        }
+        let boundary = [29, 1, 23, 3, 19, 5, 17, 7, 13, 9, 11, 21, 27];
+        let mut reduced = ReducedNonlinear::new(&base, &[0.0; N], &boundary).unwrap();
+        assert!(reduced.prepare_rhs(&[0.0; N]));
+        let mut seed = 0x7a91_12bc_9931_584du64;
+        let mut random = || {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
+            ((seed >> 11) as f64 / ((1u64 << 53) as f64) - 0.5) * 2.0
+        };
+        for case in 0..256 {
+            let mut full = [0.0; N];
+            for voltage in &mut full {
+                *voltage = random() * 450.0;
+            }
+            for row in 0..13 {
+                let mut sum = 0.0;
+                for (column, &node) in boundary.iter().enumerate() {
+                    let coefficient = random() * 10f64.powi((column % 9) as i32 - 4);
+                    reduced.reduced_matrix[row * 13 + column] = coefficient;
+                    sum += coefficient * full[node];
+                }
+                reduced.reduced_rhs[row] = if case % 2 == 0 {
+                    sum * (1.0 + 2.0 * f64::EPSILON)
+                } else {
+                    random() * 100.0
+                };
+            }
+            reduced.test_disable_fixed_13_stamped_merit = true;
+            let generic = reduced.merit_stamped(&full);
+            reduced.test_disable_fixed_13_stamped_merit = false;
+            let fixed = reduced.merit_stamped(&full);
+            assert_eq!(fixed.to_bits(), generic.to_bits(), "case {case}");
+
+            reduced
+                .merit_linear
+                .copy_from_slice(&reduced.reduced_matrix);
+            for row in 0..13 {
+                reduced.merit_rhs_base[row] = -reduced.reduced_rhs[row];
+            }
+            let mut generic_residual = [0.0; 13];
+            let mut fixed_residual = [0.0; 13];
+            reduced.test_disable_fixed_13_trial_residual = true;
+            assert!(reduced
+                .begin_residual(&[0.0; N], &full, &mut generic_residual)
+                .is_some());
+            reduced.test_disable_fixed_13_trial_residual = false;
+            assert!(reduced
+                .begin_residual(&[0.0; N], &full, &mut fixed_residual)
+                .is_some());
+            assert_eq!(
+                fixed_residual.map(f64::to_bits),
+                generic_residual.map(f64::to_bits),
+                "case {case}"
+            );
         }
     }
 

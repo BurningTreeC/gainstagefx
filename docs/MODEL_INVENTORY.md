@@ -1,11 +1,15 @@
 # GainStageFX model inventory
 
 Authoritative checklist of every hardware-inspired (and generic) model found in the
-repository, reconciled against the project targets. Built 2026-09-15 by searching
+repository, reconciled against the project targets. Originally built 2026-09-15 by searching
 source *contents* of `src/`, `tests/`, `examples/`, `docs/`, root documentation,
 `assets/`, `packaging/`, `installer/`, git history (82 commits) and the local,
 git-ignored `docs/schematics/` folder. **The repository is the inventory; the target
 lists in the task prompts are a minimum, not a boundary.**
+
+**Current reconciliation: 2026-09-20.** Section 9 records the current implementation,
+validation and performance gaps; older implementation dates identify historical work,
+not the date of a complete hardware or realtime qualification.
 
 Three names are kept separate for every model:
 
@@ -24,7 +28,10 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 
 1. `circuit` is an `EnumParam<Circuit>` with explicit ids
    `clean, crunch, highgain, overdrive, distortion, console, studio, ts808, bigmuff,
-   markiic, evh5150, neve, twin, amp_jcm800_2203, pre_api_312, pre_ssl_4000e, pre_ua_610a`. **Order is also load-bearing**:
+   markiic, evh5150, neve, twin, amp_jcm800_2203, pre_api_312, pre_ssl_4000e, pre_ua_610a, amp_marshall_1959, amp_vox_ac30_tb,
+   amp_hiwatt_dr103, amp_dual_rectifier, pedal_ts9_circuit, pedal_rat_circuit,
+   pedal_fuzz_face_circuit, pedal_mxr_dist_plus_circuit, pedal_boss_hm2_circuit,
+   pedal_boss_mt2_circuit`. **Order is also load-bearing**:
    legacy saved presets store *normalized* values (index / (len-1)).
    - `amp_jcm800_2203` was appended on 2026-09-15 together with that migration:
      `presets::migrate` re-expresses a saved preset without stable ids against
@@ -34,7 +41,8 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
      parameter before the append will map differently. This is unavoidable when an enum
      grows.
 2. `power_amp` (added this refactor) ids: `matched, bypass, power_mark_iic,
-   power_twin_ab763, power_5150, power_2203_el34`. Saved presets now also store
+   power_twin_ab763, power_5150, power_2203_el34, power_1959_el34, power_ac30_el84,
+   power_dr103_el34, power_recto_6l6, power_recto_6l6_tube`. Saved presets now also store
    `model_ids`, so this list *can* grow (ids take precedence). Host state stores
    enum ids as strings.
 3. `cabinet` ids `off, combo, stack` are the legacy baked cabinet filter. New physical
@@ -71,7 +79,7 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
 | (voicing) `bigmuff::TRIANGLE` | — | EHX Big Muff Pi **1971 Triangle** | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (netlist voicing, tested in `tests/bigmuff.rs`, not selectable) | as above | none | — | none | would need selection | TBD |
 | (voicing) `bigmuff::SUPA` | — | **Colorsound Supa Tonebender** (Muff topology, first stage without diodes) | `bigmuff.rs` const | PARTIALLY IMPLEMENTED (not selectable) | as above | none | — | none | would need selection | TBD |
 | `pedal_boss_hm2` (pedal slot) | Heavy Metal | **Boss HM-2** Heavy Metal, the Japanese original | `heavy_metal.rs` | IMPLEMENTED 2026-09-16 | Boss's own service-notes drawing (`docs/schematics/boss-hm2.png`, untracked), read part by part; gyrator centres derived from it (87/958/1278 Hz) match the published analyses' 80 Hz and 900 Hz-1.3 kHz. Log: `docs/models/heavy_metal.md` | none | pedal slot | none | `pedal` id, appended | Heavy Metal |
-| `pedal_boss_mt2` (pedal slot) | Metal Zone | **Boss MT-2** Metal Zone | `metal_zone.rs` | IMPLEMENTED 2026-09-16; **Mid Freq not modelled** (Wien-bridge parametric; the Middle band is fixed at the centre its knob's middle gives) | Boss's own drawing (`docs/schematics/boss-mt2.png`, untracked) plus Electric Druid's analysis, which agree part for part; post-distortion gyrators derived from the sheet (4894/105 Hz) match its published 4,898/105 Hz. Log: `docs/models/metal_zone.md` | none | pedal slot | none | new `pedal` id | Metal Zone |
+| `pedal_boss_mt2` (pedal slot) | Metal Zone | **Boss MT-2** Metal Zone | `metal_zone.rs` | PARTIALLY IMPLEMENTED: all six controls exist; Mid Freq uses a dual-gang gyrator approximation whose boost/cut depth varies incorrectly across the sweep; isolated factory Wien stage under validation | Boss's own drawing (`docs/schematics/boss-mt2.png`, untracked) plus Electric Druid's analysis, which agree part for part; post-distortion gyrators derived from the sheet (4894/105 Hz) match its published 4,898/105 Hz. Log: `docs/models/metal_zone.md` | none | pedal slot | none | new `pedal` id | Metal Zone |
 | (proposed `pedal_boss_ds1`) | Orange Dist | **Boss DS-1**, the 1978 TA7136AP version | none yet | RESEARCHED 2026-09-16 | ElectroSmash's value-by-value analysis. Open question: no TA7136AP data sheet located, so either that part is modelled from one or the later BA728N revision is built instead. Log: `docs/models/orange_dist.md` | none | pedal slot | none | new `pedal` id | Orange Dist |
 | (proposed `pre_boogie_studio`) | Cali Studio Pre | **Mesa/Boogie Studio Preamp** (rackmount; *not* the Studio .22 combo) | none yet | RESEARCHED 2026-09-16, **NOT cleared**: no legible drawing | Mesa's own manual gives the control set; the only Studio Preamp sheet located is hand-drawn and cannot be read value-by-value, and the legible sheet in the same file is a different product (Studio Caliber). Log: `docs/models/studio_pre.md` | its own; the documented rig is a solid-state power amp behind it | physical cabinets | blocks *Never Mind '91*, *Seattle Ten '91* | new `circuit` id | Cali Studio Pre |
 | `overdrive` | Overdrive | GENERIC op-amp with diodes in feedback (Si/Ge/LED) | `clipper.rs` (`OVERDRIVE`) | GENERIC | no hardware claim (MODELS.md: "not TS9/RAT") | none | none | 4 Overdrive presets | id/order fixed | Overdrive (keep) |
@@ -89,15 +97,14 @@ with the drive up, the RAT makes 43.8 % distortion, the MT-2 61.5 % and the HM-2
 
 | Internal ID | Current display | Hardware inspiration | Implementation | Status | Source status | Power-stage status | Cab/speaker dependency | Presets | Serialization concerns | Proposed display |
 |---|---|---|---|---|---|---|---|---|---|---|
-| `markiic` (proposed `amp_mark_iic_plus`) | Cali IIC+ | Mesa/Boogie **Mark IIC+** lead channel, stock RP10A C+ **60 W** interpretation | `markiic.rs` (preamp + 5-band graphic), `power.rs::MARKIIC` | IMPLEMENTED preamp **including lead return, V2B, Lead Master and V2A (corrected 2026-09-15)**; graphic via scalar recovery gain | [docs/models/cali_iic_plus.md](models/cali_iic_plus.md): archival preamp scan, community RP10/FINAL redraws (local copies); PI values discrepancy still recorded | Split at `TO EQ` -> graphic -> power (master pot stands in for MASTER). Matched = Cali 6L6. Panel Master = Lead Master | physical cabinets | Boutique Lead, Boutique Rhythm, Puppet Master '86 | display changed; legacy fixture blocks for this voice no longer compared | Cali IIC+ |
+| `markiic` (proposed `amp_mark_iic_plus`) | Cali IIC+ | Mesa/Boogie **Mark IIC+** lead channel, stock RP10A C+ **60 W** interpretation | `markiic.rs` (preamp + 5-band graphic), `power.rs::MARKIIC` | IMPLEMENTED preamp **including lead return, V2B, Lead Master and V2A (corrected 2026-09-15)**; graphic via differential feedback network (earlier scalar make-up removed) | [docs/models/cali_iic_plus.md](models/cali_iic_plus.md): archival preamp scan, community RP10/FINAL redraws (local copies); PI values discrepancy still recorded | Split at `TO EQ` -> graphic -> power (master pot stands in for MASTER). Matched = Cali 6L6. Panel Master = Lead Master | physical cabinets | Boutique Lead, Boutique Rhythm, Puppet Master '86 | display changed; legacy fixture blocks for this voice no longer compared | Cali IIC+ |
 | `evh5150` (proposed `amp_5150`) | American 5150 | Peavey **EVH 5150** lead channel (code labels match the **5150 II** factory drawing's ULTRA controls; revision unresolved) | `evh5150.rs`, `power.rs::EVH5150` | PARTIALLY IMPLEMENTED: six triodes built; **tone stack not modelled** (plugin tone section substitutes *after* power) | [docs/models/american_5150.md](models/american_5150.md); local `peavey-5150.jpeg` | Split at `To Tone Stack` (33 k load). Matched = American 6L6 High-Gain; no resonance control | legacy filter | Ultra Lead, Ultra Rhythm | display changed | American 5150 |
 | `twin` (proposed `amp_twin_reverb_ab763`) | American Twin | Fender **Twin Reverb AB763** (blackface) Vibrato channel | `twin.rs`, `power.rs::TWIN`, `dsp/spring.rs`, `dsp/tremolo.rs` | IMPLEMENTED coupled Vibrato/reverb/tremolo electrical path; spring mechanics external; stock 22 k PI tail / 450 V PI rail and shared A/B/C power rail corrected | [docs/models/american_twin.md](models/american_twin.md): original schematic and layout read | Split at channel output -> synthetic open master -> power. Matched = American 6L6 Clean | legacy filter | Blackface Clean, Blackface Throb | display changed (was "Twin Reverb") | American Twin |
 | `amp_jcm800_2203` | Brit 800 | Marshall **JCM800 2203** (100 W) master-volume preamp, 1981 drawing | `brit800.rs`, `power.rs::BRIT_EL34` | IMPLEMENTED 2026-09-15 (four triodes, cathode follower, stack, droppers) | [docs/models/brit_800.md](models/brit_800.md): 1981 Marshall drawing with voltage table, 1988 Marshall drawing cross-check, local redraw; middle 22k / treble 220k / bass log resolved from 1988 | Split at the treble wiper into the master pot. Matched = Brit EL34 | physical cabinets | Brit Crunch, Brit Lead, Screamer Boost | appended to `circuit`; saved presets without ids migrated (`LEGACY_CIRCUIT_COUNT`) | Brit 800 |
-| `amp_dual_rectifier` | Cali Rectifier | Mesa/Boogie **Dual Rectifier**, two-channel Rev F (RF-1F board), red channel modern | `rectifier.rs`, `power.rs::RECTO_6L6` | IMPLEMENTED 2026-09-16 (five triodes incl. the 39 k cold stage, follower, stack, master) | [docs/models/cali_rectifier.md](models/cali_rectifier.md): Mesa's own RF-1F preamp and power-amp sheets, with the Rectifier Guide for revisions | Split at the red master. Matched = Recto 6L6. **The valve rectifier is not modelled**: the supply is its silicon setting | physical cabinets | Recto Rhythm, Recto Lead | appended to `circuit` | Cali Rectifier |
+| `amp_dual_rectifier` | Cali Rectifier | Mesa/Boogie **Dual Rectifier**, two-channel Rev F (RF-1F board), red channel modern | `rectifier.rs`, `power.rs::RECTO_6L6` | IMPLEMENTED 2026-09-16 (five triodes incl. the 39 k cold stage, follower, stack, master) | [docs/models/cali_rectifier.md](models/cali_rectifier.md): Mesa's own RF-1F preamp and power-amp sheets, with the Rectifier Guide for revisions | Split at the red master. Matched = Recto 6L6. silicon and separate valve-rectifier settings exist; Matched selects silicon | physical cabinets | Recto Rhythm, Recto Lead | appended to `circuit` | Cali Rectifier |
 | `amp_marshall_1959` | Brit Plexi | Marshall **1959 Super Lead** (100 W, EL34), bright channel, Unicord drawing 70-6-11 July 1970 | `plexi.rs`, `power.rs::PLEXI_EL34` | IMPLEMENTED 2026-09-15 (three triodes, cathode follower, stack, 20k/10k/10k droppers) | [docs/models/brit_plexi.md](models/brit_plexi.md): Unicord 1970, Marshall c.1967 (voltages), Marshall 1988 1959 STD (pot laws, later changes), Robinette cross-check | Split at the treble wiper into the inverter's coupling cap (no master). Matched = Brit Plexi EL34 | physical cabinets | Plexi Crunch, Plexi Cranked, Blackout '80, Experienced '67 | appended to `circuit` | Brit Plexi |
 | `amp_hiwatt_dr103` | Brit DR103 | **Hiwatt DR103** Custom 100, brilliant channel, Issue 4 factory sheets | `dr103.rs`, `power.rs::DR103_EL34` | IMPLEMENTED 2026-09-16 (five triodes, master volume, direct-coupled inverter) | [docs/models/brit_dr103.md](models/brit_dr103.md): Hiwatt's own 1994-95 sheets, Circuit Codex redraw of a late-60s amp, Ampbooks' inverter analysis | Split at the driver's cathode, with its direct voltage carried across. Matched = DR103 EL34 | physical cabinets | Hi-Headroom Clean/Pushed, The Great Wall '79 | appended to `circuit` | Brit DR103 |
 | `amp_vox_ac30_tb` | Brit AC30 | **Vox AC30/6 Top Boost**, brilliant channel | `ac30.rs`, `power.rs::AC30_EL84` | IMPLEMENTED 2026-09-16 (three triodes, two-knob stack, cathode-biased EL84s, no loop) | [docs/models/brit_ac30.md](models/brit_ac30.md): Dallas 1974 and VSL 1971 factory sheets, voxac30.org.uk archive, Ampbooks | Split at the treble wiper into the 220 k mixers. Matched = AC30 EL84 | physical cabinets | Chime Clean, Chime Edge | appended to `circuit` | Brit AC30 |
-| — (proposed `amp_vox_ac30_tb`) | — | **Vox AC30** Top Boost (generation TBD: JMI AC30/6 TB vs later) | none | PLANNED | Not researched; `PentodeSpec::EL84` exists but unused | needs cathode-biased EL84, no-NFB power: `power.rs` builder has fixed-bias only | — | none | new selection | Brit AC30 |
 | `clean` / `crunch` / `highgain` | Clean / Crunch / High Gain | GENERIC 1/2/3 cascaded ECC83 stages | `preamp.rs`, `valve.rs` | GENERIC | no hardware claim | none (can use any power override) | legacy filter | Preamp/Crunch/High Gain presets (15) | id/order fixed | keep |
 
 ## 4. Power amplifiers
@@ -112,9 +119,9 @@ with the drive up, the RAT makes 43.8 % distortion, the MT-2 61.5 % and the HM-2
 | `power_2203_el34` | Brit EL34 | JCM800 2203 1981: ECC83 LTP 82k/100k, 4x EL34 -42 V, 100 k NFB from 4 ohm, 22k/.1uF presence, Hammond 1750U data | `power.rs::BRIT_EL34` | IMPLEMENTED (supply impedances/core estimated) | brit_el34.md (1981 originals + 1988 cross-check) | 4 ohm resistor, or a speaker load on the physical path | Brit Crunch, Brit Lead, Screamer Boost (matched to Brit 800) | appended id |
 | `power_1959_el34` | Brit Plexi EL34 | 1959 Super Lead 1970: 2203-family inverter and iron, no master, 47 k NFB from 16 ohm (23.5 k at 4), 5 k presence, -37 V (estimated) | `power.rs::PLEXI_EL34` | IMPLEMENTED 2026-09-15 (supply voltages from the 1967 drawing, bias and iron estimated) | brit_plexi.md | 4 ohm resistor or speaker load | matched to Brit Plexi | appended id |
 | `power_dr103_el34` | DR103 EL34 | Hiwatt DR103: 82k/91k inverter direct-coupled to the driver, 22k/2k2 tail, 22 k stoppers, 4x EL34 -38 V, 10 k feedback from 16 ohm | `power.rs::DR103_EL34` | IMPLEMENTED 2026-09-16 (supplies and iron estimated; presence omitted) | brit_dr103.md | 8 ohm resistor or a speaker load | matched to Brit DR103 | appended id |
-| `power_ac30_el84` | AC30 EL84 | AC30 Top Boost: cathode-biased 4x EL84 on 50 ohm/250 uF, no feedback, 250 k cut control, 4 k a-a | `power.rs::AC30_EL84` | IMPLEMENTED 2026-09-16 (supplies and iron estimated; valve rectifier as a resistance) | brit_ac30.md | 8 ohm resistor or a speaker load | matched to Brit AC30 | appended id |
-| — (proposed `power_ac30_el84`) | Brit EL84 Class-A | Vox AC30 cathode-biased 4x EL84, no NFB | none | PLANNED (needs cathode-bias builder support) | not researched | — | — | new id |
-| — (proposed `power_rectifier_6l6`) | (to name) | Dual Rectifier power, tube rectifier sag | none | PLANNED | not researched | — | — | new id |
+| `power_ac30_el84` | AC30 EL84 | AC30 Top Boost: cathode-biased 4x EL84 on 50 ohm/250 uF, no feedback, 250 k cut control, 4 k a-a | `power.rs::AC30_EL84` | IMPLEMENTED 2026-09-16 (supplies and iron estimated; GZ34 Child-law rectifier implemented) | brit_ac30.md | 8 ohm resistor or a speaker load | matched to Brit AC30 | appended id |
+| `power_recto_6l6` | Recto 6L6 | Dual Rectifier Rev F silicon supply | `power.rs::RECTO_6L6` | IMPLEMENTED; transformer/supply assumptions remain | cali_rectifier.md | resistor or reactive speaker | Recto matched | appended id |
+| `power_recto_6l6_tube` | Recto 6L6 Tube | Dual Rectifier Rev F valve supply | `power.rs::RECTO_6L6_TUBE` | IMPLEMENTED; two 5U4GB Child-law model | cali_rectifier.md | resistor or reactive speaker | explicit override | appended id |
 
 ## 5. Speakers, cabinets, microphones
 
@@ -150,7 +157,7 @@ Cabinets (values marked DOCUMENTED / DERIVED / ESTIMATED / TUNED in docs/models/
 | `cab_marshall_1960a` | Brit 1960 4x12 | Marshall 1960A (angled), G12T-75 factory | 770 W x 755 H x 365 D mm (marshall.com); 16/4 ohm mono | IMPLEMENTED |
 | `cab_marshall_1960b` | Brit Closed 4x12 | Marshall 1960B (straight), G12T-75 | same outer dims (marshall.com) | IMPLEMENTED |
 | `cab_marshall_1960ax` | Brit Green 4x12 | Marshall 1960AX, G12M-25 16 ohm | 770 x 755 x 365 mm | IMPLEMENTED |
-| `cab_marshall_1960av` | Brit V30 4x12 | Marshall 1960AV (V30-loaded 1960) | geometry as 1960A; model page not yet fetched | IMPLEMENTED |
+| `cab_marshall_1960av` | Brit V30 4x12 | Marshall 1960AV (V30-loaded 1960) | geometry as 1960A; manufacturer page recorded in cabinets.md; 70 W G12 Vintage differs from the 60 W V30 profile | IMPLEMENTED |
 | `cab_mesa_recto_standard` | Cali Oversized 4x12 | Mesa/Boogie Rectifier Standard 4x12, V30 | 32.9 H x 30.1 W x 14.25 D in (retail/Mesa text); ply thickness unverified | IMPLEMENTED |
 | `cab_generic_oversized_412` | Oversized 4x12 | GENERIC oversized closed 4x12 | no hardware claim; geometry ESTIMATED | IMPLEMENTED |
 | `cab_fender_twin_open_212` | American Open 2x12 | Fender Twin Reverb combo (AB763-style) open back | 20 H x 26-1/8 W x 10-1/2 D in (reproduction cabinet maker); openness ESTIMATED | IMPLEMENTED |
@@ -188,7 +195,7 @@ Microphones (research: `docs/models/microphones.md`):
 | 5150 tone stack | 5150 | — | **MISSING** (illegible on local drawing; plugin tone section substitutes post-power) |
 | Spring reverb | Accutronics 4AB3C1B-style long tank | `dsp/spring.rs` | IMPLEMENTED; dispersive allpass approximation |
 | Optical tremolo | AB763 neon/LDR vibrato | `dsp/tremolo.rs` | IMPLEMENTED; behavioral LDR model |
-| Tubes | ECC83, ECC82, ECC81, 6L6GC, EL34, **EL84 (unused)** | `netlist.rs` | Koren-style fits |
+| Tubes | ECC83, ECC82, ECC81, 6L6GC, EL34, EL84 (AC30) | `netlist.rs` | Koren-style fits |
 | Semiconductors | BC549, BC109C, TIP3055, FS36999, 2N5457, J201, J113, 2SC3378, 1N914/1N4148, Si/Ge/LED | various | Ebers-Moll NPN and PNP (PNP added 2026-09-15), Shockley diodes, square-law JFET, AC128 |
 | Op-amp | JRC4558 (TS808) and generic; LM308 (Rodent) | `netlist` `OpAmp`, `Transconductor`; `rodent::lm308` | ideal with rail limit; LM308 built from a saturating transconductor into an integrator for GBW and slew |
 
@@ -236,10 +243,10 @@ reused throughout rather than duplicated.
   Big Muff Ram's Head (selectable), the Triangle and Supa Tonebender voicings
   (not selectable), the seven generic topologies, the Iron materials, the Twin
   spring and tremolo, and the legacy Combo/Stack cabinets.
-- **Referenced only:** none. The Boss HM-2 is implemented and the MT-2 is researched and
-  cleared for code.
-- **Missing preamps:** none. Every model on the target list is implemented.
-- **Missing power stages:** none.
+- **Existing partial circuits:** MT-2 middle EQ, 5150 stack/resonance and revision,
+  DR103 presence, IIC+ power values; see section 9. HM-2 and MT-2 both run today.
+- **Missing preamps/amps:** Studio Preamp, modern and bass models from ROADMAP.md.
+- **Missing power stages:** the modern Generator and bass families from ROADMAP.md.
 - **Chain stages:** pedal slot, speaker load, cabinets and microphones are implemented.
 - **Research logs still owed for implemented models:** Big Muff (value-by-value
   cross-check), 73P (online DIYRE source record).
@@ -277,14 +284,92 @@ schematic-first checkpoint in `docs/models/<model>.md` *before* code.
 8. DONE: **Rodent (ProCo RAT)**: LM308 revision; `Part::Transconductor` for GBW/slew.
 9. DONE: **Round Fuzz (Fuzz Face)**: germanium revision; native PNP device.
 10. DONE: **Brit AC30 + EL84 Class-A**: cathode bias, no feedback loop and a cut control
-    added to `power.rs`; the valve rectifier is a series resistance.
+    added to `power.rs`; the GZ34 rectifier device is also present.
 11. DONE: **Brit DR103**: direct-coupled inverter, which needed a biased input in the
     netlist so one block can hand the next its direct voltage.
 12. DONE: **Cali Rectifier + its power stage** (two-channel Rev F, from Mesa's own
-    sheets; the switchable valve rectifier is not modelled).
+    sheets; silicon and valve supply selections are present).
 13. DONE: **American 312, Tube 610** (plus British 4K E).
 14. **Versioned corrections** of inherited approximations: the 5150 tone stack,
-    Twin PI tail/rail, Mark IIC+ recovery/master order and PI values. Each needs its
+    DR103 presence and Mark IIC+ PI values. Twin PI/supply and Mark recovery/master/graphic corrections are already present. Each needs its
     own regression checkpoint and must never silently alter Matched legacy output.
 15. **Factory era presets** once their components exist, with rig research logs that
     mark each claim DOCUMENTED / WIDELY REPORTED / PLAUSIBLE / APPROXIMATED.
+
+## 9. Current completion and validation audit (2026-09-20)
+
+Use **not started / researching / schematic acquired / partial / implemented /
+validated / performance-ready** as evidence milestones. Here `implemented` means
+executable code with the stated scope, not a complete replica. `Tests` names
+existing coverage, not a claim that the current checkout has passed it; the
+current suite and realtime results belong in IMPLEMENTATION_PROGRESS.md.
+**No nonlinear family is blanket-qualified performance-ready at 48 kHz / block 64.**
+Performance must include p99, max, misses and unsettled counts for the complete
+chain with profiling disabled. `Unqualified` below means no current per-device
+hard-deadline qualification has been established by this audit.
+
+| Device | Category | Status | Reference schematic found? | Reference documentation found? | Implementation status | Validation status | Known issues | Tests | Performance |
+|---|---|---|---|---|---|---|---|---|---|---|
+| DIYRE 73P v1.1 / British 73 | Preamp | implemented | Local manufacturer drawings | Local drawings; online log missing | Input, PRE1/PRE2, output/iron | Circuit tests | Not original 1073; winding/device fits | `neve`, `preamp` | Unqualified |
+| API 312 / American 312 | Preamp | partial | Factory card | API 2520/transformer sheets | Card netlist, ideal rail-limited 2520 | Gain/transformer tests | 2520 transistor dynamics absent | `american312` | Unqualified |
+| SSL 82E01 / British 4K E | Preamp | implemented | Factory revisions logged | Jensen sheets | Two amplifiers and input iron | Gain/response tests | Estimated core | `console_e` | Unqualified |
+| UA 610-A / Tube 610 | Preamp | partial | C-10068 redraw | UTC, RCA | Two feedback pairs; EQ fixed flat, gain Hi | Response/DC tests | EQ/gain switches not exposed; rail/iron estimates | `tube610` | Unqualified |
+| TS808 / Green 808 | Pedal | implemented | Traced drawings, not factory | Analysis and revision log | Buffers, feedback clipping, tone, level | Circuit/slot tests | Ideal op-amp and approximate device fits | `ts808`, `pedal_slot` | Unqualified |
+| TS9 / Green 9 | Pedal | implemented | Traced revision | Revision log | Shared TS808 builder with output values | Circuit/slot tests | Op-amp variations absent | `pedal_slot` | Unqualified |
+| Ram's Head / Ram Fuzz | Pedal | implemented | Traced archive | Version archive | Four BJTs, two clippers, passive tone | Clipping/control tests | Exact traced-unit value reconciliation outstanding | `bigmuff` | Unqualified |
+| Triangle / Supa Tonebender | Pedal variants | partial | Traced archive | Version archive | Netlist constants, not selectable | Builder coverage | No host choice/calibration | `bigmuff` | Unqualified |
+| LM308 RAT / Rodent | Pedal | implemented | Traced drawing | LM308 data | Dynamic amplifier, diodes, JFET | Clipping/control tests | Device fits | `rodent` | Unqualified |
+| Germanium Fuzz Face / Round Fuzz | Pedal | implemented | Traced drawing | Revision survey | Native PNP pair | Bias/control tests | AC128 parameters approximate; cap conflict logged | `round_fuzz` | Unqualified |
+| MXR Distortion+ / Yellow Dist | Pedal | implemented | Traced drawing | 741/analysis | Dynamic 741, germanium pair | Gain/clipping tests | Semiconductor fit | `distortion_plus` | Unqualified |
+| Boss HM-2 / Heavy Metal | Pedal | partial | Boss drawing | Research log | Audio chain and controls | Gyrator/control/reference tests | Equivalent inductors omit active-gyrator limits; device fits | `heavy_metal`, internal partition tests | Tail/stability qualification pending |
+| Boss MT-2 / Metal Zone | Pedal | partial | Boss April 1991 service notes | Factory appendix and analysis | Shipping swept gyrator; isolated original Wien EQ in development | Existing band tests; new isolated EQ tests | Shipping mid depth wrong; ideal op-amps, equivalent gyrators | `metal_zone`, internal partition tests | Tail/stability qualification pending |
+| Boss DS-1 / Orange Dist | Pedal | researching | Traced drawing; factory sheet not logged | Analysis; TA7136AP data unresolved | No netlist | None | Choose 1978 TA7136AP or 1994 BA728N; do not hybridize | None | Not measured |
+| Mark IIC+ / Cali IIC+ | Amp and power | partial | Archival and RP10A traced drawings | Revision logs | Recovery/master/graphic now present; separate 60 W power | Stage/gain/graphic tests | PI/presence values not reconciled; ideal graphic devices | `markiic`, `graphic`, `pentode` | Unqualified |
+| 5150 / American 5150 | Amp and power | partial | Factory 5150 and 5150 II acquired | Factory manual | Six-stage preamp and 6L6 power | Gain/clip/legacy tests | Revision unresolved; 33k dummy stack and post-power generic EQ; resonance absent | `evh5150`, `legacy_baseline` | Ultra Lead chain is active stress fixture |
+| AB763 / American Twin | Amp and power | implemented | Factory schematic/layout | Tube data | Coupled effects electrical path, stock PI/shared supply | DC, loading, solver/reference tests | Spring mechanics behavioral; iron estimates | `twin`, `pentode`, Twin trace/reference tests | Hard-deadline target still active |
+| 1981 JCM800 2203 / Brit 800 | Amp and power | implemented | Marshall 1981/1988 | Voltage table; Hammond | Preamp/stack and Brit EL34 | DC/gain/controls/rates | Fixed handoff; supply/iron estimates | `brit800`, `modular_power` | Unqualified |
+| 1970 1959 / Brit Plexi | Amp and power | implemented | Unicord factory | Marshall cross-check | Bright channel and separate power | DC/controls | No jumper/modified 1959T claim; estimates | `plexi` | Unqualified |
+| AC30/6 Top Boost / Brit AC30 | Amp and power | implemented | 1971/1974 factory | Tube/OT data | Top Boost, cathode bias, cut, GZ34 | Bias/controls/sag | Documented mixed rectifier/passive reference; iron estimates | `ac30`, `devices` | Unqualified |
+| DR103 Issue 4 / Brit DR103 | Amp and power | partial | Hiwatt factory sheets | Revision/PI analysis | Brilliant channel, driver, direct-coupled PI | DC/controls | Presence feeds preamp driver across present split; omitted | `dr103` | Unqualified |
+| Dual Rectifier Rev F / Cali Rectifier | Amp and power | implemented | Mesa RF-1F and power | Revision/manual | Red Modern, silicon and 5U4GB supplies | DC/clipping/sag/rates | Other modes omitted; OT estimates | `rectifier`, `mains` | Unqualified |
+| Mesa Studio Preamp | Preamp | researching | Available drawing insufficiently legible | Factory owner manual | No netlist | None | Studio .22 and Studio Caliber are different products | None | Not measured |
+| Celestion V30, G12M-25, G12T-75 | Speakers | partial | Not applicable | Manufacturer Fs/Re/SPL | Reactive load and breakup fit | Analytic impedance/chain tests | Most T/S estimated; no thermal/excursion model | `speaker_load`, `acoustic_chain` | Host-rate path; full-chain qualification pending |
+| Jensen P12R, P10R, C12N, P12N | Speakers | implemented | Not applicable | Manufacturer T/S and curves | Reactive load and breakup fit | Manufacturer curve comparison | P10R evidence conflict; no thermal/excursion model | `speaker_load` | Full-chain qualification pending |
+| Ten physical guitar cabinets | Cabinets | implemented | Construction drawings unavailable | Manufacturer/retail dimensions | Compliance, geometry, arrays, rear radiation | Geometric/response tests | Four-driver position capacity; estimated layout/panels/slant | `acoustics`, `acoustic_chain` | Host-rate; qualified only by measured chain |
+| SM57, MD421 II, MD409 U3, R121, M160, 4038, U87 Ai | Microphones | implemented | Not needed for profile scope | Manufacturer charts | Fitted response/placement/polar/dual mic | Placement/cancellation/rates tests | Estimated proximity/off-axis/nonlinearity; no circuit claim | `acoustics` | Host-rate, allocation tests exist |
+| e906, C414, U67, U47 fet | Microphones | partial | Not needed for profile scope | Incomplete charts/specifications | Response profiles | Structural/placement tests | e906 secondary curve; three approximate curves; C414 revision unresolved | `acoustics` | Host-rate, allocation tests exist |
+| Revv G3, Fortin 33, Generator 120, Generator power | Modern chain | not started | Not yet acquired in repository | Research needed | No netlists | None | Revisions, switching and Depth must be established | None | Not measured |
+| Modern Oversized 4x12 | Cabinet | not started | Not applicable | Geometry research needed | No distinct profile | None | Do not rename existing oversized profile | None | Not measured |
+| Ampeg SVT/6550, GK800RB/SS, Microtubes900/power | Bass amps/power | not started | Not yet acquired in repository | Research needed | No netlists | None | Revision and solid-state/Class-D model scope | None | Not measured |
+| SansAmp Bass Driver, B3K, Bass Big Muff | Bass pedals | not started | Not yet acquired in repository | Research needed | No netlists | None | Blend topology/revision; reuse Muff only where justified | None | Not measured |
+| 8x10, 4x10, 1x15; bass DI blend | Bass acoustics/routing | not started | Not applicable | Driver/construction/tap research needed | Four-driver array capacity currently blocks 8x10 | None | Add eight positions and up to sixteen front/rear paths per mic; select DI tap explicitly | None | Not measured |
+| Album-rig blockers from ROADMAP section C | Amps/effects/routing | researching | Per-device status varies | PRESETS rig research | No substitute aliases | None | Modified 1959T, Fish/VHT/Ecstasy/Rockman parallel rig, Sunn Model T, Super Bass, Major, Ampeg VT, Laney/treble boost | None | Not measured |
+
+The seven generic gain choices, nickel/steel/amorphous iron, Wide/Scooping tone,
+legacy Combo/Stack filters and the Twin behavioral mechanical effects remain
+intentional designed/approximate models. They are not undocumented hardware stubs.
+
+### Immediate completion order
+
+1. Stabilize current solver experiments and repair failing tests before changing
+   shipping circuit behavior. Preserve the reduced/full reference and callback evidence.
+2. **MT-2 original mid EQ:** the isolated U2a/U2b Wien stage from the
+   [April 1991 factory sheet](https://guitar-gear.ru/forum/index.php?app=core&attach_id=50406&module=attach&section=attach)
+   is now implemented as `metal_zone::mid_eq_reference`, with boost/cut, center-flat
+   and multi-rate small-signal AC/time tests added but not yet executed at this
+   handoff. Run those tests, add headroom/state/loading coverage, then integrate with
+   the low/high stage while preserving its actual loading, remeasure calibration and
+   compare full-pedal/preset sound and callback cost. Mechanical C/G pot laws remain
+   a separately documented uncertainty.
+3. **5150 revision and stack:** factory
+   [5150 II service set](https://www.thetubestore.com/lib/thetubestore/schematics/Peavey/Peavey-5150-II-Schematic.pdf)
+   and [original EVH drawing](https://el34world.com/charts/Schematics/files/Peavey/5150_evh.pdf)
+   were reopened during this audit. The former is legible when rendered at high
+   resolution. Reconcile its complete preamp/stack with the current six-stage
+   code before choosing a revision or replacing the 33k surrogate. This changes
+   gain/loading and needs an explicit legacy/version strategy, not a speed tweak.
+4. Complete DR103 cross-boundary presence and IIC+ PI/power reconciliation.
+   Improve existing active-device/gyrator fits with measured operating envelopes.
+5. Finish DS-1 device evidence and Studio Preamp schematic acquisition; then the
+   modern and bass families in ROADMAP.md. Bass cabinet work must expand the actual
+   `CabinetProfile::positions` and acoustic path capacities, not just add a profile.

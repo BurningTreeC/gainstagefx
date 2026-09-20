@@ -52,3 +52,20 @@ rail and the shared AB763 +460 reservoir -> 4 H/104 Ω choke -> screen B node ->
 1 kΩ -> PI C node supply rather than independent screen/PI sources. The two 70 µF
 series reservoir capacitors and 220 kΩ balancing resistors are represented
 explicitly.
+
+## 2026-09-20 direct-selection effects state correction
+
+The two pick/chord recovery regressions used `Chain::set_voice(Twin)` rather
+than `Chain::apply(Settings)`. Since the unified-channel change, that path left
+the electrical Reverb pot at its netlist default of 0.5 even though the chain's
+stored Reverb setting was 0.0. The measured tails (0.3283 and 0.4691 peak after
+the 250 ms settling window) therefore included the enabled mechanical tank.
+Before unification the stored zero bypassed the separate return processing;
+after unification only the electrical pot determines its contribution.
+
+Voice selection now synchronizes the stored Reverb/Intensity settings into the
+Twin netlist, using the same helper as `apply`. The transformer, spring decay,
+recovery triode, shared cathode, circuit values, and test thresholds are unchanged.
+`direct_twin_selection_uses_the_same_dry_defaults_as_settings` compares both API
+paths sample for sample beyond the tank's first return. The existing preset
+measurements continue to check explicitly enabled reverb and tremolo.

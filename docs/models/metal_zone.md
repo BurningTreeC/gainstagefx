@@ -161,3 +161,52 @@ than a leg on the shared equaliser track; that is the next piece of work on this
   eight decibels away from what a single 220 Hz tone would have said -- it is shaped hard
   enough that one frequency says very little about how loud it is -- and it puts it 1.6 dB
   above no pedal at all, in the middle of the list.
+
+## Original middle EQ completion checkpoint (2026-09-20)
+
+The production pedal still uses the approximate gyrator described above. Codex has
+now implemented the bounded **isolated U2a/U2b mid-EQ netlist** as
+`metal_zone::mid_eq_reference`, plus boost/cut, center-flat and multi-rate
+small-signal AC/time tests. Those tests still need to be executed on the development
+machine; headroom/state/loading validation and production integration remain next.
+
+1. **Revision:** original MT-2, Boss Service Notes **April 1991**, MT board
+   75275252000 / PCB 22930117RT 1/2 and VR board 22930117RT 2/2. Not MT-2W.
+2. **Original schematic:** found and visually read on page 3 of the
+   [four-page Boss service notes](https://guitar-gear.ru/forum/index.php?app=core&attach_id=50406&module=attach&section=attach).
+   This adds a reproducible online provenance to the pre-existing local PNG.
+3. **Best source:** that factory drawing. Its scan has no extractable text;
+   render page 3 with Poppler and enlarge the lower-right U2a/U2b network.
+4. **Cross-check:** the published analysis already cited above reproduces the
+   same designators. The service appendix (page 4) also supplies a future complete
+   pedal validation fixture: 200 Hz, 5 mV peak-to-peak square-wave input and six
+   control settings with oscilloscope traces. These traces have not yet been
+   digitized and are not a claimed validation result.
+5. **Values/topology, DOCUMENTED:** EQ output feeds C011 1 uF, then R038 47k to
+   U2a minus. R035 47k and C026 100 pF connect U2a output to minus. R050 330 ohm
+   connects the post-C011 input to VR02b pin 1. U2a output goes through C037 1 uF
+   and R049 330 ohm to VR02b pin 3. VR02b is 100kG; its wiper feeds U2b plus.
+   U2b is a follower: its output feeds C036 22 nF, R048 2.2k and the first 50kC
+   gang in series to the bridge node. The second 50kC gang and R062 2.2k return
+   that node to ground; C043 8.2 nF also connects it to ground. C038 100 nF
+   connects the bridge node to U2a plus, with R039 1M to the 4.5 V reference.
+   Both gang wipers are tied to pin 1. Level is downstream of U2a.
+6. **Exact mapping:** retain the separate Middle stage and every listed R/C,
+   both gang sections and both amplifiers. Measure at U2a's output, before Level.
+   Model low/high-EQ drive as a specified source resistance and the Level network
+   as a specified load. These ports permit subsequent integration without
+   pretending that arbitrary source/load values are factory components.
+7. **Approximations:** use the catalogue's rail-aware ideal op-amps, +/-4 V
+   around the ground-referenced bias, as in the current pedal; M5218AL GBW/slew,
+   input currents and noise remain absent. The drawing says C and G taper but
+   supplies no measured taper curves. For this isolated engineering fixture,
+   Mid Freq is explicitly **linear in electrical gang resistance**, and Middle
+   retains the existing estimated symmetric law. Endpoint and center tests do
+   not authenticate mechanical knob tracking. An eventual panel integration
+   must reconcile the C-taper law and legacy session behavior explicitly.
+8. **Why:** the current mid gyrator matches an approximate center-frequency law
+   but loses boost/cut depth at the low end. The factory network supplies that
+   missing physical feedback structure. This is circuit completion, not a solver
+   optimization and not grounds for replacing nonlinear amplifiers with linear
+   devices in the shipping path. AC tests may linearize the two ideal amplifiers
+   around zero solely to measure their small-signal response.

@@ -60,20 +60,178 @@ pub struct TwinPowerPhaseProfile {
 impl TwinPowerPhaseProfile {
     pub fn saturating_delta(self, before: Self) -> Self {
         Self {
-            reduced_stamp_ns: self.reduced_stamp_ns.saturating_sub(before.reduced_stamp_ns),
-            reduced_stamp_calls: self.reduced_stamp_calls.saturating_sub(before.reduced_stamp_calls),
+            reduced_stamp_ns: self
+                .reduced_stamp_ns
+                .saturating_sub(before.reduced_stamp_ns),
+            reduced_stamp_calls: self
+                .reduced_stamp_calls
+                .saturating_sub(before.reduced_stamp_calls),
             dense_solve_ns: self.dense_solve_ns.saturating_sub(before.dense_solve_ns),
             reduced_recovery_ns: self
                 .reduced_recovery_ns
                 .saturating_sub(before.reduced_recovery_ns),
-            reduced_solve_calls: self.reduced_solve_calls.saturating_sub(before.reduced_solve_calls),
-            trial_residual_ns: self.trial_residual_ns.saturating_sub(before.trial_residual_ns),
+            reduced_solve_calls: self
+                .reduced_solve_calls
+                .saturating_sub(before.reduced_solve_calls),
+            trial_residual_ns: self
+                .trial_residual_ns
+                .saturating_sub(before.trial_residual_ns),
             trial_residual_calls: self
                 .trial_residual_calls
                 .saturating_sub(before.trial_residual_calls),
-            settled_check_ns: self.settled_check_ns.saturating_sub(before.settled_check_ns),
+            settled_check_ns: self
+                .settled_check_ns
+                .saturating_sub(before.settled_check_ns),
             settled_checks: self.settled_checks.saturating_sub(before.settled_checks),
         }
+    }
+}
+
+#[cfg(test)]
+const SOLVER_CONTROL_SAMPLE_CAPACITY: usize = 32;
+#[cfg(test)]
+const SOLVER_CONTROL_ACCEPTED_LAMBDAS: usize = 8;
+
+/// Test-only cumulative control-flow telemetry for the difficult nonlinear
+/// solver tail. It deliberately counts decisions/work rather than sampling a
+/// clock, so enabling it perturbs timing much less than the phase profiler.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SolverControlProfile {
+    pub solves: u64,
+    pub newton_passes: u64,
+    pub reduced_newton_solves: u64,
+    pub full_mna_newton_solves: u64,
+    pub searched_passes: u64,
+    pub search_trial_evaluations: u64,
+    pub search_full_step_accepts: u64,
+    pub search_damped_step_accepts: u64,
+    pub backtracks: u64,
+    pub fallbacks: u64,
+    pub limiter_hold_passes: u64,
+    pub limiter_handoffs: u64,
+    pub predictor_used: u64,
+    pub predictor_suppressed: u64,
+    pub predictor_unavailable: u64,
+    pub continuation_attempts: u64,
+    pub continuation_midpoint_successes: u64,
+    pub continuation_successes: u64,
+    pub continuation_actual_rescues: u64,
+    pub continuation_source_passes: u64,
+    pub cycle_rejections: u64,
+    pub recovery_restart_attempts: u64,
+    pub recovery_restart_passes: u64,
+    pub reduced_pivot_replays: u64,
+    pub reduced_pivot_learns: u64,
+    pub reduced_pivot_invalidations: u64,
+    pub replans: u64,
+    pub unsettled: u64,
+}
+
+#[cfg(test)]
+impl SolverControlProfile {
+    pub fn saturating_delta(self, before: Self) -> Self {
+        Self {
+            solves: self.solves.saturating_sub(before.solves),
+            newton_passes: self.newton_passes.saturating_sub(before.newton_passes),
+            reduced_newton_solves: self
+                .reduced_newton_solves
+                .saturating_sub(before.reduced_newton_solves),
+            full_mna_newton_solves: self
+                .full_mna_newton_solves
+                .saturating_sub(before.full_mna_newton_solves),
+            searched_passes: self.searched_passes.saturating_sub(before.searched_passes),
+            search_trial_evaluations: self
+                .search_trial_evaluations
+                .saturating_sub(before.search_trial_evaluations),
+            search_full_step_accepts: self
+                .search_full_step_accepts
+                .saturating_sub(before.search_full_step_accepts),
+            search_damped_step_accepts: self
+                .search_damped_step_accepts
+                .saturating_sub(before.search_damped_step_accepts),
+            backtracks: self.backtracks.saturating_sub(before.backtracks),
+            fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
+            limiter_hold_passes: self
+                .limiter_hold_passes
+                .saturating_sub(before.limiter_hold_passes),
+            limiter_handoffs: self
+                .limiter_handoffs
+                .saturating_sub(before.limiter_handoffs),
+            predictor_used: self.predictor_used.saturating_sub(before.predictor_used),
+            predictor_suppressed: self
+                .predictor_suppressed
+                .saturating_sub(before.predictor_suppressed),
+            predictor_unavailable: self
+                .predictor_unavailable
+                .saturating_sub(before.predictor_unavailable),
+            continuation_attempts: self
+                .continuation_attempts
+                .saturating_sub(before.continuation_attempts),
+            continuation_midpoint_successes: self
+                .continuation_midpoint_successes
+                .saturating_sub(before.continuation_midpoint_successes),
+            continuation_successes: self
+                .continuation_successes
+                .saturating_sub(before.continuation_successes),
+            continuation_actual_rescues: self
+                .continuation_actual_rescues
+                .saturating_sub(before.continuation_actual_rescues),
+            continuation_source_passes: self
+                .continuation_source_passes
+                .saturating_sub(before.continuation_source_passes),
+            cycle_rejections: self
+                .cycle_rejections
+                .saturating_sub(before.cycle_rejections),
+            recovery_restart_attempts: self
+                .recovery_restart_attempts
+                .saturating_sub(before.recovery_restart_attempts),
+            recovery_restart_passes: self
+                .recovery_restart_passes
+                .saturating_sub(before.recovery_restart_passes),
+            reduced_pivot_replays: self
+                .reduced_pivot_replays
+                .saturating_sub(before.reduced_pivot_replays),
+            reduced_pivot_learns: self
+                .reduced_pivot_learns
+                .saturating_sub(before.reduced_pivot_learns),
+            reduced_pivot_invalidations: self
+                .reduced_pivot_invalidations
+                .saturating_sub(before.reduced_pivot_invalidations),
+            replans: self.replans.saturating_sub(before.replans),
+            unsettled: self.unsettled.saturating_sub(before.unsettled),
+        }
+    }
+}
+
+/// One of the heaviest individual transient solves observed while the test-only
+/// control profiler is enabled. The fixed-size lambda history stores the most
+/// recent accepted searched steps, which is enough to distinguish full-Newton
+/// tails from repeatedly damped ones without allocating on the audio path.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SolverControlSample {
+    pub solve: u64,
+    pub input: f64,
+    pub last_input: f64,
+    pub earlier_input: f64,
+    pub profile: SolverControlProfile,
+    pub accepted_lambda_count: usize,
+    pub accepted_lambdas: [f64; 8],
+    pub final_moved: f64,
+    /// Most recent exact line-search merit already computed by the solver. This
+    /// deliberately does not evaluate another residual just for profiling.
+    pub last_search_merit: f64,
+    pub settled: bool,
+}
+
+#[cfg(test)]
+impl SolverControlSample {
+    #[inline]
+    pub fn work_units(&self) -> u64 {
+        self.profile
+            .newton_passes
+            .saturating_add(self.profile.search_trial_evaluations)
     }
 }
 
@@ -89,7 +247,10 @@ fn test_thread_cpu_time_ns() -> u64 {
         fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut Timespec) -> std::os::raw::c_int;
     }
     const CLOCK_THREAD_CPUTIME_ID: std::os::raw::c_int = 3;
-    let mut ts = Timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut ts = Timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     let result = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
     if result == 0 {
         (ts.tv_sec as u64)
@@ -418,12 +579,7 @@ fn repeat_cycle_edge(here: f64, reference: f64, there: f64) -> bool {
 }
 
 #[inline]
-fn repeat_cycle_pair_matches(
-    old_here: f64,
-    old_reference: f64,
-    here: f64,
-    reference: f64,
-) -> bool {
+fn repeat_cycle_pair_matches(old_here: f64, old_reference: f64, here: f64, reference: f64) -> bool {
     fn close(a: f64, b: f64) -> bool {
         let scale = a.abs().max(b.abs()).max(1.0e-12);
         (a - b).abs() <= scale * REPEAT_CYCLE_MATCH_REL
@@ -446,9 +602,7 @@ fn search_trial_improves_with_progress(
     }
 
     let window = reference - here;
-    window > 0.0
-        && there < reference
-        && reference - there > window * min_progress
+    window > 0.0 && there < reference && reference - there > window * min_progress
 }
 
 #[inline]
@@ -575,7 +729,11 @@ fn predictor_source_scale(current: f64, last: f64, earlier: f64) -> f64 {
     if previous_step.abs() <= QUIET {
         // With a flat source on both samples, keep the ordinary state predictor:
         // the reactive circuit can still be moving even when its source is not.
-        return if current_step.abs() <= QUIET { 1.0 } else { 0.0 };
+        return if current_step.abs() <= QUIET {
+            1.0
+        } else {
+            0.0
+        };
     }
 
     let ratio = current_step / previous_step;
@@ -646,7 +804,10 @@ fn quadratic_backtracking_is_safeguarded_and_can_skip_dyadic_trials() {
     let next = quadratic_backtrack_lambda(1.0, 2.0, 1.0, 0.125);
     assert!((0.125..=0.5).contains(&next));
     // Non-finite merit falls straight back to ordinary halving.
-    assert_eq!(quadratic_backtrack_lambda(1.0, f64::INFINITY, 1.0, 0.125), 0.5);
+    assert_eq!(
+        quadratic_backtrack_lambda(1.0, f64::INFINITY, 1.0, 0.125),
+        0.5
+    );
 }
 
 #[inline]
@@ -762,7 +923,11 @@ fn repeat_cycle_guard_requires_recurrence_of_same_pair() {
     let second_return = 0.680_487_432_007_531_6;
 
     assert!(repeat_cycle_edge(first_here, first_reference, first_return));
-    assert!(repeat_cycle_edge(second_here, second_reference, second_return));
+    assert!(repeat_cycle_edge(
+        second_here,
+        second_reference,
+        second_return
+    ));
     assert!(repeat_cycle_pair_matches(
         first_here,
         first_reference,
@@ -812,8 +977,7 @@ fn late_continuation_rejection(
     ordinary_stuck: bool,
     stuck_only: bool,
 ) -> bool {
-    target_passes >= min_target_passes
-        && (ordinary_stuck || (!stuck_only && line_search_failed))
+    target_passes >= min_target_passes && (ordinary_stuck || (!stuck_only && line_search_failed))
 }
 
 /// Decide whether an eligible late rejection has persisted long enough to
@@ -896,12 +1060,18 @@ fn limiter_global_search_handoff(
 fn first_limiter_handoff_is_deferred_once_per_solve() {
     let mut armed = false;
 
-    assert!(!limiter_global_search_handoff(true, false, &mut armed, false));
+    assert!(!limiter_global_search_handoff(
+        true, false, &mut armed, false
+    ));
     assert!(armed);
-    assert!(limiter_global_search_handoff(true, false, &mut armed, false));
+    assert!(limiter_global_search_handoff(
+        true, false, &mut armed, false
+    ));
 
     // An already-active line search owns the pass; the preflight adds nothing.
-    assert!(!limiter_global_search_handoff(true, true, &mut armed, false));
+    assert!(!limiter_global_search_handoff(
+        true, true, &mut armed, false
+    ));
 
     let mut immediate_armed = false;
     assert!(limiter_global_search_handoff(
@@ -924,7 +1094,13 @@ fn stuck_only_continuation_ignores_recoverable_line_search_fallbacks() {
     assert!(!late_continuation_rejection(late, late, true, false, true));
     assert!(late_continuation_rejection(late, late, false, true, true));
     // Never steer early, even for a stuck step.
-    assert!(!late_continuation_rejection(late - 1, late, true, true, true));
+    assert!(!late_continuation_rejection(
+        late - 1,
+        late,
+        true,
+        true,
+        true
+    ));
 }
 
 #[cfg(test)]
@@ -935,13 +1111,7 @@ fn persistent_late_fallback_requires_two_consecutive_rejections() {
 
     // First recoverable late fallback only arms the midpoint rescue.
     assert!(!persistent_late_continuation_rejection(
-        late,
-        late,
-        true,
-        false,
-        false,
-        &mut armed,
-        false,
+        late, late, true, false, false, &mut armed, false,
     ));
     assert!(armed);
 
@@ -979,13 +1149,7 @@ fn persistent_late_fallback_requires_two_consecutive_rejections() {
 
     // A genuinely stuck pass remains an immediate rescue trigger.
     assert!(persistent_late_continuation_rejection(
-        late,
-        late,
-        false,
-        true,
-        false,
-        &mut armed,
-        false,
+        late, late, false, true, false, &mut armed, false,
     ));
 
     // Test-only A/B mode reproduces V3.1's single-fallback trigger.
@@ -1010,25 +1174,13 @@ fn continuation_min_target_pass_delays_fallback_steering_without_disabling_it() 
     // A recoverable fallback that would steer under production remains on the
     // exact target until the configured delayed threshold is reached.
     assert!(late_continuation_rejection(
-        production,
-        production,
-        true,
-        false,
-        false,
+        production, production, true, false, false,
     ));
     assert!(!late_continuation_rejection(
-        production,
-        delayed,
-        true,
-        false,
-        false,
+        production, delayed, true, false, false,
     ));
     assert!(late_continuation_rejection(
-        delayed,
-        delayed,
-        true,
-        false,
-        false,
+        delayed, delayed, true, false, false,
     ));
 
     // A genuine stuck step obeys the same minimum-pass gate.
@@ -1040,11 +1192,7 @@ fn continuation_min_target_pass_delays_fallback_steering_without_disabling_it() 
         false,
     ));
     assert!(late_continuation_rejection(
-        delayed,
-        delayed,
-        false,
-        true,
-        false,
+        delayed, delayed, false, true, false,
     ));
 }
 
@@ -1191,10 +1339,7 @@ fn repeat_cycle_guard_leaves_slaughter_twin_slow_drift_to_restart() {
 #[cfg(test)]
 #[inline]
 fn deep_rescue_is_strong(here: f64, accepted_merit: f64) -> bool {
-    here.is_finite()
-        && accepted_merit.is_finite()
-        && here > 0.0
-        && accepted_merit <= here * 0.5
+    here.is_finite() && accepted_merit.is_finite() && here > 0.0 && accepted_merit <= here * 0.5
 }
 
 #[cfg(test)]
@@ -1739,6 +1884,24 @@ pub struct Simulation {
     test_profile_twin_power_phases: bool,
     #[cfg(test)]
     test_phase_profile: TwinPowerPhaseProfile,
+    /// Opt-in test-only control-flow profiler for expensive Twin-style solver
+    /// tails. No production field or branch survives `cfg(not(test))`.
+    #[cfg(test)]
+    test_profile_solver_control_tail: bool,
+    #[cfg(test)]
+    test_control_profile: SolverControlProfile,
+    #[cfg(test)]
+    test_control_current_accepted_lambda_count: usize,
+    #[cfg(test)]
+    test_control_current_accepted_lambdas: [f64; SOLVER_CONTROL_ACCEPTED_LAMBDAS],
+    #[cfg(test)]
+    test_control_samples: [SolverControlSample; SOLVER_CONTROL_SAMPLE_CAPACITY],
+    #[cfg(test)]
+    test_control_sample_len: usize,
+    #[cfg(test)]
+    test_control_sample_lightest_index: usize,
+    #[cfg(test)]
+    test_control_sample_lightest_work: u64,
     /// Test-only cost experiment: ordinary late source continuation is allowed
     /// only after `iterate()` returns `Pass::Stuck`. A recoverable late
     /// line-search fallback stays on the exact target instead of paying for a
@@ -1956,7 +2119,10 @@ impl Simulation {
                 | Part::Transconductor { .. }
                 | Part::Core { .. }
                 | Part::OpAmp { .. }
-                | Part::Adjustable { kind: Adjust::RealtimeResistor, .. } => device_count += 1,
+                | Part::Adjustable {
+                    kind: Adjust::RealtimeResistor,
+                    ..
+                } => device_count += 1,
                 _ => {}
             }
         }
@@ -2173,6 +2339,25 @@ impl Simulation {
             #[cfg(test)]
             test_phase_profile: TwinPowerPhaseProfile::default(),
             #[cfg(test)]
+            test_profile_solver_control_tail: std::env::var_os(
+                "GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_control_profile: SolverControlProfile::default(),
+            #[cfg(test)]
+            test_control_current_accepted_lambda_count: 0,
+            #[cfg(test)]
+            test_control_current_accepted_lambdas: [0.0; SOLVER_CONTROL_ACCEPTED_LAMBDAS],
+            #[cfg(test)]
+            test_control_samples: [SolverControlSample::default(); SOLVER_CONTROL_SAMPLE_CAPACITY],
+            #[cfg(test)]
+            test_control_sample_len: 0,
+            #[cfg(test)]
+            test_control_sample_lightest_index: 0,
+            #[cfg(test)]
+            test_control_sample_lightest_work: 0,
+            #[cfg(test)]
             test_continuation_stuck_only: std::env::var_os(
                 "GAINSTAGEFX_TEST_CONTINUATION_STUCK_ONLY",
             )
@@ -2198,15 +2383,11 @@ impl Simulation {
             cycle_here: 0.0,
             cycle_reference: 0.0,
             #[cfg(test)]
-            test_weak_deep_recovery: std::env::var_os(
-                "GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY",
-            )
-            .is_some(),
+            test_weak_deep_recovery: std::env::var_os("GAINSTAGEFX_TEST_WEAK_DEEP_RECOVERY")
+                .is_some(),
             #[cfg(test)]
-            test_last_settled_restart: std::env::var_os(
-                "GAINSTAGEFX_TEST_LAST_SETTLED_RESTART",
-            )
-            .is_some(),
+            test_last_settled_restart: std::env::var_os("GAINSTAGEFX_TEST_LAST_SETTLED_RESTART")
+                .is_some(),
             #[cfg(test)]
             test_last_settled_restart_passes: std::env::var(
                 "GAINSTAGEFX_TEST_LAST_SETTLED_RESTART_PASSES",
@@ -2229,8 +2410,7 @@ impl Simulation {
             #[cfg(test)]
             last_search_accepted_merit: 0.0,
             #[cfg(test)]
-            test_trace_search_geometry: std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED")
-                .is_some(),
+            test_trace_search_geometry: std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some(),
             #[cfg(test)]
             last_search_reference: 0.0,
             #[cfg(test)]
@@ -2338,6 +2518,105 @@ impl Simulation {
             profile.reduced_solve_calls = reduced.calls;
         }
         profile
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn solver_control_tail_profile_enabled(&self) -> bool {
+        self.late_continuation && self.test_profile_solver_control_tail
+    }
+
+    #[cfg(test)]
+    pub fn solver_control_profile(&self) -> SolverControlProfile {
+        let mut profile = self.test_control_profile;
+        // Reuse the production counters where they already exist so this
+        // profiler cannot disagree with the ordinary solver health telemetry.
+        profile.solves = self.solves;
+        profile.newton_passes = self.newton_passes;
+        profile.backtracks = self.backtrack_count;
+        profile.fallbacks = self.fallbacks;
+        profile.predictor_suppressed = self.attack_predictor_suppressions;
+        profile.continuation_attempts = self.continuation_attempts;
+        profile.continuation_midpoint_successes = self.continuation_midpoint_successes;
+        profile.continuation_successes = self.continuation_successes;
+        profile.continuation_actual_rescues = self.continuation_actual_rescues;
+        if let Some(partition) = self.nonlinear_partition.as_ref() {
+            let pivots = partition.test_pivot_profile();
+            profile.reduced_pivot_replays = pivots.replays;
+            profile.reduced_pivot_learns = pivots.learns;
+            profile.reduced_pivot_invalidations = pivots.invalidations;
+        }
+        profile.replans = self.replans;
+        profile.unsettled = self.unsettled;
+        profile
+    }
+
+    #[cfg(test)]
+    pub fn solver_control_samples(&self) -> &[SolverControlSample] {
+        &self.test_control_samples[..self.test_control_sample_len]
+    }
+
+    #[cfg(test)]
+    pub fn reset_solver_control_samples(&mut self) {
+        self.test_control_sample_len = 0;
+        self.test_control_sample_lightest_index = 0;
+        self.test_control_sample_lightest_work = 0;
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn record_solver_control_accepted_lambda(&mut self, lambda: f64) {
+        if !self.solver_control_tail_profile_enabled() {
+            return;
+        }
+        if self.test_control_current_accepted_lambda_count < SOLVER_CONTROL_ACCEPTED_LAMBDAS {
+            let slot = self.test_control_current_accepted_lambda_count;
+            self.test_control_current_accepted_lambdas[slot] = lambda;
+            self.test_control_current_accepted_lambda_count += 1;
+        } else {
+            self.test_control_current_accepted_lambdas
+                .copy_within(1..SOLVER_CONTROL_ACCEPTED_LAMBDAS, 0);
+            self.test_control_current_accepted_lambdas[SOLVER_CONTROL_ACCEPTED_LAMBDAS - 1] =
+                lambda;
+        }
+    }
+
+    #[cfg(test)]
+    fn refresh_solver_control_lightest_sample(&mut self) {
+        debug_assert_eq!(self.test_control_sample_len, SOLVER_CONTROL_SAMPLE_CAPACITY);
+        let mut lightest = 0usize;
+        let mut lightest_work = self.test_control_samples[0].work_units();
+        for (index, candidate) in self.test_control_samples[1..].iter().enumerate() {
+            let work = candidate.work_units();
+            if work < lightest_work {
+                lightest = index + 1;
+                lightest_work = work;
+            }
+        }
+        self.test_control_sample_lightest_index = lightest;
+        self.test_control_sample_lightest_work = lightest_work;
+    }
+
+    #[cfg(test)]
+    fn push_solver_control_sample(&mut self, sample: SolverControlSample) {
+        if !self.solver_control_tail_profile_enabled() {
+            return;
+        }
+        if self.test_control_sample_len < SOLVER_CONTROL_SAMPLE_CAPACITY {
+            self.test_control_samples[self.test_control_sample_len] = sample;
+            self.test_control_sample_len += 1;
+            if self.test_control_sample_len == SOLVER_CONTROL_SAMPLE_CAPACITY {
+                self.refresh_solver_control_lightest_sample();
+            }
+            return;
+        }
+
+        let work = sample.work_units();
+        if work <= self.test_control_sample_lightest_work {
+            return;
+        }
+        self.test_control_samples[self.test_control_sample_lightest_index] = sample;
+        self.refresh_solver_control_lightest_sample();
     }
 
     #[cfg(test)]
@@ -2757,7 +3036,12 @@ impl Simulation {
                             1.0 / (ohms * (1.0 - f)),
                         );
                     }
-                    Part::Input { node, series, bias: at, source: which } => {
+                    Part::Input {
+                        node,
+                        series,
+                        bias: at,
+                        source: which,
+                    } => {
                         let g = 1.0 / series;
                         stamp_both(&mut base, &mut base_dc, n, node, GROUND, g);
                         if node != GROUND {
@@ -2917,9 +3201,10 @@ impl Simulation {
                         limit,
                     } => {
                         if !keep_devices {
-                            self.devices.push(AnyDevice::Transconductor(Transconductor::new(
-                                plus, minus, out, reference, gm, limit,
-                            )));
+                            self.devices
+                                .push(AnyDevice::Transconductor(Transconductor::new(
+                                    plus, minus, out, reference, gm, limit,
+                                )));
                         }
                     }
                     Part::Core {
@@ -2933,12 +3218,11 @@ impl Simulation {
                         // depends on how long a sample lasts.
                         if !keep_devices {
                             let rate = self.rate;
-                            self.devices
-                                                                .push(AnyDevice::Core(if antialias {
-                                    Core::new_antialiased(a, b, spec, rate)
-                                } else {
-                                    Core::new(a, b, spec, rate)
-                                }));
+                            self.devices.push(AnyDevice::Core(if antialias {
+                                Core::new_antialiased(a, b, spec, rate)
+                            } else {
+                                Core::new(a, b, spec, rate)
+                            }));
                         }
                     }
                     Part::LinearOpAmp { out, plus, minus } => {
@@ -3132,14 +3416,19 @@ impl Simulation {
                     );
                     #[cfg(test)]
                     let (transient, dc_partition) = {
-                        let profile = self.late_continuation && self.test_profile_twin_power_phases;
+                        let phase_profile =
+                            self.late_continuation && self.test_profile_twin_power_phases;
+                        let control_profile =
+                            self.late_continuation && self.test_profile_solver_control_tail;
                         let mut transient = transient;
                         let mut dc_partition = dc_partition;
                         if let Some(partition) = transient.as_mut() {
-                            partition.set_test_phase_profile(profile);
+                            partition.set_test_phase_profile(phase_profile);
+                            partition.set_test_pivot_profile(control_profile);
                         }
                         if let Some(partition) = dc_partition.as_mut() {
-                            partition.set_test_phase_profile(profile);
+                            partition.set_test_phase_profile(phase_profile);
+                            partition.set_test_pivot_profile(false);
                         }
                         (transient, dc_partition)
                     };
@@ -3327,12 +3616,15 @@ impl Simulation {
         self.late_continuation = enabled;
         #[cfg(test)]
         {
-            let profile = enabled && self.test_profile_twin_power_phases;
+            let phase_profile = enabled && self.test_profile_twin_power_phases;
+            let control_profile = enabled && self.test_profile_solver_control_tail;
             if let Some(partition) = self.nonlinear_partition.as_mut() {
-                partition.set_test_phase_profile(profile);
+                partition.set_test_phase_profile(phase_profile);
+                partition.set_test_pivot_profile(control_profile);
             }
             if let Some(partition) = self.nonlinear_partition_dc.as_mut() {
-                partition.set_test_phase_profile(profile);
+                partition.set_test_phase_profile(phase_profile);
+                partition.set_test_pivot_profile(false);
             }
         }
     }
@@ -3684,11 +3976,8 @@ impl Simulation {
     #[inline]
     fn build_full_trial_point(&mut self, lambda: f64) -> bool {
         let mut finite = true;
-        for ((point, &voltage), &delta) in self
-            .point
-            .iter_mut()
-            .zip(&self.voltage)
-            .zip(&self.scratch)
+        for ((point, &voltage), &delta) in
+            self.point.iter_mut().zip(&self.voltage).zip(&self.scratch)
         {
             let value = voltage + lambda * delta;
             *point = value;
@@ -3724,11 +4013,8 @@ impl Simulation {
             self.nonlinear_partition.as_ref()
         }?;
         let n = partition.boundary_len();
-        let map = partition.begin_residual(
-            &self.fixed_rhs,
-            point,
-            &mut self.trial_residual[..n],
-        )?;
+        let map =
+            partition.begin_residual(&self.fixed_rhs, point, &mut self.trial_residual[..n])?;
         let (exact, mapping_ok) = {
             let mut residual = ResidualStamper {
                 residual: &mut self.trial_residual[..n],
@@ -3996,13 +4282,30 @@ impl Simulation {
         // The production Schur path stamps nonlinear devices directly into
         // the small reduced boundary system. Full MNA is retained for
         // structure-watch diagnostics and as a numerical fallback only.
-        let mut reduced_direct = reduced_candidate
-            && !self.watching
-            && self.build_current_reduced(dc, !search);
+        let mut reduced_direct =
+            reduced_candidate && !self.watching && self.build_current_reduced(dc, !search);
         if !reduced_direct {
             self.build_current(dc, !search, false);
         }
+        #[cfg(test)]
+        if self.solver_control_tail_profile_enabled() && !dc && !search && !self.exact {
+            self.test_control_profile.limiter_hold_passes = self
+                .test_control_profile
+                .limiter_hold_passes
+                .saturating_add(1);
+        }
         let search = search && self.exact;
+        #[cfg(test)]
+        if self.solver_control_tail_profile_enabled() && !dc {
+            if search {
+                self.test_control_profile.searched_passes =
+                    self.test_control_profile.searched_passes.saturating_add(1);
+            }
+            if limiter_requests_global_search {
+                self.test_control_profile.limiter_handoffs =
+                    self.test_control_profile.limiter_handoffs.saturating_add(1);
+            }
+        }
         let here = if search {
             if reduced_direct {
                 self.current_reduced_merit(dc)
@@ -4021,7 +4324,11 @@ impl Simulation {
         // noise is not enough (see `search_trial_improves`). The reference
         // rolls forward, is reset every sample, and never changes the full
         // correction/device convergence test below. DC keeps its old search.
-        let reference = if dc { here } else { here.max(self.search_merit) };
+        let reference = if dc {
+            here
+        } else {
+            here.max(self.search_merit)
+        };
         #[cfg(test)]
         {
             self.last_search_here = here;
@@ -4140,6 +4447,20 @@ impl Simulation {
             );
             reduced_moved = None;
         }
+        #[cfg(test)]
+        if self.solver_control_tail_profile_enabled() && !dc {
+            if reduced_direct {
+                self.test_control_profile.reduced_newton_solves = self
+                    .test_control_profile
+                    .reduced_newton_solves
+                    .saturating_add(1);
+            } else {
+                self.test_control_profile.full_mna_newton_solves = self
+                    .test_control_profile
+                    .full_mna_newton_solves
+                    .saturating_add(1);
+            }
+        }
         // How far the solution wants to move, measured against the scale it is
         // moving *at*.
         //
@@ -4240,10 +4561,8 @@ impl Simulation {
                     .test_phase_profile
                     .settled_check_ns
                     .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
-                self.test_phase_profile.settled_checks = self
-                    .test_phase_profile
-                    .settled_checks
-                    .saturating_add(1);
+                self.test_phase_profile.settled_checks =
+                    self.test_phase_profile.settled_checks.saturating_add(1);
             }
             settled
         } else {
@@ -4271,10 +4590,7 @@ impl Simulation {
         let search_floor = (0.5f64)
             .powi(self.backtracks.saturating_sub(1) as i32)
             .max(MIN_LAMBDA);
-        let mut lambda = if self.late_continuation
-            && !dc
-            && self.line_search_warm_start_enabled()
-        {
+        let mut lambda = if self.late_continuation && !dc && self.line_search_warm_start_enabled() {
             self.search_lambda_hint.clamp(search_floor, 1.0)
         } else {
             1.0
@@ -4357,6 +4673,13 @@ impl Simulation {
                 }
                 let there = reduced_there.unwrap_or_else(|| self.merit(&self.point, false));
                 #[cfg(test)]
+                if self.solver_control_tail_profile_enabled() && !dc {
+                    self.test_control_profile.search_trial_evaluations = self
+                        .test_control_profile
+                        .search_trial_evaluations
+                        .saturating_add(1);
+                }
+                #[cfg(test)]
                 if self.test_trace_search_geometry
                     && self.last_search_trial_count < SEARCH_TRACE_TRIALS
                 {
@@ -4409,6 +4732,10 @@ impl Simulation {
                         #[cfg(test)]
                         {
                             self.last_search_cycle_rejected = true;
+                            if self.solver_control_tail_profile_enabled() && !dc {
+                                self.test_control_profile.cycle_rejections =
+                                    self.test_control_profile.cycle_rejections.saturating_add(1);
+                            }
                         }
                         false
                     } else {
@@ -4427,6 +4754,20 @@ impl Simulation {
                     #[cfg(test)]
                     {
                         accepted_merit = there;
+                        if self.solver_control_tail_profile_enabled() && !dc {
+                            if lambda == 1.0 {
+                                self.test_control_profile.search_full_step_accepts = self
+                                    .test_control_profile
+                                    .search_full_step_accepts
+                                    .saturating_add(1);
+                            } else {
+                                self.test_control_profile.search_damped_step_accepts = self
+                                    .test_control_profile
+                                    .search_damped_step_accepts
+                                    .saturating_add(1);
+                            }
+                            self.record_solver_control_accepted_lambda(lambda);
+                        }
                     }
                     break;
                 }
@@ -4466,11 +4807,8 @@ impl Simulation {
             let mut probe_lambda = 0.5f64.powi(self.backtracks as i32);
             while self.last_search_trial_count < SEARCH_TRACE_TRIALS {
                 let mut finite = true;
-                for ((point, &voltage), &delta) in self
-                    .point
-                    .iter_mut()
-                    .zip(&self.voltage)
-                    .zip(&self.scratch)
+                for ((point, &voltage), &delta) in
+                    self.point.iter_mut().zip(&self.voltage).zip(&self.scratch)
                 {
                     let value = voltage + probe_lambda * delta;
                     *point = value;
@@ -4558,8 +4896,7 @@ impl Simulation {
             // If no finite exact merit was measured, retain the full step.
             self.fallbacks += 1;
             if self.late_continuation && !dc && self.line_search_warm_start_enabled() {
-                self.search_lambda_hint =
-                    line_search_warm_start_lambda(best_lambda, search_floor);
+                self.search_lambda_hint = line_search_warm_start_lambda(best_lambda, search_floor);
             }
             if devices_dirty {
                 for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
@@ -4606,6 +4943,19 @@ impl Simulation {
 
     /// One sample in, one out.
     pub fn process(&mut self, input: f64) -> f64 {
+        #[cfg(test)]
+        let solver_control_before = self
+            .solver_control_tail_profile_enabled()
+            .then(|| self.solver_control_profile());
+        #[cfg(test)]
+        let solver_control_last_input = self.last_input;
+        #[cfg(test)]
+        let solver_control_earlier_input = self.earlier_input;
+        #[cfg(test)]
+        if solver_control_before.is_some() {
+            self.test_control_current_accepted_lambda_count = 0;
+            self.test_control_current_accepted_lambdas.fill(0.0);
+        }
         self.solves += 1;
         // A control has moved. What that means depends on whether there is
         // anything to lose.
@@ -4737,6 +5087,25 @@ impl Simulation {
             if suppress_predictor {
                 self.attack_predictor_suppressions += 1;
             }
+            #[cfg(test)]
+            if self.solver_control_tail_profile_enabled() {
+                if self.predictable && !self.last_was_unsettled {
+                    if predictor_scale != 0.0 {
+                        self.test_control_profile.predictor_used =
+                            self.test_control_profile.predictor_used.saturating_add(1);
+                    } else if !suppress_predictor {
+                        self.test_control_profile.predictor_unavailable = self
+                            .test_control_profile
+                            .predictor_unavailable
+                            .saturating_add(1);
+                    }
+                } else {
+                    self.test_control_profile.predictor_unavailable = self
+                        .test_control_profile
+                        .predictor_unavailable
+                        .saturating_add(1);
+                }
+            }
 
             if self.predictable && !self.last_was_unsettled && predictor_scale != 0.0 {
                 for ((voltage, earlier), recent) in self
@@ -4839,8 +5208,7 @@ impl Simulation {
                 let production_recovery_enabled = {
                     #[cfg(test)]
                     {
-                        !self.test_last_settled_restart
-                            && !self.test_post_restart_continuation
+                        !self.test_last_settled_restart && !self.test_post_restart_continuation
                     }
                     #[cfg(not(test))]
                     {
@@ -4954,9 +5322,11 @@ impl Simulation {
                 #[cfg(test)]
                 let mut tail_trace_trial_count = [0usize; TAIL_TRACE_PASSES];
                 #[cfg(test)]
-                let mut tail_trace_trial_lambdas = [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
+                let mut tail_trace_trial_lambdas =
+                    [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
                 #[cfg(test)]
-                let mut tail_trace_trial_merits = [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
+                let mut tail_trace_trial_merits =
+                    [[0.0f64; SEARCH_TRACE_TRIALS]; TAIL_TRACE_PASSES];
                 #[cfg(test)]
                 let mut tail_trace_moved_before = [0.0f64; TAIL_TRACE_PASSES];
                 #[cfg(test)]
@@ -5049,8 +5419,7 @@ impl Simulation {
                         && normal_backtracks < CONTINUATION_BACKTRACKS
                         && self.continuation_deepening_enabled()
                         && used_passes < ceiling
-                        && used_passes
-                            .saturating_add(CONTINUATION_DEEPENING_TAIL_PASSES)
+                        && used_passes.saturating_add(CONTINUATION_DEEPENING_TAIL_PASSES)
                             >= ceiling;
                     if deep_continuation_search {
                         self.backtracks = CONTINUATION_BACKTRACKS;
@@ -5060,7 +5429,11 @@ impl Simulation {
                         }
                     }
                     #[cfg(test)]
-                    let deep_moved_before = if deep_continuation_search { before } else { 0.0 };
+                    let deep_moved_before = if deep_continuation_search {
+                        before
+                    } else {
+                        0.0
+                    };
                     let limiter_would_hold = !search
                         && self.late_continuation
                         && self.limiter_global_search_enabled()
@@ -5071,15 +5444,13 @@ impl Simulation {
                         &mut limiter_handoff_armed,
                         self.immediate_limiter_global_search(),
                     );
-                    let pass = self.iterate_with_limiter_handoff(
-                        false,
-                        search,
-                        allow_limiter_handoff,
-                    );
+                    let pass =
+                        self.iterate_with_limiter_handoff(false, search, allow_limiter_handoff);
                     self.backtracks = normal_backtracks;
                     target_passes += 1;
                     let line_search_failed = self.fallbacks > fallbacks_before;
                     let backtracks_this_pass = self.backtrack_count - backtracks_before;
+
                     let strong_exact_progress = exact_tail_progress(
                         search,
                         line_search_failed,
@@ -5188,8 +5559,7 @@ impl Simulation {
                     }
                     if deep_continuation_search
                         && !line_search_failed
-                        && self.backtrack_count - backtracks_before
-                            >= normal_backtracks as u64
+                        && self.backtrack_count - backtracks_before >= normal_backtracks as u64
                     {
                         // A 1/16 or 1/32 trial beat the exact-target merit.
                         // Production retains the measured v14 policy: any
@@ -5255,8 +5625,7 @@ impl Simulation {
 
                     if matches!(pass, Pass::Settled) {
                         settled = true;
-                        let exact_tail_rescue =
-                            exhausted_exact_tail && used_passes > ceiling;
+                        let exact_tail_rescue = exhausted_exact_tail && used_passes > ceiling;
                         if exact_tail_rescue {
                             self.continuation_actual_rescues += 1;
                             if continuation_from_stuck.is_none() {
@@ -5278,11 +5647,9 @@ impl Simulation {
                     #[cfg(not(test))]
                     let continuation_stuck_only = false;
                     #[cfg(test)]
-                    let continuation_min_target_passes =
-                        self.test_continuation_min_target_passes;
+                    let continuation_min_target_passes = self.test_continuation_min_target_passes;
                     #[cfg(not(test))]
-                    let continuation_min_target_passes =
-                        LATE_CONTINUATION_MIN_TARGET_PASSES;
+                    let continuation_min_target_passes = LATE_CONTINUATION_MIN_TARGET_PASSES;
                     #[cfg(test)]
                     let single_late_rejection_continuation =
                         self.test_single_late_rejection_continuation;
@@ -5298,9 +5665,7 @@ impl Simulation {
                         single_late_rejection_continuation,
                     );
 
-                    if continuation_from_stuck.is_none()
-                        && used_passes < ceiling
-                        && late_rejection
+                    if continuation_from_stuck.is_none() && used_passes < ceiling && late_rejection
                     {
                         #[cfg(test)]
                         {
@@ -5325,6 +5690,13 @@ impl Simulation {
                         }
                         self.prepare_rhs(midpoint, false);
                         self.newton_passes += 1;
+                        #[cfg(test)]
+                        if self.solver_control_tail_profile_enabled() {
+                            self.test_control_profile.continuation_source_passes = self
+                                .test_control_profile
+                                .continuation_source_passes
+                                .saturating_add(1);
+                        }
                         used_passes += 1;
                         let midpoint_pass = self.iterate(false, false);
                         let midpoint_usable = !matches!(midpoint_pass, Pass::Stuck);
@@ -5373,6 +5745,12 @@ impl Simulation {
                     && !self.last_was_unsettled
                 {
                     last_settled_restart_attempted = true;
+                    if self.solver_control_tail_profile_enabled() {
+                        self.test_control_profile.recovery_restart_attempts = self
+                            .test_control_profile
+                            .recovery_restart_attempts
+                            .saturating_add(1);
+                    }
                     let restart_backtracks_before = self.backtrack_count;
                     let restart_fallbacks_before = self.fallbacks;
                     let normal_backtracks = self.backtracks;
@@ -5392,6 +5770,12 @@ impl Simulation {
                         let stalled = self.moved > before * CONVERGING;
                         before = self.moved;
                         self.newton_passes += 1;
+                        if self.solver_control_tail_profile_enabled() {
+                            self.test_control_profile.recovery_restart_passes = self
+                                .test_control_profile
+                                .recovery_restart_passes
+                                .saturating_add(1);
+                        }
                         used_passes += 1;
                         target_passes += 1;
                         last_settled_restart_passes += 1;
@@ -5454,7 +5838,8 @@ impl Simulation {
                     self.continuation_attempts += 1;
                     continuation_from_stuck = Some(false);
 
-                    self.post_restart_saved_voltage.copy_from_slice(&self.voltage);
+                    self.post_restart_saved_voltage
+                        .copy_from_slice(&self.voltage);
                     for (device, saved) in self
                         .devices
                         .iter()
@@ -5503,6 +5888,12 @@ impl Simulation {
                             let stalled = self.moved > before * CONVERGING;
                             before = self.moved;
                             self.newton_passes += 1;
+                            if self.solver_control_tail_profile_enabled() {
+                                self.test_control_profile.continuation_source_passes = self
+                                    .test_control_profile
+                                    .continuation_source_passes
+                                    .saturating_add(1);
+                            }
                             used_passes += 1;
                             if exact_stage {
                                 target_passes += 1;
@@ -5584,13 +5975,21 @@ impl Simulation {
                     && ceiling == MAX_ITERATIONS
                     && !self.last_was_unsettled
                 {
+                    #[cfg(test)]
+                    if self.solver_control_tail_profile_enabled() {
+                        self.test_control_profile.recovery_restart_attempts = self
+                            .test_control_profile
+                            .recovery_restart_attempts
+                            .saturating_add(1);
+                    }
                     // Snapshot the original exhausted target solve before any
                     // restart/staged rescue mutates Newton or device-limiter state.
                     // If recovery itself fails, this is the state the ordinary
                     // failed-sample containment path must see. Saving after a
                     // failed restart is too late: that restart may already have
                     // gone non-finite.
-                    self.post_restart_saved_voltage.copy_from_slice(&self.voltage);
+                    self.post_restart_saved_voltage
+                        .copy_from_slice(&self.voltage);
                     for (device, saved) in self
                         .devices
                         .iter()
@@ -5624,6 +6023,13 @@ impl Simulation {
                         let stalled = self.moved > before * CONVERGING;
                         before = self.moved;
                         self.newton_passes += 1;
+                        #[cfg(test)]
+                        if self.solver_control_tail_profile_enabled() {
+                            self.test_control_profile.recovery_restart_passes = self
+                                .test_control_profile
+                                .recovery_restart_passes
+                                .saturating_add(1);
+                        }
                         let search = stalled || restart_pass >= FULL_STEPS;
                         match self.iterate(false, search) {
                             Pass::Settled => {
@@ -5664,6 +6070,13 @@ impl Simulation {
                                 let stalled = self.moved > before * CONVERGING;
                                 before = self.moved;
                                 self.newton_passes += 1;
+                                #[cfg(test)]
+                                if self.solver_control_tail_profile_enabled() {
+                                    self.test_control_profile.continuation_source_passes = self
+                                        .test_control_profile
+                                        .continuation_source_passes
+                                        .saturating_add(1);
+                                }
                                 let search = stalled || stage_pass >= FULL_STEPS;
                                 match self.iterate(false, search) {
                                     Pass::Settled => {
@@ -5976,6 +6389,24 @@ impl Simulation {
                 }
                 self.last_settled_linearisation_valid = true;
             }
+        }
+
+        #[cfg(test)]
+        if let Some(before) = solver_control_before {
+            let profile = self.solver_control_profile().saturating_delta(before);
+            let sample = SolverControlSample {
+                solve: self.solves,
+                input,
+                last_input: solver_control_last_input,
+                earlier_input: solver_control_earlier_input,
+                profile,
+                accepted_lambda_count: self.test_control_current_accepted_lambda_count,
+                accepted_lambdas: self.test_control_current_accepted_lambdas,
+                final_moved: self.moved,
+                last_search_merit: self.search_merit,
+                settled: profile.unsettled == 0,
+            };
+            self.push_solver_control_sample(sample);
         }
 
         // Keep the continuation source synchronized with the dynamic state

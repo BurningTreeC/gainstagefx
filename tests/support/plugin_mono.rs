@@ -764,6 +764,18 @@ fn twin_realtime_recording_solver_trace() {
     );
     print_realtime_pass(Circuit::Twin, "solver_trace_mono", &result);
     assert!(output.iter().all(|sample| sample.is_finite()));
+    // Outside the measured callbacks: compare complete A/B trajectories, not
+    // merely rounded aggregate counters. Fixed byte order makes logs portable.
+    let hash = output.iter().fold(0xcbf29ce484222325u64, |hash, sample| {
+        sample
+            .to_bits()
+            .to_le_bytes()
+            .iter()
+            .fold(hash, |hash, byte| {
+                (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+            })
+    });
+    println!("twin_solver_output_hash,fnv1a64={hash:016x},frames={frames}");
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -870,7 +882,19 @@ fn run_realtime_pass(
     }
 
     plugin.channels[0].reset_twin_level_trace();
+    let solver_control_profile_enabled =
+        std::env::var_os("GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL").is_some()
+            && circuit == Circuit::Twin
+            && layout == ProbeLayout::Mono;
+    if solver_control_profile_enabled {
+        plugin.channels[0].reset_power_solver_control_samples();
+    }
     let solver_before = plugin.channels[0].solver_breakdown();
+    let solver_control_profile_before = if solver_control_profile_enabled {
+        plugin.channels[0].power_solver_control_profile()
+    } else {
+        None
+    };
     let phase_profile_enabled = std::env::var_os("GAINSTAGEFX_PROFILE_TWIN_POWER_PHASES").is_some()
         && circuit == Circuit::Twin
         && layout == ProbeLayout::Mono;
@@ -894,6 +918,7 @@ fn run_realtime_pass(
     let mut max_finish_late_us = 0.0f64;
     let mut max_meter_db = f32::NEG_INFINITY;
     let mut phase_slow_blocks = Vec::new();
+    let mut solver_control_slow_blocks = Vec::new();
 
     let mut release = std::time::Instant::now()
         + if live_paced {
@@ -908,6 +933,11 @@ fn run_realtime_pass(
         }
         let block_phase_before = if phase_profile_enabled {
             plugin.channels[0].power_phase_profile()
+        } else {
+            None
+        };
+        let block_solver_control_before = if solver_control_profile_enabled {
+            plugin.channels[0].power_solver_control_profile()
         } else {
             None
         };
@@ -980,11 +1010,23 @@ fn run_realtime_pass(
             first_cpu_compute_miss.get_or_insert(block);
         }
         if phase_profile_enabled && cpu_elapsed > callback_budget.as_secs_f64() {
-            if let (Some(before), Some(after)) = (
-                block_phase_before,
-                plugin.channels[0].power_phase_profile(),
-            ) {
+            if let (Some(before), Some(after)) =
+                (block_phase_before, plugin.channels[0].power_phase_profile())
+            {
                 phase_slow_blocks.push((cpu_us, block, after.saturating_delta(before)));
+            }
+        }
+        if solver_control_profile_enabled {
+            if let (Some(before), Some(after)) = (
+                block_solver_control_before,
+                plugin.channels[0].power_solver_control_profile(),
+            ) {
+                solver_control_slow_blocks.push((
+                    cpu_us,
+                    block,
+                    chunk.len(),
+                    after.saturating_delta(before),
+                ));
             }
         }
         if let Some(block_solver_before) = block_solver_before {
@@ -1166,6 +1208,153 @@ fn run_realtime_pass(
             );
         }
     }
+    if let (Some(before), Some(after)) = (
+        solver_control_profile_before,
+        if solver_control_profile_enabled {
+            plugin.channels[0].power_solver_control_profile()
+        } else {
+            None
+        },
+    ) {
+        let control = after.saturating_delta(before);
+        println!(
+            "twin_solver_control_profile,solves={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
+            control.solves,
+            control.newton_passes,
+            control.newton_passes.saturating_sub(control.searched_passes),
+            control.reduced_newton_solves,
+            control.full_mna_newton_solves,
+            control.searched_passes,
+            control.search_trial_evaluations,
+            control.search_full_step_accepts,
+            control.search_damped_step_accepts,
+            control.backtracks,
+            control.fallbacks,
+            control.limiter_hold_passes,
+            control.limiter_handoffs,
+            control.predictor_used,
+            control.predictor_suppressed,
+            control.predictor_unavailable,
+            control.continuation_attempts,
+            control.continuation_midpoint_successes,
+            control.continuation_successes,
+            control.continuation_actual_rescues,
+            control.continuation_source_passes,
+            control.cycle_rejections,
+            control.recovery_restart_attempts,
+            control.recovery_restart_passes,
+            control.reduced_pivot_replays,
+            control.reduced_pivot_learns,
+            control.reduced_pivot_invalidations,
+            control.replans,
+            control.unsettled,
+        );
+
+        solver_control_slow_blocks.sort_by(|a, b| b.0.total_cmp(&a.0));
+        for (cpu_us, block, frames, control) in solver_control_slow_blocks.iter().take(16) {
+            println!(
+                "twin_solver_control_tail,block={block},frames={frames},cpu_us={cpu_us:.2},work_units={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
+                control.newton_passes.saturating_add(control.search_trial_evaluations),
+                control.newton_passes,
+                control.newton_passes.saturating_sub(control.searched_passes),
+                control.reduced_newton_solves,
+                control.full_mna_newton_solves,
+                control.searched_passes,
+                control.search_trial_evaluations,
+                control.search_full_step_accepts,
+                control.search_damped_step_accepts,
+                control.backtracks,
+                control.fallbacks,
+                control.limiter_hold_passes,
+                control.limiter_handoffs,
+                control.predictor_used,
+                control.predictor_suppressed,
+                control.predictor_unavailable,
+                control.continuation_attempts,
+                control.continuation_midpoint_successes,
+                control.continuation_successes,
+                control.continuation_actual_rescues,
+                control.continuation_source_passes,
+                control.cycle_rejections,
+                control.recovery_restart_attempts,
+                control.recovery_restart_passes,
+                control.reduced_pivot_replays,
+                control.reduced_pivot_learns,
+                control.reduced_pivot_invalidations,
+                control.replans,
+                control.unsettled,
+            );
+        }
+
+        let power_before = solver_before.power.solves;
+        let mut samples = plugin.channels[0]
+            .power_solver_control_samples()
+            .iter()
+            .copied()
+            .filter(|sample| sample.solve > power_before)
+            .collect::<Vec<_>>();
+        samples.sort_by(|a, b| {
+            b.work_units()
+                .cmp(&a.work_units())
+                .then_with(|| a.solve.cmp(&b.solve))
+        });
+        for sample in samples {
+            let relative_sample =
+                sample.solve.saturating_sub(power_before.saturating_add(1)) as usize;
+            let source_step = sample.input - sample.last_input;
+            let previous_source_step = sample.last_input - sample.earlier_input;
+            let source_curvature = source_step - previous_source_step;
+            let accepted_lambdas = &sample.accepted_lambdas[..sample.accepted_lambda_count];
+            let control = sample.profile;
+            println!(
+                "twin_solver_control_sample,solve={},relative_sample={},block={},frame={},work_units={},input={:.17e},last_input={:.17e},earlier_input={:.17e},source_step={:.17e},previous_source_step={:.17e},source_curvature={:.17e},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={},settled={},final_moved={:.17e},last_search_merit={:.17e},accepted_lambdas={:?}",
+                sample.solve,
+                relative_sample,
+                relative_sample / BLOCK,
+                relative_sample % BLOCK,
+                sample.work_units(),
+                sample.input,
+                sample.last_input,
+                sample.earlier_input,
+                source_step,
+                previous_source_step,
+                source_curvature,
+                control.newton_passes,
+                control.newton_passes.saturating_sub(control.searched_passes),
+                control.reduced_newton_solves,
+                control.full_mna_newton_solves,
+                control.searched_passes,
+                control.search_trial_evaluations,
+                control.search_full_step_accepts,
+                control.search_damped_step_accepts,
+                control.backtracks,
+                control.fallbacks,
+                control.limiter_hold_passes,
+                control.limiter_handoffs,
+                control.predictor_used,
+                control.predictor_suppressed,
+                control.predictor_unavailable,
+                control.continuation_attempts,
+                control.continuation_midpoint_successes,
+                control.continuation_successes,
+                control.continuation_actual_rescues,
+                control.continuation_source_passes,
+                control.cycle_rejections,
+                control.recovery_restart_attempts,
+                control.recovery_restart_passes,
+                control.reduced_pivot_replays,
+                control.reduced_pivot_learns,
+                control.reduced_pivot_invalidations,
+                control.replans,
+                control.unsettled,
+                sample.settled,
+                sample.final_moved,
+                sample.last_search_merit,
+                accepted_lambdas,
+            );
+        }
+    }
+
     if let (Some(before), Some(after)) = (
         phase_profile_before,
         if phase_profile_enabled {

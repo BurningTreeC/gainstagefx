@@ -1,5 +1,89 @@
 # GainStageFX implementation résumé / handoff
 
+## CURRENT CHECKPOINT — 2026-09-20 (`gainstagefx(8).zip`)
+
+**Read this section first.** The older 2026-09-15 handoff below is retained as
+historical context and no longer describes the current feature/model inventory.
+Current git HEAD is `aab1277` (`v0.18.0`) with solver/model work uncommitted.
+`IMPLEMENTATION_PROGRESS.md` contains the detailed 2026-09-20 audit and exact A/B
+commands.
+
+### Current solver baseline
+
+Retain unless new measurements justify reversal:
+
+- exact nonlinear Schur reduction (Twin common case: 31 full / 13 boundary / 18 internal)
+- accepted-trial nonlinear evaluation cache
+- reciprocal-pivot reduced LU
+- boundary-major recovery
+- fixed 13x13 LU with correct pivot-plan invalidation
+- precondensed 13x13 stamp base
+- phase profiler and solver-control tail profiler
+
+Currently under validation:
+
+1. **fixed 13x13 stamped merit** — expected bit-identical to generic path;
+   disable with `GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT=1`.
+2. **fixed 13x13 trial residual** — new Codex specialization; expected bit-identical;
+   disable with `GAINSTAGEFX_TEST_DISABLE_FIXED_13_TRIAL_RESIDUAL=1`.
+3. **convergent-search release** — solver-policy experiment, still provisional;
+   disable with `GAINSTAGEFX_TEST_DISABLE_CONVERGENT_SEARCH_RELEASE=1`.
+
+Do not reintroduce accepted-search-merit reuse: it was intentionally replaced
+because its direct residual arithmetic changed floating-point search decisions.
+
+### Performance target
+
+At 48 kHz / 64 samples the callback budget is 1333.33 us. The target is **both**
+CPU p99 and CPU max below that budget, with zero CPU misses and zero unsettled
+solves. Mean CPU is secondary to tail latency.
+
+Use `tools/solver_ab.py` for repeated alternating A/B. For the two fixed-size
+arithmetic specializations use `--assert-control-equal`: solver counters and
+complete output hashes should match exactly. Run the full-reference test before
+accepting any solver change.
+
+### Codex additions in `gainstagefx(8)`
+
+- fixed-13 trial-residual gather/evaluation and cancellation/mapping regression
+- complete-output hash in `twin_realtime_recording_solver_trace`
+- repeated A/B benchmark driver `tools/solver_ab.py`
+- direct Twin selection Reverb/Intensity state synchronization + regression test
+- isolated April 1991 MT-2 U2a/U2b middle-EQ reference netlist + AC/time tests
+- updated DSP/model inventory/research documentation
+
+The Rust changes have **not been validated in this handoff environment** because
+Cargo/Rust is unavailable here. Treat compile/test execution on the development
+machine as the next gate, not as optional cleanup.
+
+### Circuit continuation
+
+The production MT-2 still uses the old approximate swept gyrator. Validate the
+isolated U2a/U2b reference first, then add headroom/state/loading tests and integrate
+it with the real low/high stage and Level loading. Recalibrate and compare presets
+and realtime cost after integration.
+
+After MT-2, the current documented priorities are: resolve the 5150 revision/tone
+stack/resonance; complete DR103 feedback/presence and IIC+ PI/power reconciliation;
+finish DS-1 and Studio Preamp evidence; then modern and bass families. `MODELS.md`
+and `docs/MODEL_INVENTORY.md` are the current device-status sources.
+
+### Immediate commands
+
+```bash
+cargo test --release fixed_13_merit_and_trial_residual_preserve_mapped_cancellation_cases -- --nocapture
+cargo test --release twin_power_four_backtracks_matches_full_reference -- --ignored --nocapture --test-threads=1
+cargo test --release direct_twin_selection_uses_the_same_dry_defaults_as_settings -- --nocapture
+cargo test --release --test metal_zone original_wien_mid -- --nocapture
+```
+
+Then run the two five-pair A/B jobs documented in `IMPLEMENTATION_PROGRESS.md`.
+Only after those results should the next solver optimization be implemented.
+
+---
+
+## Historical handoff — 2026-09-15
+
 Checkpoint: 2026-09-15. This is an incremental implementation, **not completion of
 the master specification**. Changes are uncommitted. Original clean baseline:
 `5fda86934d5695cb1995adb88a2377c6cb29d8e5`.

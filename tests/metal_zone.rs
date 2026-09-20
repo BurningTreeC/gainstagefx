@@ -153,3 +153,126 @@ fn the_mid_freq_control_moves_the_centre() {
         down_high - down_low
     );
 }
+
+/// AC analysis uses the zero-signal limit of the *same* two rail-aware devices;
+/// the production/reference time-domain builder always keeps their headroom.
+fn original_mid_ac() -> gainstagefx::dsp::netlist::Circuit {
+    use gainstagefx::dsp::netlist::Part;
+    let mut circuit = metal_zone::mid_eq_reference(1.0, 50_000.0).unwrap();
+    let mut amps = 0;
+    for part in &mut circuit.parts {
+        if let Part::OpAmp {
+            out, plus, minus, ..
+        } = *part
+        {
+            *part = Part::LinearOpAmp { out, plus, minus };
+            amps += 1;
+        }
+    }
+    assert_eq!(amps, 2, "the factory middle stage has U2a and U2b");
+    circuit
+}
+
+fn original_mid_controls(middle: f64, frequency: f64) -> [f64; 4] {
+    let mut controls = [0.5; 4];
+    controls[MIDDLE] = middle;
+    controls[MID_FREQ] = frequency;
+    controls
+}
+
+#[test]
+fn original_wien_mid_preserves_depth_across_the_sweep() {
+    use gainstagefx::dsp::ac;
+    let circuit = original_mid_ac();
+    let frequencies: Vec<f64> = (0..241)
+        .map(|i| 100.0 * 100.0_f64.powf(i as f64 / 240.0))
+        .collect();
+    for frequency in [0.0, 0.25, 0.5, 0.75, 1.0] {
+        let mut boost = (0.0, f64::NEG_INFINITY);
+        let mut cut = (0.0, f64::INFINITY);
+        for &hz in &frequencies {
+            let flat = ac::solve(&circuit, &original_mid_controls(0.5, frequency), hz).db();
+            let up = ac::solve(&circuit, &original_mid_controls(1.0, frequency), hz).db() - flat;
+            let down = ac::solve(&circuit, &original_mid_controls(0.0, frequency), hz).db() - flat;
+            if up > boost.1 {
+                boost = (hz, up);
+            }
+            if down < cut.1 {
+                cut = (hz, down);
+            }
+        }
+        println!(
+            "original MT-2 middle: gang={frequency:.2}, boost={:+.2} dB at {:.1} Hz, cut={:+.2} dB at {:.1} Hz",
+            boost.1, boost.0, cut.1, cut.0
+        );
+        // The published circuit analysis gives roughly +/-15 dB throughout
+        // the sweep. The old substitute loses most of its depth at the low end.
+        assert!((12.0..18.0).contains(&boost.1), "boost {boost:?}");
+        assert!((-18.0..-12.0).contains(&cut.1), "cut {cut:?}");
+        if frequency == 0.0 {
+            assert!((190.0..300.0).contains(&boost.0), "low boost {boost:?}");
+            assert!((190.0..300.0).contains(&cut.0), "low cut {cut:?}");
+        } else if frequency == 1.0 {
+            assert!(
+                (4_000.0..5_500.0).contains(&boost.0),
+                "high boost {boost:?}"
+            );
+            assert!((5_000.0..7_500.0).contains(&cut.0), "high cut {cut:?}");
+        }
+    }
+}
+
+#[test]
+fn original_wien_mid_at_center_leaves_the_sweep_band_nearly_flat() {
+    use gainstagefx::dsp::ac;
+    let circuit = original_mid_ac();
+    for frequency in [0.0, 0.5, 1.0] {
+        // The published middle-frequency range ends at about 4.7 kHz on
+        // boost and 6.3 kHz on cut. Inside that actual control range, the
+        // centered Middle control should remain close to unity. Do not demand
+        // the same bound at 10 kHz: the factory U2a/U2b network still contains
+        // C026 and the Wien bridge, and its fixed out-of-band response is not
+        // mathematically flat when the frequency gang is at an endpoint.
+        for hz in [100.0, 240.0, 500.0, 1_000.0, 4_700.0, 6_300.0] {
+            let response = ac::solve(&circuit, &original_mid_controls(0.5, frequency), hz);
+            assert!(
+                response.db().abs() < 0.65,
+                "gang={frequency}, {hz} Hz: {response:?}"
+            );
+        }
+
+        // Keep a looser broadband guard above the published sweep so a wiring
+        // mistake cannot turn the neutral setting into a large HF shelf. The
+        // factory topology is about -1.31 dB at 10 kHz at the high-frequency
+        // endpoint with the documented values.
+        let response = ac::solve(&circuit, &original_mid_controls(0.5, frequency), 10_000.0);
+        assert!(
+            response.db().abs() < 1.5,
+            "gang={frequency}, 10000 Hz: {response:?}"
+        );
+    }
+}
+
+#[test]
+fn original_wien_mid_small_signal_matches_ac_at_all_solver_rates() {
+    use gainstagefx::dsp::ac;
+    let circuit = original_mid_ac();
+    for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
+        for (middle, frequency, hz) in [(0.0, 0.0, 240.0), (1.0, 0.5, 500.0)] {
+            let controls = original_mid_controls(middle, frequency);
+            let mut sim =
+                Simulation::new(metal_zone::mid_eq_reference(1.0, 50_000.0).unwrap(), rate);
+            sim.set_control(MIDDLE, middle);
+            sim.set_control(MID_FREQ, frequency);
+            assert!(sim.find_operating_point());
+            let tone = Tone::near(rate, 8_192, hz, 1e-3);
+            let expected = ac::solve(&circuit, &controls, tone.hz()).db();
+            let measured = measure::run(tone, (rate * 0.15) as usize, |x| sim.process(x));
+            assert!(
+                (measured.gain_db() - expected).abs() < 0.1,
+                "rate={rate}, middle={middle}, gang={frequency}: {} dB vs {expected}",
+                measured.gain_db()
+            );
+        }
+    }
+}

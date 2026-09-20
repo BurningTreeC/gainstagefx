@@ -808,3 +808,155 @@ compared an output RMS against `NOMINAL_DBFS`, the chord's *peak* constant, and 
 voice seven decibels low -- the chord's crest factor, nothing to do with the make-up. It
 compares against the input's own broadband level now. Measured properly, the make-up holds
 the Clean voice within **0.13 dB** across the top five knots.
+
+## 2026-09-20 Codex handoff audit: current solver and circuit checkpoint
+
+This checkpoint supersedes the older handoff text for current work. The working
+source arrived as `gainstagefx(8).zip`, based on git `aab1277` (`v0.18.0`) with
+all recent solver experiments still uncommitted. The codebase was compared against
+`gainstagefx(7)` plus the previously accepted/provisional solver patches so the
+new Codex work could be separated from earlier work.
+
+### Solver work present before Codex and retained
+
+- accepted-trial nonlinear evaluation cache (current V3 form)
+- reciprocal-pivot reduced LU
+- boundary-major internal recovery
+- fixed-size 13x13 reduced LU with the stale-pivot-plan regression fix
+- precondensed 13x13 Schur stamp base
+- Twin power phase profiler
+- solver-control tail profiler
+- provisional convergent-search release
+- fixed-13 stamped-current-merit specialization, with a bit-for-bit helper test
+
+The earlier accepted-search-merit-reuse experiment is **not present**: it was
+replaced because direct physical trial merit and stamped current-point merit are
+algebraically equal but can differ in floating-point operation order and change
+search decisions.
+
+### New Codex solver work
+
+Codex added a second fixed-13 specialization for the *linear part of line-search
+trial residuals*. `ReducedNonlinear::begin_residual()` now gathers the 13 boundary
+voltages once and evaluates the cached 13x13 Schur rows without repeated global
+boundary indexing. It preserves row/column accumulation order and has an A/B
+switch:
+
+`GAINSTAGEFX_TEST_DISABLE_FIXED_13_TRIAL_RESIDUAL=1`
+
+The new `fixed_13_merit_and_trial_residual_preserve_mapped_cancellation_cases`
+test exercises non-contiguous boundary mapping, mixed scales and cancellation and
+requires bit-identical generic/fixed results. This optimization has **not yet been
+benchmarked or accepted**. Do not stack another numerical-policy change on top of
+it until the A/B below is complete.
+
+Codex also added an FNV-1a hash of the complete Twin trace output outside the timed
+callbacks and `tools/solver_ab.py`. The script builds or reuses one release test
+binary, alternates A/B ordering, records machine/compiler/git metadata, rejects
+unsettled solves, reports medians, and can require exact control-counter and output
+hash equality. The Python script passes `py_compile`; Rust execution still needs a
+machine with Cargo.
+
+### Current performance objective and next validation
+
+Primary fixture: 48 kHz, block 64, callback budget **1333.33 us**. Required target:
+
+- CPU p99 < 1333 us
+- CPU max < 1333 us
+- zero CPU callback-budget misses
+- zero unsettled solves
+
+The fixed-13 stamped-merit specialization and the new fixed-13 trial-residual
+specialization must be validated independently with repeated, unprofiled A/B runs.
+For either fixed-size arithmetic specialization, control counters and output hash
+should be identical between A and B. If they differ, investigate before acceptance.
+
+Recommended sequence:
+
+```bash
+cargo test --release fixed_13_merit_and_trial_residual_preserve_mapped_cancellation_cases -- --nocapture
+cargo test --release twin_power_four_backtracks_matches_full_reference -- --ignored --nocapture --test-threads=1
+
+python3 tools/solver_ab.py \
+  --output /tmp/gainstagefx-ab-stamped-merit \
+  --repetitions 5 \
+  --cpu <isolated-or-idle-cpu> \
+  --disable-switch GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT \
+  --assert-control-equal
+
+python3 tools/solver_ab.py \
+  --output /tmp/gainstagefx-ab-trial-residual \
+  --repetitions 5 \
+  --cpu <same-cpu> \
+  --disable-switch GAINSTAGEFX_TEST_DISABLE_FIXED_13_TRIAL_RESIDUAL \
+  --assert-control-equal
+```
+
+If `--cpu` is not used, run on an otherwise idle machine and keep the same system
+conditions for both experiments. Profiler runs are diagnostic only and are excluded
+from timing medians by the script.
+
+The convergent-search release remains **provisional**. After the two arithmetic
+specializations are decided, repeat its A/B with:
+
+`GAINSTAGEFX_TEST_DISABLE_CONVERGENT_SEARCH_RELEASE=1`
+
+and at least five alternating timing pairs before final KEEP/REJECT.
+
+### New Codex circuit/model work
+
+Codex corrected direct Twin voice selection so the chain's stored Reverb and
+Intensity defaults are synchronized into the unified Twin electrical netlist.
+The regression `direct_twin_selection_uses_the_same_dry_defaults_as_settings`
+compares direct selection with explicit dry `Settings` beyond the first spring
+return. This fix is sensible but still needs Rust test execution in this handoff.
+
+Codex also researched and implemented the April 1991 Boss MT-2 U2a/U2b middle EQ
+as **an isolated reference circuit only** (`metal_zone::mid_eq_reference`). New
+tests cover:
+
+- boost/cut depth across the Mid Freq sweep
+- near-flat center setting
+- small-signal AC/time-domain agreement at 44.1/48/88.2/96/192 kHz
+
+The production MT-2 still uses the approximate swept gyrator. The factory middle
+stage has **not** been integrated into the shipping pedal, recalibrated, preset-
+checked, or realtime-qualified. Next circuit work is to run the isolated-stage
+tests, add headroom/state/loading validation, then integrate U2a/U2b with the real
+low/high-EQ source impedance and Level load while preserving a deliberate legacy
+compatibility strategy.
+
+### Documentation/model audit from Codex
+
+`DSP.md`, `MODELS.md`, `docs/MODEL_INVENTORY.md`, `docs/models/american_twin.md`
+and `docs/models/metal_zone.md` were substantially updated. The inventory now
+separates implemented from validated/performance-ready status and records the
+major remaining model gaps. Important unfinished families include:
+
+- MT-2 factory mid-EQ production integration; HM-2/MT-2 active-gyrator/device validation
+- exact 5150 revision, loaded tone stack and resonance network
+- DR103 feedback/presence coupling and IIC+ PI/power reconciliation
+- DS-1 revision/device choice and Mesa Studio Preamp schematic acquisition
+- Revv/Fortin/Generator modern chain
+- SVT, GK800RB, Microtubes 900 and bass pedal/cabinet/DI families
+- remaining speaker/microphone parameter/evidence gaps
+
+No nonlinear family should be called performance-ready until complete-chain 48 kHz
+/ 64-sample p99, max, misses and unsettled counts have been measured with profiling
+disabled.
+
+### Handoff quality / unfinished items
+
+Codex stopped before completing the requested handoff:
+
+- no KEEP/REJECT benchmark for fixed-13 stamped merit
+- no KEEP/REJECT benchmark for fixed-13 trial residual
+- no final KEEP/REJECT for convergent-search release
+- no demonstration of p99/max below 1333.33 us
+- no MT-2 production integration
+- no 5150/DR103/IIC+/DS-1/Studio/modern/bass implementation from the updated roadmap
+- `IMPLEMENTATION_PROGRESS.md` and `IMPLEMENTATION_RESUME.md` had not been updated
+- all current changes remained uncommitted
+
+This section records the actual continuation point. Preserve the generic/reference
+paths and make one measured change at a time.

@@ -2423,6 +2423,13 @@ impl Chain {
         self.voice = gain;
         if index != self.gain {
             self.gain = index;
+            if gain.has_reverb_and_tremolo() {
+                // The unified Twin stores the Reverb pot inside its netlist.
+                // A direct voice selection must apply the chain's stored
+                // effects settings too: the netlist's default half-position
+                // otherwise enables a spring tail while `self.reverb` is zero.
+                self.sync_twin_effect_controls();
+            }
             self.twin_tank_drive_previous = 0.0;
             self.tank.reset();
             self.tremolo.reset();
@@ -3145,6 +3152,25 @@ impl Chain {
             .map(Simulation::twin_power_phase_profile)
     }
 
+    #[cfg(test)]
+    pub fn power_solver_control_profile(&self) -> Option<crate::dsp::time::SolverControlProfile> {
+        self.active_power().map(Simulation::solver_control_profile)
+    }
+
+    #[cfg(test)]
+    pub fn power_solver_control_samples(&self) -> &[crate::dsp::time::SolverControlSample] {
+        self.active_power()
+            .map(Simulation::solver_control_samples)
+            .unwrap_or(&[])
+    }
+
+    #[cfg(test)]
+    pub fn reset_power_solver_control_samples(&mut self) {
+        if let Some(power) = self.active_power_mut() {
+            power.reset_solver_control_samples();
+        }
+    }
+
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
         let sims = std::iter::once(&self.gains[self.gain])
@@ -3577,12 +3603,16 @@ impl Chain {
         self.reverb = s.reverb;
         self.speed = s.speed;
         self.intensity = s.intensity;
+        self.sync_twin_effect_controls();
+    }
+
+    fn sync_twin_effect_controls(&mut self) {
         // The Reverb control is a pot in the recovery stage's own circuit, so
         // it goes where every other control goes: into the simulation, once a
         // block, through `apply`.
-        self.gains[self.gain].set_control(twin::REVERB, s.reverb);
+        self.gains[self.gain].set_control(twin::REVERB, self.reverb);
         // The physical 50 k pot is wired opposite the panel-number direction.
-        self.gains[self.gain].set_control(twin::INTENSITY, 1.0 - s.intensity);
+        self.gains[self.gain].set_control(twin::INTENSITY, 1.0 - self.intensity);
     }
 
     /// Cap the Newton passes every circuit in this chain may take.

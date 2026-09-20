@@ -814,17 +814,12 @@ impl Triode {
         } else {
             evaluation.exp_inner / (1.0 + evaluation.exp_inner)
         };
-        let d_ip =
-            2.0 * self.spec.ex * evaluation.powered * self.inv_kg1 / evaluation.e1;
+        let d_ip = 2.0 * self.spec.ex * evaluation.powered * self.inv_kg1 / evaluation.e1;
         let d_e1_vpk = evaluation.soft * self.inv_kp
             - evaluation.vpk * evaluation.vpk * evaluation.vgk * sigma
                 / (evaluation.root * evaluation.root * evaluation.root);
         let d_e1_vgk = evaluation.vpk * sigma / evaluation.root;
-        (
-            evaluation.ip,
-            d_ip * d_e1_vpk,
-            d_ip * d_e1_vgk,
-        )
+        (evaluation.ip, d_ip * d_e1_vpk, d_ip * d_e1_vgk)
     }
 
     /// Grid current. Nothing until the grid goes positive, then it conducts
@@ -1186,15 +1181,7 @@ impl Pentode {
         evaluation: PentodeEval,
     ) -> (f64, f64, f64, f64, f64, f64, f64) {
         if !evaluation.active {
-            return (
-                evaluation.ip,
-                evaluation.ig2,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            );
+            return (evaluation.ip, evaluation.ig2, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
         let sigma = if evaluation.soft_is_linear {
             1.0
@@ -1204,8 +1191,7 @@ impl Pentode {
         let vpk_ratio = evaluation.vpk * self.inv_kvb;
         let d_knee = self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio);
         let d_e1_vgk = sigma;
-        let d_e1_vsk =
-            evaluation.soft * self.inv_kp - evaluation.vgk * sigma / evaluation.vsk;
+        let d_e1_vsk = evaluation.soft * self.inv_kp - evaluation.vgk * sigma / evaluation.vsk;
         let d_plate = self.spec.ex * evaluation.plate_base / evaluation.e1;
         let d_screen = self.spec.ex * evaluation.screen_base / evaluation.e1;
         (
@@ -1277,9 +1263,7 @@ impl Device for Pentode {
         self.vsk = vsk;
 
         let (ip, ig2, gp, gm, gs, gm2, gs2) = match self.trial_eval.take() {
-            Some(cached) if cached.matches(vpk, vgk, vsk) => {
-                self.split_slopes_from_trial(cached)
-            }
+            Some(cached) if cached.matches(vpk, vgk, vsk) => self.split_slopes_from_trial(cached),
             _ => self.split_with_slopes(vpk, vgk, vsk),
         };
 
@@ -2249,22 +2233,12 @@ impl Device for VariableResistor {
 /// same nonlinear evaluation in the immediately following Newton stamp. The
 /// accepted trial still commits physical state separately.
 trait TrialResidual {
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        cache_eval: bool,
-    );
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], cache_eval: bool);
 }
 
 impl TrialResidual for Diode {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         let wanted = across(v, self.a, self.k);
         let old = self.voltage;
         let scale = self.scale;
@@ -2299,12 +2273,7 @@ impl TrialResidual for Diode {
 
 impl TrialResidual for Rectifier {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         let wanted = across(v, self.a, self.k);
         let (guess, _) = limit(wanted, self.voltage, 25.0);
 
@@ -2326,12 +2295,7 @@ impl TrialResidual for Rectifier {
 
 impl TrialResidual for Triode {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], cache_eval: bool) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let raw = across(v, self.g, self.k);
         let vgk = if r.limiting {
@@ -2355,12 +2319,7 @@ impl TrialResidual for Triode {
 
 impl TrialResidual for Pentode {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], cache_eval: bool) {
         let vpk = across(v, self.p, self.k).max(0.0);
         let vsk = across(v, self.s, self.k).max(0.0);
         let raw = across(v, self.g, self.k);
@@ -2411,12 +2370,7 @@ impl TrialResidual for Pentode {
 
 impl TrialResidual for Jfet {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         let raw_vgs = across(v, self.g, self.s);
         let raw_vds = across(v, self.d, self.s);
         let vgs = if r.limiting {
@@ -2435,12 +2389,7 @@ impl TrialResidual for Jfet {
 
 impl TrialResidual for Bipolar {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         let (vbe_now, vbc_now) = if self.pnp {
             (across(v, self.e, self.b), across(v, self.c, self.b))
         } else {
@@ -2473,12 +2422,7 @@ impl TrialResidual for Bipolar {
 
 impl TrialResidual for OpAmp {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         let output = across(v, self.out, self.reference);
         let error = across(v, self.plus, self.minus);
         let was = self.clamped;
@@ -2518,12 +2462,7 @@ impl TrialResidual for OpAmp {
 
 impl TrialResidual for Core {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], cache_eval: bool) {
         let raw = across(v, self.a, self.b);
         let volts = if r.limiting {
             let scale = self.spec.knee / (2.0 * self.half_step * self.spec.sharpness);
@@ -2551,12 +2490,7 @@ impl TrialResidual for Core {
 
 impl TrialResidual for Transconductor {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         let difference = across(v, self.plus, self.minus);
         r.current(self.reference, self.out, self.current(difference));
     }
@@ -2564,12 +2498,7 @@ impl TrialResidual for Transconductor {
 
 impl TrialResidual for VariableResistor {
     #[inline]
-    fn trial_residual(
-        &mut self,
-        r: &mut ResidualStamper<'_>,
-        v: &[f64],
-        _cache_eval: bool,
-    ) {
+    fn trial_residual(&mut self, r: &mut ResidualStamper<'_>, v: &[f64], _cache_eval: bool) {
         r.current(self.a, self.b, across(v, self.a, self.b) / self.ohms);
     }
 }
@@ -3001,11 +2930,7 @@ mod optimization_tests {
         (matrix, rhs)
     }
 
-    fn trial_residual_bits(
-        device: &mut AnyDevice,
-        voltage: &[f64],
-        cache_eval: bool,
-    ) -> Vec<u64> {
+    fn trial_residual_bits(device: &mut AnyDevice, voltage: &[f64], cache_eval: bool) -> Vec<u64> {
         let n = voltage.len();
         let map: Vec<usize> = (0..n).collect();
         let mut residual = vec![0.0; n];
@@ -3046,30 +2971,12 @@ mod optimization_tests {
         );
 
         let pentode_voltage = [310.0, -24.0, 405.0];
-        let mut pentode_cached = AnyDevice::Pentode(Pentode::new(
-            0,
-            1,
-            GROUND,
-            2,
-            2.0,
-            PentodeSpec::T6L6GC,
-        ));
-        let mut pentode_fresh = AnyDevice::Pentode(Pentode::new(
-            0,
-            1,
-            GROUND,
-            2,
-            2.0,
-            PentodeSpec::T6L6GC,
-        ));
-        let mut pentode_legacy = AnyDevice::Pentode(Pentode::new(
-            0,
-            1,
-            GROUND,
-            2,
-            2.0,
-            PentodeSpec::T6L6GC,
-        ));
+        let mut pentode_cached =
+            AnyDevice::Pentode(Pentode::new(0, 1, GROUND, 2, 2.0, PentodeSpec::T6L6GC));
+        let mut pentode_fresh =
+            AnyDevice::Pentode(Pentode::new(0, 1, GROUND, 2, 2.0, PentodeSpec::T6L6GC));
+        let mut pentode_legacy =
+            AnyDevice::Pentode(Pentode::new(0, 1, GROUND, 2, 2.0, PentodeSpec::T6L6GC));
         assert_eq!(
             trial_residual_bits(&mut pentode_cached, &pentode_voltage, true),
             trial_residual_bits(&mut pentode_legacy, &pentode_voltage, false),
@@ -3087,8 +2994,7 @@ mod optimization_tests {
         let core_voltage = [28.0];
         let mut core_cached =
             AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
-        let mut core_fresh =
-            AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
+        let mut core_fresh = AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
         let mut core_legacy =
             AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0));
         assert_eq!(

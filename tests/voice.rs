@@ -476,6 +476,39 @@ fn resetting_does_not_pop() {
     }
 }
 
+/// Selecting the Twin directly must agree with explicitly applying the dry
+/// effects defaults. The unified electrical circuit's pot defaults need not
+/// match the chain's stored settings; leaving Reverb at the netlist's half
+/// position used to turn ordinary tank decay into an apparent solver failure.
+#[test]
+fn direct_twin_selection_uses_the_same_dry_defaults_as_settings() {
+    let mut direct = Chain::new(RATE);
+    direct.set_voice(Gain::Twin, voice::Diode::Silicon, voice::Amplifier::Valve);
+    direct.set_drive(0.85);
+    direct.settle();
+
+    let mut explicit = Chain::new(RATE);
+    explicit.apply(&voice::Settings {
+        gain: Gain::Twin,
+        amplifier: voice::Amplifier::Valve,
+        tone: ToneSection::Off,
+        drive: 0.85,
+        oversampling: 4,
+        reverb: 0.0,
+        speed: 0.5,
+        intensity: 0.0,
+        ..voice::Settings::default()
+    });
+    explicit.settle();
+
+    // Continue beyond the first spring return; short probes cannot expose an
+    // accidentally enabled mechanical tank behind otherwise identical stages.
+    for k in 0..16_384 {
+        let x = 0.1 * (std::f64::consts::TAU * 220.0 * k as f64 / RATE).sin();
+        assert_eq!(direct.process(x), explicit.process(x), "sample {k}");
+    }
+}
+
 /// A pick attack is a genuine discontinuity at the input, and the solver
 /// has to be able to follow it without either gating it silent or letting
 /// a Newton overshoot through as a click.
