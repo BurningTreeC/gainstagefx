@@ -120,9 +120,31 @@ fn initialized(circuit: Circuit, mono: bool, rate: f32) -> GainStageFx {
         param.smoothed.reset(param.value());
     }
     p.circuit = EnumParam::new("Circuit", circuit);
-    p.iron = EnumParam::new("Iron", Iron::Steel);
-    p.tone = EnumParam::new("Tone", ToneStack::Scooping);
-    p.cabinet = EnumParam::new("Cabinet", Cabinet::Stack);
+    // Focused solver-trace cost isolation. These are test-only environment
+    // switches: production/plugin builds are untouched. The normal direct
+    // callback fixture deliberately keeps the historical Steel + Scooping +
+    // Stack chain unless a benchmark explicitly removes one stage. Since all
+    // three stages sit downstream of the Twin power solve on the legacy path,
+    // their removal must not alter power-solver control counters.
+    let trace_iron = if std::env::var_os("GAINSTAGEFX_TEST_DISABLE_TRACE_IRON").is_some() {
+        Iron::Off
+    } else {
+        Iron::Steel
+    };
+    let trace_tone = if std::env::var_os("GAINSTAGEFX_TEST_DISABLE_TRACE_TONE").is_some() {
+        ToneStack::Off
+    } else {
+        ToneStack::Scooping
+    };
+    let trace_cabinet =
+        if std::env::var_os("GAINSTAGEFX_TEST_DISABLE_TRACE_LEGACY_CABINET").is_some() {
+            Cabinet::Off
+        } else {
+            Cabinet::Stack
+        };
+    p.iron = EnumParam::new("Iron", trace_iron);
+    p.tone = EnumParam::new("Tone", trace_tone);
+    p.cabinet = EnumParam::new("Cabinet", trace_cabinet);
     p.drive.smoothed.reset(0.8);
     p.reverb.smoothed.reset(0.7);
     p.intensity.smoothed.reset(0.9);
@@ -472,8 +494,10 @@ fn realtime_recording() {
     const BLOCK: usize = 64;
     const TARGET_METER_DB: f32 = 12.0;
     const LIVE_SETTLE_BLOCKS: usize = 16;
-    #[cfg(debug_assertions)]
-    panic!("use cargo test --release for timing");
+    assert!(
+        !cfg!(debug_assertions),
+        "use cargo test --release for timing"
+    );
 
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -700,8 +724,10 @@ fn twin_realtime_recording_solver_trace() {
     const BLOCK: usize = 64;
     const TARGET_METER_DB: f32 = 12.0;
     const LIVE_SETTLE_BLOCKS: usize = 16;
-    #[cfg(debug_assertions)]
-    panic!("use cargo test --release for solver tracing");
+    assert!(
+        !cfg!(debug_assertions),
+        "use cargo test --release for solver tracing"
+    );
 
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -776,6 +802,22 @@ fn twin_realtime_recording_solver_trace() {
             })
     });
     println!("twin_solver_output_hash,fnv1a64={hash:016x},frames={frames}");
+    // Finite containment output is not a solved circuit. Keep all diagnostics
+    // above visible, then make solver-health regressions fail the test itself.
+    for (stage, health) in [
+        ("pedal", result.solver.pedal),
+        ("line", result.solver.line),
+        ("gain", result.solver.gain),
+        ("power", result.solver.power),
+        ("iron", result.solver.iron),
+        ("reverb", result.solver.reverb_return),
+    ] {
+        assert_eq!(health.unsettled, 0, "{stage}: unsettled recording solves");
+        assert_eq!(
+            health.nonfinite, 0,
+            "{stage}: nonfinite recording corrections"
+        );
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1218,7 +1260,7 @@ fn run_realtime_pass(
     ) {
         let control = after.saturating_delta(before);
         println!(
-            "twin_solver_control_profile,solves={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
+            "twin_solver_control_profile,solves={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
             control.solves,
             control.newton_passes,
             control.newton_passes.saturating_sub(control.searched_passes),
@@ -1228,6 +1270,14 @@ fn run_realtime_pass(
             control.search_trial_evaluations,
             control.search_full_step_accepts,
             control.search_damped_step_accepts,
+            control.ceres_lm_entries,
+            control.ceres_lm_trials,
+            control.ceres_lm_accepts,
+            control.ceres_lm_rejects,
+            control.ceres_lm_invalid_models,
+            control.ceres_lm_radius_contractions,
+            control.ceres_lm_radius_expansions,
+            control.ceres_lm_jacobian_reuses,
             control.backtracks,
             control.fallbacks,
             control.limiter_hold_passes,
@@ -1253,7 +1303,7 @@ fn run_realtime_pass(
         solver_control_slow_blocks.sort_by(|a, b| b.0.total_cmp(&a.0));
         for (cpu_us, block, frames, control) in solver_control_slow_blocks.iter().take(16) {
             println!(
-                "twin_solver_control_tail,block={block},frames={frames},cpu_us={cpu_us:.2},work_units={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
+                "twin_solver_control_tail,block={block},frames={frames},cpu_us={cpu_us:.2},work_units={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
                 control.newton_passes.saturating_add(control.search_trial_evaluations),
                 control.newton_passes,
                 control.newton_passes.saturating_sub(control.searched_passes),
@@ -1263,6 +1313,14 @@ fn run_realtime_pass(
                 control.search_trial_evaluations,
                 control.search_full_step_accepts,
                 control.search_damped_step_accepts,
+                control.ceres_lm_entries,
+                control.ceres_lm_trials,
+                control.ceres_lm_accepts,
+                control.ceres_lm_rejects,
+                control.ceres_lm_invalid_models,
+                control.ceres_lm_radius_contractions,
+                control.ceres_lm_radius_expansions,
+                control.ceres_lm_jacobian_reuses,
                 control.backtracks,
                 control.fallbacks,
                 control.limiter_hold_passes,
@@ -1307,7 +1365,7 @@ fn run_realtime_pass(
             let accepted_lambdas = &sample.accepted_lambdas[..sample.accepted_lambda_count];
             let control = sample.profile;
             println!(
-                "twin_solver_control_sample,solve={},relative_sample={},block={},frame={},work_units={},input={:.17e},last_input={:.17e},earlier_input={:.17e},source_step={:.17e},previous_source_step={:.17e},source_curvature={:.17e},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={},settled={},final_moved={:.17e},last_search_merit={:.17e},accepted_lambdas={:?}",
+                "twin_solver_control_sample,solve={},relative_sample={},block={},frame={},work_units={},input={:.17e},last_input={:.17e},earlier_input={:.17e},source_step={:.17e},previous_source_step={:.17e},source_curvature={:.17e},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={},settled={},final_moved={:.17e},last_search_merit={:.17e},accepted_lambdas={:?}",
                 sample.solve,
                 relative_sample,
                 relative_sample / BLOCK,
@@ -1327,6 +1385,14 @@ fn run_realtime_pass(
                 control.search_trial_evaluations,
                 control.search_full_step_accepts,
                 control.search_damped_step_accepts,
+                control.ceres_lm_entries,
+                control.ceres_lm_trials,
+                control.ceres_lm_accepts,
+                control.ceres_lm_rejects,
+                control.ceres_lm_invalid_models,
+                control.ceres_lm_radius_contractions,
+                control.ceres_lm_radius_expansions,
+                control.ceres_lm_jacobian_reuses,
                 control.backtracks,
                 control.fallbacks,
                 control.limiter_hold_passes,

@@ -306,6 +306,7 @@ impl Mark<'_> {
 /// capacitor charge, inductor current, transformer flux history -- is advanced
 /// outside the Newton loop entirely and a trial step never touches it.
 #[derive(Clone, Copy, Default)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 pub struct Linearisation {
     at: [f64; 4],
     clamped: bool,
@@ -684,6 +685,7 @@ pub struct Triode {
 }
 
 #[derive(Clone, Copy)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct TriodeEval {
     vpk: f64,
     vgk: f64,
@@ -983,6 +985,7 @@ pub struct Pentode {
 }
 
 #[derive(Clone, Copy)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct PentodeEval {
     vpk: f64,
     vgk: f64,
@@ -1621,6 +1624,7 @@ pub struct Core {
 }
 
 #[derive(Clone, Copy)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 struct CoreEval {
     flux: f64,
     current: f64,
@@ -2158,26 +2162,6 @@ impl Device for Transconductor {
 // Devices, stored inline
 // ---------------------------------------------------------------------------
 
-/// A device, as one type rather than one box.
-///
-/// `Simulation::devices` used to be `Vec<Box<dyn Device>>`. Every Newton pass
-/// dispatched through a vtable eight times per device and every write a device
-/// made to its own fields went through an `&mut dyn Device` the compiler could
-/// not see into. `Triode::stamp` computes an `exp`, a `ln_1p`, a `powf` and a
-/// `sqrt`, and the intermediate results were being spilled to memory between
-/// the operations that produced them because the compiler could not prove
-/// nobody else held a reference to `self`.
-///
-/// An enum removes both: the match is monomorphic at each arm, so the concrete
-/// `stamp` inlines into the pass loop, and the device's fields live in a
-/// caller-frame local rather than behind a pointer. The vector is contiguous,
-/// which also improves cache behaviour on the foot and linearisation walks
-/// that visit every device in turn.
-///
-/// The trait stays, and `AnyDevice` implements it by forwarding, so nothing
-/// that calls `device.stamp(...)` or `device.settled(...)` needs to know which
-/// type it is holding.
-
 /// A resistor whose value may change at audio/control rate without rebuilding
 /// the circuit topology.  It is linear at every instant, but it is stamped with
 /// the nonlinear devices because its conductance is not part of the immutable
@@ -2503,6 +2487,25 @@ impl TrialResidual for VariableResistor {
     }
 }
 
+/// A device, as one type rather than one box.
+///
+/// `Simulation::devices` used to be `Vec<Box<dyn Device>>`. Every Newton pass
+/// dispatched through a vtable eight times per device and every write a device
+/// made to its own fields went through an `&mut dyn Device` the compiler could
+/// not see into. `Triode::stamp` computes an `exp`, a `ln_1p`, a `powf` and a
+/// `sqrt`, and the intermediate results were being spilled to memory between
+/// the operations that produced them because the compiler could not prove
+/// nobody else held a reference to `self`.
+///
+/// An enum removes both: the match is monomorphic at each arm, so the concrete
+/// `stamp` inlines into the pass loop, and the device's fields live in a
+/// caller-frame local rather than behind a pointer. The vector is contiguous,
+/// which also improves cache behaviour on the foot and linearisation walks
+/// that visit every device in turn.
+///
+/// The trait stays, and `AnyDevice` implements it by forwarding, so nothing
+/// that calls `device.stamp(...)` or `device.settled(...)` needs to know which
+/// type it is holding.
 pub enum AnyDevice {
     Diode(Diode),
     Rectifier(Rectifier),
@@ -2516,7 +2519,51 @@ pub enum AnyDevice {
     VariableResistor(VariableResistor),
 }
 
+/// A rejected rescue must restore both limiter history and the evaluation
+/// waiting for the next stamp. `relinearise` alone intentionally clears caches.
+/// Integration history is not included: neither stamps nor trials advance it.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct DeviceCheckpoint {
+    linearisation: Linearisation,
+    cache: TrialCache,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum TrialCache {
+    #[default]
+    None,
+    Triode(Option<TriodeEval>),
+    Pentode(Option<PentodeEval>),
+    Core(Option<CoreEval>),
+}
+
 impl AnyDevice {
+    #[cfg(test)]
+    pub(super) fn checkpoint(&self) -> DeviceCheckpoint {
+        DeviceCheckpoint {
+            linearisation: self.linearisation(),
+            cache: match self {
+                Self::Triode(device) => TrialCache::Triode(device.trial_eval),
+                Self::Pentode(device) => TrialCache::Pentode(device.trial_eval),
+                Self::Core(device) => TrialCache::Core(device.trial_eval),
+                _ => TrialCache::None,
+            },
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn restore_checkpoint(&mut self, saved: DeviceCheckpoint) {
+        self.relinearise(saved.linearisation);
+        match (self, saved.cache) {
+            (Self::Triode(device), TrialCache::Triode(cache)) => device.trial_eval = cache,
+            (Self::Pentode(device), TrialCache::Pentode(cache)) => device.trial_eval = cache,
+            (Self::Core(device), TrialCache::Core(cache)) => device.trial_eval = cache,
+            _ => {}
+        }
+    }
+
     /// Copy an identical device's evolving state without reconstructing it.
     /// All variants keep their component specifications and terminal indices.
     /// A core additionally owns committed integration history, which is not
@@ -2953,6 +3000,44 @@ mod optimization_tests {
             matrix.into_iter().map(f64::to_bits).collect(),
             rhs.into_iter().map(f64::to_bits).collect(),
         )
+    }
+
+    #[test]
+    fn rescue_checkpoint_restores_device_history_and_cached_evaluations() {
+        let core_spec = CoreSpec {
+            henry: 0.8,
+            knee: 0.04,
+            sharpness: 6.0,
+        };
+        let cases = [
+            (
+                AnyDevice::Triode(Triode::new(0, 1, GROUND, TriodeSpec::ECC81)),
+                vec![180.0, -0.7],
+            ),
+            (
+                AnyDevice::Pentode(Pentode::new(0, 1, GROUND, 2, 2.0, PentodeSpec::T6L6GC)),
+                vec![310.0, -24.0, 405.0],
+            ),
+            (
+                AnyDevice::Core(Core::new_antialiased(0, GROUND, core_spec, 48_000.0)),
+                vec![28.0],
+            ),
+        ];
+        for (mut device, voltage) in cases {
+            stamp_device(&mut device, &voltage);
+            trial_residual_bits(&mut device, &voltage, true);
+            let saved = device.checkpoint();
+            let expected = stamp_bits(&mut device, &voltage);
+            // A lazy restamp changes moved/settled history and consumes the
+            // trial cache; an LM probe then evaluates a different point.
+            let rejected: Vec<_> = voltage.iter().map(|v| v * 0.75).collect();
+            stamp_device(&mut device, &rejected);
+            trial_residual_bits(&mut device, &rejected, false);
+            assert_ne!(device.checkpoint(), saved);
+            device.restore_checkpoint(saved);
+            assert_eq!(device.checkpoint(), saved);
+            assert_eq!(stamp_bits(&mut device, &voltage), expected);
+        }
     }
 
     #[test]

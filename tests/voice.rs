@@ -134,8 +134,10 @@ fn twin_power_four_backtracks_matches_full_reference() {
     const SAMPLES: usize = 4_096;
     const MAX_NULL_DB: f64 = -140.0;
 
-    #[cfg(debug_assertions)]
-    panic!("use cargo test --release for the Twin solver reference");
+    assert!(
+        !cfg!(debug_assertions),
+        "use cargo test --release for the Twin solver reference"
+    );
 
     let mut exercised_backtracks = 0u64;
     for drive in [0.2, 0.6, 1.0] {

@@ -91,6 +91,26 @@ impl TwinPowerPhaseProfile {
 const SOLVER_CONTROL_SAMPLE_CAPACITY: usize = 32;
 #[cfg(test)]
 const SOLVER_CONTROL_ACCEPTED_LAMBDAS: usize = 8;
+#[cfg(test)]
+const CERES_LM13_RESCUE_MAX_TRIALS: usize = 2;
+#[cfg(test)]
+const CERES_LM13_RESCUE_MAX_ENTRIES_PER_SOLVE: usize = 2;
+// V3.5 has already exhausted its Newton ray before LM is allowed to run, so
+// an almost-undamped 1e4 radius would merely retry the same bad direction.
+// Start with 25% diagonal regularisation, then make the one retry 4x stronger.
+#[cfg(test)]
+const CERES_LM13_RESCUE_INITIAL_RADIUS: f64 = 4.0;
+#[cfg(test)]
+const CERES_LM13_RESCUE_RADIUS_CONTRACTION: f64 = 4.0;
+// A rescue must be a trustworthy and materially useful root-residual move,
+// not merely a positive least-squares ratio. Merit is ||F||^2, so a 20% merit
+// drop is about a 10.6% drop in residual norm.
+#[cfg(test)]
+const CERES_LM13_RESCUE_MIN_RHO: f64 = 0.25;
+#[cfg(test)]
+const CERES_LM13_RESCUE_MIN_RELATIVE_MERIT_DROP: f64 = 0.20;
+#[cfg(test)]
+const CERES_LM13_RESCUE_MIN_V35_BEAT: f64 = 0.02;
 
 /// Test-only cumulative control-flow telemetry for the difficult nonlinear
 /// solver tail. It deliberately counts decisions/work rather than sampling a
@@ -106,6 +126,14 @@ pub struct SolverControlProfile {
     pub search_trial_evaluations: u64,
     pub search_full_step_accepts: u64,
     pub search_damped_step_accepts: u64,
+    pub ceres_lm_entries: u64,
+    pub ceres_lm_trials: u64,
+    pub ceres_lm_accepts: u64,
+    pub ceres_lm_rejects: u64,
+    pub ceres_lm_invalid_models: u64,
+    pub ceres_lm_radius_contractions: u64,
+    pub ceres_lm_radius_expansions: u64,
+    pub ceres_lm_jacobian_reuses: u64,
     pub backtracks: u64,
     pub fallbacks: u64,
     pub limiter_hold_passes: u64,
@@ -150,6 +178,28 @@ impl SolverControlProfile {
             search_damped_step_accepts: self
                 .search_damped_step_accepts
                 .saturating_sub(before.search_damped_step_accepts),
+            ceres_lm_entries: self
+                .ceres_lm_entries
+                .saturating_sub(before.ceres_lm_entries),
+            ceres_lm_trials: self.ceres_lm_trials.saturating_sub(before.ceres_lm_trials),
+            ceres_lm_accepts: self
+                .ceres_lm_accepts
+                .saturating_sub(before.ceres_lm_accepts),
+            ceres_lm_rejects: self
+                .ceres_lm_rejects
+                .saturating_sub(before.ceres_lm_rejects),
+            ceres_lm_invalid_models: self
+                .ceres_lm_invalid_models
+                .saturating_sub(before.ceres_lm_invalid_models),
+            ceres_lm_radius_contractions: self
+                .ceres_lm_radius_contractions
+                .saturating_sub(before.ceres_lm_radius_contractions),
+            ceres_lm_radius_expansions: self
+                .ceres_lm_radius_expansions
+                .saturating_sub(before.ceres_lm_radius_expansions),
+            ceres_lm_jacobian_reuses: self
+                .ceres_lm_jacobian_reuses
+                .saturating_sub(before.ceres_lm_jacobian_reuses),
             backtracks: self.backtracks.saturating_sub(before.backtracks),
             fallbacks: self.fallbacks.saturating_sub(before.fallbacks),
             limiter_hold_passes: self
@@ -670,7 +720,7 @@ fn line_search_warm_start_lambda(previous: f64, floor: f64) -> f64 {
 /// The predictor assumes the next source step resembles the previous one. On
 /// the Twin attack trace the over-budget blocks coincide with large source
 /// curvature: continuing the old voltage slope through a source reversal or a
-/// >2x slope jump makes both the gain and power solves spend many passes
+/// more than 2x slope jump makes both the gain and power solves spend many passes
 /// walking back from a deliberately bad starting point. Keep the proven
 /// predictor on locally smooth audio and start from the last settled voltage
 /// only when that assumption is visibly false.
@@ -1859,6 +1909,22 @@ pub struct Simulation {
     /// always enables it on the Twin reduced line-search path.
     #[cfg(test)]
     test_disable_quadratic_backtracking: bool,
+    /// Test-only A/B switch for an NLsolve-style dogleg globalization on the
+    /// fixed 13-node Twin reduced boundary. Production remains on the proven
+    /// Newton-ray line search until this experiment earns KEEP.
+    #[cfg(test)]
+    test_disable_nlsolve_dogleg_trust_region: bool,
+    /// Opt-in A/B experiment: a Ceres-style LM *rescue* behind the proven
+    /// V3.5 Newton-ray search. The LM model is built lazily only after V3.5
+    /// has actually failed its bounded search, and entries are strictly
+    /// budgeted per sample solve. Production and ordinary tests remain on
+    /// V3.5 unless explicitly enabled.
+    #[cfg(test)]
+    test_ceres_lm13: bool,
+    #[cfg(test)]
+    test_ceres_lm13_entries_used: usize,
+    #[cfg(test)]
+    test_ceres_lm13_checkpoint: Vec<super::device::DeviceCheckpoint>,
     /// Test-only A/B switch for V3.3's within-solve line-search warm start.
     /// Production keeps the bounded warm start enabled on Twin gain and power.
     #[cfg(test)]
@@ -2311,6 +2377,21 @@ impl Simulation {
             )
             .is_some(),
             #[cfg(test)]
+            test_disable_nlsolve_dogleg_trust_region: std::env::var_os(
+                "GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION",
+            )
+            .is_some()
+                || std::env::var_os("GAINSTAGEFX_TEST_NLSOLVE_DOGLEG_TRUST_REGION").is_none(),
+            #[cfg(test)]
+            test_ceres_lm13: std::env::var_os("GAINSTAGEFX_TEST_CERES_LM13").is_some(),
+            #[cfg(test)]
+            test_ceres_lm13_entries_used: 0,
+            #[cfg(test)]
+            test_ceres_lm13_checkpoint: vec![
+                super::device::DeviceCheckpoint::default();
+                device_count
+            ],
+            #[cfg(test)]
             test_disable_line_search_warm_start: std::env::var_os(
                 "GAINSTAGEFX_TEST_DISABLE_LINE_SEARCH_WARM_START",
             )
@@ -2683,6 +2764,295 @@ impl Simulation {
         {
             true
         }
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn ceres_lm13_enabled(&self) -> bool {
+        self.test_ceres_lm13 && self.late_continuation
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn ceres_lm13_rescue_progress(here: f64, best_v35_merit: f64, there: f64) -> bool {
+        if !here.is_finite() || here <= 0.0 || !there.is_finite() || there < 0.0 {
+            return false;
+        }
+
+        let required = here * (1.0 - CERES_LM13_RESCUE_MIN_RELATIVE_MERIT_DROP);
+        if there > required {
+            return false;
+        }
+
+        // A rescue is only interesting if it also improves materially on the
+        // best point V3.5 just measured. Usually a failed monotone search has
+        // best_v35_merit >= here, so the root-residual test above is stronger;
+        // keep this explicit guard for non-monotone/cycle cases and future
+        // search policies.
+        if best_v35_merit.is_finite() && best_v35_merit >= 0.0 {
+            let required_vs_v35 = best_v35_merit * (1.0 - CERES_LM13_RESCUE_MIN_V35_BEAT);
+            if there > required_vs_v35 {
+                return false;
+            }
+        }
+        true
+    }
+
+    #[cfg(test)]
+    fn attempt_ceres_lm13_rescue(&mut self, here: f64, best_v35_merit: f64) -> bool {
+        if !self.ceres_lm13_enabled()
+            || self.test_ceres_lm13_entries_used >= CERES_LM13_RESCUE_MAX_ENTRIES_PER_SOLVE
+            || !here.is_finite()
+            || here <= 0.0
+        {
+            return false;
+        }
+        let exact_before = self.exact;
+        for (saved, device) in self
+            .test_ceres_lm13_checkpoint
+            .iter_mut()
+            .zip(&self.devices)
+        {
+            *saved = device.checkpoint();
+        }
+        // LU overwrote the searched pass's J. Capture it lazily, but do not
+        // let this extra stamp reset device correction/limiter history.
+        let model = if self.build_current_reduced(false, false) && self.exact {
+            self.nonlinear_partition
+                .as_ref()
+                .and_then(|partition| partition.ceres_lm_model_13(&self.voltage))
+        } else {
+            None
+        };
+        for (device, saved) in self
+            .devices
+            .iter_mut()
+            .zip(&self.test_ceres_lm13_checkpoint)
+        {
+            device.restore_checkpoint(*saved);
+        }
+        self.exact = exact_before;
+        if let Some(model) = model.as_ref() {
+            if self.try_ceres_lm13_rescue(model, here, best_v35_merit) {
+                return true;
+            }
+        } else {
+            // Invalid captures also spend the entry budget.
+            self.test_ceres_lm13_entries_used += 1;
+            if self.solver_control_tail_profile_enabled() {
+                self.test_control_profile.ceres_lm_entries += 1;
+                self.test_control_profile.ceres_lm_invalid_models += 1;
+            }
+        }
+        // Residual-only probes do not move the device, but can evict its
+        // accepted/current evaluation cache. Roll those back as well.
+        for (device, saved) in self
+            .devices
+            .iter_mut()
+            .zip(&self.test_ceres_lm13_checkpoint)
+        {
+            device.restore_checkpoint(*saved);
+        }
+        self.exact = exact_before;
+        false
+    }
+
+    #[cfg(test)]
+    fn try_ceres_lm13_rescue(
+        &mut self,
+        model: &super::partition::CeresLmModel13,
+        here: f64,
+        best_v35_merit: f64,
+    ) -> bool {
+        if !self.ceres_lm13_enabled()
+            || self.test_ceres_lm13_entries_used >= CERES_LM13_RESCUE_MAX_ENTRIES_PER_SOLVE
+            || !here.is_finite()
+            || here <= 0.0
+        {
+            return false;
+        }
+
+        // Budget entries, not merely accepted steps. A pathological sample can
+        // therefore spend at most 2 entries * 2 residual probes = four extra
+        // nonlinear evaluations, instead of re-entering LM on every tail pass.
+        // Invalid captures consume the same budget so they cannot spin either.
+        self.test_ceres_lm13_entries_used += 1;
+        if self.solver_control_tail_profile_enabled() {
+            self.test_control_profile.ceres_lm_entries =
+                self.test_control_profile.ceres_lm_entries.saturating_add(1);
+        }
+
+        // The model and current merit come from the same exact reduced stamp.
+        // Refuse an inconsistent capture rather than letting the trust ratio
+        // compare two different equations.
+        let merit_scale = here.abs().max(model.current_merit.abs()).max(1.0);
+        if !model.current_merit.is_finite()
+            || (here - model.current_merit).abs() > 1.0e-10 * merit_scale
+        {
+            if self.solver_control_tail_profile_enabled() {
+                self.test_control_profile.ceres_lm_invalid_models = self
+                    .test_control_profile
+                    .ceres_lm_invalid_models
+                    .saturating_add(1);
+            }
+            return false;
+        }
+
+        let exact_before = self.exact;
+        let mut radius = CERES_LM13_RESCUE_INITIAL_RADIUS;
+        let trial_budget = self.backtracks.min(CERES_LM13_RESCUE_MAX_TRIALS);
+        for trial in 0..trial_budget {
+            let predicted_merit = {
+                let (partition, voltage, point) =
+                    (&self.nonlinear_partition, &self.voltage, &mut self.point);
+                let Some(partition) = partition.as_ref() else {
+                    self.exact = exact_before;
+                    return false;
+                };
+                partition.ceres_lm_trial_point_13(model, voltage, radius, point)
+            };
+            let Some(predicted_merit) = predicted_merit else {
+                if self.solver_control_tail_profile_enabled() {
+                    self.test_control_profile.ceres_lm_invalid_models = self
+                        .test_control_profile
+                        .ceres_lm_invalid_models
+                        .saturating_add(1);
+                }
+                self.exact = exact_before;
+                return false;
+            };
+
+            if self.solver_control_tail_profile_enabled() {
+                self.test_control_profile.ceres_lm_trials =
+                    self.test_control_profile.ceres_lm_trials.saturating_add(1);
+                self.test_control_profile.search_trial_evaluations = self
+                    .test_control_profile
+                    .search_trial_evaluations
+                    .saturating_add(1);
+                if trial > 0 {
+                    self.test_control_profile.ceres_lm_jacobian_reuses = self
+                        .test_control_profile
+                        .ceres_lm_jacobian_reuses
+                        .saturating_add(1);
+                }
+            }
+
+            let Some(there) = self.reduced_trial_merit(false, false) else {
+                if self.solver_control_tail_profile_enabled() {
+                    self.test_control_profile.ceres_lm_invalid_models = self
+                        .test_control_profile
+                        .ceres_lm_invalid_models
+                        .saturating_add(1);
+                }
+                self.exact = exact_before;
+                return false;
+            };
+            if !self.exact || !there.is_finite() {
+                if self.solver_control_tail_profile_enabled() {
+                    self.test_control_profile.ceres_lm_invalid_models = self
+                        .test_control_profile
+                        .ceres_lm_invalid_models
+                        .saturating_add(1);
+                }
+                self.exact = exact_before;
+                return false;
+            }
+
+            let predicted_reduction = here - predicted_merit;
+            let actual_reduction = here - there;
+            let rho = if predicted_reduction.is_finite()
+                && predicted_reduction > f64::EPSILON * here.max(1.0)
+            {
+                actual_reduction / predicted_reduction
+            } else {
+                f64::NEG_INFINITY
+            };
+
+            // V1 accepted any rho > 1e-3 and consequently took millions of
+            // tiny least-squares improvements that never entered the root's
+            // Newton basin. V2 requires both a trustworthy local model and a
+            // material exact residual improvement over V3.5's failed search.
+            if rho.is_finite()
+                && rho >= CERES_LM13_RESCUE_MIN_RHO
+                && Self::ceres_lm13_rescue_progress(here, best_v35_merit, there)
+            {
+                let recovered = {
+                    let (partition, point) = (&mut self.nonlinear_partition, &mut self.point);
+                    partition
+                        .as_mut()
+                        .map(|partition| partition.trust_region_recover_internal_13(point))
+                        .unwrap_or(false)
+                };
+                if !recovered {
+                    if self.solver_control_tail_profile_enabled() {
+                        self.test_control_profile.ceres_lm_invalid_models = self
+                            .test_control_profile
+                            .ceres_lm_invalid_models
+                            .saturating_add(1);
+                    }
+                    self.exact = exact_before;
+                    return false;
+                }
+
+                if self.solver_control_tail_profile_enabled() {
+                    self.test_control_profile.ceres_lm_accepts =
+                        self.test_control_profile.ceres_lm_accepts.saturating_add(1);
+                    self.test_control_profile.search_damped_step_accepts = self
+                        .test_control_profile
+                        .search_damped_step_accepts
+                        .saturating_add(1);
+                    // We deliberately discard the radius after a rescue, but
+                    // keep the Ceres-style quality telemetry for diagnosis.
+                    let update = (1.0 - (2.0 * rho - 1.0).powi(3)).max(1.0 / 3.0);
+                    if 1.0 / update > 1.0 {
+                        self.test_control_profile.ceres_lm_radius_expansions = self
+                            .test_control_profile
+                            .ceres_lm_radius_expansions
+                            .saturating_add(1);
+                    } else if 1.0 / update < 1.0 {
+                        self.test_control_profile.ceres_lm_radius_contractions = self
+                            .test_control_profile
+                            .ceres_lm_radius_contractions
+                            .saturating_add(1);
+                    }
+                }
+                for device in &mut self.devices {
+                    device.commit_trial_state(&self.point);
+                }
+                self.voltage.copy_from_slice(&self.point);
+                self.search_lambda_hint = 1.0;
+                self.cycle_armed = false;
+                self.cycle_age = 0;
+                self.last_search_accepted_lambda = 0.0;
+                self.last_search_accepted_merit = there;
+                return true;
+            }
+
+            if self.solver_control_tail_profile_enabled() {
+                self.test_control_profile.ceres_lm_rejects =
+                    self.test_control_profile.ceres_lm_rejects.saturating_add(1);
+                self.test_control_profile.ceres_lm_radius_contractions = self
+                    .test_control_profile
+                    .ceres_lm_radius_contractions
+                    .saturating_add(1);
+            }
+            // Do not increment the production `backtrack_count`: rejected LM
+            // probes are test-only rescue overhead and must not perturb V3.5's
+            // continuation/deep-tail decisions when the rescue itself loses.
+            radius /= CERES_LM13_RESCUE_RADIUS_CONTRACTION;
+            if !radius.is_finite() || radius <= f64::MIN_POSITIVE {
+                break;
+            }
+        }
+
+        self.exact = exact_before;
+        false
+    }
+
+    #[cfg(test)]
+    #[inline]
+    fn nlsolve_dogleg_trust_region_enabled(&self) -> bool {
+        !self.test_disable_nlsolve_dogleg_trust_region
     }
 
     #[inline]
@@ -4358,6 +4728,24 @@ impl Simulation {
             self.search_merit = here;
         }
 
+        // NLsolve-inspired experiment: capture the unfactorised 13x13 local
+        // model before the ordinary reduced solve overwrites it with LU
+        // factors. The model is used only to choose a dogleg trial direction;
+        // the exact nonlinear residual below remains the acceptance oracle.
+        #[cfg(test)]
+        let trust_region_model = if search
+            && self.nlsolve_dogleg_trust_region_enabled()
+            && !self.ceres_lm13_enabled()
+            && reduced_direct
+            && !dc
+        {
+            self.nonlinear_partition.as_ref().and_then(|partition| {
+                partition.trust_region_model_13(&self.voltage, TOLERANCE, RELATIVE)
+            })
+        } else {
+            None
+        };
+
         // Save the linearisation before the search disturbs it. See
         // `Linearisation`: a rejected trial must leave nothing behind.
         //
@@ -4595,11 +4983,27 @@ impl Simulation {
         } else {
             1.0
         };
+        #[cfg(test)]
+        let trust_region_newton_norm = if reduced_direct {
+            trust_region_model.as_ref().and_then(|model| {
+                self.nonlinear_partition.as_ref().and_then(|partition| {
+                    partition.trust_region_newton_norm_13(model, &self.scratch)
+                })
+            })
+        } else {
+            None
+        };
+        #[cfg(test)]
+        let mut trust_region_radius = trust_region_newton_norm.map(|norm| norm * lambda);
         let mut taken = false;
         let mut best_lambda = 1.0;
         let mut best_merit = f64::INFINITY;
+        #[cfg(test)]
+        let mut best_trust_region_point = false;
         let mut cycle_rejected = false;
         let mut accepted_pure_reduced = false;
+        #[cfg(test)]
+        let mut accepted_trust_region = false;
         let mut devices_dirty = false;
         #[cfg(test)]
         let mut accepted_merit = 0.0;
@@ -4620,7 +5024,41 @@ impl Simulation {
             // defensive fallbacks still materialise every unknown.
             let mut pure_reduced_trial = reduced_direct && !self.watching;
             let mut interpolated_next = None;
-            let finite = if pure_reduced_trial {
+            #[cfg(test)]
+            let mut trust_region_trial = pure_reduced_trial
+                && !dc
+                && trust_region_model.is_some()
+                && trust_region_radius.is_some();
+            #[cfg(not(test))]
+            let trust_region_trial = false;
+            #[cfg(test)]
+            let mut trust_region_non_newton = false;
+            let finite = if trust_region_trial {
+                #[cfg(test)]
+                {
+                    let candidate = self.nonlinear_partition.as_ref().and_then(|partition| {
+                        partition.trust_region_trial_point_13(
+                            trust_region_model.as_ref().unwrap(),
+                            &self.voltage,
+                            &self.scratch,
+                            trust_region_radius.unwrap(),
+                            &mut self.point,
+                        )
+                    });
+                    if let Some((fraction, _predicted_merit)) = candidate {
+                        lambda = fraction.max(search_floor).min(1.0);
+                        trust_region_non_newton = fraction < 1.0 - 8.0 * f64::EPSILON;
+                        true
+                    } else {
+                        trust_region_trial = false;
+                        self.build_reduced_trial_point(dc, lambda)
+                    }
+                }
+                #[cfg(not(test))]
+                {
+                    false
+                }
+            } else if pure_reduced_trial {
                 self.build_reduced_trial_point(dc, lambda)
             } else {
                 self.build_full_trial_point(lambda)
@@ -4637,6 +5075,11 @@ impl Simulation {
                             // if that invariant is ever violated do not judge
                             // a trial against stale full-MNA storage.
                             pure_reduced_trial = false;
+                            #[cfg(test)]
+                            {
+                                trust_region_trial = false;
+                                trust_region_non_newton = false;
+                            }
                             if !self.build_full_trial_point(lambda) {
                                 break;
                             }
@@ -4692,6 +5135,17 @@ impl Simulation {
                 if there.is_finite() && there < best_merit {
                     best_merit = there;
                     best_lambda = lambda;
+                    #[cfg(test)]
+                    if trust_region_trial {
+                        if let Some(partition) = self.nonlinear_partition.as_ref() {
+                            for &at in partition.boundary_nodes() {
+                                self.predicted[at] = self.point[at];
+                            }
+                            best_trust_region_point = trust_region_non_newton;
+                        }
+                    } else {
+                        best_trust_region_point = false;
+                    }
                 }
                 let improves = search_trial_improves(here, reference, there);
                 // On the Twin's exact Schur path use the rejected residual to
@@ -4706,6 +5160,7 @@ impl Simulation {
                     && pure_reduced_trial
                     && !dc
                     && !improves
+                    && !trust_region_trial
                 {
                     interpolated_next = Some(quadratic_backtrack_lambda(
                         here,
@@ -4753,6 +5208,7 @@ impl Simulation {
                     accepted_pure_reduced = pure_reduced_trial;
                     #[cfg(test)]
                     {
+                        accepted_trust_region = trust_region_trial && trust_region_non_newton;
                         accepted_merit = there;
                         if self.solver_control_tail_profile_enabled() && !dc {
                             if lambda == 1.0 {
@@ -4785,6 +5241,18 @@ impl Simulation {
             self.backtrack_count += 1;
             if lambda <= search_floor {
                 break;
+            }
+            #[cfg(test)]
+            if trust_region_trial {
+                if let (Some(radius), Some(newton_norm)) =
+                    (trust_region_radius, trust_region_newton_norm)
+                {
+                    let floor_radius = search_floor * newton_norm;
+                    let next_radius = (0.5 * radius).max(floor_radius);
+                    trust_region_radius = Some(next_radius);
+                    lambda = (next_radius / newton_norm).clamp(search_floor, 1.0);
+                    continue;
+                }
             }
             lambda = interpolated_next.unwrap_or(lambda * 0.5).max(search_floor);
         }
@@ -4881,6 +5349,21 @@ impl Simulation {
         }
 
         if !taken {
+            // V3.5 gets first refusal. Only after its bounded Newton-ray
+            // search has failed may LM13-v2 spend a tiny rescue budget. Build
+            // F/J lazily at the still-current accepted point, so ordinary
+            // successful searched passes pay no J^T J/model cost at all.
+            #[cfg(test)]
+            if self.ceres_lm13_enabled()
+                && self.test_ceres_lm13_entries_used < CERES_LM13_RESCUE_MAX_ENTRIES_PER_SOLVE
+                && reduced_direct
+                && !dc
+                && !devices_dirty
+                && self.attempt_ceres_lm13_rescue(here, best_merit)
+            {
+                return Pass::Moved;
+            }
+
             // Nothing of any length improved the residual. That is not a
             // reason to stop: abandoning the solve here leaves it at a point
             // it had not finished with, and measured against an accurate
@@ -4903,6 +5386,15 @@ impl Simulation {
                     device.relinearise(*saved);
                 }
             }
+            #[cfg(test)]
+            if best_trust_region_point {
+                if let Some(partition) = self.nonlinear_partition.as_mut() {
+                    if partition.trust_region_recover_internal_13(&mut self.predicted) {
+                        self.voltage.copy_from_slice(&self.predicted);
+                        return Pass::Moved;
+                    }
+                }
+            }
             if dc || best_lambda == 1.0 {
                 self.voltage.copy_from_slice(&self.guess);
             } else {
@@ -4923,17 +5415,46 @@ impl Simulation {
             self.last_search_accepted_merit = accepted_merit;
         }
         if accepted_pure_reduced {
+            #[cfg(test)]
+            if accepted_trust_region {
+                let recovered = {
+                    let (partition, point) = (&mut self.nonlinear_partition, &mut self.point);
+                    partition
+                        .as_mut()
+                        .map(|partition| partition.trust_region_recover_internal_13(point))
+                        .unwrap_or(false)
+                };
+                if !recovered {
+                    return Pass::Stuck;
+                }
+            }
             // The probe itself deliberately did not mutate any device. Commit
             // the winner once so limiter, op-amp rail and core state are the
             // same state the old mutating trial left for continuation logic.
             for device in &mut self.devices {
                 device.commit_trial_state(&self.point);
             }
-            // Materialise the eliminated/internal entries once, preserving the
-            // exact arithmetic expression the old full candidate loop used.
-            for (voltage, &delta) in self.voltage.iter_mut().zip(&self.scratch) {
-                let value = *voltage + lambda * delta;
-                *voltage = value;
+            #[cfg(test)]
+            if accepted_trust_region {
+                self.voltage.copy_from_slice(&self.point);
+            } else {
+                // Materialise the eliminated/internal entries once, preserving
+                // the exact arithmetic expression the old full candidate loop
+                // used for the ordinary Newton-ray search.
+                for (voltage, &delta) in self.voltage.iter_mut().zip(&self.scratch) {
+                    let value = *voltage + lambda * delta;
+                    *voltage = value;
+                }
+            }
+            #[cfg(not(test))]
+            {
+                // Materialise the eliminated/internal entries once, preserving
+                // the exact arithmetic expression the old full candidate loop
+                // used.
+                for (voltage, &delta) in self.voltage.iter_mut().zip(&self.scratch) {
+                    let value = *voltage + lambda * delta;
+                    *voltage = value;
+                }
             }
         } else {
             self.voltage.copy_from_slice(&self.point);
@@ -4952,9 +5473,12 @@ impl Simulation {
         #[cfg(test)]
         let solver_control_earlier_input = self.earlier_input;
         #[cfg(test)]
-        if solver_control_before.is_some() {
-            self.test_control_current_accepted_lambda_count = 0;
-            self.test_control_current_accepted_lambdas.fill(0.0);
+        {
+            self.test_ceres_lm13_entries_used = 0;
+            if solver_control_before.is_some() {
+                self.test_control_current_accepted_lambda_count = 0;
+                self.test_control_current_accepted_lambdas.fill(0.0);
+            }
         }
         self.solves += 1;
         // A control has moved. What that means depends on whether there is
@@ -6606,6 +7130,152 @@ fn nonlinear_reduction_worthwhile(n: usize, boundary: usize) -> bool {
     let full = n * n * n;
     let reduced = b * b * b + 2.0 * i * b + b * b;
     reduced < 0.85 * full
+}
+
+#[cfg(test)]
+#[test]
+fn ceres_lm13_rejected_rescue_restores_state_and_bounds_probes() {
+    for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
+        let circuit = crate::voice::build_power(crate::voice::Gain::Twin)
+            .unwrap()
+            .unwrap();
+        let mut sim = Simulation::new(circuit, rate);
+        sim.test_ceres_lm13 = true;
+        sim.test_disable_nlsolve_dogleg_trust_region = true;
+        sim.test_profile_solver_control_tail = true;
+        sim.set_late_continuation(true);
+        sim.set_backtracks(4);
+        assert!(sim.find_operating_point());
+        sim.prepare_rhs(10.0, false);
+        assert!(sim.build_current_reduced(false, false));
+        let here = sim
+            .nonlinear_partition
+            .as_ref()
+            .unwrap()
+            .merit_stamped(&sim.voltage);
+        assert!(here > 0.0);
+        sim.point.copy_from_slice(&sim.voltage);
+        assert!(sim.reduced_trial_merit(false, true).is_some());
+        let devices: Vec<_> = sim.devices.iter().map(AnyDevice::checkpoint).collect();
+        let voltage = sim.voltage.clone();
+        let exact = sim.exact;
+        let backtracks = sim.backtrack_count;
+        let fallbacks = sim.fallbacks;
+        let hint = sim.search_lambda_hint;
+        let before = sim.test_control_profile;
+
+        // Deliberately better than any attainable trial in this fixture. This
+        // exercises actual nonlinear probes and their rejection, not just an
+        // early invalid-model return. No global environment mutation needed.
+        for _ in 0..3 {
+            assert!(!sim.attempt_ceres_lm13_rescue(here, 1e-300));
+            assert_eq!(
+                sim.devices
+                    .iter()
+                    .map(AnyDevice::checkpoint)
+                    .collect::<Vec<_>>(),
+                devices
+            );
+            assert_eq!(sim.voltage, voltage);
+            assert_eq!(sim.exact, exact);
+            assert_eq!(sim.backtrack_count, backtracks);
+            assert_eq!(sim.fallbacks, fallbacks);
+            assert_eq!(sim.search_lambda_hint, hint);
+        }
+        let work = sim.test_control_profile.saturating_delta(before);
+        assert_eq!(work.ceres_lm_entries, 2);
+        assert_eq!(work.ceres_lm_trials, 4);
+        assert_eq!(work.ceres_lm_rejects, 4);
+        assert_eq!(work.ceres_lm_accepts, 0);
+
+        // An inconsistent capture must roll back the lazy restamp too.
+        sim.test_ceres_lm13_entries_used = 0;
+        assert!(!sim.attempt_ceres_lm13_rescue(here * 10.0, 1e-300));
+        assert_eq!(
+            sim.devices
+                .iter()
+                .map(AnyDevice::checkpoint)
+                .collect::<Vec<_>>(),
+            devices
+        );
+        assert_eq!(sim.exact, exact);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn ceres_lm13_rescue_requires_material_root_progress() {
+    // Tiny least-squares wins are exactly what made LM13-v1 crawl for hundreds
+    // of passes. V2 rejects them even if their rho would otherwise look good.
+    assert!(!Simulation::ceres_lm13_rescue_progress(1.0, 1.1, 0.99));
+    assert!(!Simulation::ceres_lm13_rescue_progress(1.0, 1.1, 0.81));
+
+    // A clearly better exact root residual earns rescue eligibility.
+    assert!(Simulation::ceres_lm13_rescue_progress(1.0, 1.1, 0.75));
+
+    // And the LM candidate must beat the best V3.5 trial, not merely the
+    // current point, if the two criteria ever diverge.
+    assert!(!Simulation::ceres_lm13_rescue_progress(1.0, 0.70, 0.75));
+    assert!(!Simulation::ceres_lm13_rescue_progress(1.0, 0.0, 0.1));
+}
+
+#[cfg(test)]
+#[test]
+fn ceres_lm13_rescue_matches_full_reference_at_supported_rates() {
+    use crate::voice::{self, Gain};
+    // Integration-test dependencies compile without cfg(test), so merely
+    // setting the LM environment flag on tests/voice.rs does not exercise LM.
+    // This runs the same physical reference with the real experimental path.
+    for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
+        for drive in [0.2, 0.6, 1.0] {
+            let mut channel = Simulation::new(
+                voice::build_voice(Gain::Twin, voice::Diode::Silicon, voice::Amplifier::Valve)
+                    .unwrap(),
+                rate,
+            );
+            channel.test_ceres_lm13 = false;
+            channel.test_disable_nlsolve_dogleg_trust_region = true;
+            channel.set_control(Gain::Twin.drive_control(), drive);
+            assert!(channel.find_operating_point());
+            let power = voice::build_power(Gain::Twin).unwrap().unwrap();
+            let mut realtime = Simulation::new(power.clone(), rate);
+            realtime.test_ceres_lm13 = true;
+            realtime.test_disable_nlsolve_dogleg_trust_region = true;
+            realtime.set_backtracks(4);
+            realtime.set_late_continuation(true);
+            realtime.set_pass_ceiling(64);
+            assert!(realtime.find_operating_point());
+            let mut reference = Simulation::new(power, rate);
+            reference.test_ceres_lm13 = false;
+            reference.test_disable_nlsolve_dogleg_trust_region = true;
+            reference.set_backtracks(6);
+            reference.set_pass_ceiling(64);
+            assert!(reference.find_operating_point());
+            let (mut error_energy, mut reference_energy) = (0.0, 0.0);
+            for i in 0..4096 {
+                let t = i as f64 / rate;
+                let input = 0.969
+                    * 0.5
+                    * (t / 0.0005).min(1.0)
+                    * (-t / 0.080).exp()
+                    * ((std::f64::consts::TAU * 110.0 * t).sin()
+                        + 0.5 * (std::f64::consts::TAU * 330.0 * t).sin());
+                let power_input = channel.process(input);
+                let got = realtime.process(power_input);
+                let want = reference.process(power_input);
+                assert!(got.is_finite() && want.is_finite());
+                error_energy += (got - want).powi(2);
+                reference_energy += want.powi(2);
+            }
+            let null_db = 10.0 * (error_energy.max(1e-300) / reference_energy.max(1e-300)).log10();
+            eprintln!("LM13 reference: rate={rate}, drive={drive}, null={null_db:.1} dB");
+            assert!(null_db < -140.0);
+            assert_eq!(realtime.unsettled, 0);
+            assert_eq!(reference.unsettled, 0);
+            assert_eq!(realtime.nonfinite, 0);
+            assert_eq!(reference.nonfinite, 0);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

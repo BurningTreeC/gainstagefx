@@ -8,9 +8,6 @@ use nih_plug::prelude::Enum;
 
 const RATE: f64 = 96_000.0;
 
-/// Two presets with the same name are two presets a saved session cannot tell
-/// apart, and the one that reloads is whichever happens to be found first.
-
 /// Hand-written selector lists must stay in the same order as the host enum.
 /// Presets and automation are normalized against the enum declaration order;
 /// a different UI list makes a click select the neighboring model.
@@ -27,6 +24,8 @@ fn pedal_selector_order_matches_the_host_enum() {
     }
 }
 
+/// Two presets with the same name are two presets a saved session cannot tell
+/// apart, and the one that reloads is whichever happens to be found first.
 #[test]
 fn every_preset_has_its_own_name() {
     let mut seen = std::collections::HashSet::new();

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Repeated, alternating A/B runs of the release Twin mono solver fixture.
 
-A enables the optimization; B sets its disable switch. Profiling is always off
+A enables the optimization; B disables it. Profiling is always off
 for timing runs. Optional control runs are separate and excluded from medians.
 The harness itself warms circuit state before measuring. No system settings are
 changed. Use an otherwise idle machine; pinning does not isolate a CPU.
@@ -175,7 +175,10 @@ def arguments():
     parser.add_argument("--repetitions", type=int, default=3, help="pairs of timing runs, minimum 3")
     parser.add_argument("--cpu", help="taskset CPU list, e.g. 2 or 2,3; inherited by test threads")
     parser.add_argument("--seconds", type=float, default=8.0, help="fixture duration; 0 uses entire recording")
-    parser.add_argument("--disable-switch", default="GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT")
+    switches = parser.add_mutually_exclusive_group()
+    switches.add_argument("--disable-switch", help="A unsets this variable; B sets it to 1")
+    switches.add_argument("--enable-switch", help="A sets this opt-in variable to 1; B unsets it")
+    parser.add_argument("--clean-v35", action="store_true", help="remove inherited test switches and disable experimental dogleg before applying the A/B switch")
     parser.add_argument("--control-profile", action="store_true", help="additional A/B pair with control profiling")
     parser.add_argument("--assert-control-equal", action="store_true", help="require exact control-counter equality and equal audio hashes when available; implies --control-profile")
     args = parser.parse_args()
@@ -183,8 +186,13 @@ def arguments():
         parser.error("--repetitions must be at least 3")
     if not math.isfinite(args.seconds) or args.seconds < 0:
         parser.error("--seconds must be finite and nonnegative")
-    if not re.fullmatch(r"GAINSTAGEFX_TEST_DISABLE_[A-Z0-9_]+", args.disable_switch):
+    if not args.enable_switch and not args.disable_switch:
+        args.disable_switch = "GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT"
+    if args.disable_switch and not re.fullmatch(r"GAINSTAGEFX_TEST_DISABLE_[A-Z0-9_]+", args.disable_switch):
         parser.error("--disable-switch must be a GAINSTAGEFX_TEST_DISABLE_* variable")
+    if args.enable_switch and (not re.fullmatch(r"GAINSTAGEFX_TEST_[A-Z0-9_]+", args.enable_switch)
+                               or args.enable_switch.startswith("GAINSTAGEFX_TEST_DISABLE_")):
+        parser.error("--enable-switch must be a GAINSTAGEFX_TEST_* opt-in variable")
     return args
 
 
@@ -196,8 +204,12 @@ def main():
     env = os.environ.copy()
     removed = {}
     for key in list(env):
-        if key.startswith(("GAINSTAGEFX_PROFILE_", "GAINSTAGEFX_TRACE_")) or key == args.disable_switch:
+        if (key.startswith(("GAINSTAGEFX_PROFILE_", "GAINSTAGEFX_TRACE_"))
+                or key in (args.disable_switch, args.enable_switch)
+                or (args.clean_v35 and key.startswith("GAINSTAGEFX_TEST_"))):
             removed[key] = env.pop(key)
+    if args.clean_v35:
+        env["GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION"] = "1"
     env["GAINSTAGEFX_ATTACK_PRESET"] = args.preset
     env["GAINSTAGEFX_REALTIME_SECONDS"] = str(args.seconds)
     command = [str(binary), TEST, "--ignored", "--nocapture", "--test-threads=1"]
@@ -210,6 +222,7 @@ def main():
             "seconds": args.seconds, "cpu": args.cpu, "sample_rate": 48000,
             "block_samples": 64, "callback_budget_us": 64 / 48000 * 1e6,
             "A": "enabled", "B": "disabled", "disable_switch": args.disable_switch,
+            "enable_switch": args.enable_switch, "clean_v35": args.clean_v35,
             "command": command, "removed_environment": removed,
             "environment": {k: v for k, v in env.items() if k.startswith(("GAINSTAGEFX_", "RUSTFLAGS", "CARGO_"))},
             "note": "Unpaced thread CPU timings; cpu_compute_misses count budget overruns. Medians of maxima are not a hard realtime guarantee. Precompiled binary compiler provenance is caller supplied.",
@@ -222,8 +235,12 @@ def main():
 
     def run(label, repetition, profiling=False):
         run_env = env.copy()
-        if label == "B":
+        if label == "B" and args.disable_switch:
             run_env[args.disable_switch] = "1"
+        elif label == "A" and args.enable_switch:
+            run_env[args.enable_switch] = "1"
+        elif label == "A" and args.disable_switch:
+            run_env.pop(args.disable_switch, None)
         if profiling:
             run_env["GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL"] = "1"
         name = f"{'control' if profiling else 'timing'}-{repetition:02}-{label}.log"
@@ -240,6 +257,10 @@ def main():
             raise ValueError(f"expected exactly one successful test in {name}")
         entry["metrics"], entry["control"] = parse_log(log)
         entry["output_hash"] = parse_output_hash(log)
+        entry["preset_configuration"] = [
+            line[line.index("preset_configuration,"):]
+            for line in log.splitlines() if "preset_configuration," in line
+        ]
         save()
         if profiling and entry["control"] is None:
             raise ValueError(f"missing control summary in {name}")

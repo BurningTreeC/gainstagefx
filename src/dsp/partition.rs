@@ -477,6 +477,40 @@ pub struct ReducedNonlinear {
     test_pivot_profile: ReducedPivotProfile,
 }
 
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct TrustRegionModel13 {
+    residual: [f64; 13],
+    gradient: [f64; 13],
+    j_gradient: [f64; 13],
+    cauchy: [f64; 13],
+    j_cauchy: [f64; 13],
+    scale: [f64; 13],
+    gradient_norm: f64,
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CeresLmModel13 {
+    jacobian: [f64; 169],
+    normal: [f64; 169],
+    negative_gradient: [f64; 13],
+    residual: [f64; 13],
+    damping_diagonal: [f64; 13],
+    pub(crate) current_merit: f64,
+}
+
+#[cfg(test)]
+#[inline(always)]
+fn trust_weighted_norm_13(vector: &[f64; 13], scale: &[f64; 13]) -> f64 {
+    let mut total = 0.0;
+    for index in 0..13 {
+        let value = vector[index] / scale[index];
+        total += value * value;
+    }
+    total.sqrt()
+}
+
 #[inline(always)]
 fn recover_boundary_major_in_place(
     work: &mut [f64],
@@ -498,6 +532,10 @@ fn recover_boundary_major_in_place(
 }
 
 #[inline(always)]
+#[allow(
+    clippy::needless_range_loop,
+    reason = "keep the measured fixed-size kernel and reference operation order"
+)]
 fn merit_stamped_fixed_13(matrix: &[f64; 169], rhs: &[f64; 13], voltage: &[f64; 13]) -> f64 {
     let mut total = 0.0;
     for row in 0..13 {
@@ -986,6 +1024,10 @@ impl ReducedNonlinear {
     /// directly to this compact vector. No Jacobian is needed because the
     /// line-search candidate is judged but never solved.
     #[inline]
+    #[allow(
+        clippy::needless_range_loop,
+        reason = "keep the measured residual kernel and reference operation order"
+    )]
     pub fn begin_residual<'a>(
         &'a self,
         fixed_rhs: &[f64],
@@ -1162,6 +1204,459 @@ impl ReducedNonlinear {
             total += residual * residual;
         }
         total
+    }
+
+    /// Test-only Ceres-style Levenberg-Marquardt model for the fixed 13-node
+    /// Twin boundary. The unfactorised reduced Jacobian is captured once, then
+    /// J^T J, -J^T F, and the squared-column-norm damping diagonal are cached so
+    /// rejected LM steps only need another tiny fixed-size linear solve.
+    #[cfg(test)]
+    pub(crate) fn ceres_lm_model_13(&self, current: &[f64]) -> Option<CeresLmModel13> {
+        const MIN_DIAGONAL: f64 = 1.0e-6;
+        const MAX_DIAGONAL: f64 = 1.0e32;
+
+        if !self.valid || !self.rhs_prepared || self.condensed.boundary.len() != 13 {
+            return None;
+        }
+        let boundary: &[usize; 13] = self.condensed.boundary.as_slice().try_into().ok()?;
+        if current.len() < self.node_to_boundary.len() {
+            return None;
+        }
+        let jacobian: &[f64; 169] = self.reduced_matrix.as_slice().try_into().ok()?;
+        let rhs: &[f64; 13] = self.reduced_rhs.as_slice().try_into().ok()?;
+
+        let mut x = [0.0; 13];
+        for index in 0..13 {
+            x[index] = current[boundary[index]];
+            if !x[index].is_finite() {
+                return None;
+            }
+        }
+
+        let mut residual = [0.0; 13];
+        let mut current_merit = 0.0;
+        for row in 0..13 {
+            let base = row * 13;
+            let mut value = -rhs[row];
+            for column in 0..13 {
+                value += jacobian[base + column] * x[column];
+            }
+            if !value.is_finite() {
+                return None;
+            }
+            residual[row] = value;
+            current_merit += value * value;
+        }
+        if !current_merit.is_finite() {
+            return None;
+        }
+
+        let mut normal = [0.0; 169];
+        let mut negative_gradient = [0.0; 13];
+        let mut damping_diagonal = [0.0; 13];
+        for column in 0..13 {
+            let mut gradient = 0.0;
+            let mut column_norm_sq = 0.0;
+            for row in 0..13 {
+                let j = jacobian[row * 13 + column];
+                gradient += j * residual[row];
+                column_norm_sq += j * j;
+            }
+            if !gradient.is_finite() || !column_norm_sq.is_finite() {
+                return None;
+            }
+            negative_gradient[column] = -gradient;
+            damping_diagonal[column] = column_norm_sq.clamp(MIN_DIAGONAL, MAX_DIAGONAL);
+        }
+
+        for row in 0..13 {
+            for column in row..13 {
+                let mut value = 0.0;
+                for k in 0..13 {
+                    value += jacobian[k * 13 + row] * jacobian[k * 13 + column];
+                }
+                if !value.is_finite() {
+                    return None;
+                }
+                normal[row * 13 + column] = value;
+                normal[column * 13 + row] = value;
+            }
+        }
+
+        Some(CeresLmModel13 {
+            jacobian: *jacobian,
+            normal,
+            negative_gradient,
+            residual,
+            damping_diagonal,
+            current_merit,
+        })
+    }
+
+    /// Construct one Ceres-style LM candidate while leaving the captured local
+    /// model untouched for a possible rejected-step retry. `radius` follows
+    /// Ceres's convention: the effective diagonal is D^2 / radius. Returns the
+    /// local model merit ||F + Jp||^2 used for the actual/predicted reduction
+    /// ratio. No heap allocation and no nonlinear evaluation occur here.
+    #[cfg(test)]
+    pub(crate) fn ceres_lm_trial_point_13(
+        &self,
+        model: &CeresLmModel13,
+        current: &[f64],
+        radius: f64,
+        point: &mut [f64],
+    ) -> Option<f64> {
+        if self.condensed.boundary.len() != 13
+            || current.len() < self.node_to_boundary.len()
+            || point.len() < self.node_to_boundary.len()
+            || !radius.is_finite()
+            || radius <= 0.0
+        {
+            return None;
+        }
+        let boundary: &[usize; 13] = self.condensed.boundary.as_slice().try_into().ok()?;
+
+        let mut matrix = model.normal;
+        let mut step = model.negative_gradient;
+        for index in 0..13 {
+            matrix[index * 13 + index] += model.damping_diagonal[index] / radius;
+            if !matrix[index * 13 + index].is_finite() {
+                return None;
+            }
+        }
+        let mut pivot_plan = [0usize; 13];
+        let mut pivot_planned = false;
+        if !solve_dense_planned_fixed::<13>(
+            &mut matrix,
+            &mut step,
+            &mut pivot_plan,
+            &mut pivot_planned,
+            true,
+        ) {
+            return None;
+        }
+
+        let mut predicted_merit = 0.0;
+        for row in 0..13 {
+            let base = row * 13;
+            let mut predicted = model.residual[row];
+            for (column, &delta) in step.iter().enumerate() {
+                predicted += model.jacobian[base + column] * delta;
+            }
+            if !predicted.is_finite() {
+                return None;
+            }
+            predicted_merit += predicted * predicted;
+        }
+        if !predicted_merit.is_finite() {
+            return None;
+        }
+
+        for index in 0..13 {
+            let value = current[boundary[index]] + step[index];
+            if !value.is_finite() {
+                return None;
+            }
+            point[boundary[index]] = value;
+        }
+        Some(predicted_merit)
+    }
+
+    /// Test-only NLsolve-style dogleg model for the fixed 13-node Twin boundary.
+    ///
+    /// This is captured before the reduced matrix is factorised. `residual` is
+    /// the exact linear-model residual J*x-b at the current iterate. The
+    /// scaled steepest-descent/Cauchy direction follows NLsolve's dogleg
+    /// formulation, using the same per-unknown absolute+relative scale as the
+    /// production convergence test. No circuit equation or Jacobian entry is
+    /// changed; this only prepares an alternate globalization direction.
+    #[cfg(test)]
+    pub(crate) fn trust_region_model_13(
+        &self,
+        current: &[f64],
+        tolerance: f64,
+        relative: f64,
+    ) -> Option<TrustRegionModel13> {
+        if !self.valid || !self.rhs_prepared || self.condensed.boundary.len() != 13 {
+            return None;
+        }
+        let boundary: &[usize; 13] = self.condensed.boundary.as_slice().try_into().ok()?;
+        if current.len() < self.node_to_boundary.len() {
+            return None;
+        }
+        let matrix: &[f64; 169] = self.reduced_matrix.as_slice().try_into().ok()?;
+        let rhs: &[f64; 13] = self.reduced_rhs.as_slice().try_into().ok()?;
+
+        let mut x = [0.0; 13];
+        let mut scale = [0.0; 13];
+        for index in 0..13 {
+            let value = current[boundary[index]];
+            x[index] = value;
+            let local_scale = tolerance + relative * value.abs();
+            if !value.is_finite() || !local_scale.is_finite() || local_scale <= 0.0 {
+                return None;
+            }
+            scale[index] = local_scale;
+        }
+
+        let mut residual = [0.0; 13];
+        for row in 0..13 {
+            let base = row * 13;
+            let mut value = -rhs[row];
+            for column in 0..13 {
+                value += matrix[base + column] * x[column];
+            }
+            if !value.is_finite() {
+                return None;
+            }
+            residual[row] = value;
+        }
+
+        // NLsolve's scaled dogleg computes g = J' r ./ d^2 while measuring
+        // steps with ||d .* p||. Here d = 1/(VNTOL + RELTOL*|x|), matching
+        // the solver's existing notion of a normalized node correction.
+        let mut gradient = [0.0; 13];
+        for column in 0..13 {
+            let mut value = 0.0;
+            for row in 0..13 {
+                value += matrix[row * 13 + column] * residual[row];
+            }
+            value *= scale[column] * scale[column];
+            if !value.is_finite() {
+                return None;
+            }
+            gradient[column] = value;
+        }
+        let gradient_norm = trust_weighted_norm_13(&gradient, &scale);
+        if !gradient_norm.is_finite() || gradient_norm <= f64::MIN_POSITIVE {
+            return None;
+        }
+
+        let mut j_gradient = [0.0; 13];
+        let mut j_gradient_norm_sq = 0.0;
+        for (row, entry) in j_gradient.iter_mut().enumerate() {
+            let base = row * 13;
+            let mut value = 0.0;
+            for column in 0..13 {
+                value += matrix[base + column] * gradient[column];
+            }
+            if !value.is_finite() {
+                return None;
+            }
+            *entry = value;
+            j_gradient_norm_sq += value * value;
+        }
+        if !j_gradient_norm_sq.is_finite() || j_gradient_norm_sq <= f64::MIN_POSITIVE {
+            return None;
+        }
+
+        let alpha = (gradient_norm * gradient_norm) / j_gradient_norm_sq;
+        if !alpha.is_finite() || alpha <= 0.0 {
+            return None;
+        }
+        let mut cauchy = [0.0; 13];
+        let mut j_cauchy = [0.0; 13];
+        for index in 0..13 {
+            cauchy[index] = -alpha * gradient[index];
+            j_cauchy[index] = -alpha * j_gradient[index];
+        }
+
+        Some(TrustRegionModel13 {
+            residual,
+            gradient,
+            j_gradient,
+            cauchy,
+            j_cauchy,
+            scale,
+            gradient_norm,
+        })
+    }
+
+    /// Build one NLsolve-style dogleg candidate into `point`'s boundary
+    /// entries. The full Newton correction is supplied by the ordinary exact
+    /// reduced solve; the model captured above supplies the Cauchy leg.
+    /// Returns `(step_norm / newton_norm, predicted_merit)`.
+    #[cfg(test)]
+    pub(crate) fn trust_region_trial_point_13(
+        &self,
+        model: &TrustRegionModel13,
+        current: &[f64],
+        newton_delta: &[f64],
+        radius: f64,
+        point: &mut [f64],
+    ) -> Option<(f64, f64)> {
+        if self.condensed.boundary.len() != 13
+            || current.len() < self.node_to_boundary.len()
+            || newton_delta.len() < self.node_to_boundary.len()
+            || point.len() < self.node_to_boundary.len()
+            || !radius.is_finite()
+            || radius <= 0.0
+        {
+            return None;
+        }
+        let boundary: &[usize; 13] = self.condensed.boundary.as_slice().try_into().ok()?;
+        let mut newton = [0.0; 13];
+        for index in 0..13 {
+            newton[index] = newton_delta[boundary[index]];
+            if !newton[index].is_finite() {
+                return None;
+            }
+        }
+        let newton_norm = trust_weighted_norm_13(&newton, &model.scale);
+        if !newton_norm.is_finite() || newton_norm <= f64::MIN_POSITIVE {
+            return None;
+        }
+        let radius = radius.min(newton_norm);
+
+        let mut step = [0.0; 13];
+        let mut j_step = [0.0; 13];
+        if newton_norm <= radius * (1.0 + 8.0 * f64::EPSILON) {
+            step = newton;
+            for (index, entry) in j_step.iter_mut().enumerate() {
+                // For the Newton correction J*p = -F in the captured linear
+                // model. Using that identity avoids retaining/copying 169
+                // Jacobian coefficients after factorisation.
+                *entry = -model.residual[index];
+            }
+        } else {
+            let cauchy_norm = trust_weighted_norm_13(&model.cauchy, &model.scale);
+            if !cauchy_norm.is_finite() {
+                return None;
+            }
+            if cauchy_norm >= radius {
+                let factor = radius / model.gradient_norm;
+                for index in 0..13 {
+                    step[index] = -factor * model.gradient[index];
+                    j_step[index] = -factor * model.j_gradient[index];
+                }
+            } else {
+                let mut diff = [0.0; 13];
+                let mut a = 0.0;
+                let mut b = 0.0;
+                for index in 0..13 {
+                    diff[index] = newton[index] - model.cauchy[index];
+                    let scaled_diff = diff[index] / model.scale[index];
+                    let scaled_cauchy = model.cauchy[index] / model.scale[index];
+                    a += scaled_diff * scaled_diff;
+                    b += 2.0 * scaled_cauchy * scaled_diff;
+                }
+                let c = cauchy_norm * cauchy_norm - radius * radius;
+                let discriminant = b * b - 4.0 * a * c;
+                if !a.is_finite()
+                    || a <= f64::MIN_POSITIVE
+                    || !discriminant.is_finite()
+                    || discriminant < 0.0
+                {
+                    return None;
+                }
+                let tau = (-b + discriminant.sqrt()) / (2.0 * a);
+                if !tau.is_finite() || !(0.0..=1.0 + 8.0 * f64::EPSILON).contains(&tau) {
+                    return None;
+                }
+                let tau = tau.clamp(0.0, 1.0);
+                for index in 0..13 {
+                    step[index] = model.cauchy[index] + tau * diff[index];
+                    let j_diff = -model.residual[index] - model.j_cauchy[index];
+                    j_step[index] = model.j_cauchy[index] + tau * j_diff;
+                }
+            }
+        }
+
+        let step_norm = trust_weighted_norm_13(&step, &model.scale);
+        if !step_norm.is_finite() {
+            return None;
+        }
+        let mut predicted_merit = 0.0;
+        for index in 0..13 {
+            let predicted = model.residual[index] + j_step[index];
+            if !predicted.is_finite() {
+                return None;
+            }
+            predicted_merit += predicted * predicted;
+            let value = current[boundary[index]] + step[index];
+            if !value.is_finite() {
+                return None;
+            }
+            point[boundary[index]] = value;
+        }
+        if !predicted_merit.is_finite() {
+            return None;
+        }
+        Some(((step_norm / newton_norm).clamp(0.0, 1.0), predicted_merit))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn trust_region_newton_norm_13(
+        &self,
+        model: &TrustRegionModel13,
+        newton_delta: &[f64],
+    ) -> Option<f64> {
+        if self.condensed.boundary.len() != 13 || newton_delta.len() < self.node_to_boundary.len() {
+            return None;
+        }
+        let boundary: &[usize; 13] = self.condensed.boundary.as_slice().try_into().ok()?;
+        let mut newton = [0.0; 13];
+        for index in 0..13 {
+            newton[index] = newton_delta[boundary[index]];
+        }
+        let norm = trust_weighted_norm_13(&newton, &model.scale);
+        norm.is_finite().then_some(norm)
+    }
+
+    /// Recover eliminated internal nodes for an arbitrary accepted boundary
+    /// point. Ordinary line search never needs this because its trial remains
+    /// on the full recovered Newton ray; dogleg and LM change the boundary
+    /// direction and therefore must reapply the exact cached Schur recovery once.
+    #[cfg(test)]
+    pub(crate) fn trust_region_recover_internal_13(&mut self, full: &mut [f64]) -> bool {
+        if !self.valid
+            || !self.rhs_prepared
+            || self.condensed.boundary.len() != 13
+            || full.len() < self.node_to_boundary.len()
+        {
+            return false;
+        }
+        let boundary: &[usize; 13] = match self.condensed.boundary.as_slice().try_into() {
+            Ok(boundary) => boundary,
+            Err(_) => return false,
+        };
+        let mut boundary_solution = [0.0; 13];
+        for index in 0..13 {
+            boundary_solution[index] = full[boundary[index]];
+            if !boundary_solution[index].is_finite() {
+                return false;
+            }
+        }
+        let boundary_major = self.use_boundary_major_recovery();
+        if boundary_major {
+            recover_boundary_major_in_place(
+                &mut self.internal_recovery_work,
+                &self.internal_rhs_base,
+                &self.internal_boundary_response_by_boundary,
+                &boundary_solution,
+            );
+            for (row, &node) in self.condensed.internal.iter().enumerate() {
+                let value = self.internal_recovery_work[row];
+                if !value.is_finite() {
+                    return false;
+                }
+                full[node] = value;
+            }
+        } else {
+            let b = 13;
+            for (row, &node) in self.condensed.internal.iter().enumerate() {
+                let response = &self.internal_boundary_response[row * b..(row + 1) * b];
+                let mut value = self.internal_rhs_base[row];
+                for (&coefficient, &boundary_voltage) in response.iter().zip(&boundary_solution) {
+                    value -= coefficient * boundary_voltage;
+                }
+                if !value.is_finite() {
+                    return false;
+                }
+                full[node] = value;
+            }
+        }
+        true
     }
 
     /// Solve a directly-stamped Schur boundary and recover every full unknown,
@@ -1437,6 +1932,10 @@ impl ReducedNonlinear {
 /// arithmetic order, or the solved equations. The generic solver remains as a
 /// test-switch fallback and for all other boundary sizes.
 #[inline]
+#[allow(
+    clippy::chunks_exact_to_as_chunks,
+    reason = "keep the measured LU kernel unchanged during solver-policy experiments"
+)]
 fn solve_dense_planned_fixed<const N: usize>(
     matrix: &mut [f64],
     rhs: &mut [f64],
@@ -2474,6 +2973,105 @@ mod tests {
         for (&candidate, &reference) in fast_full.iter().zip(&legacy_full) {
             assert!((candidate - reference).abs() <= 1e-12);
         }
+    }
+
+    #[test]
+    fn trust_region_dogleg_stays_on_radius_and_reduces_linear_model() {
+        const N: usize = 14;
+        let mut base = vec![0.0; N * N];
+        for index in 0..N {
+            base[index * N + index] = 1.0;
+        }
+        let boundary: Vec<usize> = (0..13).collect();
+        let mut reduced = ReducedNonlinear::new(&base, &[0.0; N], &boundary).unwrap();
+        assert!(reduced.prepare_rhs(&[0.0; N]));
+
+        // Use a diagonal but non-uniform local model so the scaled Cauchy and
+        // Newton directions are not trivially identical.
+        reduced.reduced_matrix.fill(0.0);
+        for index in 0..13 {
+            reduced.reduced_matrix[index * 13 + index] = 0.75 + 0.25 * index as f64;
+            reduced.reduced_rhs[index] = 0.2 + 0.03 * (index as f64).sin();
+        }
+        let current = vec![0.0; N];
+        let model = reduced
+            .trust_region_model_13(&current, 1.0, 0.0)
+            .expect("finite trust model");
+        let mut newton_delta = vec![0.0; N];
+        for index in 0..13 {
+            newton_delta[index] =
+                reduced.reduced_rhs[index] / reduced.reduced_matrix[index * 13 + index];
+        }
+        let newton_norm = reduced
+            .trust_region_newton_norm_13(&model, &newton_delta)
+            .unwrap();
+        let radius = 0.4 * newton_norm;
+        let mut point = vec![0.0; N];
+        let (fraction, predicted_merit) = reduced
+            .trust_region_trial_point_13(&model, &current, &newton_delta, radius, &mut point)
+            .expect("finite dogleg point");
+        assert!((fraction - 0.4).abs() < 1.0e-12);
+        let mut step_norm_sq = 0.0;
+        for value in &point[..13] {
+            step_norm_sq += value * value;
+        }
+        assert!((step_norm_sq.sqrt() - radius).abs() < 1.0e-12);
+        let initial_merit: f64 = model.residual.iter().map(|value| value * value).sum();
+        assert!(predicted_merit < initial_merit);
+    }
+
+    #[test]
+    fn ceres_lm13_reuses_model_and_stronger_damping_shortens_the_step() {
+        const N: usize = 14;
+        let mut base = vec![0.0; N * N];
+        for index in 0..N {
+            base[index * N + index] = 1.0;
+        }
+        let boundary: Vec<usize> = (0..13).collect();
+        let mut reduced = ReducedNonlinear::new(&base, &[0.0; N], &boundary).unwrap();
+        assert!(reduced.prepare_rhs(&[0.0; N]));
+
+        reduced.reduced_matrix.fill(0.0);
+        for row in 0..13 {
+            for column in 0..13 {
+                reduced.reduced_matrix[row * 13 + column] = if row == column {
+                    1.0 + row as f64 * 0.125
+                } else {
+                    ((row * 7 + column * 11 + 3) as f64).sin() * 0.015
+                };
+            }
+            reduced.reduced_rhs[row] = 0.15 + row as f64 * 0.02;
+        }
+
+        let current = vec![0.0; N];
+        let model = reduced
+            .ceres_lm_model_13(&current)
+            .expect("finite LM model");
+        assert!(model.current_merit > 0.0);
+
+        let mut loose = vec![0.0; N];
+        let loose_predicted = reduced
+            .ceres_lm_trial_point_13(&model, &current, 1.0e4, &mut loose)
+            .expect("finite loose LM step");
+        let mut tight = vec![0.0; N];
+        let tight_predicted = reduced
+            .ceres_lm_trial_point_13(&model, &current, 1.0e-2, &mut tight)
+            .expect("finite tight LM step");
+
+        let loose_norm = loose[..13].iter().map(|v| v * v).sum::<f64>().sqrt();
+        let tight_norm = tight[..13].iter().map(|v| v * v).sum::<f64>().sqrt();
+        assert!(loose_norm > tight_norm);
+        assert!(loose_predicted < model.current_merit);
+        assert!(tight_predicted < model.current_merit);
+
+        // The model is immutable across retries: reusing the same radius must
+        // reproduce the exact same candidate and predicted reduction.
+        let mut repeated = vec![0.0; N];
+        let repeated_predicted = reduced
+            .ceres_lm_trial_point_13(&model, &current, 1.0e4, &mut repeated)
+            .expect("finite repeated LM step");
+        assert_eq!(loose[..13], repeated[..13]);
+        assert_eq!(loose_predicted, repeated_predicted);
     }
 
     #[test]

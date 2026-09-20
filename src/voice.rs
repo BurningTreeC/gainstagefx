@@ -49,6 +49,9 @@ pub const NOMINAL_DBFS: f64 = -18.0;
 pub const SOURCE: f64 = 10_000.0;
 pub const LOAD: f64 = 470_000.0;
 
+/// A circuit control index and its panel label.
+pub type NamedControl = (usize, &'static str);
+
 /// What makes the gain.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gain {
@@ -374,7 +377,7 @@ impl Gain {
 
     /// The Heavy Metal circuit's dedicated Colour Mix pair. These are not the
     /// plugin's generic Bass/Treble controls and must keep separate state.
-    pub fn own_colour_mix(self) -> Option<((usize, &'static str), (usize, &'static str))> {
+    pub fn own_colour_mix(self) -> Option<(NamedControl, NamedControl)> {
         match self {
             Gain::Hm2 => Some((
                 (heavy_metal::LOW, "COLOUR LO"),

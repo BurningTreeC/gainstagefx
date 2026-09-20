@@ -49,6 +49,7 @@ fn apply_preset(plugin: &mut GainStageFx, circuit: Circuit, name: &str) {
         .find(|p| p.name == name)
         .expect("named preset exists");
     if preset.circuit != circuit {
+        println!("preset_configuration,requested={name},applied=<standard-test-config>,reason=circuit_mismatch");
         return;
     }
     let params = Arc::get_mut(&mut plugin.params).unwrap();
@@ -77,14 +78,17 @@ fn apply_preset(plugin: &mut GainStageFx, circuit: Circuit, name: &str) {
         .reset(util::db_to_gain(preset.output_trim));
     plugin.mix_ramp.reset(preset.mix);
     println!("preset={name}");
+    println!("preset_configuration,requested={name},applied={name},reason=matched");
 }
 
 #[test]
 #[ignore = "offline level/deadline sweep; run alone in release mode"]
 fn attack_level_sweep() {
     const BLOCK: usize = 256;
-    #[cfg(debug_assertions)]
-    panic!("use cargo test --release for timing");
+    assert!(
+        !cfg!(debug_assertions),
+        "use cargo test --release for timing"
+    );
     let picks: Vec<_> = (0..96_000).map(|k| treble_pick(k, 48_000.0)).collect();
     let crest = picks.iter().fold(0.0f32, |p, x| p.max(x.abs()));
     let mut failed = 0;
@@ -278,8 +282,10 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
 #[ignore = "offline attack/timing probe; GAINSTAGEFX_REALTIME_WAV, release mode"]
 fn attack_recording_probe() {
     const BLOCK: usize = 256;
-    #[cfg(debug_assertions)]
-    panic!("use cargo test --release for timing");
+    assert!(
+        !cfg!(debug_assertions),
+        "use cargo test --release for timing"
+    );
     let path = std::env::var("GAINSTAGEFX_REALTIME_WAV").unwrap();
     let (rate, recording) = read_mono_pcm24(&path);
     assert_eq!(rate, 48_000);

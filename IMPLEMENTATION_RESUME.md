@@ -1,6 +1,76 @@
 # GainStageFX implementation résumé / handoff
 
-## CURRENT CHECKPOINT — 2026-09-20 (`gainstagefx(8).zip`)
+## Current checkpoint — Ceres audit, 2026-09-20
+
+HEAD `8e09bb2`, package 0.19.0. The working tree arrived with user LM13-v2,
+dogleg, harness and attribution changes; preserve them. V3.5 remains production.
+Read the newest IMPLEMENTATION_PROGRESS.md entry and DSP.md Ceres audit first;
+older handoffs below are historical and must not override current source.
+
+- **KEEP:** transactional LM device/cache rollback, exact-zero best-trial guard,
+  five-rate rollback/reference tests, opt-in dogleg, clean A/B tooling and explicit
+  requested/applied preset reporting. None changes production circuit equations.
+- **REJECT for production:** original opt-in LM13-v2: one unsettled solve on
+  each recording versus V3.5 zero. Still available only under `cfg(test)` for
+  research; do not enable by default.
+- **REJECT / removed:** cycle-only rescue gate (never exercised) and restart-only
+  gate (one useful rescue but no repeated p99/max win). Their switches are gone.
+- Existing exact Schur, evaluation cache, reciprocal/fixed13 LU, boundary-major
+  recovery, precondensed stamp, fixed13 merit/residual remain. Convergent-search
+  release and accepted-search-merit reuse are not current production paths.
+- Ceres inspected at `/home/simon/Work/GitHub/ceres-solver`, clean revision
+  `fe351d5ab8cbc574f33456376bf5aa90d3162d5d`. Algorithm findings/links in DSP.md.
+
+**Benchmark naming trap:** Ultra Lead is a Peavey preset. The Twin trace ignores
+it on circuit mismatch and runs the standard Twin fixture. Blackface Throb is an
+actual Twin preset. New output reports this explicitly. Do not call standard
+Twin results "Ultra Lead preset" results or silently alter historical input.
+
+Five-pair baseline medians, reported Ryzen 7 5700G/Linux, CPU 2, 48 kHz/block 64,
+profiling off: standard Twin CPU mean/p99/max 773.91/1681.18/2054.95 µs,
+407 CPU overruns per 6000 blocks; Blackface 638.36/1447.87/1941.31 µs, 88 overruns.
+Both have zero unsettled. These exceed 1333.33 µs; realtime is NOT finished.
+
+### Reproduce current baseline and validate an opt-in experiment
+
+```bash
+cargo test --release --lib ceres_lm13 -- --nocapture --test-threads=1
+cargo test --release --test voice twin_power_four_backtracks_matches_full_reference -- --ignored --nocapture --test-threads=1
+cargo nextest run --release --workspace --no-fail-fast --test-threads 4
+cargo fmt --check
+cargo clippy --all-targets --all-features
+
+# Explicit production-equivalent baseline (old dogleg disable still supported).
+GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION=1 \
+GAINSTAGEFX_ATTACK_PRESET="Blackface Throb" \
+cargo test --release --lib twin_realtime_recording_solver_trace -- --ignored --nocapture --test-threads=1
+
+# Actual opt-in A/B; CURRENT v2 should fail this script's unsettled gate.
+python3 tools/solver_ab.py --output /tmp/lm13-new-ab --preset "Blackface Throb" \
+  --enable-switch GAINSTAGEFX_TEST_CERES_LM13 --clean-v35 \
+  --cpu 2 --repetitions 5 --control-profile
+
+# Existing exact-arithmetic experiment, with clean solver policy.
+python3 tools/solver_ab.py --output /tmp/fixed13-new-ab --preset "Blackface Throb" \
+  --disable-switch GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT \
+  --clean-v35 --cpu 2 --repetitions 5 --assert-control-equal
+```
+
+Environment flags are read at construction, not per sample. LM and dogleg are
+library-test-only; integration tests compile the dependency without `cfg(test)`.
+`GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL=1`,
+`GAINSTAGEFX_PROFILE_TWIN_POWER_PHASES=1`, `GAINSTAGEFX_TRACE_UNSETTLED=1` are
+diagnostic runs only. Keep their timing separate from production-cost timing.
+`GAINSTAGEFX_TEST_NLSOLVE_DOGLEG_TRUST_REGION=1` explicitly opts into old dogleg;
+`GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION=1` overrides it.
+
+Next: instrument the entire trajectory of standard Twin sample 59930 and
+Blackface v2 failure 341494; last-eight traces miss the basin transition. Follow
+ranked experiments in PROGRESS. Do not broaden LM: 12,519 entries already failed
+where one narrow rescue barely changed aggregate work. Model implementation
+remains the separate documented roadmap; no new circuit was added this session.
+
+## Historical checkpoint — earlier 2026-09-20 (`gainstagefx(8).zip`)
 
 **Read this section first.** The older 2026-09-15 handoff below is retained as
 historical context and no longer describes the current feature/model inventory.

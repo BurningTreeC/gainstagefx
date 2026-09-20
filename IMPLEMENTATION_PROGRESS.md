@@ -1,5 +1,114 @@
 # Implementation progress
 
+## 2026-09-20 — fresh V3.5 / Ceres LM13 audit and rescue safeguards
+
+Authoritative checkout: `8e09bb2`, version 0.19.0, with pre-existing user changes
+in `time.rs`, `partition.rs`, the trace harness and Ceres notices. Inspected the
+current diffs, full solver/control/device paths and local Ceres at
+`/home/simon/Work/GitHub/ceres-solver` commit
+`fe351d5ab8cbc574f33456376bf5aa90d3162d5d`. Detailed algorithm findings and pinned
+source links are in DSP.md. No Ceres/Eigen/C++ dependency was added.
+
+**Fixture correction:** requesting `Ultra Lead` in the Twin-specific test does
+NOT apply that preset. It belongs to Peavey; `apply_preset` returns on circuit
+mismatch. Historical "Ultra Lead Twin" rows actually measure the standard Twin
+fixture. This session preserves that input/configuration for comparison, but now
+prints `preset_configuration` with both requested and applied values. Blackface
+Throb does apply. Do not silently change these fixtures and compare their numbers.
+
+### Changes and decisions
+
+| Change / hypothesis | Result | Decision |
+|---|---|---|
+| A rejected lazy LM restamp changes device correction history and evicts nonlinear caches; restoring only `exact` is insufficient. | Added preallocated test-only device checkpoints, rollback after capture/rejected probes, five-rate rollback/budget tests and triode/pentode/core cache tests. Both recording control profiles remain identical to unfixed v2. | **KEEP**, correctness safeguard; no speed claim. |
+| Best Newton-ray merit zero must not be ignored by LM's 2% improvement guard. | Changed `> 0` to `>= 0`, added regression. | **KEEP**, acceptance edge-case fix. |
+| Tests should measure the accepted baseline unless an experiment is requested. | Dogleg was on by default in test builds. Made it opt-in via `GAINSTAGEFX_TEST_NLSOLVE_DOGLEG_TRUST_REGION`; existing disable switch overrides it. Production unchanged. | **KEEP**, test isolation. |
+| LM13-v2 behind every failed ray should provide bounded useful rescues. | Standard Twin: 12,519 entries, 14,313 probes, 10,740 accepts, one unsettled. Blackface: 2,336 entries, 3,125 probes, 1,548 accepts, one unsettled. Both clean baselines have zero unsettled. | **REJECT for production**. User's opt-in research code retained, with safeguards repaired. |
+| Require an existing cycle rejection AND complete ray failure before LM. | Zero entries on either fixture: the subsequent shorter V3.5 ray already succeeds. Exactly baseline counters. | **REJECT**, no exercised benefit; code/switch removed. |
+| Permit LM only inside the existing exhausted-solve restart, after that restart's ray fails. | Standard Twin: one LM entry/probe/accept, Newton -237, trials -198, restart passes 245 -> 165, zero unsettled. Blackface identical to baseline. Repeated maximum timing did not improve. | **REJECT**, insufficient tail benefit; code/switch removed. |
+| Clean reproducible opt-in A/B and honest preset reporting. | `solver_ab.py` now supports mutually exclusive `--enable-switch` / `--disable-switch`, `--clean-v35`, and records applied-preset diagnostics. | **KEEP**, benchmark tooling. |
+
+### Deterministic recording work (384,000 samples each)
+
+| Fixture / path | Newton passes | Searched | Trials | Backtracks | Fallbacks | Continuation attempts | Restart passes | Unsettled |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Standard Twin / V3.5 | 1,944,584 | 552,633 | 613,429 | 109,464 | 14,107 | 840 | 245 | 0 |
+| Standard Twin / v2 | 1,948,831 | 556,006 | 638,178 | 119,564 | 6,318 | 1,129 | 32 | 1 |
+| Standard Twin / rejected restart gate | 1,944,347 | 552,405 | 613,231 | 109,451 | 14,068 | 835 | 165 | 0 |
+| Blackface / V3.5 | 1,434,456 | 177,237 | 191,287 | 23,807 | 2,666 | 247 | 17 | 0 |
+| Blackface / v2 | 1,435,390 | 178,016 | 196,524 | 25,788 | 1,773 | 315 | 57 | 1 |
+
+All these profiles have zero full-MNA solves/replans. Lower fallback counts alone
+are not a win: v2 displaced recovery and increased continuation and nonlinear
+trials. Rollback alone changed none of the v2 control counters/audio hashes.
+
+### Repeated timing, profiling OFF
+
+Linux, CPU reported by `lscpu`: AMD Ryzen 7 **5700G**, pinned logical CPU 2,
+48 kHz / 64 samples, eight-second excerpt, five alternating A/B pairs per fixture.
+No build or test suite ran concurrently. Governors/affinity/compiler/binary SHA
+are recorded in the run summaries. CPU is thread CPU time; pinning is not core
+isolation. Figures are medians across repetitions, including median per-run max.
+
+| Fixture / optimization | CPU mean µs | CPU p99 µs | CPU max µs | CPU budget overruns / 6000 | Decision |
+|---|---:|---:|---:|---:|---|
+| Standard Twin / clean V3.5 | 773.91 | 1681.18 | 2054.95 | 407 | Baseline; target unmet |
+| Standard Twin / restart-only LM | 774.15 | 1673.44 | 2170.44 | 405 | REJECT |
+| Blackface / clean V3.5 | 638.36 | 1447.87 | 1941.31 | 88 | Baseline; target unmet |
+| Blackface / restart-only LM | 638.78 | 1450.38 | 2070.48 | 93 | REJECT |
+
+Worst observed maxima across the five runs: standard Twin baseline 2577.76 µs,
+candidate 2272.53 µs; Blackface baseline 2028.53 µs, candidate 2871.62 µs.
+No robust tail win; different summaries of noisy maxima point in different
+directions. Blackface had identical counters/hashes and zero LM entries, exposing
+the timing noise directly. Unpaced `deadline_misses=0` is not a live deadline
+claim: use CPU budget overruns above and the separately paced realtime test.
+The 1333.33 µs p99/max requirement remains unmet.
+
+Raw session evidence: `/tmp/lm13-before-*.log`, `/tmp/lm13-rollback-*.log`,
+`/tmp/lm13-cycle-*.log`, `/tmp/lm13-restart-*.log`,
+`/tmp/lm13-restart-ab-{ultra,blackface}/summary.json`. Raw /tmp files are ephemeral;
+the decision, counters and timing tables above are the durable record.
+
+### Tail evidence and ranked next experiments
+
+Standard Twin's worst-work sample (relative sample 59930, block 936/frame 26)
+uses 166 Newton passes, 160 searched passes and 173 nonlinear trials. It follows
+a source reversal: -38.41 V step after -2.55 V, predictor suppressed. The last
+lambdas are 1/32, 1/16, 1/8, 1/4, 1/2, 1, 1, 1; final correction is 0.00229.
+Expensive blocks also contain many difficult samples without any restart:
+block 5339 in the restart-gate profile has 877 Newton passes / 742 trials,
+zero LM entries and zero restart attempts. Rescue-only LM cannot fix most of
+that block's work. The v2 Blackface failure at relative sample 341494 uses
+144 passes / 177 trials and alternating ~0.635 / ~0.317 steps; its two LM
+probes are rejected, so the sample failure is not a locally accepted LM step.
+Earlier accepted rescues still change its incoming trajectory.
+
+1. Record full per-pass correction, merit and dominant unknown for a targeted
+   worst sample, including pre/post predictor state. The current last-eight
+   history loses the transition that explains 100+ passes. Keep trace test-only.
+2. Measure a source-aware predictor confidence strategy at those reversals,
+   independently of LM. Do not resurrect V3.6–V3.8.1 without new evidence.
+3. Ceres's cheap positive model-reduction screen can avoid invalid nonlinear
+   probes; all current traces have `lm_invalid=0`, so this is a safeguard, not
+   an evidenced performance opportunity yet. Preserve arithmetic ordering when
+   comparing predicted cost formulations.
+4. Separate Jacobian column scaling experiment only after an activation policy
+   earns correctness. Tiny dense factorization is not the measured bottleneck;
+   no observed factorization failures justify mixed precision or refinement.
+5. Nonmonotone-history and dogleg policy remain research-only. Neither should
+   be stacked onto an unvalidated LM path.
+
+### Validation
+
+LM kernel, material-progress, rollback and cache regressions pass. The new library
+reference test really compiles the experimental LM path (`cfg(test)`); setting an
+environment flag on an integration-test dependency alone does not enable it.
+Across 44.1/48/88.2/96/192 kHz and drive 0.2/0.6/1.0: zero unsettled/nonfinite,
+nulls -164.0 to -210.1 dB. At 48 kHz: -202.9 / -166.9 / -184.2 dB.
+Blackface high-pick test passes with LM enabled. These short-fixture passes do
+**not** override the failed recording gate. Full suite/static checks follow below.
+
 ## 2026-09-14 audit checkpoint
 
 Phase 1 architecture inspection complete before source changes. See ARCHITECTURE,
