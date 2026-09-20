@@ -2998,9 +2998,8 @@ mod tests {
             .trust_region_model_13(&current, 1.0, 0.0)
             .expect("finite trust model");
         let mut newton_delta = vec![0.0; N];
-        for index in 0..13 {
-            newton_delta[index] =
-                reduced.reduced_rhs[index] / reduced.reduced_matrix[index * 13 + index];
+        for (index, delta) in newton_delta.iter_mut().take(13).enumerate() {
+            *delta = reduced.reduced_rhs[index] / reduced.reduced_matrix[index * 13 + index];
         }
         let newton_norm = reduced
             .trust_region_newton_norm_13(&model, &newton_delta)

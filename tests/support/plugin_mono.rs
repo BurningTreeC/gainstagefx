@@ -494,10 +494,8 @@ fn realtime_recording() {
     const BLOCK: usize = 64;
     const TARGET_METER_DB: f32 = 12.0;
     const LIVE_SETTLE_BLOCKS: usize = 16;
-    assert!(
-        !cfg!(debug_assertions),
-        "use cargo test --release for timing"
-    );
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for timing");
 
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -724,10 +722,8 @@ fn twin_realtime_recording_solver_trace() {
     const BLOCK: usize = 64;
     const TARGET_METER_DB: f32 = 12.0;
     const LIVE_SETTLE_BLOCKS: usize = 16;
-    assert!(
-        !cfg!(debug_assertions),
-        "use cargo test --release for solver tracing"
-    );
+    #[cfg(debug_assertions)]
+    panic!("use cargo test --release for solver tracing");
 
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
