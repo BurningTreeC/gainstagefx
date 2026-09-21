@@ -20,11 +20,33 @@ fn legacy_host_state_resets_power_override_without_changing_old_ids() {
     GainStageFx::filter_state(&mut state);
     assert!(matches!(&state.params["power_amp"], ParamValue::String(s) if s == "matched"));
     assert!(matches!(&state.params["circuit"], ParamValue::String(s) if s == "markiic"));
+    assert!(matches!(
+        state.params["noise_reduction"],
+        ParamValue::Bool(false)
+    ));
+    assert!(matches!(
+        state.params["noise_threshold"],
+        ParamValue::F32(-60.0)
+    ));
     state
         .params
         .insert("power_amp".into(), ParamValue::String("bypass".into()));
+    state
+        .params
+        .insert("noise_reduction".into(), ParamValue::Bool(true));
+    state
+        .params
+        .insert("noise_threshold".into(), ParamValue::F32(-48.0));
     GainStageFx::filter_state(&mut state);
     assert!(matches!(&state.params["power_amp"], ParamValue::String(s) if s == "bypass"));
+    assert!(matches!(
+        state.params["noise_reduction"],
+        ParamValue::Bool(true)
+    ));
+    assert!(matches!(
+        state.params["noise_threshold"],
+        ParamValue::F32(-48.0)
+    ));
 }
 
 #[test]
@@ -34,6 +56,10 @@ fn legacy_saved_presets_resolve_matched_and_new_ones_use_stable_ids() {
         serde_json::from_str(r#"{"name":"old","values":{"circuit":0.75}}"#).unwrap();
     presets::migrate(&mut old, &params);
     assert_eq!(old.values["power_amp"], 0.0);
+    assert_eq!(old.values["noise_reduction"], 0.0);
+    assert_eq!(old.values["noise_threshold"], 0.5);
+    old.values.insert("noise_reduction".into(), 1.0);
+    old.values.insert("noise_threshold".into(), 0.7);
     assert_eq!(old.model_ids["power_amp"], "matched");
     assert_eq!(old.model_ids["circuit"], "markiic");
     old.model_ids

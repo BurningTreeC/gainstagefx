@@ -1,5 +1,207 @@
 # Implementation progress
 
+## 2026-09-20 — follow-up rescue research and optional input expander
+
+After the instrumentation task passed all 439 tests (eight skipped), the user
+authorized further targeted solver research and selected a gentle gate/expander
+for noise between notes. The two efforts remain independent: the expander is a
+user-controlled effect, **not** a way to improve the solver benchmark.
+
+### Failed-ray rescue experiments — REJECT / removed
+
+Hypothesis: a small amount of residual-only work at the unchanged iterate can
+prevent the finite fallback excursions exposed by sample 59930, avoiding many
+restamps/factorizations. Read local SUNDIALS KINSOL at `312fc0f`, local Ceres at
+`fe351d5`, and upstream Rust-CV LM/QR/trust-region source. Exact links and transfer
+decisions are in DSP.md. No library dependency was added.
+
+Only `src/dsp/time.rs` was temporarily changed for these experiments. Under a
+test-only `GAINSTAGEFX_TEST_FAILED_RAY_RESCUE=1`, a complete failed Twin reduced
+search could try half and quarter of its existing minimum lambda. Existing
+acceptance plus strict current-merit decrease was required; rejected attempts
+restored device checkpoints/caches and retained the original fallback. Neither
+equations nor convergence tolerances changed. This changes candidate policy and
+can change subsequent solver trajectories; it is not an exact arithmetic speedup.
+
+| Variant | Newton passes | Residual trials | Fallbacks | Continuation attempts | Restart passes | Unsettled | Decision |
+|---|---:|---:|---:|---:|---:|---:|---|
+| V3.5 | 1944584 | 613429 | 14107 | 840 | 245 | 0 | KEEP |
+| Two probes after failed worsening ray | 1956155 | 660835 | 5688 | 73 | 315 | 1 | REJECT |
+| Only if best merit > current merit × 1e6 | 1944584 | 613821 | 14107 | 840 | 245 | 0 | REJECT |
+
+The broad version solved selected sample 59930 in **18 passes / 27 trials**, but
+the complete recording failed its unsettled gate and increased global trial work
+7.73%. The new failure is relative sample 48090 (block 751/frame 26): 161 Newton
+passes, 247 trials, 32 restart passes and final normalized correction 4.12e5.
+Its unmodified V3.5 counterpart converges in 66 passes / 67 trials with two
+fallbacks, one successful continuation and no restart; the complete counterpart
+trace is `/tmp/twin-48090-v35-full-trace.log`.
+A local success cannot justify that regression. The narrower version
+accepted none of its 392 additional probes and retained the original trajectory.
+The 1e6 cutoff was an isolated severe-excursion hypothesis, not a fitted or accepted
+production threshold. Neither variant advanced to realtime timing A/B: correctness
+failed in the first; the second only added work with no accepted rescue. Both
+implementations and the switch were removed, preserving all tracing changes.
+
+Commands/evidence (historical switch is now absent):
+
+```bash
+GAINSTAGEFX_TEST_FAILED_RAY_RESCUE=1 cargo test --release --lib ceres_lm13 -- --nocapture --test-threads=1
+env -u GAINSTAGEFX_ATTACK_PRESET GAINSTAGEFX_TEST_FAILED_RAY_RESCUE=1 \
+  GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION=1 \
+  GAINSTAGEFX_TRACE_POWER_SAMPLE=59930 cargo test --release --lib \
+  twin_realtime_recording_solver_trace -- --ignored --nocapture --test-threads=1
+# Narrow variant: same recording, PROFILE_SOLVER_CONTROL_TAIL=1 instead of full trace.
+```
+
+Logs: `/tmp/twin-ray-rescue-{unit,trace,severe}.log`. No solver performance win is
+claimed or enabled. The next useful experiment needs to distinguish useful early
+nonmonotone progress from the precursor to a large finite excursion, rather than
+simply spending more probes after the direction is already unusable.
+
+### Noise reduction — implemented, default OFF
+
+Added `src/dsp/noise_reduction.rs` with a bounded, allocation-free, stereo-linked
+2:1 downward expander. Controls are **Noise Reduction Off/On** and **Threshold**
+(-90 to -30 dBFS; default -60). The cubic knee, 25 ms hold, slow release and 5 ms
+enable/disable fade avoid hard gating. Maximum attenuation is 40 dB. The shared
+input detector tracks the hotter channel, and the worker consumes preallocated
+gains calculated on the host thread. There is no added latency or skipped circuit
+work. Factory presets and absent legacy-state fields initialize it Off; explicit
+saved/automated values persist. Meter readings remain before the expander.
+
+Validation covers curve/attenuation, hold/attack/release, exact off unity, reset,
+five rates, mono/dual-mono, linked stereo, parallel/sequential equivalence, plugin
+bypass, migration, preset ids, and no callback allocations. Six focused tests pass.
+The actual host path applies it before dry/wet branching and before pedal/amp;
+reverb/cabinet decay state continues independently. It is not a hardware emulation
+or continuous denoiser. UI adds controls within the existing Input section.
+
+Final-state formatting and strict release/workspace Clippy pass; four LM tests,
+Twin reference and LM-enabled Blackface attacks pass. Clean and exact Standard
+Twin recordings retain **all baseline counters and `b2fc6ff9fd0296df` audio hash**.
+The exact artifact is `/tmp/twin-59930-full-trace.log` (166 passes, 173 trials,
+sample 59930 / solve 60955 / block 936 / frame 26, unsettled=0). Final validation
+logs are `/tmp/gainstagefx-final-*.log`. Full workspace result (completed
+2026-09-21): **445 passed, 8 skipped**, 163.7 s test time. No failing tests remain.
+
+### Final profiling-free baseline — 2026-09-21
+
+After compilation/tests finished, measured the unchanged Standard Twin fixture
+on the reported **Ryzen 7 5700G**, Linux, performance governor, pinned CPU 2,
+48 kHz / 64 frames. Noise reduction OFF; both profilers and LM OFF; dogleg
+explicitly disabled. Hyperfine ran one warm-up plus three measured repetitions
+of the prebuilt library test. Each fixture also performs its normal circuit
+warm-up. Eight seconds of input, 6000 measured blocks per repetition.
+
+| Status | CPU mean µs | CPU p99 µs | CPU max µs | CPU budget overruns | Unsettled |
+|---|---:|---:|---:|---:|---:|
+| Current V3.5 baseline, medians of three | 765.14 | 1667.56 | 1995.76 | 397 | 0 |
+
+Individual CPU maxima: 2321.90 / 1992.41 / 1995.76 µs. Report the **2321.90 µs
+worst observation** as well as the median maximum; neither satisfies 1333.33 µs.
+The unpaced fixture reports zero scheduler deadline misses, which does **not**
+erase the measured CPU-budget overruns. All four runs retain output hash
+`b2fc6ff9fd0296df`. These numbers establish a current baseline, not an A/B speed
+improvement. Mean fits the budget; p99/max and zero overruns remain open goals.
+
+Reproduction (use a fresh output log; executable path is recorded in metadata):
+
+```bash
+hyperfine --runs 3 --warmup 1 --export-json /tmp/gainstagefx-final-hyperfine.json \
+  'env -u GAINSTAGEFX_ATTACK_PRESET -u GAINSTAGEFX_TRACE_POWER_SAMPLE -u GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL -u GAINSTAGEFX_PROFILE_TWIN_POWER_PHASES -u GAINSTAGEFX_TEST_CERES_LM13 GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION=1 GAINSTAGEFX_REALTIME_SECONDS=8 taskset -c 2 target/release/deps/gainstagefx-a6d9777ce2f4cd13 twin_realtime_recording_solver_trace --ignored --nocapture --test-threads=1 >> /tmp/gainstagefx-final-timing.log 2>&1'
+```
+
+`/tmp/gainstagefx-final-timing-summary.json` records each callback metric, medians,
+binary SHA256, compiler, CPU/governor and Git state; Hyperfine's process elapsed
+time is separate from the harness's per-callback thread CPU measurements.
+
+## 2026-09-20 — exact-sample full-pass trace (instrumentation only)
+
+Fresh discovery found a **clean `e2297db`** checkout, following `a075f71`. Its
+`fix clippy errors` commit had already replaced the fixed-13 test's indexed loop
+with `iter_mut().take(13).enumerate()` and replaced five constant release assertions
+with debug-only panics (two attack tests, two recording tests, one Twin reference).
+The exact requested release/workspace Clippy command was already clean on entry.
+No further lint suppressions, dependency edits, or DSP refactors were needed.
+
+Added `src/dsp/time/full_trace.rs`, small `cfg(test)` hooks in `time.rs`, a read-only
+limiter-state accessor in `device.rs`, forwarding in `voice.rs`, and setup/reporting
+in `tests/support/plugin_mono.rs`. `GAINSTAGEFX_TRACE_POWER_SAMPLE` is read once by
+the harness after warm-up. Buffers are preallocated and reporting occurs outside
+the audio callbacks. Every pass and candidate is retained for the selected solve;
+overflow/missing selection is an explicit test failure. Production has no new
+trace state, allocation, environment lookup, or call wrapper. LM and dogleg remain
+opt-in. **No performance optimization or numerical-policy change was made.**
+
+Sample mapping is zero-based after warm-up: 1024 + 59930 + 1 = solve 60955,
+block 936/frame 26. The mapping test includes relative zero and integer overflow.
+A second regression checks identical output bits, solver health and device cache
+state with/without tracing at 44.1/48/88.2/96/192 kHz. The recording also runs under
+the existing no-heap callback guard.
+
+### Validation and deterministic baseline
+
+`cargo fmt --check` and
+`cargo clippy --release --workspace --all-targets -- -D warnings` pass with zero
+project warnings/errors. Cargo still emits the upstream `xcb 0.9.0`
+future-incompatibility notice, which is not a project Clippy diagnostic.
+Four LM tests pass. The ignored Twin reference passes with nulls
+-202.9 / -166.9 / -184.0 dB at drive 0.2 / 0.6 / 1.0. Blackface high-pick attacks
+pass with LM explicitly enabled and dogleg disabled.
+
+Clean Standard Twin, **before and after instrumentation, and with full tracing
+active**, has identical complete control counters and output hash:
+
+```text
+solves=384000
+newton_passes=1944584  searched_passes=552633  search_trials=613429
+backtracks=109464  fallbacks=14107  cont_attempts=840  restart_passes=245
+unsettled=0
+fnv1a64=b2fc6ff9fd0296df
+```
+
+Generated `/tmp/twin-59930-full-trace.log` with the requested command. Parsed and
+verified exactly 166 consecutive pass records (1–166), 173 trial records, only
+relative sample 59930, correct solve/block/frame, no overflow, and unsettled=0.
+The sample has 160 searched passes, 19 backtracks, five fallbacks, one midpoint,
+and one 26-pass restart. Its phase counts are 59 normal, one midpoint, four deep
+continuation, 76 exhausted-tail, and 26 restart passes.
+
+### What the complete trajectory reveals (no policy change)
+
+The previous source step is -2.551193 V and the new step -38.411718 V: their ratio
+is **+15.0564**, above the existing 2x gate. The predictor is available but
+suppressed; all after-predictor state equals the last settled state. This source
+history is a large same-sign derivative increase, not itself a derivative sign
+reversal (the voltage crosses zero).
+
+Five failed searches choose the 1/8 fallback, at passes 5, 8, 16, 29 and 30.
+The diagnostic exact reduced merit changes as follows:
+
+| Pass | Before | After fallback |
+|---|---:|---:|
+| 5 | 0.2593 | 0.5241 |
+| 8 | 0.1702 | 7.972e27 |
+| 16 | 1.302e19 | 1.357e36 |
+| 29 | 9.028e25 | 3.211e64 |
+| 30 | 3.211e64 | 7.995e107 |
+
+Pass 31 is the continuation midpoint. Thereafter many accepted full steps reduce
+an enormous finite residual. Passes 65–140 occupy the exhausted-tail extension;
+at pass 140 the merit is still about 0.529 and normalized correction about 2.47e6.
+Pass 141 restarts from the previous settled voltage, with initial merit again
+0.115, and converges at pass 166. `pl_a` dominates the final corrections. Final
+normalized correction is 0.00229062 and diagnostic residual about 6.73e-25.
+Thus the last-eight trace hid the early finite excursions and the long return
+from them. This is evidence for the next investigation, not authorization here
+to change globalization, predictors, budgets, or convergence criteria.
+
+Logs: `/tmp/twin-full-trace-{clippy,lm-tests,reference,blackface,clean,nextest}.log`,
+`/tmp/twin-full-trace-unit.log`, `/tmp/twin-59930-full-trace.log`.
+`cargo nextest run --release --workspace --no-fail-fast --test-threads 4`:
+**439 passed, 8 skipped**, including both new trace regressions (163.1 s test time).
+
 ## 2026-09-20 — fresh V3.5 / Ceres LM13 audit and rescue safeguards
 
 Authoritative checkout: `8e09bb2`, version 0.19.0, with pre-existing user changes

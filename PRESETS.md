@@ -9,6 +9,10 @@
 - `presets::migrate` fills parameters a legacy preset lacks with their legacy
   meaning: `power_amp = matched`, `cab_model = legacy`, `pedal = none`.
 - Host state gets the same defaults in `GainStageFx::filter_state`.
+- Noise reduction is Off with a -60 dBFS threshold in factory and legacy presets.
+  The stable ids `noise_reduction` and `noise_threshold` are saved and automated;
+  migration preserves explicitly saved values. The latter is normalized to 0.5
+  in preset JSON (range -90 to -30 dBFS), and stored in dBFS in host state.
 - Existing enum ids and orders are never changed. New lists are separate parameters
   whose first entry is the legacy behaviour.
 

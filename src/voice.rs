@@ -3150,6 +3150,20 @@ impl Chain {
     }
 
     #[cfg(test)]
+    pub fn configure_full_power_trace(&mut self, relative_sample: u64, block_size: usize) {
+        self.active_power_mut()
+            .expect("selected voice has a power stage")
+            .configure_full_power_trace(relative_sample, block_size);
+    }
+
+    #[cfg(test)]
+    pub fn print_full_power_trace(&self) {
+        if let Some(power) = self.active_power() {
+            power.print_full_power_trace();
+        }
+    }
+
+    #[cfg(test)]
     pub fn power_phase_profile(&self) -> Option<crate::dsp::time::TwinPowerPhaseProfile> {
         self.active_power()
             .map(Simulation::twin_power_phase_profile)

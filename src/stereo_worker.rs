@@ -38,6 +38,7 @@ pub(crate) struct StereoJob {
     pub input_trim: *const f32,
     pub output_trim: *const f32,
     pub mix: *const f32,
+    pub noise_gain: *const f64,
     pub len: usize,
     pub bypassed: bool,
 }
@@ -209,11 +210,12 @@ unsafe fn process_job(job: StereoJob) {
     let input_trim = unsafe { slice::from_raw_parts(job.input_trim, job.len) };
     let output_trim = unsafe { slice::from_raw_parts(job.output_trim, job.len) };
     let mix = unsafe { slice::from_raw_parts(job.mix, job.len) };
+    let noise_gain = unsafe { slice::from_raw_parts(job.noise_gain, job.len) };
 
     for i in 0..job.len {
         let raw = samples[i] as f64;
         let trimmed = raw * input_trim[i] as f64;
-        let input = trimmed;
+        let input = trimmed * noise_gain[i];
         let dry = chain.delayed_dry(input);
         let wet = chain.process(input);
         if !job.bypassed {

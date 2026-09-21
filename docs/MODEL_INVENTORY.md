@@ -11,6 +11,10 @@ lists in the task prompts are a minimum, not a boundary.**
 validation and performance gaps; older implementation dates identify historical work,
 not the date of a complete hardware or realtime qualification.
 
+The optional Noise Reduction input expander is shared digital processing, not a
+new hardware model. It is disabled by default and does not replace or simplify
+any circuit. Its controls and validation are documented in README.md and DSP.md.
+
 Three names are kept separate for every model:
 
 - **Internal ID**: the stable serialized value. For existing host parameters this is the

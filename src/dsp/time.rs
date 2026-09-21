@@ -12,6 +12,9 @@
 //! `the_two_solvers_agree` is the test that says so, and it is the closest
 //! thing to an independent check either of them can have.
 
+#[cfg(test)]
+mod full_trace;
+
 use super::device::{
     AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Rectifier,
     ResidualStamper, Stamper, Transconductor, Triode, VariableResistor,
@@ -1957,6 +1960,8 @@ pub struct Simulation {
     #[cfg(test)]
     test_control_profile: SolverControlProfile,
     #[cfg(test)]
+    test_full_trace: Option<Box<full_trace::FullTrace>>,
+    #[cfg(test)]
     test_control_current_accepted_lambda_count: usize,
     #[cfg(test)]
     test_control_current_accepted_lambdas: [f64; SOLVER_CONTROL_ACCEPTED_LAMBDAS],
@@ -2426,6 +2431,8 @@ impl Simulation {
             .is_some(),
             #[cfg(test)]
             test_control_profile: SolverControlProfile::default(),
+            #[cfg(test)]
+            test_full_trace: None,
             #[cfg(test)]
             test_control_current_accepted_lambda_count: 0,
             #[cfg(test)]
@@ -2937,6 +2944,7 @@ impl Simulation {
                 }
             }
 
+            self.full_trace_trial("lm", f64::NAN);
             let Some(there) = self.reduced_trial_merit(false, false) else {
                 if self.solver_control_tail_profile_enabled() {
                     self.test_control_profile.ceres_lm_invalid_models = self
@@ -2958,6 +2966,7 @@ impl Simulation {
                 return false;
             }
 
+            self.full_trace_trial_result(there, self.exact, false);
             let predicted_reduction = here - predicted_merit;
             let actual_reduction = here - there;
             let rho = if predicted_reduction.is_finite()
@@ -3016,6 +3025,7 @@ impl Simulation {
                             .saturating_add(1);
                     }
                 }
+                self.full_trace_trial_result(there, self.exact, true);
                 for device in &mut self.devices {
                     device.commit_trial_state(&self.point);
                 }
@@ -4156,6 +4166,10 @@ impl Simulation {
     /// Cache the input, supply and reactive-history contributions once per
     /// solve. Newton trials change device stamps, never these contributions.
     fn prepare_rhs(&mut self, input: f64, dc: bool) {
+        #[cfg(test)]
+        if !dc {
+            self.full_trace_source(input);
+        }
         // A new source RHS starts a new Newton problem. Damping learned on the
         // previous RHS is not evidence about this one.
         self.search_lambda_hint = 1.0;
@@ -4600,7 +4614,25 @@ impl Simulation {
     /// and the extra stamp is worth paying for because the alternative is
     /// thirty-two passes and a held sample.
     fn iterate(&mut self, dc: bool, search: bool) -> Pass {
-        self.iterate_with_limiter_handoff(dc, search, true)
+        #[cfg(test)]
+        {
+            self.iterate_traced(dc, search, true)
+        }
+        #[cfg(not(test))]
+        {
+            self.iterate_with_limiter_handoff(dc, search, true)
+        }
+    }
+
+    #[cfg(test)]
+    fn iterate_traced(&mut self, dc: bool, search: bool, allow_limiter_handoff: bool) -> Pass {
+        if !dc && self.full_trace_active() {
+            self.full_trace_pass_begin();
+            let result = self.iterate_with_limiter_handoff(dc, search, allow_limiter_handoff);
+            self.full_trace_pass_end(result);
+            return result;
+        }
+        self.iterate_with_limiter_handoff(dc, search, allow_limiter_handoff)
     }
 
     fn iterate_with_limiter_handoff(
@@ -4899,6 +4931,14 @@ impl Simulation {
         // the line search on the moment one does not. See `CONVERGING`.
         self.moved = moved;
         #[cfg(test)]
+        self.full_trace_step(
+            reduced_direct,
+            search,
+            here,
+            reference,
+            limiter_requests_global_search,
+        );
+        #[cfg(test)]
         if search
             && collect_post_restart_cycle_geometry(
                 self.test_trace_search_geometry,
@@ -5063,6 +5103,15 @@ impl Simulation {
             } else {
                 self.build_full_trial_point(lambda)
             };
+            #[cfg(test)]
+            self.full_trace_trial(
+                if trust_region_trial {
+                    "dogleg"
+                } else {
+                    "newton"
+                },
+                lambda,
+            );
             if finite {
                 // Re-linearise where the step lands and ask whether the
                 // circuit is any closer to satisfying itself there.
@@ -5203,6 +5252,8 @@ impl Simulation {
                 } else {
                     improves
                 };
+                #[cfg(test)]
+                self.full_trace_trial_result(there, self.exact, improves);
                 if improves {
                     taken = true;
                     accepted_pure_reduced = pure_reduced_trial;
@@ -5377,6 +5428,8 @@ impl Simulation {
             // the full jump here discarded useful search results and made
             // the 5150 oscillate through its iteration allowance on attacks.
             // If no finite exact merit was measured, retain the full step.
+            #[cfg(test)]
+            self.full_trace_fallback(best_lambda, best_merit);
             self.fallbacks += 1;
             if self.late_continuation && !dc && self.line_search_warm_start_enabled() {
                 self.search_lambda_hint = line_search_warm_start_lambda(best_lambda, search_floor);
@@ -5503,6 +5556,8 @@ impl Simulation {
             self.dirty = false;
         }
         self.at_rest = false;
+        #[cfg(test)]
+        self.full_trace_begin(input);
         let n = self.n;
 
         // Whether this sample's solve failed to converge. It gates the
@@ -5631,6 +5686,8 @@ impl Simulation {
                 }
             }
 
+            #[cfg(test)]
+            self.full_trace_predictor(predictor_scale, suppress_predictor);
             if self.predictable && !self.last_was_unsettled && predictor_scale != 0.0 {
                 for ((voltage, earlier), recent) in self
                     .voltage
@@ -5655,6 +5712,8 @@ impl Simulation {
                     *earlier = voltage;
                 }
             }
+            #[cfg(test)]
+            self.full_trace_predicted();
             // `predicted` used to receive a copy of this starting point on
             // every nonlinear sample. Continuation overwrites the buffer
             // immediately before it needs a backup, and the failure bound uses
@@ -5681,6 +5740,8 @@ impl Simulation {
                     self.newton_passes += 1;
                     let stalled = self.moved > before * CONVERGING;
                     before = self.moved;
+                    #[cfg(test)]
+                    self.full_trace_phase("normal", pass + 1, pass + 1, false);
                     match self.iterate(false, stalled || pass >= FULL_STEPS) {
                         Pass::Settled => {
                             settled = true;
@@ -5968,6 +6029,26 @@ impl Simulation {
                         &mut limiter_handoff_armed,
                         self.immediate_limiter_global_search(),
                     );
+                    #[cfg(test)]
+                    self.full_trace_phase(
+                        if exhausted_exact_tail {
+                            "exhausted_tail"
+                        } else if deep_continuation_search {
+                            "deep_continuation"
+                        } else if used_passes > ceiling && deep_rescue_accepted {
+                            "post_deep_confirmation"
+                        } else if used_passes > ceiling && low_residual_confirmation {
+                            "low_residual_confirmation"
+                        } else {
+                            "normal"
+                        },
+                        target_passes + 1,
+                        used_passes,
+                        continuation_from_stuck.is_some(),
+                    );
+                    #[cfg(test)]
+                    let pass = self.iterate_traced(false, search, allow_limiter_handoff);
+                    #[cfg(not(test))]
                     let pass =
                         self.iterate_with_limiter_handoff(false, search, allow_limiter_handoff);
                     self.backtracks = normal_backtracks;
@@ -6222,6 +6303,8 @@ impl Simulation {
                                 .saturating_add(1);
                         }
                         used_passes += 1;
+                        #[cfg(test)]
+                        self.full_trace_phase("continuation_midpoint", target_passes, 1, true);
                         let midpoint_pass = self.iterate(false, false);
                         let midpoint_usable = !matches!(midpoint_pass, Pass::Stuck);
                         #[cfg(test)]
@@ -6304,6 +6387,12 @@ impl Simulation {
                         target_passes += 1;
                         last_settled_restart_passes += 1;
                         let search = stalled || restart_pass >= FULL_STEPS;
+                        self.full_trace_phase(
+                            "diagnostic_restart",
+                            target_passes,
+                            restart_pass + 1,
+                            continuation_from_stuck.is_some(),
+                        );
                         match self.iterate(false, search) {
                             Pass::Settled => {
                                 settled = true;
@@ -6423,6 +6512,12 @@ impl Simulation {
                                 target_passes += 1;
                             }
                             let search = stalled || stage_pass >= FULL_STEPS;
+                            self.full_trace_phase(
+                                "diagnostic_post_restart",
+                                target_passes,
+                                stage_pass + 1,
+                                true,
+                            );
                             match self.iterate(false, search) {
                                 Pass::Settled => {
                                     stage_settled = true;
@@ -6555,6 +6650,13 @@ impl Simulation {
                                 .saturating_add(1);
                         }
                         let search = stalled || restart_pass >= FULL_STEPS;
+                        #[cfg(test)]
+                        self.full_trace_phase(
+                            "restart",
+                            target_passes,
+                            restart_pass + 1,
+                            continuation_from_stuck.is_some(),
+                        );
                         match self.iterate(false, search) {
                             Pass::Settled => {
                                 settled = true;
@@ -6602,6 +6704,13 @@ impl Simulation {
                                         .saturating_add(1);
                                 }
                                 let search = stalled || stage_pass >= FULL_STEPS;
+                                #[cfg(test)]
+                                self.full_trace_phase(
+                                    "post_restart",
+                                    target_passes,
+                                    stage_pass + 1,
+                                    true,
+                                );
                                 match self.iterate(false, search) {
                                     Pass::Settled => {
                                         stage_settled = true;
@@ -6932,6 +7041,9 @@ impl Simulation {
             };
             self.push_solver_control_sample(sample);
         }
+
+        #[cfg(test)]
+        self.full_trace_end();
 
         // Keep the continuation source synchronized with the dynamic state
         // committed above. An unsettled sample advances neither.

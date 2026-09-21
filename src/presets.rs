@@ -1465,9 +1465,11 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 50] {
+    pub fn dials(&self) -> [(&'static str, f32); 52] {
         [
             ("in_trim", self.input_trim),
+            ("noise_reduction", 0.0),
+            ("noise_threshold", -60.0),
             (
                 "twin_low_input",
                 if self.twin_low_input { 1.0 } else { 0.0 },
@@ -1746,6 +1748,9 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
         }
     }
     preset.values.entry("power_amp".into()).or_insert(0.0);
+    // Normalized threshold: -60 dBFS is halfway through [-90, -30].
+    preset.values.entry("noise_reduction".into()).or_insert(0.0);
+    preset.values.entry("noise_threshold".into()).or_insert(0.5);
     // Legacy is the first cabinet model, so an old preset keeps its baked filter.
     preset.values.entry("cab_model".into()).or_insert(0.0);
     // No pedal is the first pedal entry.

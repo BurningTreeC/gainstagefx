@@ -190,3 +190,112 @@ improve repeated tail timing. Neither gate nor its A/B switch remains. The user'
 original LM13-v2 mechanism remains explicitly opt-in for research, with rollback
 fixed; it is **rejected for production** because both recording fixtures produce
 one unsettled solve against V3.5's zero. See IMPLEMENTATION_PROGRESS.md.
+
+
+## Exact-sample power trace — 2026-09-20
+
+`GAINSTAGEFX_TRACE_POWER_SAMPLE=59930` selects the **zero-based power solve after
+recording warm-up**, not an absolute WAV or host timestamp. The Twin mono harness
+reads it once after warm-up and configures the existing active power simulation.
+Selection is `warmup_power_solves + relative_sample + 1`: with 1024 warm-up solves,
+59930 selects solve 60955, block 936/frame 26 at block size 64. Invalid/out-of-range
+selection fails in setup. Neighbor tracing is not implemented.
+
+All state and hooks are `cfg(test)`. The pass wrapper also compiles only in tests;
+production keeps its existing call path. Setup reserves 512 pass records, 16 trial
+slots per pass, and topology-sized predictor/residual scratch. The callback does
+not allocate, format, print, lock, or read the environment. Capacity exhaustion
+sets an overflow flag and makes reporting fail rather than silently truncating.
+The existing callback allocation guard remains enabled during the recording test.
+
+Records are printed after processing:
+
+- `twin_power_full_trace_begin`: sample mapping, source history/curvature, actual
+  predictor availability/scale/suppression and diagnostic raw source ratio.
+- `twin_power_full_predictor_state`: every unknown's before/earlier/after state,
+  unscaled state secant, hypothetical raw source-scaled displacement, and actual
+  applied displacement. Hypothetical values never become solver inputs.
+- `twin_power_full_pass`: complete pass/phase counters, current source RHS,
+  normalized full Newton correction, dominant unknown/delta, exact Schur/pivot
+  work, device/limiter state, search/reference/best/accepted/fallback information,
+  and before/after residual and state. `target_passes` is the solver's actual main
+  target counter; it remains 139 during this sample's production restart, whose
+  own `phase_pass`/`restart_pass` runs 1–26. `dominant_unknown_before` refers to the
+  preceding correction and has an explicit availability flag after resets.
+- `twin_power_full_trial`: every actual Newton-ray/dogleg/LM candidate, lambda,
+  measured merit, exactness, finiteness and acceptance. LM has no Newton-ray
+  lambda and reports NaN for it. Unmeasured/inexact candidates are marked as such.
+- `twin_power_full_trace_end`: full sample control totals, completeness/overflow,
+  final normalized correction and unsettled count.
+
+The trace reuses `SolverControlProfile`, phase call sites and actual globalization
+outcomes. Diagnostic residuals use the existing reduced physical residual path
+with separate scratch and device-checkpoint restoration, including caches. They
+are **not** substituted for the stamped merit used by the solver; those two
+arithmetic paths can differ at round-off. NaN in an unavailable diagnostic field
+is not a nonfinite solver correction. No success criterion, source, predictor,
+line-search/recovery decision, budget, or circuit coefficient changes.
+
+Tracing enables existing control counting for the selected power simulation;
+timings are diagnostic only. With tracing both disabled and enabled, the complete
+Standard Twin counters and audio hash match the pre-change `e2297db` baseline.
+See the current PROGRESS entry for validation and the sample's full trajectory.
+
+## Follow-up solver research — 2026-09-20
+
+After full-trace validation, the user authorized further experiments. Inspected
+the actual implementations below, rather than adopting a library dependency:
+
+| Source | Useful mechanism / relevance to this workload |
+|---|---|
+| [SUNDIALS KINSOL](https://github.com/llnl/sundials/blob/312fc0f3684f27209ca9dc9249d194436eb41a7a/src/kinsol/kinsol.c), local checkout | `KINLineSearch` retains the accepted iterate and Newton direction while shrinking candidates, using safeguarded quadratic/cubic interpolation. On a step too small it restores the original iterate; `KINStop` distinguishes residual convergence from stagnation, and may refresh a stale Jacobian. GainStageFX already refreshes each Newton Jacobian, so a stale-Jacobian retry offers no direct benefit. Its potentially long search cannot be copied into our callback. |
+| [Ceres LM strategy](https://github.com/ceres-solver/ceres-solver/blob/fe351d5ab8cbc574f33456376bf5aa90d3162d5d/internal/ceres/levenberg_marquardt_strategy.cc), [minimizer](https://github.com/ceres-solver/ceres-solver/blob/fe351d5ab8cbc574f33456376bf5aa90d3162d5d/internal/ceres/trust_region_minimizer.cc), local checkout | A rejected step contracts the radius and reuses the unchanged model/diagonal. Accepted x/F/J are not replaced by a rejected candidate. These transaction/reuse rules suit bounded rescue attempts. Gradient, parameter and minimum-radius termination are optimizer criteria and cannot define a circuit root. |
+| Rust-CV [LM control](https://github.com/rust-cv/levenberg-marquardt/blob/master/src/lm.rs), [QR](https://github.com/rust-cv/levenberg-marquardt/blob/master/src/qr.rs), [trust region](https://github.com/rust-cv/levenberg-marquardt/blob/master/src/trust_region.rs), upstream source read 2026-09-20 | Rejected trials keep the linear least-squares problem; a pivoted QR and transformed RHS support repeated diagonal-damping solves. Column scaling and guarded reductions improve conditioning. These are useful alternatives if LM model conditioning becomes a measured failure, not grounds to replace our cheaper exact Newton LU. Its orthogonality/ftol/xtol outcomes are not physical root validation. |
+
+**Measured experiment, rejected:** after a failed Twin Newton ray whose best
+trial worsens the current residual, try only two shorter points (half and quarter
+of the current search floor), reusing the direction and residual-only path.
+Successful probes require the existing acceptance criterion AND reduction from
+the current root merit. Rejection restores all device checkpoints/cache state
+and retains the original fallback. No new matrix factorization or equation.
+
+The broad trigger reduced sample 59930 from 166 to 18 passes, but produced one
+unsettled solve over the recording and increased total trial work. A separate
+trigger restricted to a >1e6 squared-residual increase accepted no additional
+points: 392 extra evaluations, identical Newton trajectory. Both code variants
+and their opt-in switch were removed. This does **not** justify making searches
+deeper globally, or enabling LM. See PROGRESS for exact counters and commands.
+
+Next ranked investigations: (1) use neighboring full trajectories to distinguish
+useful nonmonotone fallbacks from the onset of finite residual explosions;
+(2) test a bounded recovery from the last accepted state for that evidenced
+subset, with independent full-reference and recording gates; (3) investigate
+scaling/QR only if conditioning telemetry establishes a need. No new solver
+policy is enabled and no realtime speed improvement is claimed.
+
+## Optional input noise reduction — 2026-09-20
+
+`NoiseReduction` is a digital downward expander before both delayed-dry and
+wet circuit paths, after input trim. Its default Off state returns exactly unity;
+legacy host/preset migration resets absent controls to Off/-60 dBFS. This is an
+explicit user effect, not source clipping or a solver shortcut. Circuits continue
+to process every sample, including plugin bypass, and downstream decay state is
+not gated. There is no added delay, thread, allocation or lock in processing.
+
+One peak envelope receives the maximum magnitude of the trimmed stereo inputs.
+It attacks immediately and releases with a 120 ms time constant. A 25 ms hold
+and a 2:1 expansion curve (6.02 dB cubic knee ending at threshold, 40 dB maximum
+attenuation) set target gain. Gain opens with a 0.5 ms time constant and closes
+with an 80 ms time constant. On/off changes crossfade over 5 ms, finishing at
+exact unity when off. These are product choices, not hardware-derived values.
+Threshold automation is covered by the gain smoothing. Coefficients are rebuilt
+from the actual host sample rate; only changed thresholds need a block-rate pow.
+
+The host thread calculates each stereo gain once into preallocated storage before
+publishing the right-channel worker job. The sequential/oversized-block path uses
+the same hotter-channel detector before either input is overwritten. The meter
+retains the pre-expander level. Tests cover curve monotonicity/ratio, attack/hold,
+attenuation, bypass smoothing and reset at 44.1/48/88.2/96/192 kHz; callback tests
+check mono/dual-mono equality, parallel/sequential equality, stereo linking,
+exact plugin bypass, audible-path attenuation and exact disabled dry output.
+The callback tests run under the existing no-heap guard.

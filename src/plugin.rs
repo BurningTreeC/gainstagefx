@@ -5,12 +5,13 @@ use nih_plug::wrapper::state::ParamValue;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
+use crate::dsp::noise_reduction::NoiseReduction;
 use crate::meters::Meters;
 use crate::params::{Amplifier, Circuit, Diode, GainStageParams, Oversampling};
 use crate::stereo_worker::{StereoJob, StereoWorker};
 use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 
-/// The input is never hard-gated inside the plugin.
+/// The input is never hard-gated as a solver optimization.
 ///
 /// Earlier builds quantised samples below -80 dBFS to exact zero as a CPU
 /// optimisation. That creates a numerical discontinuity exactly where a live
@@ -19,7 +20,8 @@ use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 /// a finite source jump in one sample. The physical amplifier does not contain
 /// that gate, and the saved CPU during silence is not worth a crackle/dropout
 /// on the first transient. FTZ/DAZ already handles denormal arithmetic, so the
-/// chain now receives the trimmed source exactly as the host supplied it.
+/// chain receives the trimmed source exactly as the host supplied it unless
+/// the user enables the smoothly attenuating input expander.
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
     meters: Arc<Meters>,
@@ -51,6 +53,7 @@ pub struct GainStageFx {
     input_ramp: BlockRamp,
     output_ramp: BlockRamp,
     mix_ramp: BlockRamp,
+    noise_reduction: NoiseReduction,
     /// Persistent helper for the right chain once genuine stereo is present.
     /// It sleeps while the plugin is mono/dual-mono and never owns audio
     /// state; each job borrows the already-initialized right `Chain` for one
@@ -62,6 +65,7 @@ pub struct GainStageFx {
     stereo_input_trim: Vec<f32>,
     stereo_output_trim: Vec<f32>,
     stereo_mix: Vec<f32>,
+    stereo_noise_gain: Vec<f64>,
     /// The right input magnitude before its sample is overwritten by the
     /// worker. This keeps the input meter's frame-by-frame decay identical to
     /// the sequential path.
@@ -270,10 +274,12 @@ impl Default for GainStageFx {
             input_ramp,
             output_ramp,
             mix_ramp,
+            noise_reduction: NoiseReduction::new(48_000.0),
             stereo_worker: None,
             stereo_input_trim: Vec::new(),
             stereo_output_trim: Vec::new(),
             stereo_mix: Vec::new(),
+            stereo_noise_gain: Vec::new(),
             stereo_right_peak: Vec::new(),
         }
     }
@@ -444,6 +450,14 @@ impl Plugin for GainStageFx {
     }
 
     fn filter_state(state: &mut PluginState) {
+        state
+            .params
+            .entry("noise_reduction".into())
+            .or_insert(ParamValue::Bool(false));
+        state
+            .params
+            .entry("noise_threshold".into())
+            .or_insert(ParamValue::F32(-60.0));
         // Loading a legacy session into an already configured instance must
         // clear a previous override, not depend on constructor defaults.
         state
@@ -500,6 +514,7 @@ impl Plugin for GainStageFx {
         self.stereo_input_trim.resize(max_block, 0.0);
         self.stereo_output_trim.resize(max_block, 0.0);
         self.stereo_mix.resize(max_block, 0.0);
+        self.stereo_noise_gain.resize(max_block, 1.0);
         self.stereo_right_peak.resize(max_block, 0.0);
         if channel_count == 2 {
             self.stereo_worker = Some(StereoWorker::new());
@@ -512,6 +527,11 @@ impl Plugin for GainStageFx {
         self.output_ramp
             .reset(util::db_to_gain(self.params.output_trim.value()));
         self.mix_ramp.reset(self.params.mix.value());
+        self.noise_reduction = NoiseReduction::new(self.sample_rate);
+        self.noise_reduction.reset(
+            self.params.noise_reduction.value(),
+            self.params.noise_threshold.value(),
+        );
         self.peak = 0.0;
         self.meters.reset();
 
@@ -536,6 +556,10 @@ impl Plugin for GainStageFx {
         self.output_ramp
             .reset(util::db_to_gain(self.params.output_trim.value()));
         self.mix_ramp.reset(self.params.mix.value());
+        self.noise_reduction.reset(
+            self.params.noise_reduction.value(),
+            self.params.noise_threshold.value(),
+        );
     }
 
     fn process(
@@ -749,6 +773,10 @@ impl Plugin for GainStageFx {
         self.mix_ramp.aim(mix_target, samples);
 
         let bypassed = self.params.bypass.value();
+        self.noise_reduction.configure(
+            self.params.noise_reduction.value(),
+            self.params.noise_threshold.value(),
+        );
         let decay = (-1.0 / (0.3 * self.sample_rate)).exp();
         let nominal = 10f64.powf(NOMINAL_DBFS / 20.0);
         let mut peak = self.peak;
@@ -789,6 +817,10 @@ impl Plugin for GainStageFx {
             for (i, &sample) in right_samples.iter().take(sample_count).enumerate() {
                 let trimmed = sample as f64 * self.stereo_input_trim[i] as f64;
                 self.stereo_right_peak[i] = trimmed.abs();
+                let left = left_samples[i] as f64 * self.stereo_input_trim[i] as f64;
+                self.stereo_noise_gain[i] = self
+                    .noise_reduction
+                    .next_gain(left.abs().max(trimmed.abs()));
             }
 
             let (left_chains, right_chains) = self.channels.split_at_mut(1);
@@ -800,6 +832,7 @@ impl Plugin for GainStageFx {
                 input_trim: self.stereo_input_trim.as_ptr(),
                 output_trim: self.stereo_output_trim.as_ptr(),
                 mix: self.stereo_mix.as_ptr(),
+                noise_gain: self.stereo_noise_gain.as_ptr(),
                 len: sample_count,
                 bypassed,
             };
@@ -810,7 +843,7 @@ impl Plugin for GainStageFx {
             for (i, sample) in left_samples.iter_mut().take(sample_count).enumerate() {
                 let raw = *sample as f64;
                 let trimmed = raw * self.stereo_input_trim[i] as f64;
-                let input = trimmed;
+                let input = trimmed * self.stereo_noise_gain[i];
                 let dry = left_chain.delayed_dry(input);
                 let wet = left_chain.process(input);
                 if !bypassed {
@@ -819,7 +852,7 @@ impl Plugin for GainStageFx {
                         * self.stereo_output_trim[i] as f64) as f32;
                 }
 
-                let frame_peak = input.abs().max(self.stereo_right_peak[i]);
+                let frame_peak = trimmed.abs().max(self.stereo_right_peak[i]);
                 peak = if frame_peak > peak {
                     frame_peak
                 } else {
@@ -838,6 +871,12 @@ impl Plugin for GainStageFx {
                 let input_trim = self.input_ramp.next() as f64;
                 let output_trim = self.output_ramp.next() as f64;
                 let mix = self.mix_ramp.next() as f64;
+                // Read both inputs before overwriting either. The hotter side
+                // opens one shared expander, so stereo balance cannot wander.
+                let detector = frame.iter_mut().fold(0.0f64, |peak, sample| {
+                    peak.max((*sample as f64 * input_trim).abs())
+                });
+                let noise_gain = self.noise_reduction.next_gain(detector);
                 let mut frame_peak = 0.0f64;
                 let mut duplicated_output = 0.0f32;
                 for (index, sample) in frame.iter_mut().enumerate() {
@@ -859,7 +898,7 @@ impl Plugin for GainStageFx {
                     // continues running and stays warm.
                     let raw = *sample as f64;
                     let trimmed = raw * input_trim;
-                    let input = trimmed;
+                    let input = trimmed * noise_gain;
 
                     let dry = chain.delayed_dry(input);
                     let wet = chain.process(input);
@@ -872,7 +911,7 @@ impl Plugin for GainStageFx {
                         }
                     }
 
-                    frame_peak = frame_peak.max(input.abs());
+                    frame_peak = frame_peak.max(trimmed.abs());
                 }
 
                 peak = if frame_peak > peak {

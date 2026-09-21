@@ -2541,6 +2541,11 @@ enum TrialCache {
 
 impl AnyDevice {
     #[cfg(test)]
+    pub(crate) fn limiter_held(&self) -> bool {
+        self.linearisation().clamped
+    }
+
+    #[cfg(test)]
     pub(super) fn checkpoint(&self) -> DeviceCheckpoint {
         DeviceCheckpoint {
             linearisation: self.linearisation(),

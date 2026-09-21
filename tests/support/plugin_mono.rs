@@ -230,6 +230,135 @@ fn material(k: usize) -> f32 {
     (0.12 * (k as f64 * 0.057).sin() + 0.04 * (k as f64 * 0.213).sin()) as f32
 }
 
+fn set_noise_reduction(plugin: &mut GainStageFx, enabled: bool, threshold: f32) {
+    let params = Arc::get_mut(&mut plugin.params).unwrap();
+    params.noise_reduction = BoolParam::new("Noise Reduction", enabled);
+    params.noise_threshold = FloatParam::new(
+        "Noise Threshold",
+        threshold,
+        FloatRange::Linear {
+            min: -90.0,
+            max: -30.0,
+        },
+    );
+}
+
+#[test]
+fn noise_reduction_stereo_worker_matches_sequential_and_bypass_is_a_wire() {
+    let mut parallel = initialized(Circuit::Clean, false, 48_000.0);
+    let mut sequential = initialized(Circuit::Clean, false, 48_000.0);
+    sequential.stereo_worker = None;
+    for block in 0..800 {
+        if block % 100 == 0 || block == 750 {
+            for plugin in [&mut parallel, &mut sequential] {
+                set_noise_reduction(
+                    plugin,
+                    block % 300 != 0,
+                    if block < 400 { -60.0 } else { -45.0 },
+                );
+                Arc::get_mut(&mut plugin.params).unwrap().bypass =
+                    BoolParam::new("Bypass", block >= 750);
+            }
+        }
+        let mut left = [0.0; 64];
+        let mut right = [0.0; 64];
+        for (i, (left, right)) in left.iter_mut().zip(&mut right).enumerate() {
+            let k = block * 64 + i;
+            let note = if block % 150 < 30 { 1.0 } else { 0.0001 };
+            *left = material(k) * note;
+            *right = material(k + 719) * note * 0.25;
+        }
+        let original_left = left;
+        let original_right = right;
+        let mut reference_left = left;
+        let mut reference_right = right;
+        process(&mut parallel, &mut left, Some(&mut right));
+        process(
+            &mut sequential,
+            &mut reference_left,
+            Some(&mut reference_right),
+        );
+        assert_eq!(left, reference_left, "left block={block}");
+        assert_eq!(right, reference_right, "right block={block}");
+        if parallel.params.bypass.value() {
+            assert_eq!(left, original_left);
+            assert_eq!(right, original_right);
+        }
+    }
+}
+
+#[test]
+fn noise_reduction_dual_mono_matches_mono_at_all_supported_rates() {
+    for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
+        let mut mono = initialized(Circuit::Clean, true, rate);
+        let mut stereo = initialized(Circuit::Clean, false, rate);
+        set_noise_reduction(&mut mono, true, -40.0);
+        set_noise_reduction(&mut stereo, true, -40.0);
+        for block in 0..200 {
+            let mut left = [0.0; 64];
+            for (i, sample) in left.iter_mut().enumerate() {
+                *sample = material(block * 64 + i) * 0.0001;
+            }
+            let mut right = left;
+            let mut reference = left;
+            process(&mut mono, &mut reference, None);
+            process(&mut stereo, &mut left, Some(&mut right));
+            assert_eq!(left, reference, "rate={rate}");
+            assert_eq!(left, right, "rate={rate}");
+        }
+        assert!(!stereo.stereo_seen);
+    }
+}
+
+#[test]
+fn noise_reduction_attenuates_input_and_disable_returns_to_exact_delayed_dry() {
+    let mut plugin = initialized(Circuit::Clean, true, 48_000.0);
+    let params = Arc::get_mut(&mut plugin.params).unwrap();
+    params.mix = FloatParam::new("Mix", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 });
+    params.mix.smoothed.reset(0.0);
+    set_noise_reduction(&mut plugin, true, -60.0);
+    plugin.reset();
+    let mut output = [0.0; 64];
+    for _ in 0..1500 {
+        output.fill(0.0001);
+        process(&mut plugin, &mut output, None);
+    }
+    for sample in output {
+        assert!((sample / 0.0001 - 0.1).abs() < 1e-5);
+    }
+    set_noise_reduction(&mut plugin, false, -60.0);
+    for _ in 0..20 {
+        output.fill(0.0001);
+        process(&mut plugin, &mut output, None);
+    }
+    assert_eq!(output, [0.0001; 64]);
+}
+
+#[test]
+fn noise_reduction_loud_channel_opens_both_sides() {
+    let mut plugin = initialized(Circuit::Clean, false, 48_000.0);
+    let params = Arc::get_mut(&mut plugin.params).unwrap();
+    params.mix = FloatParam::new("Mix", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 });
+    params.mix.smoothed.reset(0.0);
+    set_noise_reduction(&mut plugin, true, -60.0);
+    plugin.reset();
+    let mut left = [0.0; 64];
+    let mut right = [0.0; 64];
+    for _ in 0..1000 {
+        left.fill(0.0001);
+        right.fill(0.00005);
+        process(&mut plugin, &mut left, Some(&mut right));
+    }
+    assert!((right[63] / 0.00005 - 0.1).abs() < 1e-4);
+    for _ in 0..20 {
+        left.fill(0.1);
+        right.fill(0.00005);
+        process(&mut plugin, &mut left, Some(&mut right));
+    }
+    assert_eq!(right, [0.00005; 64]);
+    assert_eq!(left, [0.1; 64]);
+}
+
 #[test]
 fn negotiated_layout_builds_exactly_one_chain_per_host_channel() {
     let mono = initialized(Circuit::Clean, true, 48_000.0);
@@ -920,8 +1049,29 @@ fn run_realtime_pass(
     }
 
     plugin.channels[0].reset_twin_level_trace();
+    // Read once, after warm-up. Relative zero is the first measured power
+    // solve, exactly as in the existing solver-control sample records.
+    let full_trace_sample = std::env::var("GAINSTAGEFX_TRACE_POWER_SAMPLE")
+        .ok()
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .expect("TRACE_POWER_SAMPLE must be a nonnegative integer")
+        });
+    if let Some(sample) = full_trace_sample {
+        assert!(
+            circuit == Circuit::Twin && layout == ProbeLayout::Mono,
+            "exact-sample tracing requires the Twin mono recording fixture"
+        );
+        assert!(
+            sample < input.len() as u64,
+            "selected sample is outside the measured excerpt"
+        );
+        plugin.channels[0].configure_full_power_trace(sample, BLOCK);
+    }
     let solver_control_profile_enabled =
-        std::env::var_os("GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL").is_some()
+        (std::env::var_os("GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL").is_some()
+            || full_trace_sample.is_some())
             && circuit == Circuit::Twin
             && layout == ProbeLayout::Mono;
     if solver_control_profile_enabled {
@@ -1232,6 +1382,7 @@ fn run_realtime_pass(
         }
     }
 
+    plugin.channels[0].print_full_power_trace();
     let (mean_us, p99_us, max_us) = summarize(&mut times);
     let (cpu_mean_us, cpu_p99_us, cpu_max_us) = summarize(&mut cpu_times);
     let (preempt_mean_us, preempt_p99_us, preempt_max_us) = summarize(&mut preempt_times);

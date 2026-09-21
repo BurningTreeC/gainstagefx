@@ -369,7 +369,7 @@ fn input(cx: &mut Context) {
     // zero is the only place on the panel where every other control means what
     // its label says.
     let meter_x = body_x() + 88.0;
-    let meter_w = body_w() - 96.0;
+    let meter_w = body_w() - 300.0;
     Meter::new(cx, Panel::meters)
         .position_type(PositionType::SelfDirected)
         .left(Pixels(meter_x))
@@ -379,12 +379,41 @@ fn input(cx: &mut Context) {
 
     label(
         cx,
-        "arriving at the circuit, against the level it was voiced at",
+        "input level, before noise reduction",
         meter_x + meter_w / 2.0,
         top + 46.0,
         9.5,
         meter_w,
         0x7e8a96,
+    );
+
+    let noise_x = body_x() + body_w() - 195.0;
+    selector(
+        cx,
+        noise_x,
+        top + 14.0,
+        110.0,
+        |p| &p.noise_reduction,
+        vec!["Off", "On"],
+        true,
+    );
+    label(
+        cx,
+        "NOISE REDUCTION",
+        noise_x + 55.0,
+        top + 44.0,
+        9.0,
+        126.0,
+        0x7e8a96,
+    );
+    knob(
+        cx,
+        body_x() + body_w() - 35.0,
+        top + 24.0,
+        16.0,
+        "THRESHOLD",
+        |p| &p.noise_threshold,
+        |p| format!("{:.0} dBFS", p.noise_threshold.value()),
     );
 
     // The pedal, between the guitar and the circuit. Its knobs are its own, so

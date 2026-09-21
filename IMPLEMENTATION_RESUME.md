@@ -1,6 +1,78 @@
 # GainStageFX implementation résumé / handoff
 
-## Current checkpoint — Ceres audit, 2026-09-20
+## Latest follow-up — input expander and rejected bounded-ray rescue
+
+The user subsequently authorized experiments after instrumentation validation,
+and selected gentle noise reduction between notes. Production solver remains
+**V3.5 unchanged**. Two residual-only failed-ray rescue variants were tried and
+removed: broad activation solved sample 59930 in 18 passes but caused one
+unsettled solve globally; a >1e6 merit-growth gate added 392 probes without a
+single acceptance. Do not restore `GAINSTAGEFX_TEST_FAILED_RAY_RESCUE`: it no
+longer exists. DSP.md contains the SUNDIALS/Ceres/Rust-CV source findings and
+PROGRESS has the exact experiment counters and decisions. No performance win
+has earned production integration in this follow-up.
+
+New input **Noise Reduction Off/On + Threshold** controls drive a stereo-linked
+gentle expander before the pedal/amp and dry/wet branch. Defaults Off/-60 dBFS;
+legacy host/preset migration preserves the old sound. Added DSP is in
+`src/dsp/noise_reduction.rs`, connected through plugin and stereo worker, with
+preallocated shared gains. No latency or circuit simplification. Six focused
+tests cover the audio path, smooth state changes, five rates, stereo linking,
+worker equivalence and no callback allocations. All previous solver validations
+were rerun successfully after this addition; counters and output hash remain
+identical with noise reduction Off. Final full workspace suite completed
+2026-09-21: **445 passed, 8 skipped** (including the six new expander tests).
+
+Fresh three-run Standard Twin baseline, profiling/expander OFF, Ryzen 7 5700G,
+CPU 2 / performance governor, 48 kHz / 64: median CPU mean/p99/max
+**765.14 / 1667.56 / 1995.76 µs**, worst observed max **2321.90 µs**, median 397
+CPU overruns per 6000 blocks, zero unsettled. The 1333.33 µs target remains unmet;
+do not treat zero unpaced scheduler deadline misses as zero CPU overruns.
+Commands and metadata artifact paths are in the newest PROGRESS entry.
+
+## Instrumentation checkpoint — full sample trajectory, 2026-09-20
+
+Started from clean `e2297db` (`fix clippy errors`), after `a075f71` (LM experiments).
+Only test diagnostics and documentation changed. Production remains V3.5; no new
+solver optimization is enabled. LM13 remains research-only and dogleg opt-in.
+The prior handoff below is historical. See the newest PROGRESS and DSP sections.
+
+`GAINSTAGEFX_TRACE_POWER_SAMPLE=59930` now captures the complete selected Twin
+power solve. Relative zero is the first measured power solve after warm-up;
+59930 maps to solve 60955, block 936/frame 26. Read the variable once in harness
+setup. Print the preallocated records after callbacks. No neighbor flag was added.
+
+```bash
+env -u GAINSTAGEFX_ATTACK_PRESET \
+GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION=1 \
+GAINSTAGEFX_TRACE_POWER_SAMPLE=59930 \
+cargo test --release --lib twin_realtime_recording_solver_trace \
+  -- --ignored --nocapture --test-threads=1 \
+  2>&1 | tee /tmp/twin-59930-full-trace.log
+```
+
+The log contains begin/end records, all predictor unknowns, 166 passes and 173
+trials; no overflow, unsettled=0. The source-step ratio is +15.0564 and predictor
+scale zero. Five 1/8 fallback steps send the residual as high as 7.995e107;
+76 exhausted-tail passes follow, before a 26-pass restart finally converges.
+The issue is not merely the final sequence of small damped steps. Inspect the
+full log before proposing another solver policy. **Do not optimize as part of
+this instrumentation task.**
+
+Clean counters are unchanged with tracing off AND on: Newton 1944584,
+trials 613429, backtracks 109464, fallbacks 14107, continuation attempts 840,
+restart passes 245, unsettled 0. Complete output hash remains `b2fc6ff9fd0296df`.
+All additional residual probes restore the nonlinear evaluation caches and never
+supply values to the solver's acceptance/convergence logic.
+
+Formatting, strict release/workspace Clippy, four LM tests, the high-accuracy
+Twin reference, Blackface attacks with LM enabled, clean trace and full trace
+pass. Two new unit tests cover sample numbering and bit-identical DSP/cache/health
+at five rates. Cargo's dependency-only `xcb 0.9.0` future-compatibility notice
+remains; there are no project warnings. Full workspace nextest: **439 passed,
+8 skipped**.
+
+## Previous checkpoint — Ceres audit, 2026-09-20
 
 HEAD `8e09bb2`, package 0.19.0. The working tree arrived with user LM13-v2,
 dogleg, harness and attribution changes; preserve them. V3.5 remains production.

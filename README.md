@@ -42,7 +42,7 @@ what is in it.
 
 | | | |
 |---|---|---|
-| **1 Input** | Trim, meter, pedal with drive/tone/level | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
+| **1 Input** | Trim, meter, noise reduction, pedal with drive/tone/level | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
 | **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
 | **3 Drive** | Drive, master, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs. The second row belongs to the Twin. |
@@ -51,6 +51,16 @@ what is in it.
 
 Bypass is the host's: the plugin reports a bypass parameter, so the DAW's own
 bypass switch and automation lane drive it.
+
+**Noise reduction** is an optional gentle input expander, switched Off/On in the
+Input section. It defaults to Off, including in older sessions and factory presets.
+Start with the threshold at -60 dBFS and raise it only enough to reduce noise
+between notes. The threshold measures the signal after input trim; the input meter
+keeps its existing nominal-level reference. Both stereo channels share one detector
+so the louder side keeps both open. Below the soft knee it expands 2:1, with at most
+40 dB attenuation, a fast opening and a slow release. Switching it adds no latency.
+It precedes the pedal and amp, preserving their reverb and cabinet decays; it does
+not remove hum or hiss underneath a sustained note.
 
 ## The circuits
 

@@ -998,6 +998,11 @@ pub struct GainStageParams {
     /// the control that makes the rest of the panel mean what it says.
     #[id = "in_trim"]
     pub input_trim: FloatParam,
+    /// Optional gentle input expander; off preserves legacy sessions exactly.
+    #[id = "noise_reduction"]
+    pub noise_reduction: BoolParam,
+    #[id = "noise_threshold"]
+    pub noise_threshold: FloatParam,
     /// Which of the American Twin Vibrato channel's two stock input jacks is
     /// used. `false` is Jack 1 / High; `true` is Jack 2 / Low (-6 dB). The
     /// parameter is ignored by every other circuit.
@@ -1268,6 +1273,17 @@ impl Default for GainStageParams {
             preset_name: Mutex::new(String::from(crate::presets::NONE)),
 
             input_trim: decibels("Input", 24.0),
+            noise_reduction: BoolParam::new("Noise Reduction", false),
+            noise_threshold: FloatParam::new(
+                "Noise Threshold",
+                -60.0,
+                FloatRange::Linear {
+                    min: -90.0,
+                    max: -30.0,
+                },
+            )
+            .with_unit(" dBFS")
+            .with_step_size(1.0),
             twin_low_input: BoolParam::new("Twin Sensitivity", false),
             // Preserve the sound of sessions made before the switch was exposed:
             // the old model had the 120 pF capacitor permanently connected.
