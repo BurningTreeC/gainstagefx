@@ -46,7 +46,7 @@ what is in it.
 | **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
 | **3 Drive** | Drive, master, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs. The second row belongs to the Twin. |
-| **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
+| **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, pan, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
 | **6 Output** | Mix, level | The dry path is delayed to match, so mixing is a mix and not a comb filter. |
 
 Bypass is the host's: the plugin reports a bypass parameter, so the DAW's own
@@ -257,6 +257,14 @@ the cabinet: close up the nearest cone dominates, further back the array adds
 up at low frequencies and beams at high ones, an open back cancels its own
 bass, and two microphones at different distances comb-filter unless **time** is
 set to Aligned. **B polarity** inverts mic B, and **blend** mixes the two.
+
+Each microphone also has a **pan**, which is how one cabinet becomes a stereo
+image: put A and B on opposite sides and the two capsules land in different
+places in the mix rather than being summed. Centre means the whole signal on
+both sides, which is what a mono source on a stereo bus has always done here, so
+leaving both pans centred changes nothing at all. The pans apply where one
+amplifier feeds both outputs -- a mono guitar on a stereo track. A genuinely
+stereo input is already two independent amplifiers, and each keeps its own side.
 
 The models, the equations and what each number is based on are in
 [`SPEAKER_MODEL.md`](SPEAKER_MODEL.md), [`CABINET_MODEL.md`](CABINET_MODEL.md)

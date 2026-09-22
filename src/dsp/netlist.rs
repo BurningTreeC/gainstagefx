@@ -587,6 +587,44 @@ impl PentodeSpec {
         kvb: 24.0,
         kg2: 9_000.0,
     };
+    /// The 6V6GT, for the American Deluxe. Half a 6L6's current for the same
+    /// plate volts, which is the whole difference between a 22 W amplifier and
+    /// an 85 W one.
+    ///
+    /// Fitted, not transcribed: `tools/tube_fit/fit_6v6gt.py` solves for `kg1`,
+    /// `kp`, `kvb` and `kg2` against two published operating points -- RCA's
+    /// Class A1 row (250 V plate and screen, -12.5 V grid, 45 mA plate, 4.5 mA
+    /// screen) and General Electric's 1955 Class A pentode row (180 V, 180 V,
+    /// -8.5 V, 29 mA, 3 mA, 3700 micromho) -- and meets all five numbers to
+    /// better than 1.5 %.
+    ///
+    /// `ex` is held at 1.35 like every other power tube here, and `mu` is held
+    /// at the published screen amplification factor of 10 rather than fitted:
+    /// the residual surface is flat in it, and a free `mu` lands anywhere
+    /// between 10 and 40 with the same error, which would be buying one
+    /// constant with another.
+    ///
+    /// Checked against a point it was never shown: RCA's RC-30 Class AB1
+    /// push-pull row, 285 V plate and screen at -19 V, 70 mA for the pair. The
+    /// fit gives 35.02 mA in one tube against the published 35.0.
+    ///
+    /// Two known limits, recorded rather than tuned away. The Koren `atan`
+    /// knee puts the small-signal plate resistance at about 29 kohm where the
+    /// sheets say 50 kohm, which is a property of the model form and is shared
+    /// by the other pentodes here. More importantly the zero-bias end is low --
+    /// about 60 mA at 50 V on the plate, where published plate-characteristic
+    /// families suggest nearer 200 mA -- because no zero-bias figure for this
+    /// tube is published in a form that could be cited as a fit target. That
+    /// matters for a hard-driven output stage and is an open question in
+    /// `docs/models/american_deluxe.md`, not a settled number.
+    pub const T6V6GT: PentodeSpec = PentodeSpec {
+        mu: 10.0,
+        ex: 1.35,
+        kg1: 959.523,
+        kp: 47.4261,
+        kvb: 54.1185,
+        kg2: 7165.23,
+    };
     /// The EL84, for an AC30.
     pub const EL84: PentodeSpec = PentodeSpec {
         mu: 19.4,

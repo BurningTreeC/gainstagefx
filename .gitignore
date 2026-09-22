@@ -31,5 +31,11 @@
 !/docs/models/
 !/docs/models/**
 
+# Version the solver engineering record too. IMPLEMENTATION_PROGRESS.md is
+# versioned and points at these two, so leaving them local would ship a
+# dangling reference to the file that is supposed to explain the work.
+!/docs/SOLVER_OPTIMIZATION.md
+!/docs/SOLVER_EXPERIMENTS.md
+
 CLAUDE.md
 AGENTS.md

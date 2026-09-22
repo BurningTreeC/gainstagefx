@@ -182,6 +182,11 @@ pub const CALIBRATION: [Calibration; VOICES] = [
         drive_volts: 0.122000,
         make_up_db: [11.48, 11.48, 11.48, 11.41, 11.18, 10.81, 10.30, 9.63, 8.85, 8.00, 7.15, 6.37, 5.67, 5.08, 4.57, 4.14, 3.77, 3.45, 3.17, 2.92, 2.70, 2.50, 2.33, 2.17, 2.04, 1.91, 1.64, 1.58, 1.55, 1.52, 1.51, 1.49, 1.48],
     },
+    // Deluxe Reverb: placeholder pending `cargo run --release --example calibrate`.
+    Calibration {
+        drive_volts: 0.122000,
+        make_up_db: [0.0; 33],
+    },
 ];
 
 /// Insertion loss of each output transformer, measured where the

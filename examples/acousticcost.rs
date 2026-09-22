@@ -149,7 +149,7 @@ fn main() {
             distance: 0.5,
             angle: 20.0,
         };
-        stage.set_placement(p, p, 0.5, false, false);
+        stage.set_placement(p, p, 0.5, 0.0, 0.0, false, false);
         let n = (RATE * 4.0) as usize;
         let start = std::time::Instant::now();
         let mut acc = 0.0;

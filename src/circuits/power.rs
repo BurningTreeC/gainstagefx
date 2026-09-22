@@ -814,6 +814,108 @@ impl PowerSpec {
     /// supply resistance, which is lower than Mesa's, rather than by a larger
     /// reservoir -- the AB763's filters are small by modern standards and the
     /// stiffness comes from the transformer and the rectifier.
+    /// The AB763 Deluxe Reverb's: one 6V6GT a side, fixed bias, behind a GZ34.
+    /// The matched power stage of the American Deluxe preamplifier. Every value
+    /// below is read off the original Fender drawing, which is in
+    /// `docs/schematics/fender_deluxe_reverb_ab763.pdf`. See
+    /// `docs/models/american_deluxe.md`.
+    ///
+    /// Worth reading beside `TWIN` above, because the two are the *same
+    /// circuit* at the phase inverter -- 0.001 uF in, 1 M/1 M leaks, a 470 ohm
+    /// cathode, a 22 k tail, 0.1 uF across to the undriven grid and 82 k/100 k
+    /// plates -- and completely different behind it. That is the whole point of
+    /// having both: 22 W of 6V6 behind a valve rectifier against 85 W of 6L6
+    /// behind silicon.
+    pub const DELUXE_6V6: PowerSpec = PowerSpec {
+        name: "Deluxe Reverb 6V6 (AB763)",
+        // No master volume on an AB763. Wide open, so it is not one.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.001e-6,
+        driver_volts: 0.0,
+        // As on the Twin: no separate grid stopper here. The 22 k on the
+        // drawing is the long-tail resistor.
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 470.0,
+        pi_tail: 22_000.0,
+        // 47 ohms, where the Twin has 100. This is the one component that sets
+        // how much of the loop comes back, and it is why the Deluxe is the
+        // livelier of the two: less feedback, sooner.
+        pi_tail_lower: 47.0,
+        pi_cross: 0.1e-6,
+        // 82 k driven, 100 k undriven, both 5 % parts on the drawing.
+        pi_plate_driven: 82_000.0,
+        pi_plate_other: 100_000.0,
+        // The drawing labels the inverter's supply node +325 V, against the
+        // Twin's 450. A 12AT7 long-tailed pair with a third less rail runs out
+        // of room a good deal earlier, which is most of why a Deluxe starts to
+        // compress where a Twin is still clean.
+        pi_supply: 325.0,
+        pi_tube: TriodeSpec::ECC81,
+        pi_plate_cap: 0.0,
+
+        couple: 0.1e-6,
+        grid_leak: 220_000.0,
+        // One valve a side here, so these are the drawing's values as they
+        // stand -- no paralleling to divide out, unlike the Twin.
+        stopper: 1_500.0,
+        screen_resistor: 470.0,
+        tubes_per_side: 1.0,
+        tube: PentodeSpec::T6V6GT,
+        // The drawing's bias supply: 470 ohm, one diode, 25 uF and a 10 k
+        // linear bias control, labelled -35 V.
+        bias: -35.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+
+        // +415 V on both plates on the drawing. The screens hang on the same
+        // node through their 470 ohm 1 W resistors rather than on a separate
+        // choke-fed rail, so the screen supply is that node too.
+        plate_supply: 415.0,
+        screen_supply: 415.0,
+        // ESTIMATED. The drawing carries no winding resistance. This is the
+        // secondary copper of a 22 W mains transformer, and it is deliberately
+        // higher than the Twin's 70 ohms: the GZ34 in front of it is the larger
+        // part of this amplifier's sag and is modelled as the valve it is.
+        supply_resistance: 150.0,
+        rectifier: Some(RectifierSpec::GZ34),
+        // 16 uF/450 V on the drawing, which is a small reservoir even by
+        // blackface standards and is the rest of why the rail moves.
+        reservoir: 16e-6,
+        // Shared node: a small resistance rather than zero, so the screens
+        // still see their own local impedance.
+        screen_resistance: 10.0,
+        screen_reservoir: 16e-6,
+
+        // 125A1A, 6.6 k plate to plate into 8 ohms: `sqrt(6600 / 8)`.
+        ratio: 28.7228132326901,
+        // ESTIMATED: no winding data for the 125A1A was found. A 22 W
+        // transformer wound for 6.6 k needs more turns than the Twin's 1.9 k
+        // one, so more copper and more magnetising inductance; 17 H against
+        // 6.6 k puts the bottom corner near 62 Hz, which is where a small
+        // Fender's bass gives out.
+        primary_resistance: 180.0,
+        primary_inductance: 17.0,
+        leakage: 45e-6,
+        // Twenty-two watts into eight ohms is 13.3 V rms, 18.8 V peak.
+        saturation_volts: 18.7616630392937,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 8.0,
+
+        // 820 ohms from the secondary to the tail, as on the Twin. What
+        // differs is the 47 ohm leg above, not this.
+        feedback: 820.0,
+        // No presence control. One femtofarad is an open circuit.
+        presence_pot: 5_000.0,
+        presence_cap: 1e-15,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+    };
+
     pub const TWIN: PowerSpec = PowerSpec {
         name: "Twin Reverb power amp",
         // There is no master volume on an AB763. Left wide open so it is not

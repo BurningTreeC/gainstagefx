@@ -103,7 +103,7 @@ impl Rig {
             distance,
             angle,
         };
-        self.stage.set_placement(p, p, 0.0, false, false);
+        self.stage.set_placement(p, p, 0.0, 0.0, 0.0, false, false);
         self.stage.reset();
         self
     }
@@ -276,7 +276,7 @@ fn dual_microphones_keep_physical_delay_and_polarity_works() {
         angle: 0.0,
     };
     // Identical microphones at identical places, inverted and blended equally: silence.
-    stage.set_placement(near, near, 0.5, true, false);
+    stage.set_placement(near, near, 0.5, 0.0, 0.0, true, false);
     stage.reset();
     let mut peak: f64 = 0.0;
     for k in 0..4_800 {
@@ -288,7 +288,7 @@ fn dual_microphones_keep_physical_delay_and_polarity_works() {
         distance: 0.32,
         ..near
     };
-    stage.set_placement(near, far, 0.5, false, false);
+    stage.set_placement(near, far, 0.5, 0.0, 0.0, false, false);
     stage.reset();
     let expected = 0.30 / 343.0 * rate;
     let (b_first, _) = stage.relative_delays(1);
@@ -297,7 +297,7 @@ fn dual_microphones_keep_physical_delay_and_polarity_works() {
         (b_first / expected - 1.0).abs() < 0.05,
         "{b_first} vs {expected}"
     );
-    stage.set_placement(near, far, 0.5, false, true);
+    stage.set_placement(near, far, 0.5, 0.0, 0.0, false, true);
     stage.reset();
     assert_eq!(stage.relative_delays(1).0, 0.0, "aligned");
 }
@@ -316,7 +316,7 @@ fn close_placement_adds_no_latency() {
         distance: 0.02,
         angle: 0.0,
     };
-    stage.set_placement(p, p, 0.0, false, false);
+    stage.set_placement(p, p, 0.0, 0.0, 0.0, false, false);
     stage.reset();
     let response: Vec<f64> = (0..64)
         .map(|k| stage.process(if k == 0 { 1.0 } else { 0.0 }))
@@ -357,7 +357,7 @@ fn automation_is_smooth_bounded_and_allocation_free_at_every_rate() {
                         distance: 0.01 + rand() * 0.99,
                         angle: rand() * 90.0,
                     };
-                    stage.set_placement(a, b, rand(), block % 7 == 0, block % 5 == 0);
+                    stage.set_placement(a, b, rand(), 0.0, 0.0, block % 7 == 0, block % 5 == 0);
                     for k in 0..128 {
                         let x = 0.25 * (TAU * 220.0 * (block * 128 + k) as f64 / rate).sin();
                         let y = stage.process(x);
@@ -395,4 +395,93 @@ fn placement_response_does_not_depend_on_sample_rate() {
             }
         }
     }
+}
+
+/// Panning the pair must be free when it is not used, and real when it is.
+///
+/// The first half is the one that matters for every existing session and
+/// fixture: two centred microphones have to reproduce the mono sum *bit for
+/// bit* on both sides, because the plugin's stereo output for a mono source is
+/// literal duplication and always has been. The pan law is therefore
+/// `clamp(1 -/+ pan, 0, 1)`, which is exactly 1.0 on both sides at centre.
+#[test]
+fn microphone_panning_is_free_at_centre_and_separates_when_moved() {
+    let rate = 48_000.0;
+    let mut stage = AcousticStage::new(rate);
+    stage.configure(
+        Some(&CabinetProfile::BRIT_CLOSED),
+        &SpeakerProfile::BRIT_T75,
+        SM57,
+        SM57,
+    );
+    let a = MicPlacement {
+        position: 0.25,
+        distance: 0.02,
+        angle: 0.0,
+    };
+    let b = MicPlacement {
+        position: 0.8,
+        distance: 0.15,
+        angle: 30.0,
+    };
+
+    // --- centred: bit for bit the mono sum, on both sides -------------------
+    let mut mono = AcousticStage::new(rate);
+    mono.configure(
+        Some(&CabinetProfile::BRIT_CLOSED),
+        &SpeakerProfile::BRIT_T75,
+        SM57,
+        SM57,
+    );
+    mono.set_placement(a, b, 0.5, 0.0, 0.0, false, false);
+    mono.reset();
+    stage.set_placement(a, b, 0.5, 0.0, 0.0, false, false);
+    stage.reset();
+    for k in 0..4_800 {
+        let x = (TAU * 320.0 * k as f64 / rate).sin();
+        let reference = mono.process(x);
+        let (left, right) = stage.process_stereo(x);
+        assert_eq!(left.to_bits(), reference.to_bits(), "left at k={k}");
+        assert_eq!(right.to_bits(), reference.to_bits(), "right at k={k}");
+    }
+
+    // --- hard apart: each side carries exactly one microphone ---------------
+    let mut split = AcousticStage::new(rate);
+    split.configure(
+        Some(&CabinetProfile::BRIT_CLOSED),
+        &SpeakerProfile::BRIT_T75,
+        SM57,
+        SM57,
+    );
+    split.set_placement(a, b, 0.5, -1.0, 1.0, false, false);
+    split.reset();
+    let (mut left_energy, mut right_energy, mut difference) = (0.0f64, 0.0f64, 0.0f64);
+    for k in 0..9_600 {
+        let x = (TAU * 320.0 * k as f64 / rate).sin();
+        let (left, right) = split.process_stereo(x);
+        assert!(left.is_finite() && right.is_finite());
+        left_energy += left * left;
+        right_energy += right * right;
+        difference += (left - right) * (left - right);
+    }
+    assert!(left_energy > 0.0 && right_energy > 0.0, "both sides sound");
+    assert!(
+        difference > 0.05 * (left_energy + right_energy),
+        "hard-panned microphones must differ between the sides: \
+         L={left_energy} R={right_energy} diff={difference}"
+    );
+
+    // --- both hard left: the right side is silent ---------------------------
+    split.set_placement(a, b, 0.5, -1.0, -1.0, false, false);
+    split.reset();
+    let mut right_peak = 0.0f64;
+    for k in 0..4_800 {
+        let x = (TAU * 320.0 * k as f64 / rate).sin();
+        let (_, right) = split.process_stereo(x);
+        right_peak = right_peak.max(right.abs());
+    }
+    assert!(
+        right_peak < 1e-12,
+        "both hard left leaves nothing right: {right_peak}"
+    );
 }

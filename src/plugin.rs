@@ -620,6 +620,8 @@ impl Plugin for GainStageFx {
             place_a: place(&p.mic_a_position, &p.mic_a_distance, &p.mic_a_angle),
             place_b: place(&p.mic_b_position, &p.mic_b_distance, &p.mic_b_angle),
             blend: p.mic_blend.smoothed.next_step(samples) as f64,
+            pan_a: p.mic_a_pan.smoothed.next_step(samples) as f64,
+            pan_b: p.mic_b_pan.smoothed.next_step(samples) as f64,
             invert_b: p.mic_b_invert.value(),
             align: p.mic_align.value(),
         };
@@ -882,6 +884,10 @@ impl Plugin for GainStageFx {
                 for (index, sample) in frame.iter_mut().enumerate() {
                     if duplicated_mono && index == 1 {
                         if !bypassed {
+                            // The right side of the one running chain's
+                            // microphone pair. Identical to the left while the
+                            // pans are centred, so exact dual-mono in is still
+                            // exact dual-mono out.
                             *sample = duplicated_output;
                         }
                         // The right chain remains dormant while the input is exact
@@ -901,13 +907,25 @@ impl Plugin for GainStageFx {
                     let input = trimmed * noise_gain;
 
                     let dry = chain.delayed_dry(input);
-                    let wet = chain.process(input);
+                    // A mono source on a stereo bus is the one case where one
+                    // chain owns both outputs, so it is the case where the two
+                    // microphones can actually be placed apart. A genuinely
+                    // stereo input is already two independent amplifiers and
+                    // each keeps its own side.
+                    let stereo_source = duplicated_mono && index == 0;
+                    let (wet, wet_right) = if stereo_source {
+                        chain.process_stereo(input)
+                    } else {
+                        let wet = chain.process(input);
+                        (wet, wet)
+                    };
                     let processed = (dry * (1.0 - mix) + wet * mix) * output_trim;
 
                     if !bypassed {
                         *sample = processed as f32;
-                        if duplicated_mono && index == 0 {
-                            duplicated_output = *sample;
+                        if stereo_source {
+                            duplicated_output =
+                                ((dry * (1.0 - mix) + wet_right * mix) * output_trim) as f32;
                         }
                     }
 

@@ -7,9 +7,9 @@
 //! is per model, and how dense the recovery/coupling matrices really are.
 use gainstagefx::acoustics::speaker::{self, LoadValues, Mounting, SpeakerProfile};
 use gainstagefx::circuits::{
-    ac30, american312, bigmuff, brit800, clipper, console_e, distortion_plus, dr103, evh5150,
-    heavy_metal, iron, jfet, markiic, metal_zone, neve, plexi, power, preamp, rectifier, rodent,
-    round_fuzz, studio, ts808, tube610, twin, valve,
+    ac30, american312, bigmuff, brit800, clipper, console_e, deluxe, distortion_plus, dr103,
+    evh5150, heavy_metal, iron, jfet, markiic, metal_zone, neve, plexi, power, preamp, rectifier,
+    rodent, round_fuzz, studio, ts808, tube610, twin, valve,
 };
 use gainstagefx::dsp::netlist::Circuit;
 use gainstagefx::dsp::time::Simulation;
@@ -88,6 +88,7 @@ fn main() {
     row("markiic", markiic::build(SOURCE, LOAD).unwrap());
     row("evh5150", evh5150::build(SOURCE, LOAD).unwrap());
     row("twin (preamp)", twin::build(SOURCE, LOAD).unwrap());
+    row("deluxe (preamp)", deluxe::build(SOURCE, LOAD).unwrap());
     row("brit800", brit800::build(SOURCE, LOAD).unwrap());
     row("plexi", plexi::build(SOURCE, LOAD).unwrap());
     row("ac30", ac30::build(SOURCE, LOAD).unwrap());

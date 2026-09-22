@@ -156,6 +156,11 @@ pub struct AcousticStage {
     mics: [MicChannel; 2],
     placements: [MicPlacement; 2],
     blend: Ramped,
+    /// Where each microphone sits in the stereo field, -1 hard left to +1 hard
+    /// right. A pair of microphones on one cabinet is the usual way a stereo
+    /// guitar image is made, and until now the two were summed to mono before
+    /// anything downstream could place them.
+    pan: [Ramped; 2],
     invert: bool,
     align: bool,
     ramp_left: usize,
@@ -202,6 +207,7 @@ impl AcousticStage {
             mics: [MicChannel::new(), MicChannel::new()],
             placements: [MicPlacement::default(); 2],
             blend: Ramped::default(),
+            pan: [Ramped::default(); 2],
             invert: false,
             align: false,
             ramp_left: 0,
@@ -235,11 +241,17 @@ impl AcousticStage {
     }
 
     /// Placement and the dual-microphone controls. Ramped; call once a block.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one call per block carrying the whole dual-microphone control set"
+    )]
     pub fn set_placement(
         &mut self,
         a: MicPlacement,
         b: MicPlacement,
         blend: f64,
+        pan_a: f64,
+        pan_b: f64,
         invert: bool,
         align: bool,
     ) {
@@ -249,15 +261,27 @@ impl AcousticStage {
         } else {
             0.5
         };
+        let pan = |value: f64| {
+            if value.is_finite() {
+                value.clamp(-1.0, 1.0)
+            } else {
+                0.0
+            }
+        };
+        let (pan_a, pan_b) = (pan(pan_a), pan(pan_b));
         if self.placements != [a, b]
             || self.invert != invert
             || self.align != align
             || self.blend.target != blend
+            || self.pan[0].target != pan_a
+            || self.pan[1].target != pan_b
         {
             self.placements = [a, b];
             self.invert = invert;
             self.align = align;
             self.blend.aim(blend, false);
+            self.pan[0].aim(pan_a, false);
+            self.pan[1].aim(pan_b, false);
             self.geometry(false);
         }
     }
@@ -280,6 +304,9 @@ impl AcousticStage {
         }
         self.geometry(true);
         self.blend.aim(self.blend.target, true);
+        for pan in &mut self.pan {
+            pan.aim(pan.target, true);
+        }
     }
 
     pub fn copy_runtime_state_from(&mut self, source: &Self) {
@@ -542,7 +569,7 @@ impl AcousticStage {
     }
 
     #[inline]
-    pub fn process(&mut self, x: f64) -> f64 {
+    fn advance(&mut self, x: f64) -> (bool, bool, f64, f64) {
         let mut s = x;
         for bq in &mut self.voicing {
             s = bq.process(s);
@@ -559,6 +586,9 @@ impl AcousticStage {
         if ramping {
             self.ramp_left -= 1;
             self.blend.advance(last);
+            for pan in &mut self.pan {
+                pan.advance(last);
+            }
         }
 
         let mut out = [0.0; 2];
@@ -604,11 +634,51 @@ impl AcousticStage {
         let a_on = self.mics[0].count > 0;
         let b_on = self.mics[1].count > 0;
         let b = if self.invert { -out[1] } else { out[1] };
+        (a_on, b_on, out[0], b)
+    }
+
+    /// The summed microphone signal, which is what a mono output wants and what
+    /// every calibration and regression fixture in the repository measures.
+    #[inline]
+    pub fn process(&mut self, x: f64) -> f64 {
+        let (a_on, b_on, a, b) = self.advance(x);
         match (a_on, b_on) {
-            (true, true) => (1.0 - self.blend.now) * out[0] + self.blend.now * b,
-            (true, false) => out[0],
+            (true, true) => (1.0 - self.blend.now) * a + self.blend.now * b,
+            (true, false) => a,
             (false, true) => b,
             (false, false) => 0.0,
         }
     }
+
+    /// The same two microphones placed in the stereo field.
+    ///
+    /// The pan law is the one this plugin's output already implies. A mono
+    /// source on a stereo bus is duplicated sample for sample, so "centred"
+    /// has to mean *the whole signal on both sides*, not half of it: the gains
+    /// are `clamp(1 - pan, 0, 1)` and `clamp(1 + pan, 0, 1)`, which are both
+    /// exactly 1.0 at the centre and reach zero at the far side. Two centred
+    /// microphones therefore reproduce `process()` bit for bit on both sides,
+    /// so adding the controls cannot move any existing session or fixture.
+    #[inline]
+    pub fn process_stereo(&mut self, x: f64) -> (f64, f64) {
+        let (a_on, b_on, a, b) = self.advance(x);
+        let (la, ra) = pan_gains(self.pan[0].now);
+        let (lb, rb) = pan_gains(self.pan[1].now);
+        match (a_on, b_on) {
+            (true, true) => {
+                let wa = (1.0 - self.blend.now) * a;
+                let wb = self.blend.now * b;
+                (wa * la + wb * lb, wa * ra + wb * rb)
+            }
+            (true, false) => (a * la, a * ra),
+            (false, true) => (b * lb, b * rb),
+            (false, false) => (0.0, 0.0),
+        }
+    }
+}
+
+/// Left and right weights for one microphone. See `process_stereo`.
+#[inline]
+fn pan_gains(pan: f64) -> (f64, f64) {
+    ((1.0 - pan).clamp(0.0, 1.0), (1.0 + pan).clamp(0.0, 1.0))
 }

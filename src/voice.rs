@@ -27,9 +27,9 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, distortion_plus, dr103,
-    evh5150, heavy_metal, iron, markiic, metal_zone, neve, plexi, power, preamp, rectifier, rodent,
-    round_fuzz, studio, tone, ts808, tube610, twin,
+    ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, deluxe, distortion_plus,
+    dr103, evh5150, heavy_metal, iron, markiic, metal_zone, neve, plexi, power, preamp, rectifier,
+    rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -132,12 +132,16 @@ pub enum Gain {
     /// Mesa/Boogie Dual Rectifier, Rev F, the red channel in its modern setting.
     /// See `circuits::rectifier`.
     Recto,
+    /// Fender Deluxe Reverb, AB763 -- the same circuit family as the Twin at
+    /// a quarter of the power. Vibrato channel, with the spring tank and the
+    /// optical tremolo. See `circuits::deluxe`.
+    Deluxe,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 27] = [
+    pub const ALL: [Gain; 28] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -165,6 +169,7 @@ impl Gain {
         Gain::DistPlus,
         Gain::Hm2,
         Gain::Mt2,
+        Gain::Deluxe,
     ];
 
     pub fn name(self) -> &'static str {
@@ -196,6 +201,7 @@ impl Gain {
             Gain::DistPlus => "MXR Distortion+",
             Gain::Hm2 => "Boss HM-2",
             Gain::Mt2 => "Boss MT-2",
+            Gain::Deluxe => "Deluxe Reverb",
         }
     }
 
@@ -212,6 +218,7 @@ impl Gain {
             Gain::Neve => neve::GAIN,
             Gain::Screamer => ts808::DRIVE,
             Gain::Twin => twin::VOLUME,
+            Gain::Deluxe => deluxe::VOLUME,
             Gain::Muff => bigmuff::SUSTAIN,
             Gain::Brit800 => brit800::VOLUME,
             Gain::American312 => american312::GAIN,
@@ -256,7 +263,7 @@ impl Gain {
     /// missing; it is this one.
     pub fn drive_name(self) -> &'static str {
         match self {
-            Gain::Twin => "VOLUME",
+            Gain::Twin | Gain::Deluxe => "VOLUME",
             Gain::Muff => "SUSTAIN",
             Gain::Boogie => "LEAD DRIVE",
             Gain::Peavey => "PRE GAIN",
@@ -330,6 +337,9 @@ impl Gain {
         match self {
             Gain::Boogie => Some((markiic::BASS, markiic::MIDDLE, markiic::TREBLE)),
             Gain::Twin => Some((twin::BASS, twin::MIDDLE, twin::TREBLE)),
+            // No Middle control: the AB763 Deluxe grounds its stack through a
+            // fixed 6.8 k resistor, so the panel's Middle knob is greyed out.
+            Gain::Deluxe => Some((deluxe::BASS, usize::MAX, deluxe::TREBLE)),
             Gain::Brit800 => Some((brit800::BASS, brit800::MIDDLE, brit800::TREBLE)),
             Gain::Plexi => Some((plexi::BASS, plexi::MIDDLE, plexi::TREBLE)),
             // No middle control: the stack has a 10 k resistor where a Fender
@@ -424,6 +434,7 @@ impl Gain {
             Gain::Boogie => Some(&power::PowerSpec::MARKIIC),
             Gain::Peavey => Some(&power::PowerSpec::EVH5150),
             Gain::Twin => Some(&power::PowerSpec::TWIN),
+            Gain::Deluxe => Some(&power::PowerSpec::DELUXE_6V6),
             Gain::Brit800 => Some(&power::PowerSpec::BRIT_EL34),
             Gain::Plexi => Some(&power::PowerSpec::PLEXI_EL34),
             Gain::AC30 => Some(&power::PowerSpec::AC30_EL84),
@@ -459,6 +470,7 @@ impl Gain {
                 | Gain::AC30
                 | Gain::DR103
                 | Gain::Recto
+                | Gain::Deluxe
         )
     }
 
@@ -479,13 +491,66 @@ impl Gain {
         matches!(self, Gain::Overdrive | Gain::Distortion)
     }
 
+    /// What a Fender AB763 channel exposes to the chain, where this voice is
+    /// one.
+    ///
+    /// The American Twin and the American Deluxe are the same design at
+    /// different sizes: a switched pair of input jacks, a spring tank driven
+    /// from the reverb transformer's secondary and returned through an
+    /// independent port, and an optical tremolo whose photoresistor is a real
+    /// audio-rate resistor in the netlist. The chain drives all three
+    /// identically, so only the slot and control numbers live here rather than
+    /// in a `match` that grows a case per amplifier.
+    pub fn ab763(self) -> Option<Ab763> {
+        match self {
+            Gain::Twin => Some(Ab763 {
+                input_series: twin::INPUT_SERIES_SLOT,
+                input_jack_load: twin::INPUT_JACK_LOAD_SLOT,
+                input_grid_shunt: twin::INPUT_GRID_SHUNT_SLOT,
+                high_series: twin::INPUT_HIGH_SERIES_OHMS,
+                high_jack_load: twin::INPUT_HIGH_JACK_LOAD_OHMS,
+                low_series: twin::INPUT_LOW_SERIES_OHMS,
+                low_grid_shunt: twin::INPUT_LOW_GRID_SHUNT_OHMS,
+                open: twin::INPUT_OPEN_OHMS,
+                bright: Some((
+                    twin::BRIGHT_CAP_SLOT,
+                    twin::BRIGHT_CAP_FARADS,
+                    twin::BRIGHT_OFF_FARADS,
+                )),
+                ldr_slot: twin::LDR_SLOT,
+                tank_return_aux: twin::TANK_RETURN_AUX,
+                reverb: twin::REVERB,
+                intensity: twin::INTENSITY,
+            }),
+            Gain::Deluxe => Some(Ab763 {
+                input_series: deluxe::INPUT_SERIES_SLOT,
+                input_jack_load: deluxe::INPUT_JACK_LOAD_SLOT,
+                input_grid_shunt: deluxe::INPUT_GRID_SHUNT_SLOT,
+                high_series: deluxe::INPUT_HIGH_SERIES_OHMS,
+                high_jack_load: deluxe::INPUT_HIGH_JACK_LOAD_OHMS,
+                low_series: deluxe::INPUT_LOW_SERIES_OHMS,
+                low_grid_shunt: deluxe::INPUT_LOW_GRID_SHUNT_OHMS,
+                open: deluxe::INPUT_OPEN_OHMS,
+                // The Deluxe's 47 pF bright capacitor is soldered in: the
+                // panel has no switch for it, so offering one would be a
+                // control the amplifier has not got.
+                bright: None,
+                ldr_slot: deluxe::LDR_SLOT,
+                tank_return_aux: deluxe::TANK_RETURN_AUX,
+                reverb: deluxe::REVERB,
+                intensity: deluxe::INTENSITY,
+            }),
+            _ => None,
+        }
+    }
+
     /// Whether this voice has a reverb tank and a tremolo of its own.
     ///
     /// Only the Twin does. The panel greys the three controls everywhere
     /// else rather than leaving knobs that turn nothing -- which is the
     /// defect BUG-023 was about, from the other side.
     pub fn has_reverb_and_tremolo(self) -> bool {
-        matches!(self, Gain::Twin)
+        self.ab763().is_some()
     }
 
     pub const fn variants(self) -> usize {
@@ -495,6 +560,26 @@ impl Gain {
             1
         }
     }
+}
+
+/// The slot and control numbers of a Fender AB763 channel. See `Gain::ab763`.
+#[derive(Clone, Copy, Debug)]
+pub struct Ab763 {
+    pub input_series: usize,
+    pub input_jack_load: usize,
+    pub input_grid_shunt: usize,
+    pub high_series: f64,
+    pub high_jack_load: f64,
+    pub low_series: f64,
+    pub low_grid_shunt: f64,
+    pub open: f64,
+    /// Slot, fitted value and open value of the Bright capacitor, for the
+    /// panels that switch it. `None` where it is soldered in.
+    pub bright: Option<(usize, f64, f64)>,
+    pub ldr_slot: usize,
+    pub tank_return_aux: usize,
+    pub reverb: usize,
+    pub intensity: usize,
 }
 
 /// Which part does the amplifying, for the channels built around one.
@@ -701,10 +786,12 @@ pub enum PowerModel {
     DR103EL34,
     Recto6L6,
     Recto6L6Tube,
+    /// The AB763 Deluxe's two 6V6GT behind a GZ34.
+    AmericanDeluxe6V6,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 9] = [
+    pub const ALL: [PowerModel; 10] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -714,6 +801,7 @@ impl PowerModel {
         PowerModel::DR103EL34,
         PowerModel::Recto6L6,
         PowerModel::Recto6L6Tube,
+        PowerModel::AmericanDeluxe6V6,
     ];
 
     pub fn spec(self) -> &'static power::PowerSpec {
@@ -727,6 +815,7 @@ impl PowerModel {
             Self::DR103EL34 => &power::PowerSpec::DR103_EL34,
             Self::Recto6L6 => &power::PowerSpec::RECTO_6L6,
             Self::Recto6L6Tube => &power::PowerSpec::RECTO_6L6_TUBE,
+            Self::AmericanDeluxe6V6 => &power::PowerSpec::DELUXE_6V6,
         }
     }
 
@@ -741,6 +830,7 @@ impl PowerModel {
             Self::DR103EL34 => 6,
             Self::Recto6L6 => 7,
             Self::Recto6L6Tube => 8,
+            Self::AmericanDeluxe6V6 => 9,
         }
     }
 
@@ -759,6 +849,7 @@ impl PowerModel {
             // No voice has this one as its own, so it lives in the slot after
             // the catalogue. See `EXTRA_POWER_SPECS`.
             Self::Recto6L6Tube => VOICES,
+            Self::AmericanDeluxe6V6 => voice_index(Gain::Deluxe, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -778,10 +869,11 @@ pub enum PowerAmp {
     DR103EL34,
     Recto6L6,
     Recto6L6Tube,
+    AmericanDeluxe6V6,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -793,6 +885,7 @@ impl PowerAmp {
         Self::DR103EL34,
         Self::Recto6L6,
         Self::Recto6L6Tube,
+        Self::AmericanDeluxe6V6,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -806,6 +899,7 @@ impl PowerAmp {
                 Gain::AC30 => Some(PowerModel::AC30EL84),
                 Gain::DR103 => Some(PowerModel::DR103EL34),
                 Gain::Recto => Some(PowerModel::Recto6L6),
+                Gain::Deluxe => Some(PowerModel::AmericanDeluxe6V6),
                 _ => None,
             },
             Self::Bypass => None,
@@ -818,6 +912,7 @@ impl PowerAmp {
             Self::DR103EL34 => Some(PowerModel::DR103EL34),
             Self::Recto6L6 => Some(PowerModel::Recto6L6),
             Self::Recto6L6Tube => Some(PowerModel::Recto6L6Tube),
+            Self::AmericanDeluxe6V6 => Some(PowerModel::AmericanDeluxe6V6),
         }
     }
 }
@@ -1157,6 +1252,12 @@ pub struct AcousticSettings {
     pub place_a: MicPlacement,
     pub place_b: MicPlacement,
     pub blend: f64,
+    /// Where each microphone sits in the stereo field, -1 hard left to +1 hard
+    /// right. Centre is the whole signal on both sides, which is what this
+    /// plugin's duplicated-mono output already does, so the default changes
+    /// nothing. See `AcousticStage::process_stereo`.
+    pub pan_a: f64,
+    pub pan_b: f64,
     pub invert_b: bool,
     pub align: bool,
 }
@@ -1171,6 +1272,8 @@ impl Default for AcousticSettings {
             place_a: MicPlacement::default(),
             place_b: MicPlacement::default(),
             blend: 0.5,
+            pan_a: 0.0,
+            pan_b: 0.0,
             invert_b: false,
             align: false,
         }
@@ -1272,6 +1375,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // Loaded by the phase inverter's grid leak, which is where the
         // drawing hands over. See `twin.rs`.
         Gain::Twin => twin::build(10_000.0, 1_000_000.0),
+        Gain::Deluxe => deluxe::build(10_000.0, 1_000_000.0),
         Gain::Muff => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
         Gain::Boogie => markiic::build(10_000.0, 1_000_000.0),
         // Not a nominal load: the 5150's tone stack really does hang 33 k on
@@ -2070,6 +2174,8 @@ pub struct Chain {
     twin_reverb_send_plate: usize,
     /// Reverb-transformer secondary/tank-drive node in the unified Twin circuit.
     twin_tank_send: usize,
+    /// The same node in the Deluxe's netlist. See `ab763_tank_send`.
+    deluxe_tank_send: usize,
     /// Shared V4B dry/wet grid node, for diagnostics.
     #[cfg(test)]
     twin_v4b_grid: usize,
@@ -2113,6 +2219,12 @@ pub struct Chain {
     /// reset discontinuity.
     fade_remaining: usize,
     prev_output: f64,
+    /// The right side of the microphone pair while the pans are apart, and the
+    /// same value as `prev_output` while they are centred.
+    prev_output_right: f64,
+    stereo_right: f64,
+    /// Set only for the duration of `process_stereo`.
+    want_stereo: bool,
     /// A requested oversampling factor waiting to be installed at the first
     /// sample of a fresh crossfade. Changing factor resets the FIR histories;
     /// scheduling that reset at the fade boundary keeps the discontinuity
@@ -2322,6 +2434,13 @@ impl Chain {
         let twin_v4b_grid = twin_nodes
             .unknown_named(twin::V4B_GRID)
             .expect("Twin has the shared V4B grid");
+        // The Deluxe's reverb transformer secondary sits at a different MNA
+        // index, so it is resolved here beside the Twin's rather than looked up
+        // per sample.
+        let deluxe_tank_send = deluxe::build(10_000.0, 1_000_000.0)
+            .expect("Deluxe catalogue builds")
+            .unknown_named(deluxe::SEND)
+            .expect("Deluxe has the reverb-transformer secondary");
         let mut chain = Self {
             mains: 1.0,
             gains,
@@ -2374,6 +2493,7 @@ impl Chain {
             #[cfg(test)]
             twin_reverb_send_plate,
             twin_tank_send,
+            deluxe_tank_send,
             #[cfg(test)]
             twin_v4b_grid,
             twin_tank_drive_previous: 0.0,
@@ -2399,6 +2519,9 @@ impl Chain {
             out_of_target: 1.0,
             fade_remaining: 0,
             prev_output: 0.0,
+            prev_output_right: 0.0,
+            stereo_right: 0.0,
+            want_stereo: false,
             deferred_oversample: None,
         };
         chain.set_oversampling(4);
@@ -2557,8 +2680,9 @@ impl Chain {
             if load_changed || before != (a.mic_a, a.mic_b) {
                 self.fade_remaining = FADE_LEN;
             }
-            self.acoustic
-                .set_placement(a.place_a, a.place_b, a.blend, a.invert_b, a.align);
+            self.acoustic.set_placement(
+                a.place_a, a.place_b, a.blend, a.pan_a, a.pan_b, a.invert_b, a.align,
+            );
         }
         self.acoustic_settings = *a;
         // The master control may now live in a different simulation.
@@ -2643,6 +2767,7 @@ impl Chain {
             PowerAmp::DR103EL34 => 7,
             PowerAmp::Recto6L6 => 8,
             PowerAmp::Recto6L6Tube => 9,
+            PowerAmp::AmericanDeluxe6V6 => 10,
         };
         let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
         10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
@@ -3316,6 +3441,20 @@ impl Chain {
         self.dry.process(x)
     }
 
+    /// One sample, with the two cabinet microphones placed in the stereo field.
+    ///
+    /// Identical to `process` on both sides while the pans are centred, which
+    /// is the default and what every existing session and fixture uses. Only
+    /// the microphone stage is stereo; everything ahead of it is one mono
+    /// circuit, because one amplifier is one amplifier.
+    #[inline]
+    pub fn process_stereo(&mut self, x: f64) -> (f64, f64) {
+        self.want_stereo = true;
+        let left = self.process(x);
+        self.want_stereo = false;
+        (left, self.stereo_right)
+    }
+
     #[inline]
     pub fn process(&mut self, x: f64) -> f64 {
         // Apply any deferred oversampler reset at the START of the crossfade,
@@ -3340,6 +3479,8 @@ impl Chain {
         // the plugin is likely to see.
         self.out_of += (self.out_of_target - self.out_of) * 0.02;
         let iron_reference = self.iron_reference;
+        // Resolved before the mutable borrow of the gain simulation below.
+        let ab763_tank_send = self.ab763_tank_send();
         let gain = &mut self.gains[self.gain];
         let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
         let mut iron = self.iron.map(|i| &mut self.irons[i]);
@@ -3378,10 +3519,10 @@ impl Chain {
         } else {
             0.0
         };
-        if twin {
-            gain.set_aux_input(twin::TANK_RETURN_AUX, tank_pickup);
+        if let Some(ab763) = self.voice.ab763() {
+            gain.set_aux_input(ab763.tank_return_aux, tank_pickup);
             let ldr = self.tremolo.resistance(self.speed, self.intensity);
-            gain.set_realtime_value(twin::LDR_SLOT, ldr);
+            gain.set_realtime_value(ab763.ldr_slot, ldr);
             #[cfg(test)]
             if let Some(trace) = twin_level_trace.as_mut() {
                 trace
@@ -3393,7 +3534,7 @@ impl Chain {
         }
         #[cfg(test)]
         let twin_reverb_send_plate = self.twin_reverb_send_plate;
-        let twin_tank_send = self.twin_tank_send;
+        let twin_tank_send = ab763_tank_send;
         #[cfg(test)]
         let twin_v4b_grid = self.twin_v4b_grid;
         let mut next_twin_tank_drive = self.twin_tank_drive_previous;
@@ -3531,12 +3672,21 @@ impl Chain {
             let (sim, trim) = &mut self.tones[i];
             y = sim.process(y) * *trim;
         }
-        if self.radiating {
+        let mut right = if self.radiating && self.want_stereo {
+            let (left, right) = self.acoustic.process_stereo(y);
+            y = left;
+            right
+        } else if self.radiating {
             y = self.acoustic.process(y);
-        } else if matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy) {
+            y
+        } else {
+            y
+        };
+        if !self.radiating && matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy) {
             if let Some(i) = self.cabinet {
                 let (sim, trim) = &mut self.cabinets[i];
                 y = sim.process(y) * *trim;
+                right = y;
             }
         }
         // Crossfade from the old circuit's last output to the new one so that
@@ -3545,8 +3695,11 @@ impl Chain {
             let t = self.fade_remaining as f64 / FADE_LEN as f64;
             self.fade_remaining -= 1;
             y = self.prev_output * t + y * (1.0 - t);
+            right = self.prev_output_right * t + right * (1.0 - t);
         }
         self.prev_output = y;
+        self.prev_output_right = right;
+        self.stereo_right = right;
         y
     }
 
@@ -3575,33 +3728,28 @@ impl Chain {
     /// those same two 68 k parts a divider, so the guitar sees about 136 kΩ
     /// and the valve grid receives roughly half the voltage.
     fn set_twin_input(&mut self, low: bool) {
-        if self.voice != Gain::Twin {
+        let Some(ab763) = self.voice.ab763() else {
             return;
-        }
+        };
         let sim = &mut self.gains[self.gain];
         if low {
-            sim.set_value(twin::INPUT_SERIES_SLOT, twin::INPUT_LOW_SERIES_OHMS);
-            sim.set_value(twin::INPUT_JACK_LOAD_SLOT, twin::INPUT_OPEN_OHMS);
-            sim.set_value(twin::INPUT_GRID_SHUNT_SLOT, twin::INPUT_LOW_GRID_SHUNT_OHMS);
+            sim.set_value(ab763.input_series, ab763.low_series);
+            sim.set_value(ab763.input_jack_load, ab763.open);
+            sim.set_value(ab763.input_grid_shunt, ab763.low_grid_shunt);
         } else {
-            sim.set_value(twin::INPUT_SERIES_SLOT, twin::INPUT_HIGH_SERIES_OHMS);
-            sim.set_value(twin::INPUT_JACK_LOAD_SLOT, twin::INPUT_HIGH_JACK_LOAD_OHMS);
-            sim.set_value(twin::INPUT_GRID_SHUNT_SLOT, twin::INPUT_OPEN_OHMS);
+            sim.set_value(ab763.input_series, ab763.high_series);
+            sim.set_value(ab763.input_jack_load, ab763.high_jack_load);
+            sim.set_value(ab763.input_grid_shunt, ab763.open);
         }
     }
 
     /// Switch the stock 120 pF Bright capacitor. This is a real capacitor in
     /// the Twin netlist, not an EQ approximation.
     fn set_twin_bright(&mut self, bright: bool) {
-        if self.voice == Gain::Twin {
-            self.gains[self.gain].set_value(
-                twin::BRIGHT_CAP_SLOT,
-                if bright {
-                    twin::BRIGHT_CAP_FARADS
-                } else {
-                    twin::BRIGHT_OFF_FARADS
-                },
-            );
+        // `None` where the capacitor is soldered in, as on the Deluxe: the
+        // switch is not this amplifier's and the control does nothing.
+        if let Some((slot, fitted, open)) = self.voice.ab763().and_then(|a| a.bright) {
+            self.gains[self.gain].set_value(slot, if bright { fitted } else { open });
         }
     }
 
@@ -3614,7 +3762,7 @@ impl Chain {
         // non-Twin preset overwrite two unrelated controls at the very end of
         // `apply()`: Puppet Master loaded its intended Drive/Master and then
         // silently replaced them with Reverb=0 and 1-Intensity=1.
-        if self.voice != Gain::Twin {
+        if self.voice.ab763().is_none() {
             return;
         }
         self.reverb = s.reverb;
@@ -3623,13 +3771,27 @@ impl Chain {
         self.sync_twin_effect_controls();
     }
 
+    /// Which MNA node the spring tank is driven from, for the AB763 voice in
+    /// use. Both amplifiers take it off the reverb transformer's secondary;
+    /// the two netlists simply number it differently.
+    fn ab763_tank_send(&self) -> usize {
+        if self.voice == Gain::Deluxe {
+            self.deluxe_tank_send
+        } else {
+            self.twin_tank_send
+        }
+    }
+
     fn sync_twin_effect_controls(&mut self) {
+        let Some(ab763) = self.voice.ab763() else {
+            return;
+        };
         // The Reverb control is a pot in the recovery stage's own circuit, so
         // it goes where every other control goes: into the simulation, once a
         // block, through `apply`.
-        self.gains[self.gain].set_control(twin::REVERB, self.reverb);
+        self.gains[self.gain].set_control(ab763.reverb, self.reverb);
         // The physical 50 k pot is wired opposite the panel-number direction.
-        self.gains[self.gain].set_control(twin::INTENSITY, 1.0 - self.intensity);
+        self.gains[self.gain].set_control(ab763.intensity, 1.0 - self.intensity);
     }
 
     /// Cap the Newton passes every circuit in this chain may take.

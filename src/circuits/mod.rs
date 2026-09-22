@@ -7,6 +7,7 @@ pub mod brit800;
 pub mod cabinet;
 pub mod clipper;
 pub mod console_e;
+pub mod deluxe;
 pub mod distortion_plus;
 pub mod dr103;
 pub mod evh5150;

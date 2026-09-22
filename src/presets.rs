@@ -54,6 +54,11 @@ pub struct Preset {
     pub mic_b_distance: f32,
     pub mic_b_angle: f32,
     pub mic_blend: f32,
+    /// Stereo placement of each microphone, -1 hard left to +1 hard right.
+    /// Zero on every shipped preset: the stereo image is the player's choice,
+    /// not part of a voicing.
+    pub mic_a_pan: f32,
+    pub mic_b_pan: f32,
     pub mic_b_invert: bool,
     pub mic_align: bool,
     pub group: &'static str,
@@ -134,6 +139,8 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         mic_b_distance: 0.05,
         mic_b_angle: 0.0,
         mic_blend: 0.5,
+        mic_a_pan: 0.0,
+        mic_b_pan: 0.0,
         mic_b_invert: false,
         mic_align: false,
         group,
@@ -1410,6 +1417,8 @@ impl Preset {
                 place_a: place(self.mic_a_position, self.mic_a_distance, self.mic_a_angle),
                 place_b: place(self.mic_b_position, self.mic_b_distance, self.mic_b_angle),
                 blend: self.mic_blend as f64,
+                pan_a: self.mic_a_pan as f64,
+                pan_b: self.mic_b_pan as f64,
                 invert_b: self.mic_b_invert,
                 align: self.mic_align,
             },
@@ -1465,7 +1474,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 52] {
+    pub fn dials(&self) -> [(&'static str, f32); 54] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1514,6 +1523,8 @@ impl Preset {
             ("mic_b_distance", self.mic_b_distance),
             ("mic_b_angle", self.mic_b_angle),
             ("mic_blend", self.mic_blend),
+            ("mic_a_pan", self.mic_a_pan),
+            ("mic_b_pan", self.mic_b_pan),
             ("mic_b_invert", if self.mic_b_invert { 1.0 } else { 0.0 }),
             ("mic_align", if self.mic_align { 1.0 } else { 0.0 }),
             ("reverb", self.reverb),
@@ -1802,6 +1813,12 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     // that have them. A preset saved before that leaves them where a knob
     // nobody has touched belongs, which is the middle.
     for id in ["pedal_tone_b", "pedal_tone_c", "pedal_tone_d", "tone_sweep"] {
+        preset.values.entry(id.into()).or_insert(0.5);
+    }
+    // Microphone panning arrived after these presets were written. Centre is
+    // 0.5 normalised on a -1..+1 range, and centre is what the plugin did
+    // before the controls existed, so an old preset sounds the same.
+    for id in ["mic_a_pan", "mic_b_pan"] {
         preset.values.entry(id.into()).or_insert(0.5);
     }
     for (id, ptr, _) in params.param_map() {

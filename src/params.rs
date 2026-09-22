@@ -1170,6 +1170,13 @@ pub struct GainStageParams {
     pub mic_b_angle: FloatParam,
     #[id = "mic_blend"]
     pub mic_blend: FloatParam,
+    /// Where each microphone sits in the stereo field. Centre is the whole
+    /// signal on both sides, so a default session is unchanged; moving the two
+    /// apart is how one cabinet becomes a stereo image.
+    #[id = "mic_a_pan"]
+    pub mic_a_pan: FloatParam,
+    #[id = "mic_b_pan"]
+    pub mic_b_pan: FloatParam,
     #[id = "mic_b_invert"]
     pub mic_b_invert: BoolParam,
     #[id = "mic_align"]
@@ -1250,6 +1257,42 @@ fn angle(name: &str) -> FloatParam {
     .with_smoother(SmoothingStyle::Linear(20.0))
     .with_unit(" deg")
     .with_step_size(0.5)
+}
+
+/// A microphone's place in the stereo field: hard left through centre to hard
+/// right. Reads as L/R rather than as a number, the way a console does.
+fn pan(name: &str) -> FloatParam {
+    FloatParam::new(
+        name,
+        0.0,
+        FloatRange::Linear {
+            min: -1.0,
+            max: 1.0,
+        },
+    )
+    .with_smoother(SmoothingStyle::Linear(20.0))
+    .with_value_to_string(Arc::new(|v| {
+        let position = (v * 100.0).round() as i32;
+        match position {
+            0 => "C".to_string(),
+            p if p < 0 => format!("L{}", -p),
+            p => format!("R{p}"),
+        }
+    }))
+    .with_string_to_value(Arc::new(|s| {
+        let s = s.trim();
+        let upper = s.to_ascii_uppercase();
+        if upper == "C" || upper.is_empty() {
+            return Some(0.0);
+        }
+        if let Some(rest) = upper.strip_prefix('L') {
+            return rest.trim().parse::<f32>().ok().map(|v| -v / 100.0);
+        }
+        if let Some(rest) = upper.strip_prefix('R') {
+            return rest.trim().parse::<f32>().ok().map(|v| v / 100.0);
+        }
+        s.parse::<f32>().ok().map(|v| v / 100.0)
+    }))
 }
 
 fn decibels(name: &str, span: f32) -> FloatParam {
@@ -1345,6 +1388,8 @@ impl Default for GainStageParams {
             mic_b_distance: distance("Mic B Distance", 0.05),
             mic_b_angle: angle("Mic B Angle"),
             mic_blend: position("Mic Blend", 0.5),
+            mic_a_pan: pan("Mic A Pan"),
+            mic_b_pan: pan("Mic B Pan"),
             mic_b_invert: BoolParam::new("Mic B Polarity Invert", false),
             mic_align: BoolParam::new("Mic Phase Align", false),
 

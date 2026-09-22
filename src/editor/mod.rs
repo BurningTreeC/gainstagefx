@@ -1312,7 +1312,7 @@ fn cabinet(cx: &mut Context) {
             let flags = flags.get(cx);
             let a = flags & 1 != 0;
             let b = a && flags & 2 != 0;
-            let step = body_w() / 7.0;
+            let step = body_w() / 9.0;
             let x = |i: usize| body_x() + step * (i as f32 + 0.5);
             let y = top + 116.0;
             let r = 15.0;
@@ -1337,9 +1337,12 @@ fn cabinet(cx: &mut Context) {
                 centimetres,
             );
             placement_knob(cx, x(2), y, r, "A angle", |p| &p.mic_a_angle, a, degrees);
+            // Mic A's pan is live whenever mic A is, so a single microphone can
+            // still be placed off centre.
+            placement_knob(cx, x(3), y, r, "A pan", |p| &p.mic_a_pan, a, pan_position);
             placement_knob(
                 cx,
-                x(3),
+                x(4),
                 y,
                 r,
                 "B position",
@@ -1349,7 +1352,7 @@ fn cabinet(cx: &mut Context) {
             );
             placement_knob(
                 cx,
-                x(4),
+                x(5),
                 y,
                 r,
                 "B distance",
@@ -1357,8 +1360,9 @@ fn cabinet(cx: &mut Context) {
                 b,
                 centimetres,
             );
-            placement_knob(cx, x(5), y, r, "B angle", |p| &p.mic_b_angle, b, degrees);
-            placement_knob(cx, x(6), y, r, "blend", |p| &p.mic_blend, b, percent);
+            placement_knob(cx, x(6), y, r, "B angle", |p| &p.mic_b_angle, b, degrees);
+            placement_knob(cx, x(7), y, r, "B pan", |p| &p.mic_b_pan, b, pan_position);
+            placement_knob(cx, x(8), y, r, "blend", |p| &p.mic_blend, b, percent);
 
             let row_y = top + 170.0;
             label(
@@ -1403,6 +1407,16 @@ fn centimetres(v: f32) -> String {
 
 fn degrees(v: f32) -> String {
     format!("{:.0} deg", v)
+}
+
+/// Console shorthand for a pan position: centre, or how far to one side.
+fn pan_position(v: f32) -> String {
+    let position = (v * 100.0).round() as i32;
+    match position {
+        0 => "C".to_string(),
+        p if p < 0 => format!("L {}", -p),
+        p => format!("R {p}"),
+    }
 }
 
 /// A knob for a microphone placement, dimmed when it does not apply.
