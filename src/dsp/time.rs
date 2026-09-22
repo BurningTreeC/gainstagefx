@@ -14,12 +14,16 @@
 
 #[cfg(test)]
 mod full_trace;
+#[cfg(test)]
+mod jacobian_init;
 
 use super::device::{
     AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Rectifier,
     ResidualStamper, Stamper, Transconductor, Triode, VariableResistor,
 };
 use super::netlist::{Adjust, Circuit, Part, GROUND};
+#[cfg(test)]
+use super::partition::JacobianFactors13;
 use super::partition::{ReducedLinear, ReducedNonlinear};
 
 /// Enable flush-to-zero and denormals-are-zero in the MXCSR register.
@@ -57,6 +61,16 @@ pub struct TwinPowerPhaseProfile {
     pub trial_residual_calls: u64,
     pub settled_check_ns: u64,
     pub settled_checks: u64,
+    pub jacobian_init_baseline_residual_ns: u64,
+    pub jacobian_init_baseline_residual_calls: u64,
+    pub jacobian_init_previous_j_solve_ns: u64,
+    pub jacobian_init_previous_j_solve_calls: u64,
+    pub jacobian_init_candidate_recovery_ns: u64,
+    pub jacobian_init_candidate_recovery_calls: u64,
+    pub jacobian_init_candidate_residual_ns: u64,
+    pub jacobian_init_candidate_residual_calls: u64,
+    pub jacobian_init_accepts: u64,
+    pub jacobian_init_rejects: u64,
 }
 
 #[cfg(test)]
@@ -86,6 +100,36 @@ impl TwinPowerPhaseProfile {
                 .settled_check_ns
                 .saturating_sub(before.settled_check_ns),
             settled_checks: self.settled_checks.saturating_sub(before.settled_checks),
+            jacobian_init_baseline_residual_ns: self
+                .jacobian_init_baseline_residual_ns
+                .saturating_sub(before.jacobian_init_baseline_residual_ns),
+            jacobian_init_baseline_residual_calls: self
+                .jacobian_init_baseline_residual_calls
+                .saturating_sub(before.jacobian_init_baseline_residual_calls),
+            jacobian_init_previous_j_solve_ns: self
+                .jacobian_init_previous_j_solve_ns
+                .saturating_sub(before.jacobian_init_previous_j_solve_ns),
+            jacobian_init_previous_j_solve_calls: self
+                .jacobian_init_previous_j_solve_calls
+                .saturating_sub(before.jacobian_init_previous_j_solve_calls),
+            jacobian_init_candidate_recovery_ns: self
+                .jacobian_init_candidate_recovery_ns
+                .saturating_sub(before.jacobian_init_candidate_recovery_ns),
+            jacobian_init_candidate_recovery_calls: self
+                .jacobian_init_candidate_recovery_calls
+                .saturating_sub(before.jacobian_init_candidate_recovery_calls),
+            jacobian_init_candidate_residual_ns: self
+                .jacobian_init_candidate_residual_ns
+                .saturating_sub(before.jacobian_init_candidate_residual_ns),
+            jacobian_init_candidate_residual_calls: self
+                .jacobian_init_candidate_residual_calls
+                .saturating_sub(before.jacobian_init_candidate_residual_calls),
+            jacobian_init_accepts: self
+                .jacobian_init_accepts
+                .saturating_sub(before.jacobian_init_accepts),
+            jacobian_init_rejects: self
+                .jacobian_init_rejects
+                .saturating_sub(before.jacobian_init_rejects),
         }
     }
 }
@@ -129,6 +173,11 @@ pub struct SolverControlProfile {
     pub search_trial_evaluations: u64,
     pub search_full_step_accepts: u64,
     pub search_damped_step_accepts: u64,
+    pub jacobian_init_attempts: u64,
+    pub jacobian_init_evaluations: u64,
+    pub jacobian_init_accepts: u64,
+    pub jacobian_init_rejects: u64,
+    pub jacobian_init_unavailable: u64,
     pub ceres_lm_entries: u64,
     pub ceres_lm_trials: u64,
     pub ceres_lm_accepts: u64,
@@ -181,6 +230,21 @@ impl SolverControlProfile {
             search_damped_step_accepts: self
                 .search_damped_step_accepts
                 .saturating_sub(before.search_damped_step_accepts),
+            jacobian_init_attempts: self
+                .jacobian_init_attempts
+                .saturating_sub(before.jacobian_init_attempts),
+            jacobian_init_evaluations: self
+                .jacobian_init_evaluations
+                .saturating_sub(before.jacobian_init_evaluations),
+            jacobian_init_accepts: self
+                .jacobian_init_accepts
+                .saturating_sub(before.jacobian_init_accepts),
+            jacobian_init_rejects: self
+                .jacobian_init_rejects
+                .saturating_sub(before.jacobian_init_rejects),
+            jacobian_init_unavailable: self
+                .jacobian_init_unavailable
+                .saturating_sub(before.jacobian_init_unavailable),
             ceres_lm_entries: self
                 .ceres_lm_entries
                 .saturating_sub(before.ceres_lm_entries),
@@ -285,40 +349,15 @@ impl SolverControlSample {
         self.profile
             .newton_passes
             .saturating_add(self.profile.search_trial_evaluations)
+            .saturating_add(self.profile.jacobian_init_evaluations)
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
-#[inline(always)]
-fn test_thread_cpu_time_ns() -> u64 {
-    #[repr(C)]
-    struct Timespec {
-        tv_sec: std::os::raw::c_long,
-        tv_nsec: std::os::raw::c_long,
-    }
-    unsafe extern "C" {
-        fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut Timespec) -> std::os::raw::c_int;
-    }
-    const CLOCK_THREAD_CPUTIME_ID: std::os::raw::c_int = 3;
-    let mut ts = Timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    let result = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
-    if result == 0 {
-        (ts.tv_sec as u64)
-            .saturating_mul(1_000_000_000)
-            .saturating_add(ts.tv_nsec as u64)
-    } else {
-        0
-    }
-}
+/// One phase clock for the whole solver. See `partition::test_thread_cpu_time_ns`
+/// for why it is the TSC rather than the thread CPU clock.
+#[cfg(test)]
+use super::partition::test_thread_cpu_time_ns;
 
-#[cfg(all(test, not(target_os = "linux")))]
-#[inline(always)]
-fn test_thread_cpu_time_ns() -> u64 {
-    0
-}
 const LAST_SETTLED_RESTART_PASSES: usize = 32;
 const POST_RESTART_STAGE_PASSES: usize = 32;
 /// Extra exact-target work permitted only after a full-budget solve has
@@ -1924,6 +1963,19 @@ pub struct Simulation {
     /// V3.5 unless explicitly enabled.
     #[cfg(test)]
     test_ceres_lm13: bool,
+    /// Opt-in initializer only; absent from production DSP.
+    #[cfg(test)]
+    test_jacobian_init: Option<Box<jacobian_init::JacobianInit>>,
+    /// Opt-in modified-Newton experiment for the fixed 13-node Twin Schur
+    /// system. An exact Newton pass factors J once; the immediately
+    /// following plain pass solves an exact current residual with those factors
+    /// before forcing a fresh Jacobian. Search/globalisation always refreshes.
+    #[cfg(test)]
+    test_chord13: bool,
+    #[cfg(test)]
+    test_chord13_factors: Option<JacobianFactors13>,
+    #[cfg(test)]
+    test_chord13_reuses_left: u8,
     #[cfg(test)]
     test_ceres_lm13_entries_used: usize,
     #[cfg(test)]
@@ -2146,6 +2198,17 @@ impl Simulation {
                 (None, None) => {}
                 _ => panic!("runtime copy requires identical nonlinear partitions"),
             }
+        }
+        #[cfg(test)]
+        if let Some(init) = &mut self.test_jacobian_init {
+            init.factors = source
+                .test_jacobian_init
+                .as_ref()
+                .and_then(|other| other.factors);
+            init.settled_rhs = source
+                .test_jacobian_init
+                .as_ref()
+                .and_then(|other| other.settled_rhs);
         }
         // Topology masks and partition selection are immutable after `new`.
         // Work/RHS/fixed_rhs/guess/point/saved/carry buffers, RHS materialization
@@ -2392,6 +2455,16 @@ impl Simulation {
             #[cfg(test)]
             test_ceres_lm13_entries_used: 0,
             #[cfg(test)]
+            test_jacobian_init: std::env::var_os("GAINSTAGEFX_TEST_JACOBIAN_INIT13")
+                .is_some()
+                .then(|| Box::new(jacobian_init::JacobianInit::from_env(n, device_count))),
+            #[cfg(test)]
+            test_chord13: std::env::var_os("GAINSTAGEFX_TEST_CHORD13").is_some(),
+            #[cfg(test)]
+            test_chord13_factors: None,
+            #[cfg(test)]
+            test_chord13_reuses_left: 0,
+            #[cfg(test)]
             test_ceres_lm13_checkpoint: vec![
                 super::device::DeviceCheckpoint::default();
                 device_count
@@ -2549,6 +2622,104 @@ impl Simulation {
         self.nonlinear_partition
             .as_ref()
             .map(|partition| (partition.boundary_len(), partition.internal_len()))
+    }
+
+    /// Offline structural survey of the nonlinear reduction. Reporting only.
+    pub fn nonlinear_structure(&self) -> Option<super::partition::ReducedStructureStats> {
+        self.nonlinear_partition
+            .as_ref()
+            .map(ReducedNonlinear::structure_stats)
+    }
+
+    /// What the reduced boundary solve would cost if it used the structural
+    /// bounds the full-MNA factorisation already uses, instead of treating the
+    /// boundary block as dense. Offline reporting only.
+    ///
+    /// The counts are multiply-subtract pairs in the elimination, the same
+    /// unit for both, so their ratio is what a symbolic reduced LU could save.
+    /// Fill-in is propagated exactly the way `factorise` propagates `reach`.
+    pub fn reduced_elimination_cost(
+        &mut self,
+    ) -> Option<(usize, usize, usize, usize, usize, usize)> {
+        self.map_structure();
+        let partition = self.nonlinear_partition.as_ref()?;
+        let boundary = partition.boundary_nodes().to_vec();
+        let b = boundary.len();
+        let n = self.n;
+
+        // The reduced block's structural pattern, in boundary order.
+        let mut pattern = vec![false; b * b];
+        let mut structural = 0;
+        for (row, &row_node) in boundary.iter().enumerate() {
+            for (column, &column_node) in boundary.iter().enumerate() {
+                // A boundary coefficient is structurally live if the full MNA
+                // says so, or if the static Schur coupling fills it in.
+                let live = self.structure_pattern[row_node * n + column_node]
+                    || partition.coupling_is_live(row, column);
+                pattern[row * b + column] = live;
+                if live {
+                    structural += 1;
+                }
+            }
+        }
+
+        let mut dense = 0;
+        for column in 0..b {
+            let trailing = b - column - 1;
+            dense += trailing * trailing;
+        }
+
+        // Symbolic elimination with reach/depth bounds and fill-in, mirroring
+        // `factorise`. Every structurally live entry is assumed nonzero, which
+        // is the conservative direction.
+        let mut reach: Vec<usize> = (0..b)
+            .map(|row| {
+                (row..b)
+                    .rev()
+                    .find(|&k| pattern[row * b + k])
+                    .unwrap_or(row)
+                    .max(row)
+            })
+            .collect();
+        let depth: Vec<usize> = (0..b)
+            .map(|column| {
+                (column..b)
+                    .rev()
+                    .find(|&k| pattern[k * b + column])
+                    .unwrap_or(column)
+                    .max(column)
+            })
+            .collect();
+        let mut depth = depth;
+        let mut sparse = 0;
+        let mut scanned = 0;
+        let mut bookkeeping = 0;
+        for column in 0..b {
+            let bottom = depth[column].min(b - 1);
+            scanned += bottom.saturating_sub(column);
+            let stop = reach[column];
+            for row in (column + 1)..=bottom {
+                if !pattern[row * b + column] {
+                    continue;
+                }
+                sparse += stop.saturating_sub(column);
+                if stop > reach[row] {
+                    reach[row] = stop;
+                    for k in (column + 1)..=stop {
+                        pattern[row * b + k] = true;
+                    }
+                }
+            }
+            // The kernel widens `depth` for every column the pivot row reaches,
+            // which is real per-column work and real extra scanning later.
+            for value in depth.iter_mut().take(stop + 1).skip(column + 1) {
+                bookkeeping += 1;
+                if *value < bottom {
+                    *value = bottom;
+                }
+            }
+        }
+        Some((b, structural, dense, sparse, scanned, bookkeeping))
     }
 
     #[cfg(test)]
@@ -3201,6 +3372,8 @@ impl Simulation {
     /// buffer size. Call it only when `needs_operating_point` says there is
     /// nothing to discard.
     pub fn apply_operating_point(&mut self, voltage: &[f64]) {
+        #[cfg(test)]
+        self.invalidate_jacobian_init();
         if self.dirty {
             self.rebuild();
         }
@@ -3317,6 +3490,8 @@ impl Simulation {
     /// Stamps everything that does not depend on the solution, and factorises
     /// it once. A pot moving or the rate changing is what invalidates this.
     fn rebuild(&mut self) {
+        #[cfg(test)]
+        self.invalidate_jacobian_init();
         self.rebuilds += 1;
         let n = self.n;
         self.base.iter_mut().for_each(|x| *x = 0.0);
@@ -4070,6 +4245,8 @@ impl Simulation {
     /// its first tenth of a second climbing to its own bias, and whatever is
     /// listening hears that as a thump.
     pub fn find_operating_point(&mut self) -> bool {
+        #[cfg(test)]
+        self.invalidate_jacobian_init();
         // The matrix has to be the one the controls currently describe. Asking
         // for an operating point after moving a control, without rebuilding
         // first, solves the circuit as it used to be -- and the answer looks
@@ -4437,6 +4614,103 @@ impl Simulation {
         merit
     }
 
+    /// One modified-Newton/chord pass using the most recent exact 13x13
+    /// factorisation from this same sample. The nonlinear residual is still
+    /// evaluated exactly at the current point; only Jacobian derivative
+    /// stamping and factorisation are skipped. Returning `None` requests the
+    /// ordinary exact Newton path immediately.
+    #[cfg(test)]
+    fn try_chord13_pass(&mut self) -> Option<Pass> {
+        if !self.test_chord13
+            || !self.late_continuation
+            || self.watching
+            || self.test_chord13_reuses_left == 0
+        {
+            return None;
+        }
+        let factors = self.test_chord13_factors?;
+
+        // This pass updates numerical limiter/convergence coordinates without
+        // forming derivatives. Keep the operation transactional: if any part
+        // of the chord construction is unavailable, restore the exact pre-pass
+        // state and run the ordinary Newton stamp instead.
+        for (device, saved) in self.devices.iter().zip(self.saved.iter_mut()) {
+            *saved = device.linearisation();
+        }
+
+        let result = (|| {
+            // Same cheap state commit used after an accepted exact-residual
+            // line-search point. No Jacobian derivatives are formed here.
+            for device in &mut self.devices {
+                device.commit_trial_state(&self.voltage);
+            }
+            let devices_settled = self.devices.iter().all(|d| d.settled(TOLERANCE));
+
+            let n = self.nonlinear_partition.as_ref()?.boundary_len();
+            if n != 13 {
+                return None;
+            }
+            let map = self.nonlinear_partition.as_ref()?.begin_residual(
+                &self.fixed_rhs,
+                &self.voltage,
+                &mut self.trial_residual[..n],
+            )?;
+            let (exact, mapping_ok) = {
+                let mut residual = ResidualStamper {
+                    residual: &mut self.trial_residual[..n],
+                    map,
+                    mapping_failed: false,
+                    limiting: false,
+                    junction_held: false,
+                };
+                for device in &mut self.devices {
+                    device.trial_residual(&mut residual, &self.voltage, false);
+                    if residual.junction_held {
+                        break;
+                    }
+                }
+                (!residual.junction_held, !residual.mapping_failed)
+            };
+            if !exact || !mapping_ok {
+                return None;
+            }
+
+            let moved = {
+                let partition = self.nonlinear_partition.as_mut()?;
+                partition.chord_step_13(
+                    &factors,
+                    &self.trial_residual[..n],
+                    &self.voltage,
+                    &mut self.guess,
+                    &mut self.scratch,
+                    TOLERANCE,
+                    RELATIVE,
+                )?
+            };
+            Some((moved, devices_settled))
+        })();
+
+        let Some((moved, devices_settled)) = result else {
+            for (device, saved) in self.devices.iter_mut().zip(self.saved.iter()) {
+                device.relinearise(*saved);
+            }
+            self.test_chord13_factors = None;
+            self.test_chord13_reuses_left = 0;
+            return None;
+        };
+
+        self.exact = true;
+        self.moved = moved;
+        self.test_chord13_factors = None;
+        self.test_chord13_reuses_left = 0;
+        self.voltage.copy_from_slice(&self.guess);
+        if moved < 1.0 && devices_settled {
+            Some(Pass::Settled)
+        } else {
+            Some(Pass::Moved)
+        }
+    }
+
     #[inline]
     fn current_reduced_merit(&self, dc: bool) -> Option<f64> {
         let partition = if dc {
@@ -4667,6 +4941,29 @@ impl Simulation {
             self.search_lambda_hint = 1.0;
         }
 
+        // Step 16 fused-initializer integration: if the initializer already
+        // built the exact first reduced Newton stamp and accepted it, consume
+        // that stamp before either trying chord reuse or rebuilding anything.
+        // This is required for bit-exact Step 20 behavior when chord13 is off,
+        // and prevents chord13 from bypassing a freshly accepted fused stamp.
+        #[cfg(test)]
+        let prebuilt_first_pass = if !dc && !search {
+            self.test_jacobian_init
+                .as_mut()
+                .is_some_and(|init| init.take_prebuilt_first_pass())
+        } else {
+            false
+        };
+        #[cfg(not(test))]
+        let prebuilt_first_pass = false;
+
+        #[cfg(test)]
+        if !prebuilt_first_pass && !dc && !search && self.test_chord13 {
+            if let Some(pass) = self.try_chord13_pass() {
+                return pass;
+            }
+        }
+
         // Linearise where the solve is now.
         //
         // Re-centred every pass rather than inherited from the step that got
@@ -4684,8 +4981,14 @@ impl Simulation {
         // The production Schur path stamps nonlinear devices directly into
         // the small reduced boundary system. Full MNA is retained for
         // structure-watch diagnostics and as a numerical fallback only.
-        let mut reduced_direct =
-            reduced_candidate && !self.watching && self.build_current_reduced(dc, !search);
+        let mut reduced_direct = if prebuilt_first_pass {
+            // `jacobian_assisted_init()` left the exact reduced stamp/factors
+            // live in `nonlinear_partition`; solve it directly without stamping
+            // the same candidate a second time.
+            true
+        } else {
+            reduced_candidate && !self.watching && self.build_current_reduced(dc, !search)
+        };
         if !reduced_direct {
             self.build_current(dc, !search, false);
         }
@@ -4881,6 +5184,23 @@ impl Simulation {
                     .saturating_add(1);
             }
         }
+        #[cfg(test)]
+        if self.test_chord13 {
+            if !dc && !search && self.late_continuation && reduced_direct && self.exact {
+                self.test_chord13_factors = self
+                    .nonlinear_partition
+                    .as_ref()
+                    .and_then(ReducedNonlinear::jacobian_factors_13);
+                self.test_chord13_reuses_left = if self.test_chord13_factors.is_some() {
+                    1
+                } else {
+                    0
+                };
+            } else {
+                self.test_chord13_factors = None;
+                self.test_chord13_reuses_left = 0;
+            }
+        }
         // How far the solution wants to move, measured against the scale it is
         // moving *at*.
         //
@@ -4997,6 +5317,30 @@ impl Simulation {
             false
         };
         if moved < 1.0 && devices_settled {
+            #[cfg(test)]
+            if !dc {
+                let (settled_factors, settled_rhs) =
+                    if self.late_continuation && reduced_direct && self.exact {
+                        if let Some(partition) = self.nonlinear_partition.as_ref() {
+                            (
+                                partition.jacobian_factors_13(),
+                                partition.fixed_reduced_rhs_13(&self.fixed_rhs),
+                            )
+                        } else {
+                            (None, None)
+                        }
+                    } else {
+                        (None, None)
+                    };
+                if let Some(init) = &mut self.test_jacobian_init {
+                    init.factors = settled_factors;
+                    init.settled_rhs = if settled_factors.is_some() {
+                        settled_rhs
+                    } else {
+                        None
+                    };
+                }
+            }
             self.voltage.copy_from_slice(&self.guess);
             return Pass::Settled;
         }
@@ -5528,6 +5872,8 @@ impl Simulation {
         #[cfg(test)]
         {
             self.test_ceres_lm13_entries_used = 0;
+            self.test_chord13_factors = None;
+            self.test_chord13_reuses_left = 0;
             if solver_control_before.is_some() {
                 self.test_control_current_accepted_lambda_count = 0;
                 self.test_control_current_accepted_lambdas.fill(0.0);
@@ -5688,18 +6034,37 @@ impl Simulation {
 
             #[cfg(test)]
             self.full_trace_predictor(predictor_scale, suppress_predictor);
+            #[cfg(test)]
+            let tangent_used = self.jacobian_tangent_predict(
+                self.predictable && !self.last_was_unsettled && predictor_scale != 0.0,
+            );
+            #[cfg(not(test))]
+            let tangent_used = false;
             if self.predictable && !self.last_was_unsettled && predictor_scale != 0.0 {
-                for ((voltage, earlier), recent) in self
-                    .voltage
-                    .iter_mut()
-                    .zip(self.earlier.iter_mut())
-                    .zip(self.recent_move.iter_mut())
-                {
-                    let last = *voltage;
-                    let previous = *earlier;
-                    *recent = (last - previous).abs();
-                    *earlier = last;
-                    *voltage = last + predictor_scale * (last - previous);
+                if tangent_used {
+                    for ((&last, earlier), recent) in self
+                        .predicted
+                        .iter()
+                        .zip(self.earlier.iter_mut())
+                        .zip(self.recent_move.iter_mut())
+                    {
+                        let previous = *earlier;
+                        *recent = (last - previous).abs();
+                        *earlier = last;
+                    }
+                } else {
+                    for ((voltage, earlier), recent) in self
+                        .voltage
+                        .iter_mut()
+                        .zip(self.earlier.iter_mut())
+                        .zip(self.recent_move.iter_mut())
+                    {
+                        let last = *voltage;
+                        let previous = *earlier;
+                        *recent = (last - previous).abs();
+                        *earlier = last;
+                        *voltage = last + predictor_scale * (last - previous);
+                    }
                 }
             } else {
                 for ((&voltage, earlier), recent) in self
@@ -5712,6 +6077,8 @@ impl Simulation {
                     *earlier = voltage;
                 }
             }
+            #[cfg(test)]
+            self.jacobian_assisted_init(suppress_predictor, input);
             #[cfg(test)]
             self.full_trace_predicted();
             // `predicted` used to receive a copy of this starting point on
@@ -6953,6 +7320,11 @@ impl Simulation {
             }
         }
 
+        #[cfg(test)]
+        if failed {
+            self.invalidate_jacobian_init();
+        }
+
         // Advance what each reactance remembers -- but only when this sample
         // actually converged.
         //
@@ -7076,6 +7448,8 @@ impl Simulation {
     /// pristine constructors without allocating, using the capacity reserved
     /// in `new`.
     pub fn reset_deferred(&mut self) {
+        #[cfg(test)]
+        self.invalidate_jacobian_init();
         self.at_rest = true;
 
         for c in &mut self.capacitors {

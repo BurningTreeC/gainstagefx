@@ -2569,6 +2569,17 @@ impl AnyDevice {
         }
     }
 
+    /// Restore initializer limiter coordinates while retaining only the exact
+    /// evaluation at its accepted voltage. No integration history is changed.
+    #[cfg(test)]
+    pub(super) fn restore_coordinates_keep_trial_cache(&mut self, saved: DeviceCheckpoint) {
+        let cache = self.checkpoint().cache;
+        self.restore_checkpoint(DeviceCheckpoint {
+            linearisation: saved.linearisation,
+            cache,
+        });
+    }
+
     /// Copy an identical device's evolving state without reconstructing it.
     /// All variants keep their component specifications and terminal indices.
     /// A core additionally owns committed integration history, which is not

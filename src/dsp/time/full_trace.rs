@@ -95,6 +95,7 @@ pub(super) struct FullTrace {
     predictor_suppressed: bool,
     predictor_reason: &'static str,
     predictor_scale: f64,
+    jacobian_init: Option<super::jacobian_init::Attempt>,
     source_scaled: bool,
     curvature_gate: bool,
     raw_ratio: f64,
@@ -144,6 +145,7 @@ impl Simulation {
             predictor_suppressed: false,
             predictor_reason: "unavailable",
             predictor_scale: 0.0,
+            jacobian_init: None,
             source_scaled: false,
             curvature_gate: false,
             raw_ratio: f64::NAN,
@@ -227,6 +229,7 @@ impl Simulation {
     pub(super) fn full_trace_predicted(&mut self) {
         if let Some(t) = self.test_full_trace.as_mut().filter(|t| t.active) {
             t.predicted.copy_from_slice(&self.voltage);
+            t.jacobian_init = self.test_jacobian_init.as_ref().map(|init| init.last);
         }
     }
 
@@ -466,6 +469,9 @@ impl Simulation {
         println!("twin_power_full_trace_begin,relative_sample={relative},block={block},frame={frame},solve={},numbering=zero_based_after_warmup,input={:.17e},last_input={:.17e},earlier_input={:.17e},source_step={step:.17e},previous_source_step={previous:.17e},source_curvature={:.17e},predictor_available={},predictor_used={},predictor_suppressed={},predictor_suppression_reason={},source_scaled={},curvature_gate={},raw_source_secant_scale={:.17e},bounded_predictor_scale={:.17e},timing_valid=false",
             t.selected_solve,t.input,t.last_input,t.earlier_input,step-previous,
             t.predictor_available,t.predictor_available && t.predictor_scale != 0.0,t.predictor_suppressed,t.predictor_reason,t.source_scaled,t.curvature_gate,t.raw_ratio,t.predictor_scale);
+        if let Some(init) = t.jacobian_init {
+            println!("twin_power_full_initializer,relative_sample={relative},kind=previous_jacobian,gate_passed={},attempted={},accepted={},fused_first_newton={},fused_fallback={},source_step_abs={:.17e},source_ratio_abs={:.17e},min_source_step={:.17e},min_source_ratio={:.17e},baseline_merit={:.17e},candidate_merit={:.17e},step_scale={:.17e}", init.gate_passed,init.attempted,init.accepted,init.fused_first_newton,init.fused_fallback,init.source_step_abs,init.source_ratio_abs,init.min_source_step,init.min_source_ratio,init.baseline_merit,init.candidate_merit,init.scale);
+        }
         for (at, ((&before, &earlier), &after)) in
             t.prior.iter().zip(&t.earlier).zip(&t.predicted).enumerate()
         {

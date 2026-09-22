@@ -412,8 +412,9 @@ from parts the plugin actually has; which parts of each rig are documented and
 which are approximated is written down in [`PRESETS.md`](PRESETS.md).
 
 Save your own with the button beside the name; they go to
-`~/.config/gainstagefx/presets` as readable JSON and appear under their own
-**Saved** heading at the foot of the list. Only those can be deleted — saving
+`~/.config/gainstagefx/presets` on Linux and macOS, and to
+`%APPDATA%\GainStageFx\Presets` on Windows, as readable JSON, and appear under
+their own **Saved** heading at the foot of the list. Only those can be deleted — saving
 under a shipped preset's name writes a new file beside it rather than replacing
 it, so the shipped one never becomes unreachable. A dot next to the name means
 the panel has been moved since the preset was loaded; move the control back and

@@ -12,6 +12,30 @@ use super::style::*;
 const DRAG_RANGE: f32 = 260.0;
 const FINE: f32 = 0.15;
 
+/// Keep sub-step mouse movement until the parameter can represent it. Reading
+/// the host's snapped value after every event discards slow/fine drags (notably
+/// the noise threshold's 1 dB steps). This also tolerates delayed host updates.
+#[derive(Default)]
+struct DragPosition {
+    normalized: f32,
+    y: f32,
+}
+
+impl DragPosition {
+    fn start(&mut self, normalized: f32, y: f32) {
+        self.normalized = normalized;
+        self.y = y;
+    }
+
+    fn move_to(&mut self, y: f32, scale_factor: f32, fine: bool) -> f32 {
+        let speed = if fine { FINE } else { 1.0 };
+        let delta = (self.y - y) / (DRAG_RANGE * scale_factor) * speed;
+        self.y = y;
+        self.normalized = (self.normalized + delta).clamp(0.0, 1.0);
+        self.normalized
+    }
+}
+
 /// How a control is drawn. The drag is the same either way -- vertical, with
 /// the same range and the same fine-adjust -- so a fader is a knob's face and
 /// not a second widget, which keeps the mouse-capture healing in one place.
@@ -30,7 +54,7 @@ pub struct Knob {
     shape: Face,
     face: Sprite,
     dragging: bool,
-    last_y: f32,
+    drag_position: DragPosition,
     /// Whether the control reaches anything at the moment. A knob that does
     /// nothing has to look like one: the tone controls are wired to a stack
     /// that can be switched out of circuit, and fourteen of the shipped
@@ -59,7 +83,7 @@ impl Knob {
             shape: Face::Round,
             face: Sprite::new(),
             dragging: false,
-            last_y: 0.0,
+            drag_position: DragPosition::default(),
             live,
         }
         .build(
@@ -96,7 +120,7 @@ impl Knob {
             shape: Face::Slider { height },
             face: Sprite::new(),
             dragging: false,
-            last_y: 0.0,
+            drag_position: DragPosition::default(),
             live,
         }
         .build(
@@ -110,10 +134,17 @@ impl Knob {
         .height(Pixels(height))
     }
 
-    fn nudge(&self, cx: &mut EventContext, delta: f32) {
-        let current = self.param.unmodulated_normalized_value();
-        self.param
-            .set_normalized_value(cx, (current + delta).clamp(0.0, 1.0));
+    fn nudge(&mut self, cx: &mut EventContext, delta: f32) {
+        let current = if self.dragging {
+            self.drag_position.normalized
+        } else {
+            self.param.unmodulated_normalized_value()
+        };
+        let value = (current + delta).clamp(0.0, 1.0);
+        if self.dragging {
+            self.drag_position.normalized = value;
+        }
+        self.param.set_normalized_value(cx, value);
     }
 
     /// Ends a drag: releases the mouse and closes the gesture with the host.
@@ -356,7 +387,10 @@ impl View for Knob {
                     // thing anybody tries.
                     self.finish(cx);
                     self.dragging = true;
-                    self.last_y = cx.mouse().cursory;
+                    self.drag_position.start(
+                        self.param.unmodulated_normalized_value(),
+                        cx.mouse().cursory,
+                    );
                     cx.capture();
                     cx.focus();
                     cx.set_active(true);
@@ -395,18 +429,22 @@ impl View for Knob {
                         self.finish(cx);
                         return;
                     }
-                    let speed = if cx.modifiers().shift() { FINE } else { 1.0 };
-                    let delta = (self.last_y - *y) / (DRAG_RANGE * cx.scale_factor()) * speed;
-                    self.last_y = *y;
-                    self.nudge(cx, delta);
+                    let normalized =
+                        self.drag_position
+                            .move_to(*y, cx.scale_factor(), cx.modifiers().shift());
+                    self.param.set_normalized_value(cx, normalized);
                     cx.needs_redraw();
                 }
             }
             WindowEvent::MouseScroll(_, y) => {
                 let step = if cx.modifiers().shift() { 0.005 } else { 0.02 };
-                self.param.begin_set_parameter(cx);
+                if !self.dragging {
+                    self.param.begin_set_parameter(cx);
+                }
                 self.nudge(cx, y * step);
-                self.param.end_set_parameter(cx);
+                if !self.dragging {
+                    self.param.end_set_parameter(cx);
+                }
                 cx.needs_redraw();
                 meta.consume();
             }
@@ -847,5 +885,53 @@ impl View for Selector {
                     .with_line_width(scale),
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::params::GainStageParams;
+
+    #[test]
+    fn threshold_drag_accumulates_sub_step_movements_at_all_ui_scales() {
+        let params = GainStageParams::default();
+        let threshold = &params.noise_threshold;
+        for scale in [0.75, 1.0, 1.5, 2.0] {
+            for fine in [false, true] {
+                let mut drag = DragPosition::default();
+                let start = threshold.default_normalized_value();
+                drag.start(start, 500.0 * scale);
+                let mut normalized = start;
+                // One logical pixel per event cannot move a 1 dB stepped
+                // parameter by itself. Accumulated motion must still work.
+                for i in 1..=100 {
+                    normalized = drag.move_to((500.0 - i as f32) * scale, scale, fine);
+                }
+                let plain = threshold.preview_plain(normalized);
+                assert!(plain > threshold.default_plain_value());
+                let mut coalesced = DragPosition::default();
+                coalesced.start(start, 500.0 * scale);
+                assert_eq!(
+                    plain,
+                    threshold.preview_plain(coalesced.move_to(400.0 * scale, scale, fine))
+                );
+                assert_eq!(plain, if fine { -57.0 } else { -37.0 });
+            }
+        }
+    }
+
+    #[test]
+    fn knob_drag_reverses_at_limits_and_restarts_from_current_parameter() {
+        let mut drag = DragPosition::default();
+        drag.start(0.5, 500.0);
+        assert_eq!(drag.move_to(-1000.0, 1.0, false), 1.0);
+        assert!(drag.move_to(-999.0, 1.0, false) < 1.0);
+        assert_eq!(drag.move_to(1000.0, 1.0, false), 0.0);
+        assert!(drag.move_to(999.0, 1.0, false) > 0.0);
+        drag.start(0.25, 200.0);
+        assert_eq!(drag.move_to(200.0, 1.0, true), 0.25);
+        let fine_value = drag.move_to(180.0, 1.0, true);
+        assert_eq!(drag.move_to(180.0, 1.0, false), fine_value);
     }
 }

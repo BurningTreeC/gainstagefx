@@ -1591,7 +1591,47 @@ pub struct Stored {
 const EXCLUDED: [&str; 0] = [];
 
 /// Where saved presets live.
+///
+/// Per platform, because `$XDG_CONFIG_HOME` and `$HOME` are a Unix
+/// convention: neither is normally set on Windows, so the Unix rule returned
+/// nothing there and saving a preset failed with "no config directory". A host
+/// started from a Unix-style shell was worse than that -- it did find `$HOME`,
+/// and wrote the presets somewhere no Windows DAW session would look again.
+/// Windows keeps per-user application data under `%APPDATA%`, which is the
+/// roaming profile, and a preset is exactly the kind of thing that should
+/// roam.
 pub fn preset_dir() -> Option<PathBuf> {
+    #[cfg(windows)]
+    {
+        windows_preset_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        xdg_preset_dir()
+    }
+}
+
+/// `%APPDATA%\GainStageFx\Presets`, falling back to deriving the roaming
+/// directory from `%USERPROFILE%` for the rare host that clears `APPDATA`.
+#[cfg(windows)]
+fn windows_preset_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("APPDATA")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("USERPROFILE")
+                .map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .map(|home| home.join("AppData").join("Roaming"))
+        })?;
+    Some(base.join("GainStageFx").join("Presets"))
+}
+
+/// `$XDG_CONFIG_HOME/gainstagefx/presets`, or `~/.config` below it. This is
+/// also what macOS gets: it is where presets have always been written there,
+/// and moving them would lose everyone's.
+#[cfg(not(windows))]
+fn xdg_preset_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())

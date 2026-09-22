@@ -1271,3 +1271,56 @@ Codex stopped before completing the requested handoff:
 
 This section records the actual continuation point. Preserve the generic/reference
 paths and make one measured change at a time.
+
+## Session 2026-09-22 -- solver measurement correction, Step 33, Windows preset path
+
+Full detail in [`docs/SOLVER_OPTIMIZATION.md`](docs/SOLVER_OPTIMIZATION.md) and
+[`docs/SOLVER_EXPERIMENTS.md`](docs/SOLVER_EXPERIMENTS.md); those two files are
+now the place solver performance work is recorded.
+
+**The phase profiler was measuring itself.** It timed with
+`clock_gettime(CLOCK_THREAD_CPUTIME_ID)`, which is a real syscall on Linux and
+costs 558 ns a call here, against phases of 100-400 ns. It now reads the
+invariant TSC (8 ns). Every phase figure taken before this is unusable for
+ranking work, including the `recovery_us ~1.30 s` that had made internal-node
+recovery look like the next target: it is 0.22 s, 13 % of the profiled phases
+and under 5 % of chain CPU.
+
+**Where the time actually goes** (`perf`, whole Twin deterministic trace):
+reduced dense linear algebra 43 %, libm transcendentals 19 %, device stamping
+about 17 %. `examples/partition_survey` is new and prints the boundary/internal
+dimensions, recovery-matrix density and elimination cost of every model.
+
+**Step 33 accepted:** AVX (four-lane) instantiations of `solve_dense_planned`,
+`solve_dense_planned_fixed_13_reciprocal` and `recover_boundary_major_in_place`,
+selected by runtime CPU detection, with the scalar bodies kept for CPUs without
+AVX. Bit-identical by construction and by test; the Twin hash
+`ae73533fafbdafdb` and every solver counter are unchanged. Worth -1.61 % CPU
+averaged over Cali IIC+, 5150 and Twin in five modes each, and -5.4 % deadline
+misses on the Twin.
+
+**Symbolic sparse reduced LU rejected:** exact, and 58-99 % fewer elimination
+flops on paper, but 5-11 % slower in practice. These matrices are too small;
+the dense kernel is overhead-bound, not flop-bound. Removed, with the
+measurement kept.
+
+**Wired up rather than left in a transcript:** the Twin hash is now an
+assertion in `twin_realtime_recording_solver_trace` instead of a hex string a
+human compares, and it arms itself only under the accepted configuration;
+`tools/twin_trace.sh` carries that configuration so it cannot be mistyped;
+`examples/partition_survey` prints the structural survey; and
+`dsp::partition::tests` gained a bit-exactness test for the wide kernels and a
+guard on the profiling clock's cost. All four were verified to fail when they
+should.
+
+**Open decision for the owner:** building the whole crate with
+`-C target-cpu=x86-64-v3` is bit-exact (verified against the Twin hash) and
+worth -2.8 % mean and -16 % deadline misses, at the cost of requiring AVX2 at
+load time.
+
+**Also fixed:** saved presets on Windows. `preset_dir()` used
+`$XDG_CONFIG_HOME`/`$HOME`, which is a Unix convention and normally unset
+there, so saving failed; a host started from a Unix-style shell was worse,
+writing presets somewhere no Windows DAW session would look again. Windows now
+uses `%APPDATA%\GainStageFx\Presets`, with `%USERPROFILE%` as a fallback. Linux
+and macOS are untouched. Verified against the `x86_64-pc-windows-gnu` target.

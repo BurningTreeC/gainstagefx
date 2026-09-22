@@ -27,9 +27,78 @@ pub struct ReducedPivotProfile {
     pub invalidations: u64,
 }
 
+/// Structural summary of a `ReducedNonlinear` partition. Offline reporting
+/// only; nothing on the audio thread reads it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ReducedStructureStats {
+    pub boundary: usize,
+    pub internal: usize,
+    pub response_entries: usize,
+    pub response_zero_entries: usize,
+    pub response_zero_columns: usize,
+    pub response_zero_rows: usize,
+    /// Entries inside the per-column contiguous nonzero row span.
+    pub response_span_entries: usize,
+    /// Contiguous nonzero runs summed over every boundary column.
+    pub response_runs: usize,
+    pub coupling_entries: usize,
+    pub coupling_nonzero_entries: usize,
+    pub active_rhs_nodes: usize,
+}
+
+/// The phase-profiling clock.
+///
+/// This used to be `CLOCK_THREAD_CPUTIME_ID`, and that was wrong in a way that
+/// invalidated every phase number taken with it. That clock is not served by
+/// the vDSO: it is a real syscall, measured at ~560 ns a call on the
+/// development machine. The solver phases it was timing -- a stamp, a 13x13
+/// solve, a Schur recovery -- are 100-400 ns each, so each measurement charged
+/// its phase several times its own cost, and the four phase totals came out
+/// close together mostly because they were all close to `calls x syscall`.
+///
+/// The invariant TSC reads in ~8 ns, which is small enough to leave the split
+/// between phases legible. Two consequences are deliberate. It is wall time
+/// rather than thread CPU time, so a preempted phase is charged for the
+/// preemption -- over millions of short phases that lands in the tail rather
+/// than the mean, and the profile is only ever read as a ratio. And `rdtsc`
+/// is not serialising, so a boundary can drift by a few cycles either way;
+/// that averages out over the same millions of samples.
+#[cfg(all(test, target_arch = "x86_64"))]
+#[inline(always)]
+pub(crate) fn test_thread_cpu_time_ns() -> u64 {
+    let (base, scale) = test_profile_clock_calibration();
+    let cycles = unsafe { core::arch::x86_64::_rdtsc() }.saturating_sub(base);
+    (cycles as f64 * scale) as u64
+}
+
+/// Nanoseconds per TSC cycle, and the TSC value they are counted from, worked
+/// out once against `CLOCK_MONOTONIC`.
+#[cfg(all(test, target_arch = "x86_64"))]
+fn test_profile_clock_calibration() -> (u64, f64) {
+    static CALIBRATION: std::sync::OnceLock<(u64, f64)> = std::sync::OnceLock::new();
+    *CALIBRATION.get_or_init(|| {
+        let started_ns = test_monotonic_ns();
+        let started = unsafe { core::arch::x86_64::_rdtsc() };
+        // Long enough that the ~19 ns cost of reading the reference clock does
+        // not move the ratio, short enough not to be felt at test start-up.
+        while test_monotonic_ns().saturating_sub(started_ns) < 2_000_000 {
+            std::hint::spin_loop();
+        }
+        let finished = unsafe { core::arch::x86_64::_rdtsc() };
+        let finished_ns = test_monotonic_ns();
+        let cycles = finished.saturating_sub(started);
+        let scale = if cycles == 0 {
+            1.0
+        } else {
+            finished_ns.saturating_sub(started_ns) as f64 / cycles as f64
+        };
+        (started, scale)
+    })
+}
+
 #[cfg(all(test, target_os = "linux"))]
 #[inline(always)]
-fn test_thread_cpu_time_ns() -> u64 {
+fn test_monotonic_ns() -> u64 {
     #[repr(C)]
     struct Timespec {
         tv_sec: std::os::raw::c_long,
@@ -38,13 +107,12 @@ fn test_thread_cpu_time_ns() -> u64 {
     unsafe extern "C" {
         fn clock_gettime(clock_id: std::os::raw::c_int, tp: *mut Timespec) -> std::os::raw::c_int;
     }
-    const CLOCK_THREAD_CPUTIME_ID: std::os::raw::c_int = 3;
+    const CLOCK_MONOTONIC: std::os::raw::c_int = 1;
     let mut ts = Timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
-    let result = unsafe { clock_gettime(CLOCK_THREAD_CPUTIME_ID, &mut ts) };
-    if result == 0 {
+    if unsafe { clock_gettime(CLOCK_MONOTONIC, &mut ts) } == 0 {
         (ts.tv_sec as u64)
             .saturating_mul(1_000_000_000)
             .saturating_add(ts.tv_nsec as u64)
@@ -53,9 +121,23 @@ fn test_thread_cpu_time_ns() -> u64 {
     }
 }
 
-#[cfg(all(test, not(target_os = "linux")))]
+#[cfg(all(test, not(target_os = "linux"), target_arch = "x86_64"))]
 #[inline(always)]
-fn test_thread_cpu_time_ns() -> u64 {
+fn test_monotonic_ns() -> u64 {
+    0
+}
+
+/// Everywhere without a TSC: the vDSO monotonic clock, which is still thirty
+/// times cheaper than the thread CPU clock this replaced.
+#[cfg(all(test, not(target_arch = "x86_64"), target_os = "linux"))]
+#[inline(always)]
+pub(crate) fn test_thread_cpu_time_ns() -> u64 {
+    test_monotonic_ns()
+}
+
+#[cfg(all(test, not(target_arch = "x86_64"), not(target_os = "linux")))]
+#[inline(always)]
+pub(crate) fn test_thread_cpu_time_ns() -> u64 {
     0
 }
 
@@ -391,6 +473,14 @@ pub struct ReducedNonlinear {
     condensed: Condensed,
     /// The static Schur term `A_bi * inv(A_ii) * A_ib`.
     coupling: Vec<f64>,
+    /// Slots whose static Schur coupling is not positive zero. Skipping an
+    /// exact `x -= +0.0` is bit-preserving for the finite Newton matrices and
+    /// avoids touching structurally-zero coupling entries on every pass.
+    coupling_nonzero_slots: Vec<usize>,
+    /// Whether the wide solver kernels may be used. Resolved once at
+    /// construction rather than per pass: `is_x86_feature_detected!` caches,
+    /// but a bool field is a predictable branch and this is the hot path.
+    avx: bool,
     /// Linear A_bb block cached at rebuild time. Normal Newton passes stamp
     /// nonlinear devices directly into this compact boundary matrix instead of
     /// rebuilding/stamping a full n x n MNA matrix and copying A_bb back out.
@@ -464,6 +554,10 @@ pub struct ReducedNonlinear {
     #[cfg(test)]
     test_disable_precondensed_13_stamp_base: bool,
     #[cfg(test)]
+    test_precondensed_stamp_base_all: bool,
+    #[cfg(test)]
+    test_sparse_coupling_subtraction: bool,
+    #[cfg(test)]
     test_disable_fixed_13_stamped_merit: bool,
     #[cfg(test)]
     test_disable_fixed_13_trial_residual: bool,
@@ -500,6 +594,62 @@ pub(crate) struct CeresLmModel13 {
     pub(crate) current_merit: f64,
 }
 
+/// The dense kernel swaps only the uneliminated suffix of each row and leaves
+/// the pre-elimination entry below each pivot. These are elimination records,
+/// not conventional packed L/U factors: RHS swaps must be interleaved with
+/// elimination, and each multiplier must be reconstructed using that pivot.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct JacobianFactors13 {
+    matrix: [f64; 169],
+    pivots: [usize; 13],
+    reciprocal: bool,
+}
+
+#[cfg(test)]
+impl JacobianFactors13 {
+    pub(crate) fn solve(&self, mut rhs: [f64; 13]) -> Option<[f64; 13]> {
+        for (column, &pivot) in self.pivots.iter().enumerate() {
+            if !(column..13).contains(&pivot) {
+                return None;
+            }
+            rhs.swap(column, pivot);
+            let diagonal = self.matrix[column * 13 + column];
+            if !diagonal.is_finite() || diagonal == 0.0 {
+                return None;
+            }
+            let value = rhs[column];
+            for (row, target) in rhs.iter_mut().enumerate().skip(column + 1) {
+                let entry = self.matrix[row * 13 + column];
+                if entry != 0.0 {
+                    let factor = if self.reciprocal {
+                        entry * diagonal
+                    } else {
+                        entry / diagonal
+                    };
+                    *target -= factor * value;
+                }
+            }
+        }
+        for row in (0..13).rev() {
+            let mut value = rhs[row];
+            for (&coefficient, &known) in self.matrix[row * 13 + row + 1..(row + 1) * 13]
+                .iter()
+                .zip(&rhs[row + 1..])
+            {
+                value -= coefficient * known;
+            }
+            let diagonal = self.matrix[row * 13 + row];
+            rhs[row] = if self.reciprocal {
+                value * diagonal
+            } else {
+                value / diagonal
+            };
+        }
+        rhs.iter().all(|v| v.is_finite()).then_some(rhs)
+    }
+}
+
 #[cfg(test)]
 #[inline(always)]
 fn trust_weighted_norm_13(vector: &[f64; 13], scale: &[f64; 13]) -> f64 {
@@ -511,8 +661,50 @@ fn trust_weighted_norm_13(vector: &[f64; 13], scale: &[f64; 13]) -> f64 {
     total.sqrt()
 }
 
+/// Whether this CPU has 256-bit AVX, resolved once.
+///
+/// The plugin is built for the x86-64 baseline so that it loads on any machine
+/// a DAW runs on, which means every automatically vectorised loop in it is
+/// SSE2 and two doubles wide. The hot solver kernels are worth twice that, so
+/// they are compiled a second time with `#[target_feature(enable = "avx")]`
+/// and chosen here.
+///
+/// Deliberately `avx` and not `avx2`/`fma`. Widening an elementwise multiply
+/// and subtract to four lanes is bit-for-bit identical to doing it two at a
+/// time or one at a time, because each lane is a separately rounded IEEE-754
+/// operation. Contracting a multiply and a subtract into one FMA would *not*
+/// be, and although Rust never contracts on its own, not enabling the feature
+/// makes it impossible rather than merely unlikely. That this holds was
+/// checked the hard way as well: a whole-crate `-C target-cpu=x86-64-v3`
+/// build, which has AVX2 and FMA on everywhere, reproduces the Twin
+/// deterministic hash exactly.
+#[inline]
+fn avx_available() -> bool {
+    #[cfg(test)]
+    if std::env::var_os("GAINSTAGEFX_TEST_DISABLE_WIDE_KERNELS").is_some() {
+        // Same-binary A/B. The wide and narrow kernels are bit-identical, so
+        // this only ever changes timing, never the trajectory.
+        return false;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::arch::is_x86_feature_detected!("avx")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Recover every internal unknown from the solved boundary voltages.
+///
+/// Boundary-major: one boundary voltage at a time, updating every independent
+/// internal row contiguously. Each internal row still sees the boundary
+/// columns in exactly the order the row-major dot product used, so the result
+/// is bit-identical, but the inner loop carries no floating-point dependency
+/// between iterations and vectorises.
 #[inline(always)]
-fn recover_boundary_major_in_place(
+fn recover_boundary_major_body(
     work: &mut [f64],
     base: &[f64],
     response_by_boundary: &[f64],
@@ -529,6 +721,42 @@ fn recover_boundary_major_in_place(
             *value -= coefficient * boundary_voltage;
         }
     }
+}
+
+/// The same recovery, four lanes wide. See `avx_available` for why this is
+/// bit-identical to the scalar body rather than merely equivalent.
+///
+/// # Safety
+/// The caller must have established that the CPU supports AVX.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn recover_boundary_major_avx(
+    work: &mut [f64],
+    base: &[f64],
+    response_by_boundary: &[f64],
+    boundary_solution: &[f64],
+) {
+    recover_boundary_major_body(work, base, response_by_boundary, boundary_solution);
+}
+
+#[inline(always)]
+fn recover_boundary_major_in_place(
+    work: &mut [f64],
+    base: &[f64],
+    response_by_boundary: &[f64],
+    boundary_solution: &[f64],
+    avx: bool,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if avx {
+        // SAFETY: `avx` is only ever set from `avx_available()`.
+        unsafe {
+            recover_boundary_major_avx(work, base, response_by_boundary, boundary_solution);
+        }
+        return;
+    }
+    let _ = avx;
+    recover_boundary_major_body(work, base, response_by_boundary, boundary_solution);
 }
 
 #[inline(always)]
@@ -566,6 +794,9 @@ impl ReducedNonlinear {
     pub(crate) fn copy_runtime_state_from(&mut self, source: &Self) {
         self.condensed.copy_runtime_state_from(&source.condensed);
         self.coupling.copy_from_slice(&source.coupling);
+        self.coupling_nonzero_slots.clear();
+        self.coupling_nonzero_slots
+            .extend_from_slice(&source.coupling_nonzero_slots);
         self.boundary_base.copy_from_slice(&source.boundary_base);
         self.merit_linear.copy_from_slice(&source.merit_linear);
         self.internal_boundary_response
@@ -647,6 +878,8 @@ impl ReducedNonlinear {
         let mut result = Self {
             condensed,
             coupling: vec![0.0; b * b],
+            coupling_nonzero_slots: Vec::with_capacity(b * b),
+            avx: avx_available(),
             boundary_base: vec![0.0; b * b],
             merit_linear: vec![0.0; b * b],
             merit_rhs_base: vec![0.0; b],
@@ -689,6 +922,16 @@ impl ReducedNonlinear {
             )
             .is_some(),
             #[cfg(test)]
+            test_precondensed_stamp_base_all: std::env::var_os(
+                "GAINSTAGEFX_TEST_PRECONDENSED_STAMP_BASE_ALL",
+            )
+            .is_some(),
+            #[cfg(test)]
+            test_sparse_coupling_subtraction: std::env::var_os(
+                "GAINSTAGEFX_TEST_SPARSE_COUPLING_SUBTRACTION",
+            )
+            .is_some(),
+            #[cfg(test)]
             test_disable_fixed_13_stamped_merit: std::env::var_os(
                 "GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT",
             )
@@ -724,8 +967,116 @@ impl ReducedNonlinear {
         &self.condensed.boundary
     }
 
+    /// Effective fixed reduced RHS for the 13-node nonlinear Schur system.
+    ///
+    /// `prepare_rhs()` has already folded the current sample's source, supply,
+    /// capacitor and inductor histories into `rhs_internal_correction`.  The
+    /// nonlinear device tangent sources are deliberately *not* included here.
+    /// This is therefore the exact per-sample forcing term whose change can be
+    /// replayed through the previous settled Jacobian as a first-order tangent
+    /// predictor without evaluating any nonlinear residual.
+    #[cfg(test)]
+    pub(crate) fn fixed_reduced_rhs_13(&self, fixed_rhs: &[f64]) -> Option<[f64; 13]> {
+        if !self.valid
+            || !self.rhs_prepared
+            || self.condensed.boundary.len() != 13
+            || fixed_rhs.len() != self.node_to_boundary.len()
+            || self.rhs_internal_correction.len() != 13
+        {
+            return None;
+        }
+        let mut reduced = [0.0; 13];
+        #[allow(
+            clippy::needless_range_loop,
+            reason = "the index addresses three arrays at once; zipping them reads worse"
+        )]
+        for index in 0..13 {
+            let global = self.condensed.boundary[index];
+            let value = fixed_rhs[global] - self.rhs_internal_correction[index];
+            if !value.is_finite() {
+                return None;
+            }
+            reduced[index] = value;
+        }
+        Some(reduced)
+    }
+
     pub fn internal_len(&self) -> usize {
         self.condensed.internal.len()
+    }
+
+    /// Offline structural survey of the reduction, used by
+    /// `examples/partition_survey.rs` to choose where shared solver work is
+    /// worth specialising. Never called on the audio thread.
+    /// Whether the static Schur coupling can put a nonzero in this reduced
+    /// slot. Offline reporting only; see `Simulation::reduced_elimination_cost`.
+    pub fn coupling_is_live(&self, row: usize, column: usize) -> bool {
+        let b = self.condensed.boundary.len();
+        row < b && column < b && self.coupling[row * b + column].to_bits() != 0
+    }
+
+    pub fn structure_stats(&self) -> ReducedStructureStats {
+        let b = self.condensed.boundary.len();
+        let i = self.condensed.internal.len();
+        let response_zero = self
+            .internal_boundary_response
+            .iter()
+            .filter(|value| value.to_bits() == 0)
+            .count();
+        let mut zero_columns = 0;
+        for column in 0..b {
+            let slice = &self.internal_boundary_response_by_boundary[column * i..(column + 1) * i];
+            if slice.iter().all(|value| value.to_bits() == 0) {
+                zero_columns += 1;
+            }
+        }
+        let mut zero_rows = 0;
+        for row in 0..i {
+            let slice = &self.internal_boundary_response[row * b..(row + 1) * b];
+            if slice.iter().all(|value| value.to_bits() == 0) {
+                zero_rows += 1;
+            }
+        }
+        // Per boundary column, the contiguous row span that has to be touched
+        // if leading/trailing structural zeros are skipped. A cascade puts each
+        // stage's internal nodes next to each other, so this is expected to be
+        // far shorter than `i` while staying a dense contiguous run.
+        let mut span_entries = 0;
+        let mut runs = 0;
+        for column in 0..b {
+            let slice = &self.internal_boundary_response_by_boundary[column * i..(column + 1) * i];
+            let first = slice.iter().position(|value| value.to_bits() != 0);
+            if let Some(first) = first {
+                let last = slice
+                    .iter()
+                    .rposition(|value| value.to_bits() != 0)
+                    .unwrap_or(first);
+                span_entries += last + 1 - first;
+            }
+            // Contiguous runs of nonzeros. Each run is a dense contiguous axpy,
+            // so this is the loop count a run-compressed recovery would pay.
+            let mut inside = false;
+            for value in slice {
+                let nonzero = value.to_bits() != 0;
+                if nonzero && !inside {
+                    runs += 1;
+                }
+                inside = nonzero;
+            }
+        }
+        ReducedStructureStats {
+            boundary: b,
+            internal: i,
+            response_span_entries: span_entries,
+            response_runs: runs,
+            response_entries: i * b,
+            response_zero_entries: response_zero,
+            response_zero_columns: zero_columns,
+            response_zero_rows: zero_rows,
+            coupling_entries: b * b,
+            coupling_nonzero_entries: self.coupling_nonzero_slots.len(),
+            active_rhs_nodes: self.active_rhs_nodes.len(),
+        }
     }
 
     #[inline]
@@ -764,25 +1115,31 @@ impl ReducedNonlinear {
         }
     }
 
-    /// The Twin/American-6L6 nonlinear boundary is exactly 13 unknowns. For
-    /// that hot path the fixed Schur subtraction can be moved to rebuild/sample
-    /// preparation time: `merit_linear` already contains
+    /// The fixed Schur subtraction can be moved to rebuild time for any
+    /// reduced nonlinear partition: `merit_linear` already contains
     /// `A_bb - A_bi inv(A_ii) A_ib`. Nonlinear devices then stamp the same
     /// equations directly on top. The RHS deliberately keeps the legacy
     /// post-stamp correction order. This changes only matrix floating-point
     /// evaluation order relative to the legacy post-stamp subtraction.
+    ///
+    /// The 13-node path is already accepted in production. Step 32 extends
+    /// the exact same optimization to every reduced boundary behind a test
+    /// gate so cross-model trajectory and timing can be measured first.
     #[inline]
-    fn use_precondensed_13_stamp_base(&self) -> bool {
-        if self.condensed.boundary.len() != 13 {
-            return false;
-        }
+    fn use_precondensed_stamp_base(&self) -> bool {
         #[cfg(test)]
         {
-            !self.test_disable_precondensed_13_stamp_base
+            if self.test_disable_precondensed_13_stamp_base {
+                return false;
+            }
+            self.test_precondensed_stamp_base_all || self.condensed.boundary.len() == 13
         }
         #[cfg(not(test))]
         {
-            true
+            // Step 32 is test-gated for non-13 partitions until the cross-model
+            // trajectory and timing sweeps prove the shared optimization. The
+            // already-accepted 13-node path remains production-enabled.
+            self.condensed.boundary.len() == 13
         }
     }
 
@@ -842,6 +1199,7 @@ impl ReducedNonlinear {
             || self.condensed.internal_to_boundary.len() != i * b
             || self.condensed.full_rhs.len() != n
             || self.coupling.len() != b * b
+            || self.coupling_nonzero_slots.capacity() < b * b
             || self.boundary_base.len() != b * b
             || self.merit_linear.len() != b * b
             || self.merit_rhs_base.len() != b
@@ -998,9 +1356,9 @@ impl ReducedNonlinear {
         if !self.valid || !self.rhs_prepared || fixed_rhs.len() != self.node_to_boundary.len() {
             return None;
         }
-        if self.use_precondensed_13_stamp_base() {
+        if self.use_precondensed_stamp_base() {
             // `merit_linear` is the exact fixed Schur matrix cached at rebuild
-            // time. Starting here removes the otherwise repeated 13x13 coupling
+            // time. Starting here removes the otherwise repeated b x b coupling
             // subtraction after every nonlinear stamp. Keep RHS preparation in
             // its legacy order so this optimization is matrix-only.
             self.reduced_matrix.copy_from_slice(&self.merit_linear);
@@ -1097,11 +1455,34 @@ impl ReducedNonlinear {
         Some(total)
     }
 
+    #[inline]
+    fn use_sparse_coupling_subtraction(&self) -> bool {
+        #[cfg(test)]
+        {
+            self.test_sparse_coupling_subtraction
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
+    }
+
     /// Complete the Schur system after direct nonlinear device stamping.
     pub fn finish_stamp(&mut self) {
-        if !self.use_precondensed_13_stamp_base() {
-            for (value, &coupling) in self.reduced_matrix.iter_mut().zip(&self.coupling) {
-                *value -= coupling;
+        if !self.use_precondensed_stamp_base() {
+            if self.use_sparse_coupling_subtraction() {
+                // Preserve the legacy operation on every coefficient that can
+                // change a finite f64. Positive-zero coupling entries are the
+                // only operations omitted: `x -= +0.0` leaves finite x
+                // bit-identical, including signed zero. Slots remain in the
+                // original row-major order.
+                for &slot in &self.coupling_nonzero_slots {
+                    self.reduced_matrix[slot] -= self.coupling[slot];
+                }
+            } else {
+                for (value, &coupling) in self.reduced_matrix.iter_mut().zip(&self.coupling) {
+                    *value -= coupling;
+                }
             }
         }
         // Deliberately retain the legacy RHS arithmetic order even on the
@@ -1125,7 +1506,7 @@ impl ReducedNonlinear {
     /// and RHS entry, then the same row/column accumulation order.
     #[inline]
     pub fn merit_unfinished_stamp(&self, full: &[f64]) -> f64 {
-        if self.use_precondensed_13_stamp_base() {
+        if self.use_precondensed_stamp_base() {
             let b = self.condensed.boundary.len();
             let mut total = 0.0;
             for row in 0..b {
@@ -1634,6 +2015,7 @@ impl ReducedNonlinear {
                 &self.internal_rhs_base,
                 &self.internal_boundary_response_by_boundary,
                 &boundary_solution,
+                self.avx,
             );
             for (row, &node) in self.condensed.internal.iter().enumerate() {
                 let value = self.internal_recovery_work[row];
@@ -1677,16 +2059,42 @@ impl ReducedNonlinear {
         #[cfg(test)]
         let solve_started = self.test_profile_enabled.then(test_thread_cpu_time_ns);
         let reciprocal_pivots = self.use_reciprocal_pivots();
+        let avx = self.avx;
         #[cfg(test)]
         let pivot_was_planned = self.pivot_planned;
         let solved = if b == 13 && self.use_fixed_13_dense_solve() {
-            solve_dense_planned_fixed::<13>(
-                &mut self.reduced_matrix,
-                &mut self.reduced_rhs,
-                &mut self.pivot_plan,
-                &mut self.pivot_planned,
-                reciprocal_pivots,
-            )
+            if reciprocal_pivots
+                && self.reduced_matrix.len() == 169
+                && self.reduced_rhs.len() >= 13
+                && self.pivot_plan.len() >= 13
+            {
+                let matrix: &mut [f64; 169] = self
+                    .reduced_matrix
+                    .as_mut_slice()
+                    .try_into()
+                    .expect("13x13 reduced matrix length checked above");
+                let rhs: &mut [f64; 13] = (&mut self.reduced_rhs[..13])
+                    .try_into()
+                    .expect("13-entry reduced RHS length checked above");
+                let plan: &mut [usize; 13] = (&mut self.pivot_plan[..13])
+                    .try_into()
+                    .expect("13-entry pivot plan length checked above");
+                solve_dense_planned_fixed_13_reciprocal(
+                    matrix,
+                    rhs,
+                    plan,
+                    &mut self.pivot_planned,
+                    avx,
+                )
+            } else {
+                solve_dense_planned_fixed::<13>(
+                    &mut self.reduced_matrix,
+                    &mut self.reduced_rhs,
+                    &mut self.pivot_plan,
+                    &mut self.pivot_planned,
+                    reciprocal_pivots,
+                )
+            }
         } else {
             solve_dense_planned(
                 &mut self.reduced_matrix,
@@ -1695,6 +2103,7 @@ impl ReducedNonlinear {
                 &mut self.pivot_plan,
                 &mut self.pivot_planned,
                 reciprocal_pivots,
+                avx,
             )
         };
         #[cfg(test)]
@@ -1739,6 +2148,7 @@ impl ReducedNonlinear {
                 &self.internal_rhs_base,
                 &self.internal_boundary_response_by_boundary,
                 &self.reduced_rhs,
+                self.avx,
             );
             for (row, &node) in self.condensed.internal.iter().enumerate() {
                 let value = self.internal_recovery_work[row];
@@ -1772,6 +2182,85 @@ impl ReducedNonlinear {
                 .test_profile
                 .recovery_ns
                 .saturating_add(test_thread_cpu_time_ns().saturating_sub(started));
+        }
+        Some(moved)
+    }
+
+    /// Call only immediately after a successful directly-stamped fixed-13
+    /// solve. An unsound replay can have two swaps in one column; its plan no
+    /// longer describes the elimination, so it must never be reused for an RHS.
+    #[cfg(test)]
+    pub(crate) fn jacobian_factors_13(&self) -> Option<JacobianFactors13> {
+        if !self.valid || !self.pivot_planned || !self.use_fixed_13_dense_solve() {
+            return None;
+        }
+        Some(JacobianFactors13 {
+            matrix: self.reduced_matrix.as_slice().try_into().ok()?,
+            pivots: self.pivot_plan.as_slice().try_into().ok()?,
+            reciprocal: self.use_reciprocal_pivots(),
+        })
+    }
+
+    /// Test-only modified-Newton/chord step for the fixed 13-node reduced
+    /// boundary. `factors` may come from an earlier Newton linearisation in
+    /// the same sample. The nonlinear residual is exact at `current`; only the
+    /// Jacobian is reused. Internal linear nodes are then recovered from the
+    /// exact Schur relation for this sample.
+    #[cfg(test)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a test-only probe that mirrors the production solve's arguments"
+    )]
+    pub(crate) fn chord_step_13(
+        &mut self,
+        factors: &JacobianFactors13,
+        residual: &[f64],
+        current: &[f64],
+        full: &mut [f64],
+        delta: &mut [f64],
+        tolerance: f64,
+        relative: f64,
+    ) -> Option<f64> {
+        if !self.valid
+            || !self.rhs_prepared
+            || self.condensed.boundary.len() != 13
+            || residual.len() < 13
+            || current.len() < self.node_to_boundary.len()
+            || full.len() < self.node_to_boundary.len()
+            || delta.len() < self.node_to_boundary.len()
+        {
+            return None;
+        }
+
+        let mut rhs = [0.0; 13];
+        for i in 0..13 {
+            rhs[i] = -residual[i];
+        }
+        let step = factors.solve(rhs)?;
+
+        for (i, &node) in self.condensed.boundary.iter().enumerate() {
+            let value = current[node] + step[i];
+            if !value.is_finite() {
+                return None;
+            }
+            full[node] = value;
+        }
+        if !self.trust_region_recover_internal_13(full) {
+            return None;
+        }
+
+        let mut moved = 0.0f64;
+        for ((&value, &old), d) in full.iter().zip(current).zip(delta.iter_mut()) {
+            let change = value - old;
+            if !change.is_finite() {
+                return None;
+            }
+            *d = change;
+            let scale = tolerance + relative * old.abs();
+            if !scale.is_finite() || scale <= 0.0 {
+                return None;
+            }
+            moved = moved.max(change.abs() / scale);
         }
         Some(moved)
     }
@@ -1820,6 +2309,7 @@ impl ReducedNonlinear {
             &mut self.pivot_plan,
             &mut self.pivot_planned,
             reciprocal_pivots,
+            self.avx,
         ) {
             return false;
         }
@@ -1837,6 +2327,7 @@ impl ReducedNonlinear {
                 &self.internal_rhs_base,
                 &self.internal_boundary_response_by_boundary,
                 &self.reduced_rhs,
+                self.avx,
             );
             for (row, &node) in self.condensed.internal.iter().enumerate() {
                 full[node] = self.internal_recovery_work[row];
@@ -1913,6 +2404,7 @@ impl ReducedNonlinear {
     fn update_coupling(&mut self) {
         let b = self.condensed.boundary.len();
         let i = self.condensed.internal.len();
+        self.coupling_nonzero_slots.clear();
         for row in 0..b {
             for column in 0..b {
                 let mut value = 0.0;
@@ -1920,10 +2412,117 @@ impl ReducedNonlinear {
                     value += self.condensed.boundary_internal[row * i + k]
                         * self.condensed.internal_to_boundary[k * b + column];
                 }
-                self.coupling[row * b + column] = value;
+                let slot = row * b + column;
+                self.coupling[slot] = value;
+                // Only skip canonical +0.0. Retain -0.0, infinities and NaNs
+                // so the enabled path is exactly the legacy subtraction for
+                // every coefficient with observable IEEE-754 semantics.
+                if value.to_bits() != 0 {
+                    self.coupling_nonzero_slots.push(slot);
+                }
             }
         }
     }
+}
+
+/// Fully specialized production-hot Twin solve: fixed 13x13 storage and
+/// reciprocal pivots. This is algebraically identical to
+/// `solve_dense_planned_fixed::<13>(..., true)`, but removes slice-length and
+/// reciprocal/division decisions from the elimination and back-substitution
+/// loops. Operation ordering is intentionally kept identical.
+#[inline(always)]
+fn solve_dense_planned_fixed_13_reciprocal_body(
+    matrix: &mut [f64; 169],
+    rhs: &mut [f64; 13],
+    plan: &mut [usize; 13],
+    planned: &mut bool,
+) -> bool {
+    if *planned {
+        let mut sound = true;
+        let mut column = 0usize;
+        while column < 13 {
+            let pivot = plan[column];
+            if pivot < column || pivot >= 13 {
+                let solved =
+                    solve_dense_planned_fixed_search_tail::<13>(matrix, rhs, plan, column, true);
+                *planned = false;
+                return solved;
+            }
+            if pivot != column {
+                let a = column * 13;
+                let b = pivot * 13;
+                let mut offset = column;
+                while offset < 13 {
+                    matrix.swap(a + offset, b + offset);
+                    offset += 1;
+                }
+                rhs.swap(column, pivot);
+            }
+
+            let diagonal_index = column * 13 + column;
+            let diagonal = matrix[diagonal_index];
+            if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+                let solved =
+                    solve_dense_planned_fixed_search_tail::<13>(matrix, rhs, plan, column, true);
+                *planned = false;
+                return solved;
+            }
+
+            let inverse = 1.0 / diagonal;
+            matrix[diagonal_index] = inverse;
+            let ceiling = diagonal.abs();
+            let pivot_rhs = rhs[column];
+            let pivot_base = column * 13;
+
+            let mut row_index = column + 1;
+            while row_index < 13 {
+                let row_base = row_index * 13;
+                let entry = matrix[row_base + column];
+                if entry != 0.0 {
+                    if entry.abs() > ceiling * 16.0 {
+                        sound = false;
+                    }
+                    let factor = entry * inverse;
+                    let mut target_column = column + 1;
+                    while target_column < 13 {
+                        let target = row_base + target_column;
+                        let source = pivot_base + target_column;
+                        matrix[target] -= factor * matrix[source];
+                        target_column += 1;
+                    }
+                    rhs[row_index] -= factor * pivot_rhs;
+                }
+                row_index += 1;
+            }
+            column += 1;
+        }
+
+        let mut row = 13usize;
+        while row != 0 {
+            row -= 1;
+            let row_base = row * 13;
+            let mut value = rhs[row];
+            let mut column = row + 1;
+            while column < 13 {
+                value -= matrix[row_base + column] * rhs[column];
+                column += 1;
+            }
+            let inverse = matrix[row_base + row];
+            if !inverse.is_finite() || inverse == 0.0 {
+                *planned = false;
+                return false;
+            }
+            rhs[row] = value * inverse;
+            if !rhs[row].is_finite() {
+                *planned = false;
+                return false;
+            }
+        }
+        *planned = sound;
+        return true;
+    }
+
+    solve_dense_planned_fixed_search::<13>(matrix, rhs, plan, planned, true)
 }
 
 /// Fixed-size specialization of the same reduced dense solve. Keeping the
@@ -1946,109 +2545,105 @@ fn solve_dense_planned_fixed<const N: usize>(
     if matrix.len() != N * N || rhs.len() < N || plan.len() < N {
         return false;
     }
-    let replay = *planned;
-    let mut searching = !replay;
-    let mut sound = true;
-    for column in 0..N {
-        let mut pivot = if searching {
-            let mut best = column;
-            let mut largest = matrix[column * N + column].abs();
-            for row in (column + 1)..N {
-                let candidate = matrix[row * N + column].abs();
-                if candidate > largest {
-                    largest = candidate;
-                    best = row;
-                }
-            }
-            plan[column] = best;
-            best
-        } else {
-            plan[column]
-        };
-        if pivot < column || pivot >= N {
-            searching = true;
-            sound = false;
-            pivot = column;
-            let mut largest = matrix[column * N + column].abs();
-            for row in (column + 1)..N {
-                let candidate = matrix[row * N + column].abs();
-                if candidate > largest {
-                    largest = candidate;
-                    pivot = row;
-                }
-            }
-            plan[column] = pivot;
-        }
-        if pivot != column {
-            let a = column * N;
-            let b = pivot * N;
-            for offset in column..N {
-                matrix.swap(a + offset, b + offset);
-            }
-            rhs.swap(column, pivot);
-        }
 
-        let mut diagonal = matrix[column * N + column];
-        if !searching && (diagonal.abs() < 1e-30 || !diagonal.is_finite()) {
-            searching = true;
-            sound = false;
-            let mut best = column;
-            let mut largest = diagonal.abs();
-            for row in (column + 1)..N {
-                let candidate = matrix[row * N + column].abs();
-                if candidate > largest {
-                    largest = candidate;
-                    best = row;
-                }
+    // The Twin spends the overwhelming majority of its solves replaying a
+    // previously learned pivot plan. Keep that case in a separate loop so the
+    // compiler does not have to carry the search/replay state machine through
+    // every elimination row. Arithmetic and swap order are deliberately kept
+    // identical to the legacy kernel.
+    if *planned {
+        let mut sound = true;
+        for column in 0..N {
+            let pivot = plan[column];
+            if pivot < column || pivot >= N {
+                let solved = solve_dense_planned_fixed_search_tail::<N>(
+                    matrix,
+                    rhs,
+                    plan,
+                    column,
+                    reciprocal_pivots,
+                );
+                *planned = false;
+                return solved;
             }
-            if best != column {
+            if pivot != column {
                 let a = column * N;
-                let b = best * N;
+                let b = pivot * N;
                 for offset in column..N {
                     matrix.swap(a + offset, b + offset);
                 }
-                rhs.swap(column, best);
+                rhs.swap(column, pivot);
             }
-            plan[column] = best;
-            diagonal = matrix[column * N + column];
+
+            let diagonal = matrix[column * N + column];
+            if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+                // Match the old replay failure semantics exactly: the planned
+                // row has already been swapped into place, then this column and
+                // the remaining suffix are searched from the partially
+                // factorised matrix. A recovered replay is intentionally marked
+                // unplanned so the following solve relearns from scratch.
+                let solved = solve_dense_planned_fixed_search_tail::<N>(
+                    matrix,
+                    rhs,
+                    plan,
+                    column,
+                    reciprocal_pivots,
+                );
+                *planned = false;
+                return solved;
+            }
+
+            let pivot_scale = if reciprocal_pivots {
+                let inverse = 1.0 / diagonal;
+                matrix[column * N + column] = inverse;
+                inverse
+            } else {
+                diagonal
+            };
+
+            let ceiling = diagonal.abs();
+            let (above, below) = matrix.split_at_mut((column + 1) * N);
+            let pivot_row = &above[column * N..];
+            let (rhs_above, rhs_below) = rhs[..N].split_at_mut(column + 1);
+            let pivot_rhs = rhs_above[column];
+            for (row, value) in below.chunks_exact_mut(N).zip(rhs_below) {
+                let entry = row[column];
+                if entry == 0.0 {
+                    continue;
+                }
+                if entry.abs() > ceiling * 16.0 {
+                    sound = false;
+                }
+                let factor = if reciprocal_pivots {
+                    entry * pivot_scale
+                } else {
+                    entry / pivot_scale
+                };
+                for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..])
+                {
+                    *target -= factor * source;
+                }
+                *value -= factor * pivot_rhs;
+            }
         }
-        if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+
+        if !solve_dense_planned_fixed_back_substitute::<N>(matrix, rhs, reciprocal_pivots) {
             *planned = false;
             return false;
         }
-
-        let pivot_scale = if reciprocal_pivots {
-            let inverse = 1.0 / diagonal;
-            matrix[column * N + column] = inverse;
-            inverse
-        } else {
-            diagonal
-        };
-
-        let ceiling = diagonal.abs();
-        let (above, below) = matrix.split_at_mut((column + 1) * N);
-        let pivot_row = &above[column * N..];
-        let (rhs_above, rhs_below) = rhs[..N].split_at_mut(column + 1);
-        let pivot_rhs = rhs_above[column];
-        for (row, value) in below.chunks_exact_mut(N).zip(rhs_below) {
-            let entry = row[column];
-            if entry == 0.0 {
-                continue;
-            }
-            if !searching && entry.abs() > ceiling * 16.0 {
-                sound = false;
-            }
-            let factor = if reciprocal_pivots {
-                entry * pivot_scale
-            } else {
-                entry / pivot_scale
-            };
-            for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..]) {
-                *target -= factor * source;
-            }
-            *value -= factor * pivot_rhs;
-        }
+        *planned = sound;
+        return true;
     }
+
+    solve_dense_planned_fixed_search::<N>(matrix, rhs, plan, planned, reciprocal_pivots)
+}
+
+#[inline(always)]
+fn solve_dense_planned_fixed_back_substitute<const N: usize>(
+    matrix: &[f64],
+    rhs: &mut [f64],
+    reciprocal_pivots: bool,
+) -> bool {
     for row in (0..N).rev() {
         let mut value = rhs[row];
         for (&coefficient, &known) in matrix[row * N + row + 1..(row + 1) * N]
@@ -2062,7 +2657,6 @@ fn solve_dense_planned_fixed<const N: usize>(
             || (!reciprocal_pivots && diagonal.abs() < 1e-30)
             || (reciprocal_pivots && diagonal == 0.0)
         {
-            *planned = false;
             return false;
         }
         rhs[row] = if reciprocal_pivots {
@@ -2071,141 +2665,64 @@ fn solve_dense_planned_fixed<const N: usize>(
             value / diagonal
         };
         if !rhs[row].is_finite() {
-            *planned = false;
             return false;
         }
     }
-    // Match the generic solver's learned-plan lifecycle exactly. A replay can
-    // remain numerically solvable while still being a poor pivot sequence
-    // (for example when a below-pivot entry grows far beyond the replayed
-    // diagonal). In that case `sound` is cleared and the next solve must learn
-    // a fresh plan. Keeping the stale plan was the fixed-13 production bug.
-    *planned = if replay { sound } else { true };
     true
 }
 
-/// Dense partial-pivoting solve for a reduced boundary system with a learned
-/// swap sequence. The first solve searches exactly as before and records each
-/// pivot row; subsequent solves replay those swaps and only validate the chosen
-/// diagonal. The production path reuses one reciprocal per pivot across every
-/// row elimination and back substitution, avoiding dozens of repeated FP
-/// divisions on the Twin's 13x13 boundary. A test-only switch retains the old
-/// division sequence for same-build A/B. A failed replay returns false so the
-/// caller can take full MNA.
-#[inline]
-fn solve_dense_planned(
+#[inline(always)]
+fn solve_dense_planned_fixed_search_tail<const N: usize>(
     matrix: &mut [f64],
     rhs: &mut [f64],
-    n: usize,
     plan: &mut [usize],
-    planned: &mut bool,
+    start_column: usize,
     reciprocal_pivots: bool,
 ) -> bool {
-    if matrix.len() != n * n || rhs.len() < n || plan.len() < n {
-        return false;
-    }
-    let replay = *planned;
-    let mut searching = !replay;
-    let mut sound = true;
-    for column in 0..n {
-        let mut pivot = if searching {
-            let mut best = column;
-            let mut largest = matrix[column * n + column].abs();
-            for row in (column + 1)..n {
-                let candidate = matrix[row * n + column].abs();
-                if candidate > largest {
-                    largest = candidate;
-                    best = row;
-                }
+    for column in start_column..N {
+        let mut pivot = column;
+        let mut largest = matrix[column * N + column].abs();
+        for row in (column + 1)..N {
+            let candidate = matrix[row * N + column].abs();
+            if candidate > largest {
+                largest = candidate;
+                pivot = row;
             }
-            plan[column] = best;
-            best
-        } else {
-            plan[column]
-        };
-        if pivot < column || pivot >= n {
-            searching = true;
-            sound = false;
-            pivot = column;
-            let mut largest = matrix[column * n + column].abs();
-            for row in (column + 1)..n {
-                let candidate = matrix[row * n + column].abs();
-                if candidate > largest {
-                    largest = candidate;
-                    pivot = row;
-                }
-            }
-            plan[column] = pivot;
         }
+        plan[column] = pivot;
         if pivot != column {
-            let a = column * n;
-            let b = pivot * n;
-            for offset in column..n {
+            let a = column * N;
+            let b = pivot * N;
+            for offset in column..N {
                 matrix.swap(a + offset, b + offset);
             }
             rhs.swap(column, pivot);
         }
 
-        let mut diagonal = matrix[column * n + column];
-        if !searching && (diagonal.abs() < 1e-30 || !diagonal.is_finite()) {
-            // Replayed row no longer contains a usable pivot. Search from this
-            // column onward; completed columns remain a valid LU prefix.
-            searching = true;
-            sound = false;
-            let mut best = column;
-            let mut largest = diagonal.abs();
-            for row in (column + 1)..n {
-                let candidate = matrix[row * n + column].abs();
-                if candidate > largest {
-                    largest = candidate;
-                    best = row;
-                }
-            }
-            if best != column {
-                let a = column * n;
-                let b = best * n;
-                for offset in column..n {
-                    matrix.swap(a + offset, b + offset);
-                }
-                rhs.swap(column, best);
-            }
-            plan[column] = best;
-            diagonal = matrix[column * n + column];
-        }
+        let diagonal = matrix[column * N + column];
         if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
-            *planned = false;
             return false;
         }
-
-        // Every elimination below this column divides by the same pivot. On
-        // the Twin's exact 13x13 Schur boundary that is up to 12+11+...+1 =
-        // 78 serial FP divisions per Newton pass, plus 13 more during back
-        // substitution. Compute one reciprocal per pivot instead and reuse it
-        // for both elimination and the later diagonal solve. This changes only
-        // floating-point evaluation order, never the LU equations or pivot
-        // sequence; the test switch keeps the previous division path available
-        // for same-build A/B and the full-reference null test guards drift.
         let pivot_scale = if reciprocal_pivots {
             let inverse = 1.0 / diagonal;
-            matrix[column * n + column] = inverse;
+            matrix[column * N + column] = inverse;
             inverse
         } else {
             diagonal
         };
 
-        let ceiling = diagonal.abs();
-        let (above, below) = matrix.split_at_mut((column + 1) * n);
-        let pivot_row = &above[column * n..];
-        let (rhs_above, rhs_below) = rhs[..n].split_at_mut(column + 1);
+        let (above, below) = matrix.split_at_mut((column + 1) * N);
+        let pivot_row = &above[column * N..];
+        let (rhs_above, rhs_below) = rhs[..N].split_at_mut(column + 1);
         let pivot_rhs = rhs_above[column];
-        for (row, value) in below.chunks_exact_mut(n).zip(rhs_below) {
+        #[allow(
+            clippy::chunks_exact_to_as_chunks,
+            reason = "keep the measured kernel's iteration shape identical to the dynamic one"
+        )]
+        for (row, value) in below.chunks_exact_mut(N).zip(rhs_below) {
             let entry = row[column];
             if entry == 0.0 {
                 continue;
-            }
-            if !searching && entry.abs() > ceiling * 16.0 {
-                // Still an exact LU; just relearn the pivot sequence next pass.
-                sound = false;
             }
             let factor = if reciprocal_pivots {
                 entry * pivot_scale
@@ -2218,6 +2735,209 @@ fn solve_dense_planned(
             *value -= factor * pivot_rhs;
         }
     }
+    solve_dense_planned_fixed_back_substitute::<N>(matrix, rhs, reciprocal_pivots)
+}
+
+#[inline(always)]
+fn solve_dense_planned_fixed_search<const N: usize>(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    plan: &mut [usize],
+    planned: &mut bool,
+    reciprocal_pivots: bool,
+) -> bool {
+    let solved =
+        solve_dense_planned_fixed_search_tail::<N>(matrix, rhs, plan, 0, reciprocal_pivots);
+    *planned = solved;
+    solved
+}
+
+/// Dense partial-pivoting solve for a reduced boundary system with a learned
+/// swap sequence. The first solve searches exactly as before and records each
+/// pivot row; subsequent solves replay those swaps and only validate the chosen
+/// diagonal. The production path reuses one reciprocal per pivot across every
+/// row elimination and back substitution, avoiding dozens of repeated FP
+/// divisions on the Twin's 13x13 boundary. A test-only switch retains the old
+/// division sequence for same-build A/B. A failed replay returns false so the
+/// caller can take full MNA.
+#[inline(always)]
+fn solve_dense_planned_body(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    n: usize,
+    plan: &mut [usize],
+    planned: &mut bool,
+    reciprocal_pivots: bool,
+) -> bool {
+    if matrix.len() != n * n || rhs.len() < n || plan.len() < n {
+        return false;
+    }
+
+    // Shared reduced-solver replay fast path. This is the dynamic-size
+    // counterpart of the fixed-13 Step-29 kernel: every circuit that reaches
+    // ReducedNonlinear benefits, regardless of model or boundary dimension.
+    // Pivoting, swaps, elimination order and floating-point arithmetic remain
+    // identical to the legacy path. If a learned plan is no longer sound, the
+    // current partially-factorised prefix is retained and the remaining suffix
+    // is searched exactly as before; the plan is then marked unplanned so the
+    // next solve relearns it.
+    if *planned {
+        let mut sound = true;
+        for column in 0..n {
+            let pivot = plan[column];
+            if pivot < column || pivot >= n {
+                let solved = solve_dense_planned_search_tail(
+                    matrix,
+                    rhs,
+                    n,
+                    plan,
+                    column,
+                    reciprocal_pivots,
+                );
+                *planned = false;
+                return solved;
+            }
+            if pivot != column {
+                let a = column * n;
+                let b = pivot * n;
+                for offset in column..n {
+                    matrix.swap(a + offset, b + offset);
+                }
+                rhs.swap(column, pivot);
+            }
+
+            let diagonal = matrix[column * n + column];
+            if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+                let solved = solve_dense_planned_search_tail(
+                    matrix,
+                    rhs,
+                    n,
+                    plan,
+                    column,
+                    reciprocal_pivots,
+                );
+                *planned = false;
+                return solved;
+            }
+
+            let pivot_scale = if reciprocal_pivots {
+                let inverse = 1.0 / diagonal;
+                matrix[column * n + column] = inverse;
+                inverse
+            } else {
+                diagonal
+            };
+
+            let ceiling = diagonal.abs();
+            let (above, below) = matrix.split_at_mut((column + 1) * n);
+            let pivot_row = &above[column * n..];
+            let (rhs_above, rhs_below) = rhs[..n].split_at_mut(column + 1);
+            let pivot_rhs = rhs_above[column];
+            for (row, value) in below.chunks_exact_mut(n).zip(rhs_below) {
+                let entry = row[column];
+                if entry == 0.0 {
+                    continue;
+                }
+                if entry.abs() > ceiling * 16.0 {
+                    sound = false;
+                }
+                let factor = if reciprocal_pivots {
+                    entry * pivot_scale
+                } else {
+                    entry / pivot_scale
+                };
+                for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..])
+                {
+                    *target -= factor * source;
+                }
+                *value -= factor * pivot_rhs;
+            }
+        }
+
+        if !solve_dense_planned_back_substitute(matrix, rhs, n, reciprocal_pivots) {
+            *planned = false;
+            return false;
+        }
+        *planned = sound;
+        return true;
+    }
+
+    let solved = solve_dense_planned_search_tail(matrix, rhs, n, plan, 0, reciprocal_pivots);
+    *planned = solved;
+    solved
+}
+
+#[inline(always)]
+fn solve_dense_planned_search_tail(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    n: usize,
+    plan: &mut [usize],
+    start_column: usize,
+    reciprocal_pivots: bool,
+) -> bool {
+    for column in start_column..n {
+        let mut pivot = column;
+        let mut largest = matrix[column * n + column].abs();
+        for row in (column + 1)..n {
+            let candidate = matrix[row * n + column].abs();
+            if candidate > largest {
+                largest = candidate;
+                pivot = row;
+            }
+        }
+        plan[column] = pivot;
+        if pivot != column {
+            let a = column * n;
+            let b = pivot * n;
+            for offset in column..n {
+                matrix.swap(a + offset, b + offset);
+            }
+            rhs.swap(column, pivot);
+        }
+
+        let diagonal = matrix[column * n + column];
+        if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+            return false;
+        }
+        let pivot_scale = if reciprocal_pivots {
+            let inverse = 1.0 / diagonal;
+            matrix[column * n + column] = inverse;
+            inverse
+        } else {
+            diagonal
+        };
+
+        let (above, below) = matrix.split_at_mut((column + 1) * n);
+        let pivot_row = &above[column * n..];
+        let (rhs_above, rhs_below) = rhs[..n].split_at_mut(column + 1);
+        let pivot_rhs = rhs_above[column];
+        for (row, value) in below.chunks_exact_mut(n).zip(rhs_below) {
+            let entry = row[column];
+            if entry == 0.0 {
+                continue;
+            }
+            let factor = if reciprocal_pivots {
+                entry * pivot_scale
+            } else {
+                entry / pivot_scale
+            };
+            for (target, &source) in row[column + 1..].iter_mut().zip(&pivot_row[column + 1..]) {
+                *target -= factor * source;
+            }
+            *value -= factor * pivot_rhs;
+        }
+    }
+    solve_dense_planned_back_substitute(matrix, rhs, n, reciprocal_pivots)
+}
+
+#[inline(always)]
+fn solve_dense_planned_back_substitute(
+    matrix: &[f64],
+    rhs: &mut [f64],
+    n: usize,
+    reciprocal_pivots: bool,
+) -> bool {
     for row in (0..n).rev() {
         let mut value = rhs[row];
         for (&coefficient, &known) in matrix[row * n + row + 1..(row + 1) * n]
@@ -2231,7 +2951,6 @@ fn solve_dense_planned(
             || (!reciprocal_pivots && diagonal.abs() < 1e-30)
             || (reciprocal_pivots && diagonal == 0.0)
         {
-            *planned = false;
             return false;
         }
         rhs[row] = if reciprocal_pivots {
@@ -2240,12 +2959,82 @@ fn solve_dense_planned(
             value / diagonal
         };
         if !rhs[row].is_finite() {
-            *planned = false;
             return false;
         }
     }
-    *planned = if replay { sound } else { true };
     true
+}
+
+/// Wide and narrow builds of the two hot dense kernels, chosen by
+/// `avx_available()`. The bodies are shared and `#[inline(always)]`, so the
+/// only difference between the two instantiations is the vector width LLVM is
+/// allowed to pick for the elimination's row update -- an elementwise multiply
+/// and subtract, which is bit-identical at any width. See `avx_available`.
+///
+/// # Safety
+/// The caller must have established that the CPU supports AVX.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn solve_dense_planned_fixed_13_reciprocal_avx(
+    matrix: &mut [f64; 169],
+    rhs: &mut [f64; 13],
+    plan: &mut [usize; 13],
+    planned: &mut bool,
+) -> bool {
+    solve_dense_planned_fixed_13_reciprocal_body(matrix, rhs, plan, planned)
+}
+
+#[inline(always)]
+fn solve_dense_planned_fixed_13_reciprocal(
+    matrix: &mut [f64; 169],
+    rhs: &mut [f64; 13],
+    plan: &mut [usize; 13],
+    planned: &mut bool,
+    avx: bool,
+) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    if avx {
+        // SAFETY: `avx` is only ever set from `avx_available()`.
+        return unsafe { solve_dense_planned_fixed_13_reciprocal_avx(matrix, rhs, plan, planned) };
+    }
+    let _ = avx;
+    solve_dense_planned_fixed_13_reciprocal_body(matrix, rhs, plan, planned)
+}
+
+/// # Safety
+/// The caller must have established that the CPU supports AVX.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn solve_dense_planned_avx(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    n: usize,
+    plan: &mut [usize],
+    planned: &mut bool,
+    reciprocal_pivots: bool,
+) -> bool {
+    solve_dense_planned_body(matrix, rhs, n, plan, planned, reciprocal_pivots)
+}
+
+#[inline]
+fn solve_dense_planned(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    n: usize,
+    plan: &mut [usize],
+    planned: &mut bool,
+    reciprocal_pivots: bool,
+    avx: bool,
+) -> bool {
+    #[cfg(target_arch = "x86_64")]
+    if avx {
+        // SAFETY: `avx` is only ever set from `avx_available()`.
+        return unsafe {
+            solve_dense_planned_avx(matrix, rhs, n, plan, planned, reciprocal_pivots)
+        };
+    }
+    let _ = avx;
+    solve_dense_planned_body(matrix, rhs, n, plan, planned, reciprocal_pivots)
 }
 
 impl Condensed {
@@ -2483,8 +3272,66 @@ fn inverse(matrix: &[f64], n: usize) -> Option<Vec<f64>> {
 mod tests {
     use super::{
         condense, merit_stamped_fixed_13, recover_boundary_major_in_place, solve_dense_planned,
-        solve_dense_planned_fixed, ReducedLinear, ReducedNonlinear,
+        solve_dense_planned_fixed, solve_dense_planned_fixed_13_reciprocal,
+        test_thread_cpu_time_ns, ReducedLinear, ReducedNonlinear,
     };
+
+    #[test]
+    fn jacobian_init_factors_replay_new_rhs_with_pivot_swaps() {
+        use super::JacobianFactors13;
+        for reciprocal in [false, true] {
+            for seed in 0..16 {
+                let original: [f64; 169] = std::array::from_fn(|k| {
+                    let row = k / 13;
+                    let column = k % 13;
+                    let diagonal = (row * 5 + seed) % 13;
+                    if column == diagonal {
+                        4.0 + row as f64
+                    } else {
+                        ((k * 37 + seed) as f64).sin() * 0.1
+                    }
+                });
+                let mut matrix = original;
+                let mut first_rhs = [1.0; 13];
+                let mut pivots = [0; 13];
+                let mut planned = false;
+                assert!(solve_dense_planned_fixed::<13>(
+                    &mut matrix,
+                    &mut first_rhs,
+                    &mut pivots,
+                    &mut planned,
+                    reciprocal,
+                ));
+                assert!(planned);
+                assert!(pivots.iter().enumerate().any(|(i, &p)| i != p));
+                let factors = JacobianFactors13 {
+                    matrix,
+                    pivots,
+                    reciprocal,
+                };
+                for rhs_seed in 0..4 {
+                    let rhs = std::array::from_fn(|i| ((i * 7 + rhs_seed) as f64).cos());
+                    let got = factors.solve(rhs).unwrap();
+                    let mut want = rhs;
+                    let mut replay_matrix = original;
+                    let mut replay_pivots = pivots;
+                    assert!(solve_dense_planned_fixed::<13>(
+                        &mut replay_matrix,
+                        &mut want,
+                        &mut replay_pivots,
+                        &mut planned,
+                        reciprocal,
+                    ));
+                    assert!(planned);
+                    assert_eq!(got.map(f64::to_bits), want.map(f64::to_bits));
+                    for (row, &target) in original.as_chunks::<13>().0.iter().zip(&rhs) {
+                        let value: f64 = row.iter().zip(got).map(|(&a, x)| a * x).sum();
+                        assert!((value - target).abs() < 1e-12);
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn boundary_major_recovery_matches_row_major_bit_for_bit() {
@@ -2516,9 +3363,22 @@ mod tests {
         }
 
         let mut transposed = vec![0.0; INTERNAL];
-        recover_boundary_major_in_place(&mut transposed, &base, &boundary_major, &boundary);
+        recover_boundary_major_in_place(&mut transposed, &base, &boundary_major, &boundary, false);
+        let mut wide = vec![0.0; INTERNAL];
+        recover_boundary_major_in_place(&mut wide, &base, &boundary_major, &boundary, true);
         for (&candidate, &reference) in transposed.iter().zip(&legacy) {
             assert_eq!(candidate.to_bits(), reference.to_bits());
+        }
+        // The wide kernel is only selected on a CPU that has AVX, and on one
+        // that does not `recover_boundary_major_in_place` ignores the request,
+        // so this compares the scalar body with itself there. Either way the
+        // requirement is the same: bit-for-bit, not merely close.
+        for (&candidate, &reference) in wide.iter().zip(&legacy) {
+            assert_eq!(
+                candidate.to_bits(),
+                reference.to_bits(),
+                "the wide recovery kernel must be bit-identical to the row-major dot product"
+            );
         }
     }
 
@@ -2560,6 +3420,7 @@ mod tests {
                 &mut generic_plan,
                 &mut generic_planned,
                 reciprocal,
+                false,
             ));
             assert!(solve_dense_planned_fixed::<N>(
                 &mut fixed_matrix,
@@ -2597,6 +3458,7 @@ mod tests {
                 &mut generic_plan,
                 &mut generic_planned,
                 reciprocal,
+                false,
             ));
             assert!(solve_dense_planned_fixed::<N>(
                 &mut fixed_matrix,
@@ -2613,6 +3475,256 @@ mod tests {
             for (&candidate, &reference) in fixed_rhs.iter().zip(&generic_rhs) {
                 assert_eq!(candidate.to_bits(), reference.to_bits());
             }
+        }
+    }
+
+    #[test]
+    fn fixed_13_reciprocal_specialization_matches_fixed_bit_for_bit() {
+        const N: usize = 13;
+        let original: [f64; 169] = std::array::from_fn(|k| {
+            let row = k / N;
+            let column = k % N;
+            let distance = row.abs_diff(column) as f64;
+            let signed = (((row * 31 + column * 17 + 11) % 29) as f64 - 14.0) * 0.017;
+            if row == column {
+                3.0 + 0.09 * row as f64
+            } else {
+                signed / (1.0 + distance)
+            }
+        });
+        let original_rhs: [f64; 13] =
+            std::array::from_fn(|index| ((index * 7 + 5) as f64).sin() * 1.7);
+
+        let mut reference_matrix = original;
+        let mut reference_rhs = original_rhs;
+        let mut reference_plan = [0usize; 13];
+        let mut reference_planned = false;
+        assert!(solve_dense_planned_fixed::<13>(
+            &mut reference_matrix,
+            &mut reference_rhs,
+            &mut reference_plan,
+            &mut reference_planned,
+            true,
+        ));
+        assert!(reference_planned);
+
+        let mut candidate_matrix = original;
+        let mut candidate_rhs = original_rhs;
+        let mut candidate_plan = [0usize; 13];
+        let mut candidate_planned = false;
+        assert!(solve_dense_planned_fixed_13_reciprocal(
+            &mut candidate_matrix,
+            &mut candidate_rhs,
+            &mut candidate_plan,
+            &mut candidate_planned,
+            false,
+        ));
+        assert_eq!(candidate_plan, reference_plan);
+        assert_eq!(candidate_planned, reference_planned);
+        assert_eq!(
+            candidate_matrix.map(f64::to_bits),
+            reference_matrix.map(f64::to_bits)
+        );
+        assert_eq!(
+            candidate_rhs.map(f64::to_bits),
+            reference_rhs.map(f64::to_bits)
+        );
+
+        let replay_matrix: [f64; 169] = std::array::from_fn(|k| {
+            let row = k / N;
+            if row == k % N {
+                original[k] * (1.0 + (row as f64 + 1.0) * 1e-6)
+            } else {
+                original[k]
+            }
+        });
+        let replay_rhs: [f64; 13] =
+            std::array::from_fn(|i| original_rhs[i] + (i as f64 - 6.0) * 2e-7);
+
+        let mut reference_matrix = replay_matrix;
+        let mut reference_rhs = replay_rhs;
+        let mut reference_planned = true;
+        assert!(solve_dense_planned_fixed::<13>(
+            &mut reference_matrix,
+            &mut reference_rhs,
+            &mut reference_plan,
+            &mut reference_planned,
+            true,
+        ));
+
+        let mut candidate_matrix = replay_matrix;
+        let mut candidate_rhs = replay_rhs;
+        let mut candidate_planned = true;
+        assert!(solve_dense_planned_fixed_13_reciprocal(
+            &mut candidate_matrix,
+            &mut candidate_rhs,
+            &mut candidate_plan,
+            &mut candidate_planned,
+            false,
+        ));
+        assert_eq!(candidate_plan, reference_plan);
+        assert_eq!(candidate_planned, reference_planned);
+        assert_eq!(
+            candidate_matrix.map(f64::to_bits),
+            reference_matrix.map(f64::to_bits)
+        );
+        assert_eq!(
+            candidate_rhs.map(f64::to_bits),
+            reference_rhs.map(f64::to_bits)
+        );
+    }
+
+    /// The phase profiler must cost much less than the phases it reports.
+    ///
+    /// This guards a mistake that already happened and was expensive: the
+    /// profiler used to time with `clock_gettime(CLOCK_THREAD_CPUTIME_ID)`,
+    /// which is a real syscall on Linux and measured 558 ns a call here. The
+    /// phases it was timing are 100-400 ns, so every phase reported mostly its
+    /// own instrument, and the four phase totals came out close together
+    /// because they were all close to `calls x syscall`. A whole programme of
+    /// solver work was aimed at the wrong phase on the strength of it.
+    ///
+    /// The minimum over several batches rather than a mean, so a scheduling
+    /// slice inflates nothing; and a threshold with several times' margin over
+    /// both the TSC (8 ns) and the `CLOCK_MONOTONIC` fallback (19 ns), so the
+    /// only thing that trips it is a clock in a different class.
+    #[test]
+    fn the_phase_profiling_clock_is_far_cheaper_than_a_solver_phase() {
+        const BATCH: usize = 2_000;
+        const BATCHES: usize = 5;
+        const CEILING_NS: u64 = 150;
+
+        let mut cheapest = u64::MAX;
+        for _ in 0..BATCHES {
+            let started = test_thread_cpu_time_ns();
+            for _ in 0..BATCH {
+                std::hint::black_box(test_thread_cpu_time_ns());
+            }
+            let elapsed = test_thread_cpu_time_ns().saturating_sub(started);
+            cheapest = cheapest.min(elapsed / BATCH as u64);
+        }
+
+        assert!(
+            cheapest < CEILING_NS,
+            "the phase-profiling clock costs {cheapest} ns a call, which is the \
+             same order as the phases it measures, so every phase number it \
+             produces is mostly itself. A thread/process CPU clock is a syscall \
+             on Linux; the profiler wants the invariant TSC. See \
+             docs/SOLVER_OPTIMIZATION.md"
+        );
+    }
+
+    /// The wide kernels must be bit-identical to the scalar ones, not close.
+    ///
+    /// Widening an elementwise multiply-and-subtract cannot change a result:
+    /// each lane is a separately rounded IEEE-754 operation and no reduction
+    /// is reassociated. This checks that claim on the two kernels that carry
+    /// it, on a matrix whose elimination both pivots and fills in, and it
+    /// checks the learned-plan replay as well as the first search. On a CPU
+    /// without AVX the dispatcher returns the scalar body for both sides, so
+    /// the test still passes and still guards the dispatch.
+    #[test]
+    fn wide_dense_kernels_match_the_scalar_ones_bit_for_bit() {
+        const N: usize = 13;
+        let mut original = [0.0f64; N * N];
+        for row in 0..N {
+            for column in 0..N {
+                let distance = row.abs_diff(column) as f64;
+                let signed = (((row * 31 + column * 17 + 5) % 29) as f64 - 14.0) * 0.023;
+                original[row * N + column] = if row == column {
+                    // Deliberately not diagonally dominant everywhere, so the
+                    // search actually swaps rows.
+                    0.6 + 0.37 * ((row * 7) % 5) as f64
+                } else {
+                    signed / (1.0 + distance)
+                };
+            }
+        }
+        let original_rhs: [f64; N] =
+            std::array::from_fn(|index| 0.31 * index as f64 - 1.7 + 0.0009 * index as f64);
+
+        for reciprocal in [false, true] {
+            let mut narrow_matrix = original.to_vec();
+            let mut narrow_rhs = original_rhs.to_vec();
+            let mut narrow_plan: Vec<usize> = (0..N).collect();
+            let mut narrow_planned = false;
+            let mut wide_matrix = original.to_vec();
+            let mut wide_rhs = original_rhs.to_vec();
+            let mut wide_plan: Vec<usize> = (0..N).collect();
+            let mut wide_planned = false;
+
+            // Twice: the searching first solve, then the learned-plan replay.
+            for pass in 0..2 {
+                assert!(solve_dense_planned(
+                    &mut narrow_matrix,
+                    &mut narrow_rhs,
+                    N,
+                    &mut narrow_plan,
+                    &mut narrow_planned,
+                    reciprocal,
+                    false,
+                ));
+                assert!(solve_dense_planned(
+                    &mut wide_matrix,
+                    &mut wide_rhs,
+                    N,
+                    &mut wide_plan,
+                    &mut wide_planned,
+                    reciprocal,
+                    true,
+                ));
+                assert_eq!(
+                    wide_plan, narrow_plan,
+                    "pass {pass}, reciprocal {reciprocal}"
+                );
+                assert_eq!(wide_planned, narrow_planned);
+                for (&wide, &narrow) in wide_matrix.iter().zip(&narrow_matrix) {
+                    assert_eq!(wide.to_bits(), narrow.to_bits());
+                }
+                for (&wide, &narrow) in wide_rhs.iter().zip(&narrow_rhs) {
+                    assert_eq!(wide.to_bits(), narrow.to_bits());
+                }
+                narrow_matrix.copy_from_slice(&original);
+                wide_matrix.copy_from_slice(&original);
+                narrow_rhs.copy_from_slice(&original_rhs);
+                wide_rhs.copy_from_slice(&original_rhs);
+            }
+        }
+
+        let mut narrow_matrix = original;
+        let mut narrow_rhs = original_rhs;
+        let mut narrow_plan = [0usize; N];
+        let mut narrow_planned = false;
+        let mut wide_matrix = original;
+        let mut wide_rhs = original_rhs;
+        let mut wide_plan = [0usize; N];
+        let mut wide_planned = false;
+        for _ in 0..2 {
+            assert!(solve_dense_planned_fixed_13_reciprocal(
+                &mut narrow_matrix,
+                &mut narrow_rhs,
+                &mut narrow_plan,
+                &mut narrow_planned,
+                false,
+            ));
+            assert!(solve_dense_planned_fixed_13_reciprocal(
+                &mut wide_matrix,
+                &mut wide_rhs,
+                &mut wide_plan,
+                &mut wide_planned,
+                true,
+            ));
+            assert_eq!(wide_plan, narrow_plan);
+            assert_eq!(wide_planned, narrow_planned);
+            assert_eq!(
+                wide_matrix.map(f64::to_bits),
+                narrow_matrix.map(f64::to_bits)
+            );
+            assert_eq!(wide_rhs.map(f64::to_bits), narrow_rhs.map(f64::to_bits));
+            narrow_matrix = original;
+            wide_matrix = original;
+            narrow_rhs = original_rhs;
+            wide_rhs = original_rhs;
         }
     }
 
@@ -2646,6 +3758,7 @@ mod tests {
                 &mut generic_plan,
                 &mut generic_planned,
                 reciprocal,
+                false,
             ));
             assert!(solve_dense_planned_fixed::<N>(
                 &mut fixed_matrix,
@@ -2681,6 +3794,7 @@ mod tests {
                 &mut generic_plan,
                 &mut generic_planned,
                 reciprocal,
+                false,
             ));
             assert!(solve_dense_planned_fixed::<N>(
                 &mut fixed_matrix,
@@ -2742,6 +3856,7 @@ mod tests {
             &mut divided_plan,
             &mut divided_planned,
             false,
+            false,
         ));
 
         let mut reciprocal_matrix = original.clone();
@@ -2755,6 +3870,7 @@ mod tests {
             &mut reciprocal_plan,
             &mut reciprocal_planned,
             true,
+            false,
         ));
 
         assert_eq!(reciprocal_plan, divided_plan);
@@ -2885,6 +4001,76 @@ mod tests {
         // no pivot. The caller must keep the original full-MNA path instead.
         let matrix = [4.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!(ReducedNonlinear::new(&matrix, &[0.0; 3], &[0]).is_none());
+    }
+
+    #[test]
+    fn sparse_coupling_subtraction_matches_legacy_bit_for_bit() {
+        // Three nonlinear boundary nodes, two internal linear nodes. Only a
+        // subset of boundary/internal connections exist, so the Schur coupling
+        // contains canonical +0.0 slots that the sparse path may skip.
+        const N: usize = 5;
+        let boundary = [0usize, 1, 2];
+        let mut base = [0.0; N * N];
+        for row in 0..N {
+            base[row * N + row] = 4.0 + row as f64 * 0.25;
+        }
+        base[3 * N + 4] = 0.125;
+        base[4 * N + 3] = -0.0625;
+        // Boundary 0 talks only to internal 3; boundary 2 only to internal 4.
+        // Boundary 1 has no internal connection and therefore creates exact
+        // positive-zero coupling entries.
+        #[allow(
+            clippy::erasing_op,
+            clippy::identity_op,
+            reason = "the uniform row * N + column form is what makes this fixture readable"
+        )]
+        {
+            base[0 * N + 3] = 0.2;
+            base[3 * N + 0] = -0.15;
+        }
+        base[2 * N + 4] = -0.1;
+        base[4 * N + 2] = 0.175;
+
+        let fixed_rhs = [0.75, -0.5, 0.25, 0.125, -0.375];
+        let zero = [0.0; N];
+        let mut sparse = ReducedNonlinear::new(&base, &zero, &boundary).unwrap();
+        let mut legacy = sparse.clone();
+        sparse.test_disable_precondensed_13_stamp_base = true;
+        legacy.test_disable_precondensed_13_stamp_base = true;
+        sparse.test_precondensed_stamp_base_all = false;
+        legacy.test_precondensed_stamp_base_all = false;
+        sparse.test_sparse_coupling_subtraction = true;
+        legacy.test_sparse_coupling_subtraction = false;
+        assert!(sparse.prepare_rhs(&fixed_rhs));
+        assert!(legacy.prepare_rhs(&fixed_rhs));
+
+        {
+            let (matrix, rhs, _) = sparse.begin_stamp(&fixed_rhs).unwrap();
+            matrix[0] += 0.03125;
+            matrix[1] -= 0.015625;
+            matrix[4] += 0.0078125;
+            matrix[8] -= 0.00390625;
+            rhs[0] += 0.0625;
+            rhs[2] -= 0.03125;
+        }
+        {
+            let (matrix, rhs, _) = legacy.begin_stamp(&fixed_rhs).unwrap();
+            matrix[0] += 0.03125;
+            matrix[1] -= 0.015625;
+            matrix[4] += 0.0078125;
+            matrix[8] -= 0.00390625;
+            rhs[0] += 0.0625;
+            rhs[2] -= 0.03125;
+        }
+        sparse.finish_stamp();
+        legacy.finish_stamp();
+
+        for (&candidate, &reference) in sparse.reduced_matrix.iter().zip(&legacy.reduced_matrix) {
+            assert_eq!(candidate.to_bits(), reference.to_bits());
+        }
+        for (&candidate, &reference) in sparse.reduced_rhs.iter().zip(&legacy.reduced_rhs) {
+            assert_eq!(candidate.to_bits(), reference.to_bits());
+        }
     }
 
     #[test]

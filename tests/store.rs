@@ -13,7 +13,10 @@ fn saved_presets_survive_the_round_trip() {
     let dir = std::env::temp_dir().join(format!("gainstagefx-store-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("a temporary directory");
+    // Both, so the test points `preset_dir` at the temporary directory on
+    // either platform rule: Unix reads XDG_CONFIG_HOME, Windows reads APPDATA.
     std::env::set_var("XDG_CONFIG_HOME", &dir);
+    std::env::set_var("APPDATA", &dir);
 
     let params = GainStageParams::default();
 

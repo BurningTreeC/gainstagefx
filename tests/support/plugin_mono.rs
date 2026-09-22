@@ -838,6 +838,67 @@ fn realtime_recording() {
     }
 }
 
+/// The Twin trajectory that every accepted solver change reproduces.
+///
+/// See `docs/SOLVER_EXPERIMENTS.md` for the configuration this belongs to and
+/// for the rejected experiments that moved it.
+const ACCEPTED_TWIN_OUTPUT_HASH: &str = "ae73533fafbdafdb";
+
+/// Switches the accepted configuration is defined by, and the values it fixes
+/// them at. A missing or different value means the run is something else and
+/// the hash does not apply to it.
+const ACCEPTED_TWIN_SWITCHES: [(&str, Option<&str>); 5] = [
+    ("GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION", None),
+    ("GAINSTAGEFX_TEST_JACOBIAN_INIT13", None),
+    (
+        "GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_RATIO",
+        Some("3"),
+    ),
+    (
+        "GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_STEP",
+        Some("0"),
+    ),
+    ("GAINSTAGEFX_TEST_JACOBIAN_INIT13_FUSE_FIRST_NEWTON", None),
+];
+
+/// Switches that change how fast the solve runs but not what it computes, so
+/// the hash check stays armed while they are set. Anything else beginning
+/// `GAINSTAGEFX_TEST_` is an experiment and disarms it.
+const TRAJECTORY_NEUTRAL_SWITCHES: [&str; 1] = ["GAINSTAGEFX_TEST_DISABLE_WIDE_KERNELS"];
+
+/// `None` when this run is the accepted configuration and the hash applies;
+/// otherwise why it does not.
+fn accepted_twin_trace_configuration(frames: usize) -> Option<String> {
+    if frames != 384_000 {
+        return Some(format!("frames={frames} rather than 384000"));
+    }
+    if std::env::var_os("GAINSTAGEFX_ATTACK_PRESET").is_some() {
+        return Some("GAINSTAGEFX_ATTACK_PRESET is set".to_string());
+    }
+    for (name, value) in ACCEPTED_TWIN_SWITCHES {
+        match (std::env::var_os(name), value) {
+            (None, _) => return Some(format!("{name} is not set")),
+            (Some(actual), Some(expected)) if actual != expected => {
+                return Some(format!("{name}={actual:?} rather than {expected}"));
+            }
+            _ => {}
+        }
+    }
+    for (name, _) in std::env::vars_os() {
+        let Some(name) = name.to_str() else { continue };
+        if !name.starts_with("GAINSTAGEFX_TEST_")
+            || ACCEPTED_TWIN_SWITCHES
+                .iter()
+                .any(|(known, _)| *known == name)
+            || TRAJECTORY_NEUTRAL_SWITCHES.contains(&name)
+        {
+            continue;
+        }
+        return Some(format!("{name} is an experiment outside the accepted set"));
+    }
+    None
+}
+
 /// Fast, deterministic solver-only companion to `realtime_recording`.
 ///
 /// It uses the exact same energetic excerpt, trim and 64-sample block size,
@@ -927,6 +988,27 @@ fn twin_realtime_recording_solver_trace() {
             })
     });
     println!("twin_solver_output_hash,fnv1a64={hash:016x},frames={frames}");
+    if let Some(reason) = accepted_twin_trace_configuration(frames) {
+        println!("twin_solver_output_hash,checked=false,reason={reason}");
+    } else {
+        // The whole solver-optimization programme is judged against this
+        // number, and until now it was only printed -- a human compared a hex
+        // string by eye and a changed trajectory could pass unnoticed. Under
+        // the accepted configuration it is now an assertion.
+        //
+        // It also does real work on every A/B run: the timing switches in
+        // `TRAJECTORY_NEUTRAL_SWITCHES` are claimed to be bit-identical, so
+        // leaving the check armed while they are set is what proves the claim
+        // rather than asserting it.
+        assert_eq!(
+            format!("{hash:016x}"),
+            ACCEPTED_TWIN_OUTPUT_HASH,
+            "the Twin deterministic trajectory moved. This is the regression \
+             oracle for every solver change: see docs/SOLVER_EXPERIMENTS.md. \
+             If the change is intended, record why there and update \
+             ACCEPTED_TWIN_OUTPUT_HASH in the same commit"
+        );
+    }
     // Finite containment output is not a solved circuit. Keep all diagnostics
     // above visible, then make solver-health regressions fail the test itself.
     for (stage, health) in [
@@ -1407,7 +1489,7 @@ fn run_realtime_pass(
     ) {
         let control = after.saturating_delta(before);
         println!(
-            "twin_solver_control_profile,solves={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
+            "twin_solver_control_profile,solves={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},jacobian_init_attempts={},jacobian_init_evaluations={},jacobian_init_accepts={},jacobian_init_rejects={},jacobian_init_unavailable={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
             control.solves,
             control.newton_passes,
             control.newton_passes.saturating_sub(control.searched_passes),
@@ -1425,6 +1507,11 @@ fn run_realtime_pass(
             control.ceres_lm_radius_contractions,
             control.ceres_lm_radius_expansions,
             control.ceres_lm_jacobian_reuses,
+            control.jacobian_init_attempts,
+            control.jacobian_init_evaluations,
+            control.jacobian_init_accepts,
+            control.jacobian_init_rejects,
+            control.jacobian_init_unavailable,
             control.backtracks,
             control.fallbacks,
             control.limiter_hold_passes,
@@ -1450,8 +1537,8 @@ fn run_realtime_pass(
         solver_control_slow_blocks.sort_by(|a, b| b.0.total_cmp(&a.0));
         for (cpu_us, block, frames, control) in solver_control_slow_blocks.iter().take(16) {
             println!(
-                "twin_solver_control_tail,block={block},frames={frames},cpu_us={cpu_us:.2},work_units={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
-                control.newton_passes.saturating_add(control.search_trial_evaluations),
+                "twin_solver_control_tail,block={block},frames={frames},cpu_us={cpu_us:.2},work_units={},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},jacobian_init_attempts={},jacobian_init_evaluations={},jacobian_init_accepts={},jacobian_init_rejects={},jacobian_init_unavailable={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={}",
+                control.newton_passes.saturating_add(control.search_trial_evaluations).saturating_add(control.jacobian_init_evaluations),
                 control.newton_passes,
                 control.newton_passes.saturating_sub(control.searched_passes),
                 control.reduced_newton_solves,
@@ -1468,6 +1555,11 @@ fn run_realtime_pass(
                 control.ceres_lm_radius_contractions,
                 control.ceres_lm_radius_expansions,
                 control.ceres_lm_jacobian_reuses,
+                control.jacobian_init_attempts,
+                control.jacobian_init_evaluations,
+                control.jacobian_init_accepts,
+                control.jacobian_init_rejects,
+                control.jacobian_init_unavailable,
                 control.backtracks,
                 control.fallbacks,
                 control.limiter_hold_passes,
@@ -1512,7 +1604,7 @@ fn run_realtime_pass(
             let accepted_lambdas = &sample.accepted_lambdas[..sample.accepted_lambda_count];
             let control = sample.profile;
             println!(
-                "twin_solver_control_sample,solve={},relative_sample={},block={},frame={},work_units={},input={:.17e},last_input={:.17e},earlier_input={:.17e},source_step={:.17e},previous_source_step={:.17e},source_curvature={:.17e},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={},settled={},final_moved={:.17e},last_search_merit={:.17e},accepted_lambdas={:?}",
+                "twin_solver_control_sample,solve={},relative_sample={},block={},frame={},work_units={},input={:.17e},last_input={:.17e},earlier_input={:.17e},source_step={:.17e},previous_source_step={:.17e},source_curvature={:.17e},newton_passes={},plain_passes={},reduced_solves={},full_mna_solves={},searched_passes={},search_trials={},full_accepts={},damped_accepts={},lm_entries={},lm_trials={},lm_accepts={},lm_rejects={},lm_invalid={},lm_contracts={},lm_expands={},lm_jacobian_reuses={},jacobian_init_attempts={},jacobian_init_evaluations={},jacobian_init_accepts={},jacobian_init_rejects={},jacobian_init_unavailable={},backtracks={},fallbacks={},limiter_holds={},limiter_handoffs={},predictor_used={},predictor_suppressed={},predictor_unavailable={},cont_attempts={},cont_midpoints={},cont_successes={},cont_rescues={},cont_source_passes={},cycle_rejections={},restart_attempts={},restart_passes={},pivot_replays={},pivot_learns={},pivot_invalidations={},full_mna_replans={},unsettled={},settled={},final_moved={:.17e},last_search_merit={:.17e},accepted_lambdas={:?}",
                 sample.solve,
                 relative_sample,
                 relative_sample / BLOCK,
@@ -1540,6 +1632,11 @@ fn run_realtime_pass(
                 control.ceres_lm_radius_contractions,
                 control.ceres_lm_radius_expansions,
                 control.ceres_lm_jacobian_reuses,
+                control.jacobian_init_attempts,
+                control.jacobian_init_evaluations,
+                control.jacobian_init_accepts,
+                control.jacobian_init_rejects,
+                control.jacobian_init_unavailable,
                 control.backtracks,
                 control.fallbacks,
                 control.limiter_hold_passes,
@@ -1578,7 +1675,7 @@ fn run_realtime_pass(
     ) {
         let phase = after.saturating_delta(before);
         println!(
-            "twin_power_phase_profile,stamp_calls={},stamp_us={:.2},dense_solve_calls={},dense_solve_us={:.2},recovery_us={:.2},trial_calls={},trial_us={:.2},settled_checks={},settled_us={:.2}",
+            "twin_power_phase_profile,stamp_calls={},stamp_us={:.2},dense_solve_calls={},dense_solve_us={:.2},recovery_us={:.2},trial_calls={},trial_us={:.2},settled_checks={},settled_us={:.2},jacobian_init_baseline_residual_calls={},jacobian_init_baseline_residual_us={:.2},jacobian_init_previous_j_solve_calls={},jacobian_init_previous_j_solve_us={:.2},jacobian_init_candidate_recovery_calls={},jacobian_init_candidate_recovery_us={:.2},jacobian_init_candidate_residual_calls={},jacobian_init_candidate_residual_us={:.2},jacobian_init_accepts={},jacobian_init_rejects={}",
             phase.reduced_stamp_calls,
             phase.reduced_stamp_ns as f64 / 1000.0,
             phase.reduced_solve_calls,
@@ -1588,11 +1685,21 @@ fn run_realtime_pass(
             phase.trial_residual_ns as f64 / 1000.0,
             phase.settled_checks,
             phase.settled_check_ns as f64 / 1000.0,
+            phase.jacobian_init_baseline_residual_calls,
+            phase.jacobian_init_baseline_residual_ns as f64 / 1000.0,
+            phase.jacobian_init_previous_j_solve_calls,
+            phase.jacobian_init_previous_j_solve_ns as f64 / 1000.0,
+            phase.jacobian_init_candidate_recovery_calls,
+            phase.jacobian_init_candidate_recovery_ns as f64 / 1000.0,
+            phase.jacobian_init_candidate_residual_calls,
+            phase.jacobian_init_candidate_residual_ns as f64 / 1000.0,
+            phase.jacobian_init_accepts,
+            phase.jacobian_init_rejects,
         );
         phase_slow_blocks.sort_by(|a, b| b.0.total_cmp(&a.0));
         for (cpu_us, block, phase) in phase_slow_blocks.iter().take(16) {
             println!(
-                "twin_power_phase_tail,block={block},cpu_us={cpu_us:.2},stamp_calls={},stamp_us={:.2},dense_solve_calls={},dense_solve_us={:.2},recovery_us={:.2},trial_calls={},trial_us={:.2},settled_checks={},settled_us={:.2}",
+                "twin_power_phase_tail,block={block},cpu_us={cpu_us:.2},stamp_calls={},stamp_us={:.2},dense_solve_calls={},dense_solve_us={:.2},recovery_us={:.2},trial_calls={},trial_us={:.2},settled_checks={},settled_us={:.2},jacobian_init_baseline_residual_calls={},jacobian_init_baseline_residual_us={:.2},jacobian_init_previous_j_solve_calls={},jacobian_init_previous_j_solve_us={:.2},jacobian_init_candidate_recovery_calls={},jacobian_init_candidate_recovery_us={:.2},jacobian_init_candidate_residual_calls={},jacobian_init_candidate_residual_us={:.2},jacobian_init_accepts={},jacobian_init_rejects={}",
                 phase.reduced_stamp_calls,
                 phase.reduced_stamp_ns as f64 / 1000.0,
                 phase.reduced_solve_calls,
@@ -1602,6 +1709,16 @@ fn run_realtime_pass(
                 phase.trial_residual_ns as f64 / 1000.0,
                 phase.settled_checks,
                 phase.settled_check_ns as f64 / 1000.0,
+                phase.jacobian_init_baseline_residual_calls,
+                phase.jacobian_init_baseline_residual_ns as f64 / 1000.0,
+                phase.jacobian_init_previous_j_solve_calls,
+                phase.jacobian_init_previous_j_solve_ns as f64 / 1000.0,
+                phase.jacobian_init_candidate_recovery_calls,
+                phase.jacobian_init_candidate_recovery_ns as f64 / 1000.0,
+                phase.jacobian_init_candidate_residual_calls,
+                phase.jacobian_init_candidate_residual_ns as f64 / 1000.0,
+                phase.jacobian_init_accepts,
+                phase.jacobian_init_rejects,
             );
         }
     }
