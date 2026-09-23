@@ -8,6 +8,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# If another commit is pushed to the same branch while CI is still running,
+# stop wasting runner time compiling the obsolete commit.
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 defaults:
   run:
     # The default Windows shell does not do brace expansion.
@@ -16,24 +22,57 @@ defaults:
 env:
   PACKAGE: gainstagefx
   PLUGIN: GainStageFx
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libgl-dev libjack-dev \
-            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
-            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --release
-      # --workspace so the installer that ships to users is linted too.
-      - run: cargo clippy --release --workspace --all-targets -- -D warnings
+          sudo apt-get install -y \
+            libasound2-dev \
+            libgl-dev \
+            libjack-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-dri2-0-dev \
+            libxcb-icccm4-dev \
+            libxcursor-dev \
+            libxkbcommon-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test-ci
+          cache-on-failure: true
+
+      # Do not use the shipping release profile here.
+      #
+      # GainStageFx is now large enough that opt-level=3 + Thin LTO makes
+      # LLVM spend an enormous amount of time optimizing the test binaries.
+      #
+      # The ci profile is still optimized, so DSP tests are representative,
+      # but it deliberately disables LTO and uses more codegen units.
+      - name: Run tests
+        run: cargo test --profile ci --workspace
+
+      # Clippy does not need release/LTO code generation. Running it without
+      # --release avoids recompiling the entire DSP graph at maximum
+      # optimization just to perform linting.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
       - name: Third party notices are up to date
         run: |
           python3 tools/third-party-notices.py
@@ -41,84 +80,130 @@ jobs:
 
   package:
     name: Package (${{ matrix.name }})
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: linux, os: ubuntu-22.04 }
-          - { name: macos-universal, os: macos-latest }
-          - { name: windows, os: windows-latest }
+          - name: linux
+            os: ubuntu-22.04
+
+          - name: macos-universal
+            os: macos-latest
+
+          - name: windows
+            os: windows-latest
+
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install Linux dependencies
         if: startsWith(matrix.os, 'ubuntu')
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libgl-dev libjack-dev \
-            libx11-xcb-dev libxcb1-dev libxcb-dri2-0-dev libxcb-icccm4-dev \
-            libxcursor-dev libxkbcommon-dev libxcb-shape0-dev libxcb-xfixes0-dev
+          sudo apt-get install -y \
+            libasound2-dev \
+            libgl-dev \
+            libjack-dev \
+            libx11-xcb-dev \
+            libxcb1-dev \
+            libxcb-dri2-0-dev \
+            libxcb-icccm4-dev \
+            libxcursor-dev \
+            libxkbcommon-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
           # A universal macOS binary is lipo'd together from both slices, so
-          # both have to be installed even though the runner is one of them.
+          # both targets have to be installed.
           targets: ${{ startsWith(matrix.os, 'macos') && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
-      - uses: Swatinem/rust-cache@v2
+
+      # Each platform gets an independent cache. In particular, do not mix
+      # native Linux objects with Windows or either macOS architecture.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.name }}
+          key: package-${{ matrix.name }}
+          cache-on-failure: true
 
       - name: Test the Windows window backend
         if: startsWith(matrix.os, 'windows')
-        run: cargo test --manifest-path vendor/baseview/Cargo.toml --features opengl --lib -- --test-threads=1
+        run: |
+          cargo test \
+            --manifest-path vendor/baseview/Cargo.toml \
+            --features opengl \
+            --lib \
+            -- --test-threads=1
 
-      - name: Build the installer
-        # A small dependency free program that copies the bundles into place,
-        # shipped in the Windows archive as install.exe.
+      - name: Build the Windows installer
         if: startsWith(matrix.os, 'windows')
         run: cargo build --release -p installer
 
+      # Actual binaries shipped to users still use the real release profile:
+      #
+      #   opt-level = 3
+      #   lto = "thin"
+      #
+      # We only removed expensive release optimization from CI correctness
+      # tests and Clippy, not from the plugin itself.
       - name: Build the plugin
         run: |
           if [[ '${{ matrix.name }}' == 'macos-universal' ]]; then
-            # Anything older than this cannot run the plugin anyway.
             export MACOSX_DEPLOYMENT_TARGET=10.13
-            # cargo xtask ad-hoc signs the bundles after lipo. That is free and
-            # needs no Apple account, and an arm64 binary will not load at all
-            # without at least an ad-hoc signature.
-            cargo xtask bundle-universal "$PACKAGE" --release
+
+            if [[ '${{ github.ref }}' == refs/tags/v* ]]; then
+              cargo xtask bundle-universal "$PACKAGE" --profile release-lto
+            else
+              cargo xtask bundle-universal "$PACKAGE" --release
+            fi
           else
-            cargo xtask bundle "$PACKAGE" --release
+            if [[ '${{ github.ref }}' == refs/tags/v* ]]; then
+              cargo xtask bundle "$PACKAGE" --profile release-lto
+            else
+              cargo xtask bundle "$PACKAGE" --release
+            fi
           fi
 
       - name: Stage the archive contents
         run: |
           staged="staged/$PLUGIN-${{ matrix.name }}"
           mkdir -p "$staged"
-          # The standalone binary is a development aid, not something to ship.
+
+          # The standalone binary is a development aid and is not shipped.
           rm -rf "target/bundled/$PLUGIN"
+
           cp -R target/bundled/* "$staged/"
-          # The GPL requires the licence to travel with the binaries, and the
-          # permissive licences of the dependencies require their notices.
+
+          # Ship licensing information with every binary package.
           cp LICENSE THIRD-PARTY-NOTICES.md "$staged/"
           cp ".github/readme-${{ runner.os }}.txt" "$staged/README.txt"
+
           case '${{ runner.os }}' in
             Linux)
               cp .github/install-Linux.sh "$staged/install.sh"
               chmod +x "$staged/install.sh"
               ;;
+
             macOS)
               cp .github/install-macOS.command "$staged/Install.command"
               chmod +x "$staged/Install.command"
               ;;
+
             Windows)
               cp target/release/install.exe "$staged/install.exe"
               ;;
           esac
+
+          echo "Staged package:"
           ls -la "$staged"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload package
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.PLUGIN }}-${{ matrix.name }}
           path: staged/${{ env.PLUGIN }}-${{ matrix.name }}
@@ -126,27 +211,50 @@ jobs:
 
   release:
     name: Release
-    needs: [test, package]
+
+    # Never publish a release unless both correctness testing and every
+    # platform package succeeded.
+    needs:
+      - test
+      - package
+
     if: startsWith(github.ref, 'refs/tags/v')
+
     runs-on: ubuntu-22.04
+
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
       - name: Zip each platform
         run: |
           mkdir -p release
+
           for dir in artifacts/*/; do
             name="$(basename "$dir")"
-            # Executability is not preserved through the artifact round trip.
-            chmod +x "$dir/Install.command" "$dir/install.sh" 2>/dev/null || true
-            (cd "$dir" && zip -qr "../../release/$name-${GITHUB_REF_NAME}.zip" .)
+
+            # Executability is not preserved through the GitHub Actions
+            # artifact round trip.
+            chmod +x \
+              "$dir/Install.command" \
+              "$dir/install.sh" \
+              2>/dev/null || true
+
+            (
+              cd "$dir"
+              zip -qr "../../release/$name-${GITHUB_REF_NAME}.zip" .
+            )
           done
-          ls -la release
+
+          echo "Release archives:"
+          ls -lah release
 
       - name: Publish the release
         env:

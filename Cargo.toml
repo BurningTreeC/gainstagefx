@@ -1,6 +1,6 @@
 [package]
 name = "gainstagefx"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2021"
 authors = ["Simon Huber <huber.simon@protonmail.com>"]
 license = "GPL-3.0-or-later"
@@ -35,8 +35,18 @@ serde_json = "1.0"
 [profile.release]
 lto = "thin"
 opt-level = 3
+codegen-units = 16
 strip = "symbols"
 
+# Fast optimized builds for CI correctness testing.
+[profile.ci]
+inherits = "release"
+lto = "off"
+opt-level = 2
+codegen-units = 16
+strip = "none"
+
+# Maximum optimization for exceptional/shipping builds.
 [profile.release-lto]
 inherits = "release"
 lto = "fat"
