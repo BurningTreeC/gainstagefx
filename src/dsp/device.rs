@@ -1494,7 +1494,41 @@ impl Jfet {
     }
 
     /// Drain current for a pair of terminal voltages.
+    /// Drain current, for either polarity across the channel.
+    ///
+    /// **A JFET's channel is symmetric.** There is no junction between the two
+    /// ends: source and drain are the same diffusion, and which one is which is
+    /// decided by the voltage across them, not by the part. Drive the drain
+    /// below the source and the device is the same device with its two ends
+    /// exchanged -- it conducts the other way, gated by what is now the near
+    /// end, which is `vgd`.
+    ///
+    /// This used to return **zero, with zero slope**, for every `vds <= 0`.
+    /// That is wrong twice over. It is wrong physically: an ohmic channel
+    /// conducts in both directions and is how every JFET switch and mixer ever
+    /// built works. And it is a cliff for Newton -- an iterate that steps
+    /// across `vds = 0` lands on a device with no current and no conductance,
+    /// the solve is thrown a long way, and the next pass has to find its way
+    /// back.
+    ///
+    /// Measured on the Jazz 120, whose second 2SK184 is driven hard enough to
+    /// take its drain below its source: 40,760 fallbacks in 9,600 samples
+    /// became **none**, Newton passes fell from 12.05 to 2.58, and the drain
+    /// node stopped answering -23 V on a +27 V single rail -- which was never a
+    /// solution, only what the fallback had left there. That -23 V, converted
+    /// to audio, is the crackle the amplifier was reported for.
     pub fn drain(&self, vgs: f64, vds: f64) -> f64 {
+        if vds < 0.0 {
+            // The ends swap: the far end is now the source, so the gate is
+            // `vgs - vds = vgd` above it, and the current runs the other way.
+            return -self.forward(vgs - vds, -vds);
+        }
+        self.forward(vgs, vds)
+    }
+
+    /// The square law with the drain above the source, which is the only case
+    /// `drain` has to consider once it has oriented the channel.
+    fn forward(&self, vgs: f64, vds: f64) -> f64 {
         let vp = self.spec.pinch_off;
         // Below pinch-off the channel is shut.
         if vgs <= vp || vds <= 0.0 {
@@ -3157,5 +3191,107 @@ mod optimization_tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod jfet_channel_tests {
+    use super::Jfet;
+    use crate::dsp::netlist::JfetSpec;
+
+    /// The 2SK184 of the Jazz 120's two stages, which is where this was found.
+    const SPEC: JfetSpec = JfetSpec::J2SK184;
+
+    fn part() -> Jfet {
+        Jfet::new(0, 1, 2, SPEC)
+    }
+
+    /// The defect, stated as what must not come back.
+    ///
+    /// The channel used to return exactly zero for every `vds <= 0`. A JFET
+    /// with its gate at its source is a resistor of a few hundred ohms and a
+    /// resistor conducts both ways; returning zero there is not an
+    /// approximation, it is a different component.
+    #[test]
+    fn the_channel_conducts_with_the_drain_below_the_source() {
+        let j = part();
+        let back = j.drain(0.0, -0.05);
+        assert!(back < -1e-5, "the channel is shut backwards: {back} A");
+    }
+
+    /// And it conducts *equally* both ways, because there is no junction
+    /// between the two ends: they are the same diffusion. With the gate on the
+    /// source the device is symmetric about the origin to within the small
+    /// asymmetry that moving the far end introduces.
+    #[test]
+    fn the_channel_is_symmetric_about_the_origin() {
+        let j = part();
+        // Not exactly equal, and it should not be: the gate is a different
+        // distance above whichever end is the source, so the two directions
+        // differ by that much and by nothing else. It grows with `vds`, which
+        // is why these are small.
+        for v in [0.005, 0.01, 0.02] {
+            let forward = j.drain(0.0, v);
+            let backward = -j.drain(0.0, -v);
+            let error = (forward - backward).abs() / forward;
+            assert!(error < 0.05, "{v} V: {forward} A against {backward} A");
+        }
+    }
+
+    /// No step at `vds = 0`, which is the property Newton actually needs. The
+    /// old law had one from a finite ohmic current straight to zero, and an
+    /// iterate that landed across it was thrown a long way -- which on the
+    /// Jazz 120 was 40,760 fallbacks in 9,600 samples and a drain node
+    /// answering -23 V on a +27 V single rail.
+    #[test]
+    fn the_law_is_continuous_and_sloped_through_zero() {
+        let j = part();
+        let step = 1e-6;
+        let below = j.drain(0.0, -step);
+        let above = j.drain(0.0, step);
+        assert!(
+            (above - below).abs() < 1e-7,
+            "a step at the origin: {below} to {above}"
+        );
+        // And the slope through it is the channel's conductance, not zero.
+        let slope = (above - below) / (2.0 * step);
+        assert!(slope > 1e-4, "no conductance through the origin: {slope} S");
+    }
+
+    /// Below pinch-off the channel is shut in *both* directions. Symmetry must
+    /// not have opened a path that a cut-off device does not have.
+    #[test]
+    fn a_pinched_off_channel_stays_shut_both_ways() {
+        let j = part();
+        let vp = SPEC.pinch_off;
+        for vds in [-2.0f64, -0.5, 0.5, 2.0] {
+            // Gate a volt below pinch-off, relative to whichever end is the
+            // source -- so the *more* negative of the two gate voltages.
+            let vgs = vp - 1.0 + vds.min(0.0);
+            let id = j.drain(vgs, vds);
+            assert!(id.abs() < 1e-9, "vds {vds}: {id} A through a shut channel");
+        }
+    }
+
+    /// The forward region is untouched. Every JFET circuit in the catalogue
+    /// works here, so this is the check that the fix costs nothing where the
+    /// old law was right.
+    #[test]
+    fn the_saturated_square_law_is_unchanged() {
+        let j = part();
+        // Well past the knee, gate on the source: the sheet's Idss.
+        let id = j.drain(0.0, 5.0);
+        assert!(
+            (id - SPEC.idss).abs() < 1e-12,
+            "{id} A against Idss {}",
+            SPEC.idss
+        );
+        // And the square law at half pinch-off is a quarter of it.
+        let half = j.drain(SPEC.pinch_off / 2.0, 5.0);
+        assert!(
+            (half - SPEC.idss * 0.25).abs() < 1e-12,
+            "{half} A against {}",
+            SPEC.idss * 0.25
+        );
     }
 }

@@ -327,3 +327,78 @@ fn the_volume_is_a_real_monotonic_level_control() {
         "the Volume covers only {span:.1} dB end to end"
     );
 }
+
+/// CH-1 runs from one supply, so **every node in it is between ground and
+/// that supply** and the channel clips when it runs out of either. That is not
+/// a modelling preference, it is what a single-rail circuit can do.
+///
+/// It is checked here because it was not true. The second 2SK184 is driven
+/// hard enough to take its drain below its source, and the JFET law returned
+/// zero current with zero slope for any `vds <= 0` -- a cliff, and physically
+/// wrong, because a JFET channel is symmetric and conducts both ways. The
+/// solve fell off it: 40,760 fallbacks in 9,600 samples, twelve Newton passes
+/// a sample, and `q1_d` answering **-23 V on a +27 V rail**. That number is
+/// not a solution; it is what the fallback left behind, and converted to audio
+/// it is the crackle the amplifier was reported for.
+///
+/// See `Jfet::drain` and `examples/stutter.rs`.
+#[test]
+fn hard_driven_the_channel_stays_inside_its_own_supply() {
+    // The channel's supply, which `docs/models/jazz_120.md` derives from the
+    // MTZ-30B zener and the DC solve puts at 27.2 V. A volt of margin, because
+    // this is a bound on physics and not a fit.
+    const SUPPLY: f64 = 27.2 + 1.0;
+    for at in [HEAD_OUT, "q1_d"] {
+        for volts in [0.122, 0.488, 0.976, 2.0] {
+            let mut s =
+                Simulation::new(jazz120::tap(SOURCE, LOAD, at).expect("JC-120 builds"), RATE);
+            for control in [TREBLE, MIDDLE, BASS] {
+                s.set_control(control, 0.5);
+            }
+            s.set_control(VOLUME, 0.55);
+            s.find_operating_point();
+            let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+            for k in 0..(RATE as usize / 10) {
+                let t = k as f64 / RATE;
+                let y = s.process(volts * (std::f64::consts::TAU * 220.0 * t).sin());
+                // Past the coupling capacitors' settling.
+                if k > RATE as usize / 20 {
+                    lo = lo.min(y);
+                    hi = hi.max(y);
+                }
+            }
+            assert!(
+                lo > -1.0 && hi < SUPPLY,
+                "{at} at {volts} V reaches {lo:.2} .. {hi:.2} V, outside 0 .. {SUPPLY} V"
+            );
+        }
+    }
+}
+
+/// And the solve that produces it settles. A node inside its rails that took a
+/// fallback to get there is still wrong; this is the other half of the check.
+#[test]
+fn hard_driving_the_channel_does_not_defeat_the_solver() {
+    for volts in [0.488, 0.976, 2.0] {
+        let mut s = Simulation::new(
+            jazz120::tap(SOURCE, LOAD, CHANNEL_OUT).expect("JC-120 builds"),
+            RATE,
+        );
+        for control in [TREBLE, MIDDLE, BASS] {
+            s.set_control(control, 0.5);
+        }
+        s.set_control(VOLUME, 0.55);
+        s.find_operating_point();
+        let before = s.health();
+        let n = RATE as usize / 10;
+        for k in 0..n {
+            let t = k as f64 / RATE;
+            s.process(volts * (std::f64::consts::TAU * 220.0 * t).sin());
+        }
+        let fallbacks = s.health().1 - before.1;
+        assert!(
+            fallbacks < n as u64 / 100,
+            "{volts} V: {fallbacks} fallbacks in {n} samples"
+        );
+    }
+}

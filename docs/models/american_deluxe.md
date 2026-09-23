@@ -341,6 +341,71 @@ to the same `PowerSpec::DELUXE_6V6`, with one preset, *Blackface Normal*.
 Still to build: nothing on this list. See **Open questions** for what remains
 uncertain rather than unbuilt.
 
+## Why this amplifier costs what it costs, 2026-09-23
+
+Reported from playing: it crackles once the input meter passes its middle.
+Measured with `examples/stutter.rs`, one callback at a time, and most of what it
+looked like it was turned out not to be.
+
+**Three hypotheses tested and rejected.**
+
+- *The optical tremolo restamps a resistor every sample.* It does, and it costs
+  nothing measurable: `Blackface Throb` (tremolo on) is **cheaper** than
+  `Blackface Clean` (tremolo off), and `Deluxe Breakup` is cheaper in the tail
+  than `Blackface Deluxe`.
+- *The solve is failing, like the Jazz 120's was.* It is not. Zero fallbacks and
+  zero unsettled samples, driven to 40 V. The stage never fails to converge; it
+  simply needs three Newton passes where the Twin needs two.
+- *The Twin's measured solver settings will transfer.* They do not.
+  `set_late_continuation(true)` is slightly **worse** (3.377 to 3.478 µs a
+  sample) and `set_backtracks(4)` is neutral. Recorded so it is not retried.
+
+**Where the time goes**, by removing one block at a time at -6 dBFS:
+
+| block | Blackface Deluxe | Blackface Clean (Twin) |
+|---|---:|---:|
+| power stage | **251 µs** | 187 µs |
+| everything ahead of it | 284 µs | 244 µs |
+| reverb | 30 µs | 33 µs |
+| acoustics | 35 µs | 29 µs |
+| tone section | 26 µs | 35 µs |
+
+The power stage is 47 % of the callback in both, and the whole of the difference
+is the **GZ34**:
+
+| Deluxe power stage | boundary | Newton passes | µs a sample |
+|---|---:|---:|---:|
+| with the rectifier | 16 of 31 | 3.06 | 3.39 |
+| rectifier removed | 13 of 30 | 2.19 | **1.90** |
+
+**Forty-four per cent of that block is the rectifier, and it stays.** It is the
+sag, and the sag is what this amplifier is. Its anode node cannot be eliminated
+either: a `supply` must carry finite series resistance, so the rectifier's anode
+is always an unknown of its own. The gain circuit's three extra boundary nodes
+over the Twin's are the **second channel**, which this model carries on purpose
+-- its shared bias current and its load on the mixer node are real rather than
+guessed -- and that is fidelity, not waste.
+
+So there is nothing here to remove. What remains is solver architecture: a
+separate small nonlinear block for the rectifier, or a lower rate for the supply
+loop, which is a 120 Hz phenomenon behind 16 µF. Both touch this amplifier's
+character and neither has been attempted.
+
+**What was actually making it crackle** was none of the above. A fresh instance
+defaulted to 2x oversampling while every shipped preset asks for Off, and this
+is the most expensive voice in the catalogue:
+
+| Blackface Deluxe, fresh instance, -6 dBFS | median | worst | missed |
+|---|---:|---:|---:|
+| 2x, the old default | 1,072 us | 1,848 us | **9** |
+| Off, the presets' own setting | 544 us | 1,293 us | **0** |
+
+80 % of a callback as the *median*, before any transient, and `Deluxe Breakup`
+is worse again at 1,150 us and eleven missed. The parameter now
+defaults to Off. As shipped and at every normal playing level the amplifier now
+misses nothing; at a hot 0 dBFS input it misses one callback in 2,250, and the
+headroom above that is thin.
+
 ## Open questions
 
 - **The zero-bias end of the 6V6 fit is low.** About 60 mA at 50 V on the

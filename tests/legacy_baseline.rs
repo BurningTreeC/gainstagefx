@@ -37,6 +37,24 @@
 //! loading, corrected PI/power supply/output stage), so its old frozen samples
 //! are no longer a valid regression oracle either. The 5150 and 73P blocks
 //! remain frozen and are still compared sample for sample.
+//!
+//! **A third exception, 2026-09-23, and it leaves only the 5150 compared.** The
+//! 73P's OUTPUT block -- two BC109C into a TIP3055 and the VTB1148 -- was in
+//! that voice's *calibration* and not in its *path*: `Chain` built its output
+//! stages from `Gain::power_stage`, which can only name a valve `PowerSpec`,
+//! while `examples/calibrate` has always used `build_power`, which knows about
+//! the blocks that are not one. So the make-up table took out a gain the
+//! rendered signal never had, and what this fixture froze was an incomplete
+//! 73P: the PRE blocks alone. Putting the block in the path changes the voice,
+//! which is the correction, not a regression.
+//!
+//! That is a real loss of coverage and it is not disguised: of the four voices
+//! here, three are now excluded and only the 5150 is still compared sample for
+//! sample. The fixture is worth less than it was. What it still does is guard
+//! the one untouched voice and the solver's stability budget across all four,
+//! and the right way to restore the rest is a fresh frozen capture of the
+//! corrected circuits -- a new fixture, deliberately taken, not a quiet
+//! regeneration of this one.
 use gainstagefx::voice::{Chain, Gain, Settings, Tone};
 use std::f64::consts::TAU;
 
@@ -152,14 +170,15 @@ fn legacy_matched_output_is_preserved() {
         "the settled mask is the wrong length"
     );
 
-    let guarded_runs = settled.len() * 2 / VOICES.len();
+    // One of the four voices is still compared; see the header.
+    let guarded_runs = settled.len() / VOICES.len();
     let fell_back = settled
         .iter()
         .zip(&captured_settled)
         .enumerate()
         .filter(|(run, _)| {
             let voice = VOICES[(*run / (4 * 5)) % VOICES.len()];
-            !matches!(voice, Gain::Boogie | Gain::Twin)
+            !matches!(voice, Gain::Boogie | Gain::Twin | Gain::Neve)
         })
         .filter(|(_, (now, then))| !**now || **then == 0)
         .count();
@@ -177,10 +196,11 @@ fn legacy_matched_output_is_preserved() {
 
     for (index, (&actual, bytes)) in actual.iter().zip(expected_samples).enumerate() {
         let voice = VOICES[(index / BLOCK) % VOICES.len()];
-        // These two voices were deliberately redesigned after this fixture was
+        // These three voices were deliberately changed after this fixture was
         // captured, so their historical samples are not valid regression
-        // references. Keep the fixture guarding the untouched 5150 and 73P.
-        if matches!(voice, Gain::Boogie | Gain::Twin) {
+        // references. See the exceptions in the header. The 5150 is untouched
+        // and is what the fixture still guards.
+        if matches!(voice, Gain::Boogie | Gain::Twin | Gain::Neve) {
             continue;
         }
         // A run the solver did not settle is not reproducible on another
@@ -210,7 +230,7 @@ fn legacy_matched_output_is_preserved() {
         (error / energy.max(1e-30)).sqrt(),
         guarded_runs,
     );
-    let guarded_samples = actual.len() * 2 / VOICES.len();
+    let guarded_samples = actual.len() / VOICES.len();
     assert!(
         compared > guarded_samples * 3 / 4,
         "only {compared} of {guarded_samples} guarded 5150/73P samples were comparable; too few for a useful regression guard",

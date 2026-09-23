@@ -89,6 +89,8 @@ pub struct Preset {
     pub reverb: f32,
     pub speed: f32,
     pub intensity: f32,
+    /// The Jazz 120's chorus, SW3 OFF..CHORUS. Ignored by every other circuit.
+    pub chorus: f32,
     pub input_trim: f32,
     pub output_trim: f32,
     pub mix: f32,
@@ -162,6 +164,7 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,
+        chorus: 0.0,
         input_trim: 0.0,
         output_trim: 0.0,
         mix: 1.0,
@@ -733,13 +736,25 @@ pub const PRESETS: &[Preset] = &[
     // it has far more authority than a Fender's, which is why Bass and
     // Treble are nearer noon here than on the two blackface presets.
     //
-    // No power stage: the JC-120's two 60 W transistor amplifiers are not
-    // built yet, so Matched resolves to nothing and the channel hands
-    // straight over. The cabinet is the nearest open-back 2x12 and a ceramic
+    // Matched resolves to the amplifier's own 60 W complementary transistor
+    // output stage, which is in the path with the speaker's impedance solved
+    // inside it. The cabinet is the nearest open-back 2x12 and a ceramic
     // 12 in it; the Roland 30-103D is APPROXIMATED by the C12N until its own
     // driver is measured. See docs/models/jazz_120.md.
     Preset {
-        drive: 0.55,
+        // Where the amplifier is clean, which is the whole of its reputation
+        // and was not where this preset sat. Measured: 1.6 % distortion here
+        // and effectively all of it second harmonic -- the two JFET stages'
+        // own colour -- against **29 %** at the 0.55 this used to carry. That
+        // 0.55 was chosen while the Drive knob had no authority at all: the
+        // drive-dependent make-up cancelled VR1 almost exactly, so the
+        // position looked like a loudness choice rather than the gain choice
+        // it is. See `Gain::drive_is_channel_volume`.
+        //
+        // The knee is at 0.17 and the amplifier is into its rails by 0.20.
+        // Everything above that is still there to be turned up to, and now it
+        // gets louder as well as dirtier, which is what the pot does.
+        drive: 0.16,
         circuit: Circuit::Jazz120,
         tone: ToneStack::Off,
         // BRI off, which is how Roland's own test points are taken and how
@@ -758,11 +773,47 @@ pub const PRESETS: &[Preset] = &[
         mic_b_position: 0.5,
         mic_b_distance: 0.25,
         mic_blend: 0.25,
-        // The other direction: no power stage behind this one, so the chain
-        // loses what every valve amplifier here gains. Measured, not guessed.
-        output_trim: 4.0,
+        // Measured by `examples/presetlevel`, with the amplifier's own 60 W
+        // output stage in the path. Re-measured 2026-09-23 after the Drive
+        // knob stopped being cancelled by the make-up: the preset now sits
+        // where the amplifier is clean, which is quieter, so it needs more.
+        output_trim: 6.0,
         oversampling: Oversampling::Off,
+        // SW3 in its OFF position. The chorus is the next preset down: this
+        // one is the channel, and a clean amplifier that always chorused
+        // would be an amplifier with a control missing.
         ..base("Amplifier", "Jazz Clean")
+    },
+    // The same amplifier with SW3 in CHORUS -- which is the sound the JC-120
+    // is actually known for, and the reason it is stereo. One of the two 60 W
+    // amplifiers and its 12 in carry the bucket brigade's output and the
+    // other carries the dry; the width is two speakers, not a mix control.
+    //
+    // It needs a stereo bus to be heard: on a mono source duplicated across
+    // one, which is how a guitar arrives, the chain owns both sides and the
+    // split lands. That is the same condition the microphone pans already
+    // carry. Level is Jazz Clean's, and it is the same number because the
+    // left output is the dry side untouched.
+    Preset {
+        drive: 0.16,
+        circuit: Circuit::Jazz120,
+        tone: ToneStack::Off,
+        twin_bright: false,
+        bass: 0.5,
+        mid: 0.5,
+        treble: 0.5,
+        chorus: 1.0,
+        cab_model: CabModel::AmericanOpen212,
+        speaker: SpeakerModel::AmericanCeramic,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.05,
+        mic_b: MicModel::Ribbon121,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.25,
+        mic_blend: 0.25,
+        output_trim: 6.0,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Jazz Chorus")
     },
     // The AB763's other channel, which is the amplifier with everything taken
     // off it: no bright capacitor across the Volume, no reverb, no tremolo.
@@ -1580,6 +1631,7 @@ impl Preset {
             reverb: self.reverb as f64,
             speed: self.speed as f64,
             intensity: self.intensity as f64,
+            chorus: self.chorus as f64,
             oversampling: self.oversampling.factor(),
         }
     }
@@ -1592,7 +1644,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 54] {
+    pub fn dials(&self) -> [(&'static str, f32); 55] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1648,6 +1700,7 @@ impl Preset {
             ("reverb", self.reverb),
             ("speed", self.speed),
             ("intensity", self.intensity),
+            ("chorus", self.chorus),
             ("mix", self.mix),
             ("out_trim", self.output_trim),
             ("oversampling", self.oversampling.to_index() as f32),
@@ -1940,6 +1993,11 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     for id in ["pedal_tone_b", "pedal_tone_c", "pedal_tone_d", "tone_sweep"] {
         preset.values.entry(id.into()).or_insert(0.5);
     }
+    // The Jazz 120's chorus arrived with that amplifier. Every preset saved
+    // before it was written for a circuit that has no chorus, so OFF is both
+    // the amplifier's own default and the only value that leaves an old
+    // preset sounding the way it did.
+    preset.values.entry("chorus".into()).or_insert(0.0);
     // Microphone panning arrived after these presets were written. Centre is
     // 0.5 normalised on a -1..+1 range, and centre is what the plugin did
     // before the controls existed, so an old preset sounds the same.

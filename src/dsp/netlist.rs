@@ -318,6 +318,18 @@ impl BipolarSpec {
         reverse_beta: 4.0,
         early: 80.0,
     };
+    /// The 2SC2229, O rank: the voltage amplifier stage of a JC-120's power
+    /// amplifier. A 160 V part where the 2SC1815 above is a 50 V one, which is
+    /// why it is there -- a VAS swinging between +-40 V rails needs the
+    /// breakdown. WIDELY REPORTED ranks; the O grade's 70-140 taken at its
+    /// middle. Beta matters here rather than being a detail: it sets how hard
+    /// this stage loads the differential pair's collector.
+    pub const NPN_2SC2229_O: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-14,
+        forward_beta: 100.0,
+        reverse_beta: 3.0,
+        early: 100.0,
+    };
     /// The output pair, 2SC4386 and 2SA1671. Power transistors: a large
     /// saturation current and a beta of about a hundred, which is what holds
     /// the drivers' current where the 0.33 ohm emitter resistors need it.

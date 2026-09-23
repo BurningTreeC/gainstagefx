@@ -56,6 +56,11 @@ fn every_control_reaches_the_circuit() {
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,
+        // Off, and not in the `moved` table below: this base is a Distortion,
+        // which has no chorus, so the knob is meant to reach nothing here --
+        // `tests/chorus.rs` is where it is proved to reach the Jazz 120 and
+        // proved not to reach anything else.
+        chorus: 0.0,
         gain: Gain::Distortion,
         diode: Diode::Silicon,
         amplifier: Amplifier::Jfet,

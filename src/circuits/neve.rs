@@ -84,6 +84,7 @@
 //! in for the iron; the 14 dB of transistor gain in front of it does not, and
 //! its clipping behaviour is therefore missing from this voice.
 
+use crate::acoustics::speaker::{self, LoadSlots, LoadValues};
 use crate::dsp::netlist::{BipolarSpec, Circuit, CoreSpec, Fault, Netlist, Taper};
 
 /// The gain-setting resistance on PRE 2's GAIN pin, as a control.
@@ -386,6 +387,27 @@ pub fn output(source: f64, load: f64) -> Result<Circuit, Fault> {
 /// The same block brought out at a chosen node, for measuring one stage at a
 /// time.
 pub fn output_tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
+    output_netlist(source, load).build(at)
+}
+
+/// The block working into a loudspeaker instead of a line.
+///
+/// A microphone preamplifier's line driver is not a power amplifier, and this
+/// is not a combination the 73P was built for -- but the panel allows any
+/// circuit to be put in front of any cabinet, and what the VTB1148's secondary
+/// does into eight ohms is a fact about the transformer rather than a licence
+/// to leave the block out of the path. Which is what used to happen: the 73P
+/// had no `PowerModel`, so with a speaker selected its output block was
+/// skipped entirely while its calibration still counted it.
+pub fn output_with_speaker(source: f64, load: &LoadValues) -> Result<(Circuit, LoadSlots), Fault> {
+    // Zero for the line load, so the only thing across the secondary is R43,
+    // C26 and the driver.
+    let mut net = output_netlist(source, 0.0);
+    let slots = speaker::stamp(&mut net, "spk", load);
+    Ok((net.build(speaker::MOTIONAL)?, slots))
+}
+
+fn output_netlist(source: f64, load: f64) -> Netlist {
     let mut net = Netlist::new("Neve 73P output");
     // Ten ohms, not the hundred the PRE blocks feed through. This block draws
     // nearly forty milliamps where they draw a fraction of one, and a hundred
@@ -469,10 +491,14 @@ pub fn output_tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .transformer("w", "n", "sec", "gnd", OUTPUT_RATIO)
         .inductor("sec", "spk", LEAKAGE)
         .resistor("spk", "gnd", 1_500.0) // R43
-        .capacitor("spk", "gnd", 0.01e-6) // C26
-        .resistor("spk", "gnd", load);
+        .capacitor("spk", "gnd", 0.01e-6); // C26
+                                           // The line load, where there is one. Zero means a driver is stamped here
+                                           // instead; see `output_with_speaker`.
+    if load > 0.0 {
+        net.resistor("spk", "gnd", load);
+    }
 
-    net.build(at)
+    net
 }
 
 /// Primary volts per secondary volt.

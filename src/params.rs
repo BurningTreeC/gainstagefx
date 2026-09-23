@@ -1173,6 +1173,13 @@ pub struct GainStageParams {
     #[id = "intensity"]
     pub intensity: FloatParam,
 
+    // --- 4c The Jazz 120's chorus ----------------------------------------
+    /// SW3's OFF..CHORUS. Zero is both power amplifiers dry, one is the
+    /// second one carrying the bucket brigade. Greyed for every circuit
+    /// without a chorus. See `Gain::has_chorus`.
+    #[id = "chorus"]
+    pub chorus: FloatParam,
+
     // --- 5 Cabinet -------------------------------------------------------
     #[id = "cabinet"]
     pub cabinet: EnumParam<Cabinet>,
@@ -1402,6 +1409,11 @@ impl Default for GainStageParams {
             speed: position("Speed", 0.4),
             intensity: position("Intensity", 0.0),
 
+            // Off by default, for the same reason Reverb is: a chorus is a
+            // choice rather than a starting point, and it is the one position
+            // SW3 has that the amplifier ships in.
+            chorus: position("Chorus", 0.0),
+
             cabinet: EnumParam::new("Cabinet", Cabinet::Off),
             // Legacy by default: an instance, like an old session, starts on the
             // resistor-loaded path it always had. See `filter_state`.
@@ -1424,7 +1436,24 @@ impl Default for GainStageParams {
             mix: position("Mix", 1.0),
             output_trim: decibels("Output", 24.0),
 
-            oversampling: EnumParam::new("Oversampling", Oversampling::Two),
+            // Off, which is where every shipped preset already sits and where
+            // the modelled circuits were pinned when they were calibrated.
+            //
+            // This was `Two`, and the disagreement cost real callbacks. A
+            // player who inserts the plugin and picks an amplifier without
+            // loading a preset got 2x. Measured on the American Deluxe, the
+            // most expensive voice in the catalogue, at a -6 dBFS input: a
+            // **median** of 1072 us against a 1333 us callback -- 80 % before
+            // any transient -- and nine missed callbacks in three seconds of
+            // plucked attacks. At Off, 544 us and none. Every voice but the
+            // Deluxe's Normal channel misses at 2x at that level.
+            // See `examples/stutter.rs`, which prints the whole comparison.
+            //
+            // The control still goes up, and `MODELLED_MAX_OVERSAMPLING` still
+            // caps what a modelled circuit will actually use. What changed is
+            // that the amplifier no longer starts somewhere its own presets
+            // never put it.
+            oversampling: EnumParam::new("Oversampling", Oversampling::Off),
         }
     }
 }

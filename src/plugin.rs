@@ -691,6 +691,7 @@ impl Plugin for GainStageFx {
             reverb: self.params.reverb.smoothed.next_step(samples) as f64,
             speed: self.params.speed.smoothed.next_step(samples) as f64,
             intensity: self.params.intensity.smoothed.next_step(samples) as f64,
+            chorus: self.params.chorus.smoothed.next_step(samples) as f64,
             oversampling: oversampling.factor(),
         };
 

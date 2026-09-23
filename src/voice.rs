@@ -28,10 +28,11 @@ use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerPr
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, deluxe, distortion_plus,
-    dr103, evh5150, heavy_metal, iron, jazz120, markiic, metal_zone, neve, plexi, power, preamp,
-    rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    dr103, evh5150, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone, neve, plexi,
+    power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
+use crate::dsp::bbd::Bbd;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::Oversampler;
 use crate::dsp::spring::Tank;
@@ -656,6 +657,45 @@ impl Gain {
         self.ab763().is_some()
     }
 
+    /// Whether this voice's Drive parameter **is** the amplifier's own channel
+    /// Volume control, modelled in the netlist, rather than a gain control
+    /// ahead of the distortion.
+    ///
+    /// Where it is, the drive-dependent make-up must not be applied. The
+    /// make-up curve is measured by `examples/calibrate` sweeping this very
+    /// control, so applying it back cancels the control almost exactly: the
+    /// guitar stays near one loudness while the make-up swings tens of
+    /// decibels end to end, and the large boost at the bottom of the travel
+    /// exaggerates tremolo, noise and switching transients. `set_drive` freezes
+    /// the conversion at `CHANNEL_VOLUME_CALIBRATION_REFERENCE` for these and
+    /// lets the modelled pot decide the level, as the hardware does.
+    ///
+    /// Both AB763s and the Jazz 120. The Jazz 120 was missing here until
+    /// 2026-09-23 and the symptom was concrete: the make-up cancelled VR1, so
+    /// turning Drive down did not quieten the amplifier and did not stop it
+    /// driving its own power stage 3.7 times past full output. That is the
+    /// same shape of defect as `power_stage` against `build_power` -- one
+    /// question with two answers, and the amplifier caught between them.
+    ///
+    /// The Brit 800, Plexi, AC30 and DR103 also put Drive on a Volume pot and
+    /// are deliberately **not** here. Their make-up curves are what their
+    /// shipped presets were trimmed against, so moving them is a separate,
+    /// deliberate change with its own re-trimming, not a tidy-up to fold into
+    /// this one.
+    pub fn drive_is_channel_volume(self) -> bool {
+        self.ab763().is_some() || self == Gain::Jazz120
+    }
+
+    /// Whether this voice has a bucket-brigade chorus of its own.
+    ///
+    /// Only the Jazz 120 does, and on that amplifier it is not an effect hung
+    /// on the end: `CN6` carries the delayed signal to one of the two power
+    /// amplifiers and its 12", and the other gets the dry. See
+    /// `Chain::process` for where the split is taken and why.
+    pub const fn has_chorus(self) -> bool {
+        matches!(self, Gain::Jazz120)
+    }
+
     pub const fn variants(self) -> usize {
         if self.has_diodes() || self.has_amplifier() {
             3
@@ -923,10 +963,18 @@ pub enum PowerModel {
     Recto6L6Tube,
     /// The AB763 Deluxe's two 6V6GT behind a GZ34.
     AmericanDeluxe6V6,
+    /// The JC-120's 60 W transistor amplifier, and the first output stage here
+    /// that is not a valve one. See `circuits::jc120_power`.
+    Jazz120SS,
+    /// The 73P's OUTPUT block: two BC109C into a TIP3055 and the VTB1148. Not
+    /// a power amplifier at all -- it drives a line -- but it is the block
+    /// behind that voice, and a voice's block has to be in its path or its
+    /// calibration is describing something that is not being played.
+    British73Out,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 10] = [
+    pub const ALL: [PowerModel; 12] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -937,10 +985,20 @@ impl PowerModel {
         PowerModel::Recto6L6,
         PowerModel::Recto6L6Tube,
         PowerModel::AmericanDeluxe6V6,
+        PowerModel::Jazz120SS,
+        PowerModel::British73Out,
     ];
 
-    pub fn spec(self) -> &'static power::PowerSpec {
-        match self {
+    /// The valve stage this model is, where it is one.
+    ///
+    /// `None` for the Jazz 120, and that is the point of the option rather
+    /// than an oversight: a `PowerSpec` is a phase inverter, a bias supply and
+    /// an output transformer, and a complementary transistor amplifier has
+    /// none of the three. Every caller has to say what it does about that,
+    /// which is how the two definitions of "the block behind this voice" stop
+    /// drifting apart again.
+    pub fn spec(self) -> Option<&'static power::PowerSpec> {
+        Some(match self {
             Self::Cali6L6 => &power::PowerSpec::MARKIIC,
             Self::American6L6Clean => &power::PowerSpec::TWIN,
             Self::American6L6HighGain => &power::PowerSpec::EVH5150,
@@ -951,6 +1009,31 @@ impl PowerModel {
             Self::Recto6L6 => &power::PowerSpec::RECTO_6L6,
             Self::Recto6L6Tube => &power::PowerSpec::RECTO_6L6_TUBE,
             Self::AmericanDeluxe6V6 => &power::PowerSpec::DELUXE_6V6,
+            Self::Jazz120SS | Self::British73Out => return None,
+        })
+    }
+
+    /// The speaker-loaded circuit for this stage, whatever kind it is. One
+    /// place that knows how each kind is built, rather than a `match` at every
+    /// call site that wants one.
+    fn build_loaded(self, load: &LoadValues) -> Result<(Netlist, speaker::LoadSlots), Fault> {
+        match self.spec() {
+            Some(spec) => power::build_with_speaker(spec, 10_000.0, load),
+            None if self == Self::British73Out => neve::output_with_speaker(LOAD, load),
+            None => jc120_power::build_with_speaker(1_000.0, load),
+        }
+    }
+
+    /// How far this stage's nominal load is from the profile's own impedance,
+    /// so one measured driver can stand for a 4, 8 or 16 ohm one.
+    fn speaker_scale(self) -> f64 {
+        match self.spec() {
+            Some(spec) => power::speaker_scale(spec),
+            // The JC-120 drives one 8 ohm speaker a side, which is the
+            // profile's own impedance; the 73P's transformer is wound for a
+            // line and for no impedance of speaker at all. Both take the
+            // profile as it is.
+            None => 1.0,
         }
     }
 
@@ -966,6 +1049,8 @@ impl PowerModel {
             Self::Recto6L6 => 7,
             Self::Recto6L6Tube => 8,
             Self::AmericanDeluxe6V6 => 9,
+            Self::Jazz120SS => 10,
+            Self::British73Out => 11,
         }
     }
 
@@ -985,6 +1070,8 @@ impl PowerModel {
             // the catalogue. See `EXTRA_POWER_SPECS`.
             Self::Recto6L6Tube => VOICES,
             Self::AmericanDeluxe6V6 => voice_index(Gain::Deluxe, Diode::Silicon, Amplifier::Valve),
+            Self::Jazz120SS => voice_index(Gain::Jazz120, Diode::Silicon, Amplifier::Valve),
+            Self::British73Out => voice_index(Gain::Neve, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -1035,6 +1122,8 @@ impl PowerAmp {
                 Gain::DR103 => Some(PowerModel::DR103EL34),
                 Gain::Recto => Some(PowerModel::Recto6L6),
                 Gain::Deluxe | Gain::DeluxeNormal => Some(PowerModel::AmericanDeluxe6V6),
+                Gain::Jazz120 => Some(PowerModel::Jazz120SS),
+                Gain::Neve => Some(PowerModel::British73Out),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1477,6 +1566,12 @@ pub fn build_power(gain: Gain) -> Option<Result<Netlist, Fault>> {
         // modern input presents; the 73P was designed for six hundred, and
         // R43's 1.5 k across the secondary means the difference is small.
         Gain::Neve => Some(neve::output(LOAD, 10_000.0)),
+        // A complementary transistor amplifier into one 8 ohm speaker. It has
+        // no `PowerSpec` because `PowerSpec` is valve-shaped throughout and
+        // this has no inverter, no grid leaks and no output transformer -- the
+        // same reason the 73P's line driver is its own block. Driven from the
+        // main amplifier board's own follower, so the source is low.
+        Gain::Jazz120 => Some(jc120_power::build(1_000.0, 8.0)),
         _ => gain.power_stage().map(|spec| power::build(spec, 10_000.0)),
     }
 }
@@ -1651,13 +1746,17 @@ pub const IRON_VOLTS: f64 = 96.0;
 /// to be, and because it leaves the top of the travel with somewhere to go.
 pub const IRON_REFERENCE_DRIVE: f64 = 0.75;
 
-/// The AB763 channel Volume position used only to calibrate the Twin's fixed
-/// digital output conversion.  Unlike a generic distortion Drive control, the
-/// Twin's Drive parameter *is* the physical 1 MΩ channel Volume pot, so moving
-/// it must be allowed to change level naturally.  Freezing the post-circuit
-/// make-up here keeps the circuit calibration anchored without cancelling the
-/// knob's real gain law.
-pub const TWIN_VOLUME_CALIBRATION_REFERENCE: f64 = 0.24;
+/// The channel Volume position used to anchor the fixed digital output
+/// conversion of every voice whose Drive parameter *is* a modelled Volume pot.
+///
+/// Unlike a generic distortion Drive control, these knobs must be allowed to
+/// change level naturally. Freezing the post-circuit make-up at one position
+/// keeps the circuit calibration anchored without cancelling the knob's real
+/// gain law. See `Gain::drive_is_channel_volume`.
+///
+/// Named for the Twin until 2026-09-23, when the Jazz 120 joined it and the
+/// name stopped being true.
+pub const CHANNEL_VOLUME_CALIBRATION_REFERENCE: f64 = 0.24;
 
 /// The tone section, which can be out of circuit entirely.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2192,6 +2291,10 @@ pub struct Settings {
     /// Heavy Metal Colour Mix low/high. Ignored by every other circuit.
     pub hm2_colour_lo: f64,
     pub hm2_colour_hi: f64,
+    /// The Jazz 120's bucket-brigade chorus. Zero is the panel's OFF position
+    /// and one is CHORUS -- both speakers dry, or one dry and one delayed.
+    /// Ignored by every other circuit. See `Gain::has_chorus`.
+    pub chorus: f64,
 }
 
 impl Default for Settings {
@@ -2222,6 +2325,7 @@ impl Default for Settings {
             tone_sweep: 0.5,
             hm2_colour_lo: 0.5,
             hm2_colour_hi: 0.5,
+            chorus: 0.0,
         }
     }
 }
@@ -2331,6 +2435,16 @@ pub struct Chain {
     reverb: f64,
     speed: f64,
     intensity: f64,
+    /// The Jazz 120's bucket brigade. Built for every chain for the same
+    /// reason the tank and the tremolo are: `apply` runs on the audio thread
+    /// and may not allocate. It runs whenever the selected voice has one, so
+    /// that turning `chorus` up does not start from a line full of silence.
+    bbd: Bbd,
+    /// The panel's Chorus knob, 0..1. Zero is SW3 OFF.
+    chorus: f64,
+    /// Whether the selected voice has a chorus at all, resolved in `set_voice`
+    /// so `process` does not ask the enum per sample.
+    has_chorus: bool,
     #[cfg(test)]
     twin_level_trace: Option<TwinLevelAccumulator>,
     /// The make-up at the Drive control's reference position, for the iron.
@@ -2496,34 +2610,49 @@ impl Chain {
                                 return Some(Simulation::new(built, rate));
                             }
                             let gain = voice_at(i).0;
+                            // `build_power`, not `power_stage`.
+                            //
+                            // There were two definitions of "the block behind
+                            // this voice" and they disagreed. `power_stage`
+                            // answers with a `PowerSpec`, so it can only ever
+                            // name a valve stage -- but `examples/calibrate`
+                            // has always built the chain with `build_power`,
+                            // which also knows about the blocks that are not
+                            // one: the 73P's line driver and the JC-120's
+                            // transistor amplifier. So those two voices were
+                            // calibrated *with* their output stage and played
+                            // *without* it, and the make-up table then took out
+                            // a gain that was never put in. On the JC-120 that
+                            // is eighteen decibels.
+                            //
+                            // One definition, and it is the one the
+                            // calibration already used.
                             // Studio line output is kept with its preamp independently.
-                            gain.power_stage()
-                                .map(|spec| power::build(spec, 10_000.0))
-                                .map(|built| {
-                                    let mut sim =
-                                        Simulation::new(built.expect("catalogue builds"), rate);
-                                    // The Twin power stage is the one measured circuit where the
-                                    // shortest line-search trials can become a numerical spiral. The
-                                    // 1/16 and 1/32 trials barely move an ordinary solve, then the
-                                    // following Newton pass searches again. Four trials stop at 1/8 and
-                                    // were reference-checked at the same -190..-205 dB error floor,
-                                    // while materially reducing realtime misses.  Do not apply this
-                                    // to the 5150: its solver genuinely needs the shorter steps and
-                                    // the same cap was measured at about -45.7 dB from reference.
-                                    if gain == Gain::Twin {
-                                        sim.set_backtracks(4);
-                                    }
-                                    // Source continuation is deliberately Twin-only. The 5150
-                                    // already settles every measured sample on the proven normal
-                                    // path, and the tight rescue fired only once in 384k samples
-                                    // without rescuing anything. Keeping it disabled there restores
-                                    // the exact pre-continuation hot loop. The Twin, by contrast,
-                                    // measurably benefits from one late midpoint steering step.
-                                    if gain == Gain::Twin {
-                                        sim.set_late_continuation(true);
-                                    }
-                                    sim
-                                })
+                            build_power(gain).map(|built| {
+                                let mut sim =
+                                    Simulation::new(built.expect("catalogue builds"), rate);
+                                // The Twin power stage is the one measured circuit where the
+                                // shortest line-search trials can become a numerical spiral. The
+                                // 1/16 and 1/32 trials barely move an ordinary solve, then the
+                                // following Newton pass searches again. Four trials stop at 1/8 and
+                                // were reference-checked at the same -190..-205 dB error floor,
+                                // while materially reducing realtime misses.  Do not apply this
+                                // to the 5150: its solver genuinely needs the shorter steps and
+                                // the same cap was measured at about -45.7 dB from reference.
+                                if gain == Gain::Twin {
+                                    sim.set_backtracks(4);
+                                }
+                                // Source continuation is deliberately Twin-only. The 5150
+                                // already settles every measured sample on the proven normal
+                                // path, and the tight rescue fired only once in 384k samples
+                                // without rescuing anything. Keeping it disabled there restores
+                                // the exact pre-continuation hot loop. The Twin, by contrast,
+                                // measurably benefits from one late midpoint steering step.
+                                if gain == Gain::Twin {
+                                    sim.set_late_continuation(true);
+                                }
+                                sim
+                            })
                         })
                         .collect()
                 });
@@ -2536,13 +2665,13 @@ impl Chain {
         let loaded = PowerModel::ALL
             .iter()
             .map(|model| {
-                let spec = model.spec();
                 let values = LoadValues::new(
                     &SpeakerProfile::BRIT_V30,
                     &Mounting::BAFFLE,
-                    power::speaker_scale(spec),
+                    model.speaker_scale(),
                 );
-                let (circuit, slots) = power::build_with_speaker(spec, 10_000.0, &values)
+                let (circuit, slots) = model
+                    .build_loaded(&values)
                     .expect("speaker-loaded power builds");
                 let motional = circuit
                     .unknown_named(speaker::MOTIONAL)
@@ -2645,6 +2774,9 @@ impl Chain {
             reverb: 0.0,
             speed: 0.5,
             intensity: 0.0,
+            bbd: Bbd::new(rate),
+            chorus: 0.0,
+            has_chorus: false,
             #[cfg(test)]
             twin_level_trace: std::env::var_os("GAINSTAGEFX_TWIN_LEVEL_TRACE")
                 .map(|_| TwinLevelAccumulator::default()),
@@ -2690,6 +2822,13 @@ impl Chain {
     pub fn set_voice(&mut self, gain: Gain, diode: Diode, amplifier: Amplifier) {
         let index = voice_index(gain, diode, amplifier);
         self.voice = gain;
+        self.has_chorus = gain.has_chorus();
+        if !self.has_chorus {
+            // A knob that is not on the panel for this circuit must not still
+            // be reaching the delay line, the way Reverb used to reach the
+            // Mark's Lead Drive. See `set_reverb_and_tremolo`.
+            self.chorus = 0.0;
+        }
         if index != self.gain {
             self.gain = index;
             if gain.has_reverb_and_tremolo() {
@@ -2702,6 +2841,7 @@ impl Chain {
             self.twin_tank_drive_previous = 0.0;
             self.tank.reset();
             self.tremolo.reset();
+            self.bbd.reset();
             self.gains[index].reset_deferred();
             // And its power stage, for the same reason and more so. A power
             // stage sits at four hundred volts with its output transformer
@@ -2800,8 +2940,7 @@ impl Chain {
             if let Some(profile) = speaker {
                 let mounting = a.mounting();
                 for (model, loaded) in PowerModel::ALL.iter().zip(self.loaded.iter_mut()) {
-                    let values =
-                        LoadValues::new(profile, &mounting, power::speaker_scale(model.spec()));
+                    let values = LoadValues::new(profile, &mounting, model.speaker_scale());
                     loaded.slots.apply(&mut loaded.sim, &values);
                     loaded.sim.reset_deferred();
                 }
@@ -3122,8 +3261,8 @@ impl Chain {
         // Both AB763 amplifiers put their Drive parameter on the physical
         // channel Volume pot, so both keep one fixed calibration conversion and
         // let the modelled pot decide the level, exactly as the hardware does.
-        let make_up_drive = if self.voice.ab763().is_some() {
-            TWIN_VOLUME_CALIBRATION_REFERENCE
+        let make_up_drive = if self.voice.drive_is_channel_volume() {
+            CHANNEL_VOLUME_CALIBRATION_REFERENCE
         } else {
             self.drive
         };
@@ -3145,9 +3284,10 @@ impl Chain {
     /// roughly constant while Drive moves, so anything sitting behind it is
     /// handed about the same level. The Twin is intentionally excluded: its
     /// Drive parameter is the physical channel Volume pot and its make-up is
-    /// fixed at `TWIN_VOLUME_CALIBRATION_REFERENCE`, so Twin Volume is allowed
-    /// to change level like the hardware. The American Deluxe is excluded for
-    /// the same reason: its Drive is its Volume too.
+    /// fixed at `CHANNEL_VOLUME_CALIBRATION_REFERENCE`, so Twin Volume is
+    /// allowed to change level like the hardware. The American Deluxe and the
+    /// Jazz 120 are excluded for the same reason: their Drive is their Volume
+    /// too. See `Gain::drive_is_channel_volume`.
     /// The power stage was moved in front of the make-up for exactly that
     /// reason and the comment there says so; the iron was left behind it and
     /// the same argument was never applied. Reported from a DAW as the Iron
@@ -3308,6 +3448,7 @@ impl Chain {
         }
         self.tremolo.set_rate(rate);
         self.tank = Tank::accutronics(rate);
+        self.bbd.set_rate(rate);
         self.acoustic.set_rate(rate);
     }
 
@@ -3527,6 +3668,7 @@ impl Chain {
             s.hm2_colour_hi,
         );
         self.set_reverb_and_tremolo(s);
+        self.set_chorus(if self.has_chorus { s.chorus } else { 0.0 });
     }
 
     /// What the amplifier is plugged into, as a fraction of its own mains.
@@ -3819,7 +3961,13 @@ impl Chain {
             let (sim, trim) = &mut self.tones[i];
             y = sim.process(y) * *trim;
         }
-        let mut right = if self.radiating && self.want_stereo {
+        // With a chorus in the circuit the stereo field is the amplifier's,
+        // not the microphones'. Two capsules panned apart and a second speaker
+        // carrying a delay are two different pictures of the same cabinet, and
+        // superimposing them is neither; the Jazz Chorus is stereo because it
+        // has two power amplifiers, so that is what wins. The microphones are
+        // still both heard -- `process` is their blend, summed.
+        let mut right = if self.radiating && self.want_stereo && !self.has_chorus {
             let (left, right) = self.acoustic.process_stereo(y);
             y = left;
             right
@@ -3835,6 +3983,30 @@ impl Chain {
                 y = sim.process(y) * *trim;
                 right = y;
             }
+        }
+        // The Jazz Chorus splits here. `CN6` carries the bucket brigade's
+        // output to one of the two power amplifiers and its 12"; the other
+        // gets the dry, and that is where the width comes from. It is not a
+        // mix control and there is no wet/dry sum anywhere: each speaker
+        // carries one signal whole.
+        //
+        // The delay is taken at the end of the chain rather than ahead of the
+        // two power stages, where the board sits. APPROXIMATED, and the
+        // argument is short enough to state: the power stage at these levels
+        // and the speaker are both linear and time-invariant, and an LTI
+        // filter commutes with a swept fractional delay to first order in the
+        // sweep's rate of change. Here that rate is 4.86 ms over a 0.6 s half
+        // period -- 0.8 %, a 14 cent shift -- so filtering before the delay
+        // instead of after moves a corner by 0.8 % and changes nothing else.
+        // A second power stage and a second acoustics path would cost twice
+        // the tail for that.
+        //
+        // The line runs whenever the voice has one, so the knob does not start
+        // from silence; at zero the read is the undelayed dry and `right` is
+        // `y` to the last bit, which is why no existing fixture moves.
+        if self.has_chorus {
+            let wet = self.bbd.process(y);
+            right = y + (wet - y) * self.chorus;
         }
         // Crossfade from the old circuit's last output to the new one so that
         // a capacitor-reset discontinuity is inaudible.
@@ -3923,6 +4095,21 @@ impl Chain {
         self.speed = s.speed;
         self.intensity = s.intensity;
         self.sync_twin_effect_controls();
+    }
+
+    /// The Chorus knob.
+    ///
+    /// Zero is SW3's OFF position -- both power amplifiers carry the dry
+    /// signal and the output is what it was. One is CHORUS: the second
+    /// amplifier carries the delay and nothing else, which is the amplifier's
+    /// own arrangement. In between is the plugin's, and it is stated as such:
+    /// on the hardware this is a switch, because in CHORUS the sheet's
+    /// oscillator is a fixed 1.2 s triangle with no panel control over it.
+    ///
+    /// Ignored by every circuit that has no chorus, the same way Reverb and
+    /// Intensity are ignored outside the AB763s.
+    pub fn set_chorus(&mut self, amount: f64) {
+        self.chorus = amount.clamp(0.0, 1.0);
     }
 
     /// Which MNA node the spring tank is driven from, for the AB763 voice in
@@ -4154,6 +4341,7 @@ impl Chain {
         self.twin_tank_drive_previous = 0.0;
         self.tank.reset();
         self.tremolo.reset();
+        self.bbd.reset();
         self.over.reset();
         self.pad.reset();
         self.dry.reset();

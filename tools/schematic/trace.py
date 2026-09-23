@@ -221,6 +221,56 @@ for k, (root, members) in enumerate(
     for i in sorted(members, key=lambda i: (items[i][0], items[i][1])):
         print(f"      {describe(i)}")
 
+# --- components, as the gaps between collinear wires ---------------------
+# A two-terminal part is drawn as a break in a wire, so every gap between two
+# collinear segments of different nodes is a component and its two endpoints
+# are the nodes it bridges. This is what turns a node list into a netlist.
+order = {
+    root: k
+    for k, (root, _) in enumerate(
+        sorted(groups.items(), key=lambda kv: -len(kv[1])), start=1
+    )
+}
+gaps = []
+for i, (ki, ai, bi, ci) in enumerate(items):
+    for j, (kj, aj, bj, cj) in enumerate(items):
+        if j <= i or ki != kj or find(i) == find(j):
+            continue
+        if ki == "H":
+            if abs(bi - bj) > TOL:
+                continue
+            lo, hi = (ci, aj) if ci <= aj else (cj, ai)
+            at = ((lo + hi) // 2, bi)
+        else:
+            if abs(ai - aj) > TOL:
+                continue
+            lo, hi = (ci, bj) if ci <= bj else (cj, bi)
+            at = (ai, (lo + hi) // 2)
+        span = hi - lo
+        if not 25 <= span <= 420:
+            continue
+        # Only if nothing else lies in the gap: otherwise two segments with a
+        # third between them read as one long component that is not there.
+        blocked = False
+        for k2, (kk, ak, bk, ck) in enumerate(items):
+            if kk != ki or k2 in (i, j):
+                continue
+            if ki == "H":
+                if abs(bk - bi) <= TOL and ak < hi and ck > lo:
+                    blocked = True
+            elif abs(ak - ai) <= TOL and bk < hi and ck > lo:
+                blocked = True
+            if blocked:
+                break
+        if not blocked:
+            gaps.append((at[0], at[1], span, ki, order[find(i)], order[find(j)]))
+gaps.sort(key=lambda g: (g[1], g[0]))
+print("\n-- components: a gap between two collinear wires, and the nodes it joins")
+for gx, gy, span, kind, na, nb in gaps:
+    print(
+        f"   {kind} at ({x0 + gx:>6},{y0 + gy:>6})  {span:>3} px   node {na} -- node {nb}"
+    )
+
 # --- query: which node is a given point on? -----------------------------
 for arg in sys.argv[6:]:
     if not arg.startswith("@"):
@@ -274,5 +324,20 @@ if "--overlay" in sys.argv:
                 d.text((a + 8, b + 6), str(k), fill=col, font=font)
     for dx, dy, _ in dots:
         d.ellipse([dx - 13, dy - 13, dx + 13, dy + 13], outline=(255, 0, 0), width=5)
-    base.save("an/overlay.png")
+    # A grid in sheet coordinates, so a terminal can be read off as a number
+    # and handed straight back as `@x,y`.
+    step = 200
+    for gx in range(-x0 % step, w, step):
+        d.line([(gx, 0), (gx, h)], fill=(170, 170, 170), width=2)
+        d.text((gx + 4, 4), str(x0 + gx), fill=(120, 120, 120), font=font)
+    for gy in range(-y0 % step, h, step):
+        d.line([(0, gy), (w, gy)], fill=(170, 170, 170), width=2)
+        d.text((4, gy + 4), str(y0 + gy), fill=(120, 120, 120), font=font)
+    base.save(
+        sys.argv[sys.argv.index("--overlay") + 1]
+        if "--overlay" in sys.argv
+        and len(sys.argv) > sys.argv.index("--overlay") + 1
+        and not sys.argv[sys.argv.index("--overlay") + 1].startswith("@")
+        else "overlay.png"
+    )
     print("\noverlay written to an/overlay.png")

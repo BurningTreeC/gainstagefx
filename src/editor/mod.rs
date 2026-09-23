@@ -1059,6 +1059,9 @@ pub struct ToneKnobs {
     /// The Heavy Metal's dedicated Colour Mix pair. These are deliberately
     /// separate from the generic Bass/Treble stack controls.
     pub colour_mix: Option<[&'static str; 2]>,
+    /// Whether the Chorus knob reaches anything. Only the Jazz 120 has a
+    /// bucket brigade; see `Gain::has_chorus`.
+    pub chorus: bool,
 }
 
 // Written out rather than derived: vizia's derive asks every field to be
@@ -1096,6 +1099,7 @@ impl ToneKnobs {
                 .voice()
                 .own_colour_mix()
                 .map(|((_, low), (_, high))| [low, high]),
+            chorus: circuit.voice().has_chorus(),
         }
     }
 }
@@ -1201,6 +1205,28 @@ fn tone(cx: &mut Context) {
                 if live { 0x9aa6b0 } else { 0x5a636b },
             );
         }
+        // The Jazz 120's chorus, in the fourth column of the same row: it is
+        // the amplifier's own effect and belongs beside the amplifier's own
+        // reverb and tremolo rather than in a section of its own. Drawn for
+        // every circuit and greyed where it reaches nothing, which is what
+        // the three beside it do.
+        {
+            let live = state.chorus;
+            let x = body_x() + 46.0 + 3.0 * 84.0;
+            Knob::new(cx, Panel::params, |p| &p.chorus, 18.0, live)
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(x - 18.0))
+                .top(Pixels(top + 104.0));
+            label(
+                cx,
+                "CHORUS",
+                x,
+                top + 150.0,
+                9.5,
+                80.0,
+                if live { 0x9aa6b0 } else { 0x5a636b },
+            );
+        }
     });
 
     // Kept to lines that fit the space rather than sentences that overflow
@@ -1234,9 +1260,9 @@ fn tone(cx: &mut Context) {
     }
     for (i, line) in [
         "Below: the American Twin's spring tank",
-        "and its optical tremolo. Reverb is the",
-        "recovery stage's own mix control;",
-        "Speed and Intensity drive the bulb.",
+        "and its optical tremolo. Chorus is the",
+        "Jazz 120's bucket brigade, which sends",
+        "one of its two speakers the delay.",
     ]
     .into_iter()
     .enumerate()

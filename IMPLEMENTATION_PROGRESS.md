@@ -1,5 +1,337 @@
 # Implementation progress
 
+## 2026-09-23 (later still) — the Drive knob, and what the Deluxe's cost actually is
+
+### The Jazz 120's Drive was cancelling itself
+
+`set_drive` freezes the drive-dependent make-up for voices whose Drive parameter
+*is* the amplifier's own channel Volume pot, because the make-up curve is
+measured by sweeping that very pot and applying it back cancels the pot. Both
+AB763s took that branch; the Jazz 120 did not, although its Drive is `VR1`.
+
+Measured, sweeping Drive and reporting output level:
+
+| voice | Drive authority, 0.1 to 0.9 |
+|---|---:|
+| Jazz 120, before | **0.0 dB** |
+| Jazz 120, after | 8.5 dB |
+| Twin | 28.8 dB |
+| Deluxe | 16.8 dB |
+| 5150 (a real gain control) | 0.0 dB — correct |
+
+The predicate is now shared rather than spelled out twice:
+`Gain::drive_is_channel_volume`, used by `set_drive` and by
+`tests/voice.rs`'s make-up invariant, which already said in a comment that it
+wanted to ask the DSP's question rather than name an amplifier.
+`TWIN_VOLUME_CALIBRATION_REFERENCE` became
+`CHANNEL_VOLUME_CALIBRATION_REFERENCE`, because it is no longer the Twin's.
+
+The Brit 800, Plexi, AC30 and DR103 also put Drive on a Volume pot and are
+deliberately **not** included: their make-up curves are what their shipped
+presets were trimmed against, so moving them is a separate change with its own
+re-trimming.
+
+### And the preset was in the wrong place because of it
+
+With the knob cancelled, 0.55 looked like a loudness choice. It was a gain
+choice, and measured it was the wrong one:
+
+| Drive | THD | third harmonic |
+|---:|---:|---:|
+| 0.10 | 1.00 % | 0.01 % |
+| **0.16** | **1.59 %** | **0.02 %** |
+| 0.17 | 1.63 % | 0.53 % |
+| 0.20 | 6.72 % | 5.73 % |
+| 0.55 (as shipped) | **29.3 %** | 27.2 % |
+
+A preset called *Jazz Clean* was sitting at 29 % distortion. Both Jazz presets
+now ship at **0.16** — 1.6 % and effectively all of it second harmonic, which is
+the two JFET stages' own colour — with `output_trim` re-measured to +6.0 by
+`examples/presetlevel`. Level-matched to 0.1 dB of the catalogue mean.
+
+It also finished the deadline work by itself, because a clean amplifier is a
+cheap one:
+
+| Jazz Clean | worst | missed |
+|---|---:|---:|
+| −12 dBFS (mid meter) | 1,226 µs | **0** |
+| 0 dBFS | 1,605 µs | **1** in 2,250 |
+
+against 7,005 µs / 207 missed and 10,168 µs / 420 missed when this started.
+
+### The Deluxe: measured, and most of it was not what it looked like
+
+Every hypothesis was tested rather than assumed, and most were wrong.
+
+- **The optical tremolo is not the cost.** `Blackface Throb` (tremolo on) is
+  *cheaper* than `Blackface Clean` (tremolo off), and `Deluxe Breakup` is
+  cheaper in the tail than `Blackface Deluxe`. The LDR restamping every sample
+  costs nothing measurable.
+- **The Twin's solver policies do not help.** `set_backtracks(4)` and
+  `set_late_continuation(true)` were A/B'd on the Deluxe power stage:
+  `late` is slightly *worse* (3.377 → 3.478 µs a sample) and `bt4` is neutral.
+  Recorded so the experiment is not repeated.
+- **The solve is healthy.** Zero fallbacks and zero unsettled samples, even
+  driven to 40 V. It is not failing; it is simply a bigger system.
+
+Where the time actually goes, by taking one piece out at a time at −6 dBFS:
+
+| block | Blackface Deluxe | Blackface Clean |
+|---|---:|---:|
+| power stage | **251 µs** | 187 µs |
+| everything ahead of it | 284 µs | 244 µs |
+| reverb | 30 µs | 33 µs |
+| acoustics | 35 µs | 29 µs |
+| tone section | 26 µs | 35 µs |
+
+The power stage is 47 % of the callback, and the difference is the **GZ34**:
+
+| Deluxe power stage | boundary | passes | µs a sample |
+|---|---:|---:|---:|
+| with the rectifier | 16 of 31 | 3.06 | 3.39 |
+| rectifier removed | 13 of 30 | 2.19 | **1.90** |
+
+44 % of that block. It cannot be removed — it *is* the sag, and the sag is the
+amplifier. Its anode node cannot be eliminated either: a `supply` must have
+finite series resistance, so the rectifier's own anode is always an unknown.
+The gain circuit's extra three boundary nodes over the Twin's are the second
+channel, which `circuits/deluxe.rs` models on purpose because "its shared bias
+current and its load on the mixer node are real rather than guessed."
+
+So there is nothing to remove, and the remaining route is solver architecture —
+a separate small nonlinear block for the rectifier, or a lower rate for the
+supply loop. Both touch a shipped amplifier's character and neither was started.
+
+### What was actually making the Deluxe crackle
+
+A fresh instance defaulted to **2x oversampling** while every shipped preset
+asks for Off, and the Deluxe is the most expensive voice in the catalogue:
+
+| preset, fresh instance | 1x median / worst / missed | 2x median / worst / missed |
+|---|---|---|
+| Blackface Deluxe | 512 / 1,315 / **0** | 1,078 / 1,903 / **22** |
+| Blackface Clean | 394 / 884 / **0** | 769 / 1,625 / 3 |
+| Jazz Clean | 356 / 1,008 / **0** | 617 / 1,682 / 2 |
+
+81 % of a callback as the *median*, before any transient. The parameter now
+defaults to **Off**, which is where every shipped preset already sits and where
+the modelled circuits were pinned when they were calibrated. The control still
+goes up and `MODELLED_MAX_OVERSAMPLING` still caps what a modelled circuit uses;
+what changed is that an amplifier no longer starts somewhere its own presets
+never put it. A saved session is unaffected — it stores its own value.
+
+## 2026-09-23 (later) — the crackle, found by measuring the deadline
+
+Reported from playing: the American Deluxe and the Jazz 120 crackle and stutter
+on a strong attack — the Jazz 120 more heavily, the Deluxe once the input meter
+passes its middle.
+
+Nothing here measured that. `examples/wherecpu.rs` averages a whole second and
+`examples/presetcost.rs` reports a load; a callback that is fast on average and
+occasionally takes eight times as long drops out, and both numbers look fine.
+So the first thing built was the measurement: **`examples/stutter.rs`** — one
+callback at a time, over a sweep of input levels, with the presets set up
+exactly as they ship, and the Twin as the control because it has had the solver
+work and does not stutter.
+
+It reproduced the report exactly, including which amplifier and at which level,
+and then localised it. Two defects, and neither was a tuning problem.
+
+### The JFET channel was one-directional — `src/dsp/device.rs`
+
+`Jfet::drain` returned **zero current with zero slope** for every `vds <= 0`.
+
+A JFET's channel is symmetric. There is no junction between the two ends: they
+are the same diffusion, and which one is the source is decided by the voltage
+across them, not by the part. An ohmic channel conducts both ways — that is how
+every JFET switch and mixer ever built works. The old law was not an
+approximation of that; it was a cliff, and Newton fell off it.
+
+Found by probing CH-1 node by node with `tap()`, which is what `CLAUDE.md` says
+to do first and which localised it in one run: `q1_d`, the second 2SK184's
+drain, was answering **−23.2 V on a +27.2 V single rail**. That is not a
+solution. It is what the fallback left behind, and converted to audio it is the
+crackle.
+
+| on that stage | before | after |
+|---|---:|---:|
+| Newton passes a sample | 12.05 | **2.58** |
+| fallbacks in 9,600 samples | 40,760 | **0** |
+| `q1_d` excursion | −23.2 .. +27.2 V | 0.7 .. 26.8 V |
+
+Guarded by `jfet_channel_tests` in `device.rs` — the channel conducts backwards,
+is symmetric about the origin, is continuous and sloped through zero, stays shut
+both ways below pinch-off, and the saturated square law is bit-identical — and
+by two tests in `tests/jazz120.rs` that bound CH-1 inside its own supply and
+require the solve that gets there to settle.
+
+This reaches every JFET circuit: `jfet.rs`, `rodent`, `heavy_metal`,
+`metal_zone` and the Jazz 120 — but only in the region the old law had flatly
+wrong, so a circuit that never takes a drain below its source does not move.
+
+**That is measured, not argued.** `src/calibration.rs` was regenerated against
+the corrected model and compared row by row against the table before it: of the
+whole catalogue, **one row moved, by 0.06 dB, and it is the Jazz 120's.** Every
+JFET pedal and the JFET amplifier are bit-identical. The only other row to move
+anywhere was the Neve's in `src/power_trim.rs`, from that voice's own output
+stage correction earlier the same day.
+
+### The power amplifier's rails had no impedance to the output devices
+
+`src/circuits/jc120_power.rs`. The output transistors' collectors sat directly
+on the reservoir node. A saturating device is then a path of *no* resistance
+between a stiff supply and a signal node, and Ebers-Moll in saturation drives
+both junction conductances toward 1e13 S — an unconditioned matrix rather than
+a hard one.
+
+What was missing is real and was simply absent: the reservoir capacitor's ESR,
+the wiring from the DI board to the TR board, and each transistor's own
+collector ohmic resistance. `RAIL_WIRING_OHMS`, ESTIMATED at 50 mΩ. The model
+is insensitive to it across the range that is physically arguable — 20 mΩ and
+200 mΩ were both measured and the output moved in the third decimal place — so
+it is in because it is real, not to make a number come out.
+
+Beside it, the partitioning the work was asked for: **D11 is now a fixed drop
+rather than a diode.** It puts two nodes on the nonlinear boundary and the
+bootstrap pushes `vb` around enough to make it switch, while its own current is
+a near-constant 4.9 mA behind 1.36 kΩ and 47 µF. Boundary **20 of 31 unknowns
+became 18**, and what is lost — the rail's own sag reaching `vb` — was already
+filtered out by a 2.5 Hz corner before it could reach anything.
+
+| at the clipping point | before | after |
+|---|---:|---:|
+| Newton passes a sample | 4.18 | **2.58** |
+| fallbacks in 9,600 samples | 2,254 | **56** |
+| microseconds a sample | 7.45 | **3.41** |
+
+All six of the sheet-verified `tests/jc120_power.rs` tests still pass: the
+printed 26 dB gain, the operating point, the printed input and output levels,
+the clipping point and rate independence.
+
+### What it is worth
+
+`Jazz Clean`, 64 samples at 48 kHz against a 1,333 µs budget, three seconds of
+plucked attacks:
+
+| input | worst before | worst after | missed before | missed after |
+|---|---:|---:|---:|---:|
+| −24 dBFS | 5,474 µs | 817 µs | 7 | **0** |
+| −18 dBFS | 6,372 µs | 1,282 µs | 81 | **0** |
+| −12 dBFS (mid meter) | 7,005 µs | 1,056 µs | 207 | **0** |
+| −6 dBFS | 10,831 µs | 1,358 µs | 331 | **1** |
+| 0 dBFS | 10,168 µs | 1,452 µs | 420 | **3** |
+
+### The Deluxe, measured rather than assumed
+
+Its power stage has **no fallbacks at all**, even driven to 30 V: it never
+fails to converge. Its cost is per-pass, and it is inherent — boundary 16 of 31
+against the Twin's 13 of 35, and 3.01 Newton passes a sample against 2.31.
+The difference is the **GZ34 valve rectifier**, which the Twin does not have
+and which is the Deluxe's sag and most of its character. There is nothing to
+remove.
+
+Measured now: 88 % of budget at the middle of the meter with **no missed
+callbacks**, and 126 % at a hot 0 dBFS with two missed in 2,250. Better than
+reported but not eliminated, and the remaining route is per-pass cost in the
+rectifier's solve rather than anything structural.
+
+### What the Twin's settings would have done
+
+`set_backtracks(4)` and `set_late_continuation(true)` were A/B'd on the JC-120
+power stage before anything else was tried. Both made it **worse** —
+`set_backtracks(4)` took it from 831 fallbacks to 4,123 — which is why they are
+gated on the Twin in the first place. Recorded so the experiment is not
+repeated.
+
+## 2026-09-23 — the JC-120's chorus, and the Neve's output stage
+
+### The Neve
+
+`neve::output_with_speaker` now builds the 73P's output block against a real
+loudspeaker load, and `PowerModel::British73Out` (slot 11) carries it, so the
+British 73 reaches a driver the way every other output stage does. Its three
+presets moved 0.6 dB, which `examples/presetlevel` measured and the shipped
+`output_trim` values absorb.
+
+`tests/legacy_baseline.rs` records this as its **third** documented exception,
+in the file's own header, as that file's rule requires. The fixture was **not**
+regenerated. The cost is stated there too: only the 5150 is still compared
+against the frozen capture — 200,704 samples at 1.3e-8 RMS — and a fresh capture
+to restore the rest is written into that header as the next thing to do.
+
+### The chorus
+
+Read off the EFF BOARD of the Sep. 2000 service notes before any code, into
+`docs/models/jazz_120.md`. Two printed figures decide how it sounds and both are
+on the sheet: the MN3101's **2.5–12 µs** clock period and the LFO's **1.2 s,
+10 Vpp triangle** in CHORUS. A 1024-stage MN3007 delays by `N / (2 f_clk)`, so
+that clock range is **1.28 ms to 6.14 ms** — a five-to-one sweep, 0.81 % of
+pitch, about **14 cents**. There is no companding anywhere on the board.
+
+Built as `src/dsp/bbd.rs`: the delay line with four-point Hermite interpolation,
+the triangle oscillator, and IC2A/IC2B's band as one-pole pairs either side. The
+bucket brigade is **APPROXIMATED** — simulating 1024 stages would mean running
+the chain at 400 kHz — and that is the one approximation in this amplifier. The
+delay range, the period and the filter corners are all the drawing's own values.
+
+`Mode::Vibrato` carries the CH1 board's own 120–500 ms sweep and works, but SW3's
+third position has no panel control yet; it needs a selector and the Tone
+section's second row is full. Recorded as an open question rather than shipped
+half-wired.
+
+### Where the split is taken
+
+The amplifier is stereo at the speaker and that is the whole point: `CN6` sends
+one of the two 60 W amplifiers and its 12" the delay, and the other gets the
+dry. Each speaker carries **one signal whole** — there is no wet/dry sum in the
+path, and the CHORUS knob interpolates between SW3's two positions.
+
+The split is taken at the **end** of the chain rather than ahead of the two power
+stages, where the board sits. The argument is in the research log and is short:
+the output stage below clipping and the speaker are both LTI, an LTI filter
+commutes with a swept fractional delay to first order in the sweep's rate of
+change, and that rate here is 0.81 %. The alternative is a second power stage
+and a second acoustics path for that 0.81 %. Above clipping the two do differ,
+and that limit is stated rather than left to be discovered.
+
+With a chorus in circuit the **microphone pans give way**: two capsules panned
+apart and a second speaker carrying a delay are two pictures of the same
+cabinet, and superimposing them is neither. Both microphones are still heard,
+summed at their blend.
+
+### The panel
+
+A **CHORUS** knob in the Tone section, per the standing rule, in the fourth
+column of the row that holds the Twin's Reverb, Speed and Intensity — greyed for
+every circuit that has none, which is what those three already do. `Settings`,
+`params.rs`, the preset field and a `migrate()` default of OFF all follow, so
+every preset saved before this exists sounds the way it did.
+
+A second shipped preset, **Jazz Chorus**, is the same amplifier with SW3 in
+CHORUS. Its `output_trim` is Jazz Clean's and it is the same number, because the
+left output is the dry side untouched.
+
+### What was measured
+
+`tests/chorus.rs`, twelve tests, at all five rates. The sheet's figures are
+asserted as literals and the line is measured against them: the 1.28/6.144 ms
+ends, the 4.864 ms sweep (an impulse at both ends of the oscillator, differenced
+so the filters' 98 µs group delay cancels), the 1.2 s and 120–500 ms periods,
+the 14 cents. Then, in the chain: SW3 OFF leaves the two outputs identical **bit
+for bit**; in CHORUS the dry side equals the mono path **exactly**, sample for
+sample; a chorusing chain does not allocate; and the knob reaches nothing on any
+of the other 29 circuits.
+
+Checked by deletion: breaking the clock constant fails the two tests that assert
+the printed figures.
+
+### Known next
+
+Both the American Deluxe and the Jazz 120 crackle and stutter under attack — the
+JC-120 more heavily, the Deluxe above the middle of the input meter. They need
+the partitioning and solver work the Twin has had. Nothing in this session
+addresses it.
+
 ## 2026-09-20 — follow-up rescue research and optional input expander
 
 After the instrumentation task passed all 439 tests (eight skipped), the user
@@ -1624,6 +1956,96 @@ It found its own limits too, and they are written down: connector boxes are
 rectangles whose edges read as wires, and shorted every row of W8 together
 until the crop excluded them. That is why the overlay exists.
 
-What remains on that amplifier is no longer topology. It is which terminal of
-each transistor sits on which of those nodes -- a reading against a known node
-list rather than against a picture. The netlist gets written from the list.
+It finds the components too, because a two-terminal part is a break in a wire:
+every gap between two collinear segments of different nodes is a part, and its
+ends name the nodes it bridges. That turns the node list into a netlist, and it
+settled the three roles both wrong versions had guessed:
+
+* **Q13 (2SC2229) is the voltage amplifier stage** -- base off the pair's
+  collector, emitter degenerated by R83 into -VE.
+* **Q14 and Q12 are a two-transistor bias spreader, not a mirror.** Q14 sits
+  across R76 + R75 with its collector on the upper driver's base and its
+  emitter on the lower one's, and Q12 senses their junction and drives it. C44
+  carries the audio past the whole thing while the bias stays set. Taking those
+  two for a mirror is exactly what pinned the input pair against the negative
+  rail, twice.
+* **C43 bootstraps the collector load** to the output.
+
+**`circuits::jc120_power` is built, and the sheet checks it twice over.** The
+two checks are independent -- one is a pair of resistors read off the drawing,
+the other a measurement somebody took on a bench:
+
+| | printed | model |
+|---|---|---|
+| closed-loop gain (R88/R93 gives 26.7) | 26 dB | **25.7 dB** |
+| output at the printed 3.10 Vpp input | 61.8 Vpp | **60.0 Vpp** |
+| into 8 ohms | 60 W | **56 W** |
+
+and the distortion *falls* as the level rises -- 1.11 % at 50 mV in against
+0.06 % at the rated output -- which is what a feedback amplifier with a biased
+class-AB stage does and what a mis-wired one does not. It clips just above the
+rated output, which is what holds the DERIVED +-40 V rails honest: nobody rates
+an amplifier anywhere but just under its ceiling.
+
+`tests/jc120_power.rs`, six tests, including the two that the wrong versions
+would have failed. Wired into `build_power`, so **`Matched` now means something
+for the Jazz 120** -- it was the one voice in the catalogue with no power stage,
+and it is not any more.
+
+**And the shared machinery was refactored, because the alternative was a
+preset that lied.** With the power amplifier built, the Jazz Clean preset came
+out eighteen decibels quiet, and the reason was not the preset.
+
+There were **two definitions of "the block behind this voice" and they
+disagreed**. `Chain` built its power blocks from `Gain::power_stage`, which
+answers with a `PowerSpec`; `examples/calibrate` has always built them from
+`build_power`, which also knows about the blocks that are *not* a `PowerSpec`
+-- the 73P's line driver and now the JC-120's transistor amplifier. So such a
+voice was calibrated **with** its output stage and played **without** it, and
+the make-up table then took out a gain that was never put in.
+
+Both are `build_power` now. And `PowerModel::spec` returns `Option`, because a
+`PowerSpec` is a phase inverter, a bias supply and an output transformer, and a
+complementary transistor amplifier has none of the three -- so every caller has
+to say what it does about `None`, which is what stops the two drifting apart
+again. `PowerModel::Jazz120SS` is the first non-valve entry; it carries its own
+`speaker_scale` and its own `build_with_speaker`, so the JC-120's output stage
+is speaker-loaded like every other.
+
+That last part is not bookkeeping. A loudspeaker's impedance is nothing like
+the resistor that stands for it, and this amplifier has the feedback to hold
+its output voltage across all of it -- so what changes is the current, and with
+it where the output pair runs out. *Jazz Clean* now sits within a tenth of a
+decibel of the catalogue mean on its own 2x12.
+
+**And the Neve 73P had the same problem, so it is fixed too.** Its OUTPUT block
+-- two BC109C into a TIP3055 and the VTB1148 -- was in its calibration and not
+in its path, for the same reason: no `PowerModel`, because a line driver is not
+a `PowerSpec`. It has one now, `PowerModel::British73Out`, and
+`neve::output_with_speaker` puts the driver where the line load was so the
+block is in the path with a cabinet selected as well as without one.
+
+A 73P into a guitar speaker is not a combination the card was built for, and
+the panel allows it, so what the VTB1148's secondary does into eight ohms is a
+fact about the transformer rather than a licence to leave the block out. The
+correction is small -- the three 73P presets moved 0.6 dB -- which is the point:
+the calibration had always counted the block, so putting it back in the path
+makes the voice agree with its own table instead of changing what it is.
+
+`PowerModel::build_loaded` is now the one place that knows how each of the
+three kinds of output stage is built, rather than a `match` at every call site
+that wants a speaker-loaded one.
+
+**And it cost a third of the frozen fixture, which is recorded rather than
+hidden.** Putting the 73P's OUTPUT block into its path changes that voice, and
+`tests/legacy_baseline.rs` froze it. The file's own rule is that output which
+must change gets an exception in the header rather than a regeneration, so that
+is what it got -- but the consequence is worth stating plainly: of the four
+voices in that fixture, three are now excluded and only the 5150 is still
+compared sample for sample. 200,704 samples at a relative RMS error of 1.3e-8,
+where it used to be twice that many.
+
+The fixture is worth less than it was. The right way to restore the rest is a
+fresh frozen capture of the corrected circuits -- a new fixture, deliberately
+taken and dated -- not a quiet regeneration of this one, and it is written into
+the header as the thing to do next.
