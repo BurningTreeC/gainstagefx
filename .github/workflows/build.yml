@@ -57,21 +57,31 @@ jobs:
           key: test-ci
           cache-on-failure: true
 
-      # Do not use the shipping release profile here.
+      # Use the dedicated CI profile instead of the shipping release profile.
       #
-      # GainStageFx is now large enough that opt-level=3 + Thin LTO makes
-      # LLVM spend an enormous amount of time optimizing the test binaries.
+      # The CI profile is optimized and inherits release semantics, but avoids
+      # expensive LTO:
       #
-      # The ci profile is still optimized, so DSP tests are representative,
-      # but it deliberately disables LTO and uses more codegen units.
+      #   opt-level = 2
+      #   lto = "off"
+      #   codegen-units = 16
+      #
+      # This keeps DSP tests representative while substantially reducing LLVM
+      # optimization time.
       - name: Run tests
         run: cargo test --profile ci --workspace
 
-      # Clippy does not need release/LTO code generation. Running it without
-      # --release avoids recompiling the entire DSP graph at maximum
-      # optimization just to perform linting.
+      # Use the CI profile here as well.
+      #
+      # Some timing/realtime test-support code intentionally requires
+      # release-style compilation. Running Clippy with the default dev profile
+      # makes the release guard unconditional and causes unreachable-code
+      # warnings, which become errors under -D warnings.
+      #
+      # The CI profile gives Clippy release-style cfg/debug-assertion behavior
+      # without paying for Thin/Fat LTO.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --profile ci --workspace --all-targets -- -D warnings
 
       - name: Third party notices are up to date
         run: |
@@ -123,8 +133,8 @@ jobs:
           # both targets have to be installed.
           targets: ${{ startsWith(matrix.os, 'macos') && 'x86_64-apple-darwin,aarch64-apple-darwin' || '' }}
 
-      # Each platform gets an independent cache. In particular, do not mix
-      # native Linux objects with Windows or either macOS architecture.
+      # Each platform gets an independent cache. Do not mix native Linux
+      # objects with Windows or either macOS architecture.
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
@@ -140,31 +150,54 @@ jobs:
             --lib \
             -- --test-threads=1
 
+      # The installer is a small separate program. It does not need the
+      # expensive release-lto profile used for the DSP plugin.
       - name: Build the Windows installer
         if: startsWith(matrix.os, 'windows')
         run: cargo build --release -p installer
 
-      # Actual binaries shipped to users still use the real release profile:
+      # Ordinary branch/PR package builds use the normal release profile:
       #
       #   opt-level = 3
       #   lto = "thin"
+      #   codegen-units = 16
       #
-      # We only removed expensive release optimization from CI correctness
-      # tests and Clippy, not from the plugin itself.
+      # Tagged releases use release-lto:
+      #
+      #   opt-level = 3
+      #   lto = "fat"
+      #   codegen-units = 1
+      #
+      # This keeps ordinary CI reasonably fast while ensuring the binaries
+      # actually published to users receive maximum optimization.
+      #
+      # IMPORTANT:
+      # xtask's bundle and bundle-universal commands must support:
+      #
+      #   --profile release-lto
+      #
+      # and forward that profile to their internal Cargo build commands.
       - name: Build the plugin
         run: |
           if [[ '${{ matrix.name }}' == 'macos-universal' ]]; then
             export MACOSX_DEPLOYMENT_TARGET=10.13
 
+            # cargo xtask ad-hoc signs the bundles after lipo. This requires
+            # no Apple Developer account. An arm64 binary needs at least an
+            # ad-hoc signature to load.
             if [[ '${{ github.ref }}' == refs/tags/v* ]]; then
+              echo "Building tagged macOS release with release-lto profile"
               cargo xtask bundle-universal "$PACKAGE" --profile release-lto
             else
+              echo "Building macOS CI package with release profile"
               cargo xtask bundle-universal "$PACKAGE" --release
             fi
           else
             if [[ '${{ github.ref }}' == refs/tags/v* ]]; then
+              echo "Building tagged release with release-lto profile"
               cargo xtask bundle "$PACKAGE" --profile release-lto
             else
+              echo "Building CI package with release profile"
               cargo xtask bundle "$PACKAGE" --release
             fi
           fi
@@ -195,6 +228,8 @@ jobs:
               ;;
 
             Windows)
+              # The installer is built separately with the normal release
+              # profile, so it remains in target/release/.
               cp target/release/install.exe "$staged/install.exe"
               ;;
           esac
@@ -212,12 +247,14 @@ jobs:
   release:
     name: Release
 
-    # Never publish a release unless both correctness testing and every
-    # platform package succeeded.
+    # Never publish a release unless the tests and every platform package
+    # succeeded.
     needs:
       - test
       - package
 
+    # Only v* tags create public GitHub releases. The package job above uses
+    # release-lto for exactly these builds.
     if: startsWith(github.ref, 'refs/tags/v')
 
     runs-on: ubuntu-22.04
