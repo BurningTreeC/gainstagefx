@@ -122,6 +122,20 @@ pub enum Circuit {
     #[id = "pedal_boss_mt2_circuit"]
     #[name = "Metal Zone"]
     Mt2,
+    // Appended, like everything above it. Beside the American Twin: the same
+    // AB763 circuit at a quarter of the power.
+    #[id = "amp_fender_deluxe_ab763"]
+    #[name = "American Deluxe"]
+    Deluxe,
+    // Appended. The first solid-state amplifier in the list, and the first
+    // with no valve power stage to match it to.
+    #[id = "amp_roland_jc120"]
+    #[name = "Jazz 120"]
+    Jazz120,
+    // Appended. The same amplifier as `Deluxe`, through its other channel.
+    #[id = "amp_fender_deluxe_ab763_normal"]
+    #[name = "American Deluxe Normal"]
+    DeluxeNormal,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -181,9 +195,12 @@ impl Circuit {
             Circuit::DistPlus => "Yellow Dist",
             Circuit::Hm2 => "Heavy Metal",
             Circuit::Mt2 => "Metal Zone",
+            Circuit::Deluxe => "American Deluxe",
+            Circuit::Jazz120 => "Jazz 120",
+            Circuit::DeluxeNormal => "American Deluxe Normal",
         }
     }
-    pub const ALL: [Circuit; 27] = [
+    pub const ALL: [Circuit; 30] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -211,6 +228,9 @@ impl Circuit {
         Circuit::DistPlus,
         Circuit::Hm2,
         Circuit::Mt2,
+        Circuit::Deluxe,
+        Circuit::Jazz120,
+        Circuit::DeluxeNormal,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -242,6 +262,9 @@ impl Circuit {
             Circuit::DistPlus => voice::Gain::DistPlus,
             Circuit::Hm2 => voice::Gain::Hm2,
             Circuit::Mt2 => voice::Gain::Mt2,
+            Circuit::Deluxe => voice::Gain::Deluxe,
+            Circuit::Jazz120 => voice::Gain::Jazz120,
+            Circuit::DeluxeNormal => voice::Gain::DeluxeNormal,
         }
     }
 
@@ -362,10 +385,13 @@ pub enum PowerAmp {
     #[id = "power_recto_6l6_tube"]
     #[name = "Recto 6L6 Tube"]
     Recto6L6Tube,
+    #[id = "power_deluxe_6v6"]
+    #[name = "American Deluxe 6V6"]
+    AmericanDeluxe6V6,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -377,6 +403,7 @@ impl PowerAmp {
         Self::DR103EL34,
         Self::Recto6L6,
         Self::Recto6L6Tube,
+        Self::AmericanDeluxe6V6,
     ];
 
     pub fn name(self) -> &'static str {
@@ -396,6 +423,7 @@ impl PowerAmp {
             Self::DR103EL34 => voice::PowerAmp::DR103EL34,
             Self::Recto6L6 => voice::PowerAmp::Recto6L6,
             Self::Recto6L6Tube => voice::PowerAmp::Recto6L6Tube,
+            Self::AmericanDeluxe6V6 => voice::PowerAmp::AmericanDeluxe6V6,
         }
     }
 }

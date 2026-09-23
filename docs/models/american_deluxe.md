@@ -114,6 +114,15 @@ documented ESTIMATED 1x12 open-back configuration built the way
 [speakers.md](speakers.md) and [cabinets.md](cabinets.md) already build them, and
 the choice of driver is recorded as an open question rather than a fact.
 
+**Settled 2026-09-22.** `CabinetProfile::AMERICAN_OPEN_112` already carried the
+box; what it carried as its `default_speaker` was the *alnico* P12R, which is
+not a blackface Deluxe part at all. It is now the ceramic **C12N** —
+`SpeakerProfile::AMERICAN_CERAMIC`, `spk_jensen_c12n` — which is what the Twin's
+own AB763 cabinet in this repository already defaults to, and one of the two
+drivers this amplifier actually shipped with. The Oxford 12K5 stays an open
+question and the '65 reissue's C12K stays excluded. Both shipped presets follow
+the cabinet. Labelled WIDELY REPORTED.
+
 ## Progress
 
 **2026-09-22 — the 6V6GT is modelled.** `PentodeSpec::T6V6GT` in
@@ -200,8 +209,137 @@ missing from the dropper chain; without it every plate below sat about forty
 volts high. It is modelled as the load it is, DC only -- the node has 16 µF
 across it.
 
-Still to build: the `Gain`/`Circuit` enum entries, the calibration, the panel
-wiring and the cabinet.
+**2026-09-22 — selectable, calibrated and presetted.** `Gain::Deluxe` and
+`Circuit::Deluxe` appended (never inserted), display **American Deluxe**, id
+`amp_fender_deluxe_ab763`; `PowerModel::AmericanDeluxe6V6` and the matching
+`PowerAmp` override, so the 6V6 stage is both the matched default and available
+behind other preamplifiers. `POWER_TRIM_DB` widened to eleven columns for it.
+Drive is the channel Volume and is labelled VOLUME, as on the Twin; Middle is
+greyed out because the amplifier has no Middle control.
+
+The Twin's spring-tank, optical-tremolo and switched-jack handling was a dozen
+`self.voice == Gain::Twin` tests. They are now one `Gain::ab763()` descriptor
+carrying the slot and control numbers, which both amplifiers share. It also
+states the difference honestly: the Deluxe's `bright` is `None`, because its
+47 pF is soldered in and the panel has no switch, so the Bright control is
+correctly inert there.
+
+**The tremolo was inaudible, and the fix is a decision rather than a reading.**
+Reported from a DAW -- "I cannot hear the Tremolo of the Deluxe" -- and it was
+real. Measured through the whole chain at full Intensity, peak to trough of a
+steady tone: the Twin **7.65 dB**, the Deluxe **0.14 dB**.
+
+Both amplifiers use the same AB763 roach: one package holding a neon lamp and a
+photoresistor, the lamp driven from the 12AX7 oscillator through 10 M and 100 k,
+the cell shunting the signal through the 50 kOhm reverse-audio Intensity
+control. So a Deluxe fifty times shallower than a Twin is a wiring error, not a
+quieter tremolo.
+
+The error was the order of the 0.1 uF and the 220 kOhm around the intensity tap.
+With the 220 kOhm *before* the tap, the photocell is isolated from the signal by
+a quarter of a megohm and can do almost nothing; with it *after*, the cell sits
+on the signal node and the 220 kOhm carries what survives to the inverter. At
+the resolution of the Fender sheet the two parts can be read either way round,
+and this is recorded as a **decision**: it is modelled the way the Twin's AB763
+drawing shows the same circuit, because that is the arrangement that produces
+the amplifier's known behaviour. Both now measure 7.6 dB.
+
+`tests/deluxe.rs::the_tremolo_is_as_deep_as_the_twin_s` measures both and
+compares them, so this cannot regress quietly.
+
+**Where the module boundary goes, and why it moved.** The first version took
+the channel's output straight off the mixer plate, which is where the drawing
+puts the 0.001 uF to the inverter. That is faithful to the drawing and wrong for
+this engine: the plate sits at about 190 V, so the chain handed a DC step to the
+power module's coupling capacitor and the amplifier thumped on the first sample
+of every session. `tests/voice.rs::silence_in_is_silence_out` caught it at
+0.1012 against a 0.02 threshold, and `resetting_does_not_pop` with it.
+
+The boundary is now drawn on the far side of that capacitor: the 0.001 uF is in
+`circuits::deluxe`, on the plate where it belongs, working into the inverter's
+1 M + 1 M grid-leak chain, which `load` stands for and which is why the Deluxe
+is built with 2 MOhm where the other circuits use 1. `PowerSpec::DELUXE_6V6`
+then carries a short in `pi_couple` so the capacitor is counted once.
+Deliberately a short and not zero: zero means a *direct*-coupled inverter, which
+turns `pi_leak_upper` into a series resistor -- the Hiwatt's cathode-follower
+arrangement, not this one.
+
+This made the model more correct, not less, and it showed: the hand-off is a
+high-pass at about **80 Hz**, which is a real and fairly aggressive AB763
+property and part of why these amplifiers stay tight. Measured small-signal
+response with the stack at noon:
+
+| Hz | 40 | 60 | 80 | 110 | 150 | 220 | 400 | 600 | 1 k | 5 k |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| dB | 32.8 | 35.5 | 37.1 | 38.0 | 38.1 | 37.5 | 35.3 | 34.0 | 34.0 | 45.0 |
+
+A bass peak near 150 Hz, the Fender dip bottoming around 600 Hz to 1 kHz, and
+the treble climbing 11 dB above it by 5 kHz. The first version of the scoop test
+probed 80 Hz and so measured the hand-off corner rather than the stack; it now
+probes 150 Hz and says why.
+
+**Calibration.** `cargo run --release --example calibrate` regenerated with 36
+voices. Two things worth recording:
+
+* **No shipped voice moved.** Maximum drift across all 35 existing rows is
+  **0.010 dB**, which is the last printed digit.
+* **The Deluxe lands where the physics says it should**, without being tuned
+  to. Same 0.122 V guitar into the front of each amplifier, Drive full up:
+
+  | voice | distortion | make-up span |
+  |---|---:|---:|
+  | American Twin (85 W, four 6L6) | 31.7 % | 76.4 dB |
+  | **American Deluxe (22 W, two 6V6)** | **42.2 %** | **53.6 dB** |
+  | American 5150 | 57.2 % | 33.9 dB |
+  | Cali IIC+ | 61.2 % | 32.6 dB |
+
+  Dirtier than the Twin, cleaner than the high-gain amplifiers, at the same
+  input. That ordering fell out of the netlist, the fitted 6V6 and the power
+  stage; nothing in it was chosen to produce it.
+
+**Presets.** Two, in the Amplifier group: *Blackface Deluxe* (Volume 0.30 with
+reverb, 1x12 open back on the American Vintage 12) and *Deluxe Breakup*
+(Volume 0.62 with the tremolo running). Both still want a `presetlevel` pass to
+choose their `output_trim`.
+
+**2026-09-22 — both channels, and the Normal one selectable.** The drawing has
+two channels and only one of them was built. The Normal channel's *second*
+stage was present, because it shares the [A] cathode and loads the mixer, but
+its first stage, its stack and its Volume were not — so a triode's worth of
+standing current was missing from the dropper chain that feeds every plate in
+the amplifier.
+
+Both channels are now built by the same code, `deluxe::front_end`, because on
+the drawing they *are* the same code: same 68 k jacks, same 100 kΩ plate, same
+1.5 kΩ / 25 µF cathode, same stack, same 1 MΩ Volume. They differ in two things
+and the sheet is unambiguous about both — the Vibrato channel has the 47 pF
+across its Volume and the Normal channel has not, and the reverb and the
+tremolo hang on the Vibrato channel's second stage, joining the Normal channel
+only at the mixer, *after* the intensity tap. So the Normal channel has no
+reverb and no tremolo, and those controls rest rather than being greyed panel
+knobs.
+
+`deluxe::Channel` says which channel the jacks feed; the other stays in the
+network with its jacks open (grid returned through the same 34 kΩ + 1 MΩ the High jack presents)
+and its Volume resting at zero.
+
+**The missing stage was worth four decibels of plate voltage.** Against the
+drawing's own printed figures, at the drawing's own ±20 %:
+
+| node | before | now | drawing |
+|---|---:|---:|---:|
+| `v1_p` | 193.4 V (+13.8 %) | **186.1 V (+9.5 %)** | 170 V |
+| `v2_p` | 197.3 V (+9.6 %) | **189.9 V (+5.5 %)** | 180 V |
+
+Nothing was tuned to produce that; it is the current of a triode that should
+always have been there.
+
+Selectable as `Gain::DeluxeNormal` / `Circuit::DeluxeNormal`
+(`amp_fender_deluxe_ab763_normal`, display **American Deluxe Normal**), matched
+to the same `PowerSpec::DELUXE_6V6`, with one preset, *Blackface Normal*.
+
+Still to build: nothing on this list. See **Open questions** for what remains
+uncertain rather than unbuilt.
 
 ## Open questions
 

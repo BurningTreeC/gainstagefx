@@ -258,10 +258,14 @@ fn the_calibration_table_still_describes_the_circuits() {
 fn the_make_up_holds_the_level_between_the_measured_points() {
     for index in 0..VOICES {
         let (gain, diode, amplifier) = voice::voice_at(index);
-        // The Twin's Drive parameter is its physical channel Volume control.
-        // It is intentionally a volume control now, so this gain-normalisation
-        // invariant does not apply to it.
-        if gain == Gain::Twin {
+        // An AB763 Fender's Drive parameter is its physical channel Volume
+        // control -- the Twin's and the Deluxe's both. They are intentionally
+        // volume controls, so this gain-normalisation invariant does not apply
+        // to them. The test asks the same question the DSP does
+        // (`Chain::make_up_drive`) rather than naming one amplifier, so the
+        // next AB763 is exempt for the stated reason and not by being added to
+        // a list.
+        if gain.ab763().is_some() {
             continue;
         }
         let mut worst: f64 = 0.0;

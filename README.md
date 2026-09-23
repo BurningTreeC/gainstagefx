@@ -293,11 +293,14 @@ hardware behind them at all.
 | Cali IIC+ | Mesa/Boogie Mark IIC+ lead channel, 60 W | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
 | American 5150 | Peavey EVH 5150 lead channel | [american_5150.md](docs/models/american_5150.md) |
 | American Twin | Fender Twin Reverb AB763 (blackface), vibrato channel | [american_twin.md](docs/models/american_twin.md) |
+| American Deluxe | Fender Deluxe Reverb AB763 (blackface), vibrato channel | [american_deluxe.md](docs/models/american_deluxe.md) |
+| American Deluxe Normal | the same amplifier through its Normal channel: no bright cap, no reverb, no tremolo | [american_deluxe.md](docs/models/american_deluxe.md) |
 | Brit 800 | Marshall JCM800 2203 100 W, 1981 drawing | [brit_800.md](docs/models/brit_800.md) |
 | Brit Plexi | Marshall 1959 Super Lead 100 W, bright channel, 1970 drawing | [brit_plexi.md](docs/models/brit_plexi.md) |
 | Brit AC30 | Vox AC30/6 Top Boost, brilliant channel | [brit_ac30.md](docs/models/brit_ac30.md) |
 | Brit DR103 | Hiwatt DR103 Custom 100, brilliant channel, Issue 4 | [brit_dr103.md](docs/models/brit_dr103.md) |
 | Cali Rectifier | Mesa/Boogie Dual Rectifier, two-channel Rev F, red channel modern | [cali_rectifier.md](docs/models/cali_rectifier.md) |
+| Jazz 120 | Roland JC-120 Jazz Chorus, CH-1, the JC-120UT/JT of Sep. 2000 | [jazz_120.md](docs/models/jazz_120.md) |
 | British 73 | DIY Recording Equipment 73P v1.1 (a 1073-style 500-series card) | project-local drawings |
 | American 312 | API 312 microphone preamplifier card (2622, 2520, 2503) | [american_312.md](docs/models/american_312.md) |
 | British 4K E | SSL SL 4000 E channel amp, 82E01 microphone amplifier | [british_4k_e.md](docs/models/british_4k_e.md) |
@@ -328,6 +331,7 @@ hardware behind them at all.
 | Brit Plexi EL34 | 1959 Super Lead: the same iron with no master, 47 k feedback | [brit_plexi.md](docs/models/brit_plexi.md) |
 | AC30 EL84 | AC30 Top Boost: four cathode-biased EL84, no feedback loop, cut control, GZ34 rectifier | [brit_ac30.md](docs/models/brit_ac30.md) |
 | DR103 EL34 | Hiwatt DR103: four EL34, inverter direct-coupled to its driver | [brit_dr103.md](docs/models/brit_dr103.md) |
+| American Deluxe 6V6 | Deluxe Reverb AB763: 12AT7 inverter, two 6V6GT, GZ34 rectifier | [american_deluxe.md](docs/models/american_deluxe.md) |
 | Recto 6L6 / Recto 6L6 Tube | Dual Rectifier: four 6L6 on the silicon setting, or two 5U4GB valve rectifiers | [cali_rectifier.md](docs/models/cali_rectifier.md) |
 
 **Cabinets, speakers and microphones** — dimensions from the manufacturers,

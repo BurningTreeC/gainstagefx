@@ -831,7 +831,15 @@ impl PowerSpec {
         // No master volume on an AB763. Wide open, so it is not one.
         master: 1_000_000.0,
         master_rest: 1.0,
-        pi_couple: 0.001e-6,
+        // The drawing's 0.001 uF is modelled in `circuits::deluxe`, on the
+        // mixer plate where it is drawn, so that the channel hands off an AC
+        // signal like every other circuit here. This is a short across the
+        // module boundary so the capacitor is counted once -- 10 uF into the
+        // 2 MOhm leak chain is a corner at eight thousandths of a hertz. It is
+        // deliberately not zero: zero means a *direct*-coupled inverter, which
+        // rearranges `pi_leak_upper` into a series resistor, and that is the
+        // Hiwatt's cathode-follower topology, not this one.
+        pi_couple: 10e-6,
         driver_volts: 0.0,
         // As on the Twin: no separate grid stopper here. The 22 k on the
         // drawing is the long-tail resistor.

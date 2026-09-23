@@ -1324,3 +1324,306 @@ there, so saving failed; a host started from a Unix-style shell was worse,
 writing presets somewhere no Windows DAW session would look again. Windows now
 uses `%APPDATA%\GainStageFx\Presets`, with `%USERPROFILE%` as a fallback. Linux
 and macOS are untouched. Verified against the `x86_64-pc-windows-gnu` target.
+
+## Session 2026-09-22 (cont.) -- the JC-120's CH-1, settled by a better scan
+
+The previous entry left the Jazz 120 blocked on one question: whether CH-1's
+tone network was the passive stack it was modelled as, or an active one inside
+a feedback loop. The 200 ppi A3 scan of the Fifth Edition could not answer it,
+and the fitting harness had proved -- correctly -- that the modelled topology
+was wrong, because each of the three published control ranges could be reached
+alone and none of them together.
+
+**A search for better schematics found four documents, and the answer was not
+the one on the table.** `Roland JC-120.zip` on schematicsforfree.com carries the
+**JC-120UT/JT Service Notes of Sep. 2000** -- the current-production amplifier --
+whose two schematic pages are **1334 and 1305 ppi**, against 200 for the sheet in
+hand. Also recovered: the Third Edition at 600 ppi, and the factory sheet for
+serials 380100-410599. All four are in the git-ignored `docs/schematics/`.
+
+**CH-1 is a different circuit in every generation of this amplifier.** Four of
+them, with four different tone networks. The 250 k / 250 k / 10 k pot values on
+the Fifth Edition's *parts list* belong to the amplifier that edition covers;
+the 17 / 13 / 14 dB control ranges on its *specification page* describe the
+50 k / 100 k / 5 k network of the generation it supersedes, carried forward
+wholesale as Roland's service notes do. Fitting one to the other could only ever
+fail, which is exactly what it did. **A specification page and a schematic page
+in the same service manual need not describe the same circuit.**
+
+**`circuits::jazz120` is rebuilt against the 2000 sheet** and is now the
+current-production JC-120's CH-1, jacks to CN3, 25 unknowns. J3 a 2SK184 in
+common source with a 15 k drain load -- not the source follower the older sheet
+seemed to show -- then the passive stack, the 1 M Volume with its bright
+network, a second 2SK184 as the gain stage and a 2SC1815 follower out.
+
+The stack is a Fender FMV with one structural difference that no amount of
+value-fitting could have found: **the slope resistor feeds two caps into two
+entry points**, C13 .082 into the Treble/Bass junction and C12 .056 into the
+Middle pot's top, past R19. R19, the connection the whole question had come down
+to, is a plain 1 k in the ladder between Bass and Middle. The stack's bottom
+returns to ground; there is no feedback path anywhere near it.
+
+**Nothing is fitted any more, and the sheet checks itself.** Its printed test
+points are -30 dBm at the jack, -10 dBm at J3's drain and +13 dBm at CN3 under a
+stated `VOL, EQ MAX / BRI OFF`, so the amplifier's own gain is documented:
+
+| check | published | model |
+|---|---|---|
+| jack to J3's drain, 1 kHz | 20 dB | 19.0 dB |
+| jack to CN3 | 43 dB | 43.7 dB |
+| input impedance | 680 kohm | 5.7 dB into a 680 k source |
+| +VA (MTZ-30B zener) | 30 V | +VO 27.2 V after R20's 680 ohm |
+
+Both gains land within a decibel with the JFET model being nothing but the two
+numbers on Toshiba's sheet. `JfetSpec::J2SK184` is new;
+`JfetSpec::J2SK117_GR`'s comment no longer claims to be the JC-120's input JFET.
+
+**Wired up rather than left in a transcript:** `tests/jazz120.rs`, nine tests --
+the two test-point gains, the operating point and its headroom for the sheet's
+9.79 Vpp, the published input impedance, the two jacks, that the tone network is
+passive at every setting and every frequency (the test that would have caught
+the original error), that each control moves its own band the right way, the
+Bright switch, and rate independence at all five rates. `examples/jc120_fit` is
+now `examples/jc120` and checks rather than searches.
+
+Two orientation bugs fixed on the way: the Bass and Middle pots are rheostats
+with the wiper strapped to terminal 3, so they need `ReverseAudio` and
+`ReverseLinear` -- with a forward taper both controls ran backwards, which is
+`CLAUDE.md`'s failure mode 5 exactly.
+
+## Session 2026-09-22 (cont.) -- the Jazz 120 on the panel
+
+`Circuit::Jazz120` (`amp_roland_jc120`, display **Jazz 120**) appended to the
+circuit list, `Gain::Jazz120` appended to `Gain::ALL` behind it. Drive turns the
+amplifier's own Volume and the panel says `VOLUME`, as it does on the two
+Fenders; Bass, Middle and Treble drive CH-1's own stack through `own_tone`. One
+factory preset, **Jazz Clean**.
+
+**The first voice in the catalogue with no power stage.** `Matched` resolves to
+nothing and the channel hands straight over to the tone section. That is the
+honest state until the JC-120's two 60 W transistor amplifiers are built, rather
+than borrowing a valve stage the amplifier has not got.
+
+**The Bright and sensitivity selectors are no longer the Twin's alone.** They
+were gated on `Circuit::Twin` and carried its labels as literals in the editor,
+so the American Deluxe -- which has the same switched jacks -- never got them
+either. `Gain::input_jacks` and `Gain::bright_switch` now carry the slots, the
+values *and* the labels, and the panel reads whichever circuit is selected:
+High/Low with Roland's own -30 and -20 dBm on the Jazz 120, the AB763's
+1 MOhm / -6 dB on the two Fenders. The two are gated separately, because the
+Deluxe has the jacks but its Bright capacitor is soldered in.
+
+`src/calibration.rs` and `src/power_trim.rs` regenerated -- both are `Gain::ALL`
+shaped, so a new voice is a new row in each. The JC-120 calibrates at a guitar's
+0.122 V, like every other amplifier here, and makes 10.8 % at the Volume stop:
+43 dB of gain with no valve compression behind it does run out of room, and it
+does so abruptly, which is what the amplifier is known for.
+
+**Also fixed, because `examples/presetlevel` named it:** the two American Deluxe
+presets shipped with no `output_trim` and were the two loudest things in the
+catalogue -- Deluxe Breakup at +2.4 dB against a -7.2 dB mean, which put the
+spread at 16.2 dB and failed `the_presets_are_level_matched`. Both now carry a
+measured trim (-7 and -10), and Jazz Clean carries +4 for the opposite reason:
+no power stage behind it, so it loses what every valve amplifier here gains.
+All three sit within half a decibel of the mean.
+
+**And one test fixed rather than worked around:**
+`every_control_is_either_reachable_or_given_a_resting_position` hard-coded
+`twin::REVERB` and `twin::INTENSITY` as the reachable pair for every voice with
+a tank and a tremolo. The Twin has a Middle control and the Deluxe has not, so
+the Deluxe's numbers are one lower and its Reverb looked unreachable -- the test
+had been failing on the Deluxe since that voice was added. It now asks each
+voice for its own numbers through `Gain::ab763`, which is what keeps it true
+when a third AB763 arrives.
+
+`tests/tone_knobs.rs` needed the same kind of correction: its `OWN` table is the
+panel's claim about which circuits carry their own tone controls, and the
+American Deluxe had never been added to it, so a test asserting the Deluxe had
+no tone control was failing against a Deluxe that has two. Both it and the
+Jazz 120 are in the table now -- Deluxe `[true, false, true]`, Jazz 120 all
+three.
+
+## Session 2026-09-22 (cont.) -- the Deluxe's leftovers
+
+Two items the American Deluxe's research log listed as unbuilt, both now done.
+
+**The cabinet and speaker choice.** The box was already there; its
+`default_speaker` was wrong. `CabinetProfile::AMERICAN_OPEN_112` resolved
+`Matched` to the *alnico* Jensen P12R, which is not a blackface Deluxe part at
+all -- the amplifier shipped with a ceramic C12N or an Oxford 12K5, and the
+Twin's own AB763 cabinet in this repository already defaults to the C12N. The
+1x12 now does the same, both Deluxe presets follow it, and the '65 reissue's
+C12K stays excluded as the later part it is.
+
+**The Normal channel, and a missing triode.** The drawing has two channels and
+only one was built. The Normal channel's *second* stage was present -- it shares
+the [A] cathode and loads the mixer -- but its first stage, its stack and its
+Volume were not, so a triode's worth of standing current was missing from the
+dropper chain that feeds every plate in the amplifier. Against the drawing's own
+printed voltages:
+
+| node | before | now | drawing |
+|---|---:|---:|---:|
+| `v1_p` | 193.4 V (+13.8 %) | **186.1 V (+9.5 %)** | 170 V |
+| `v2_p` | 197.3 V (+9.6 %) | **189.9 V (+5.5 %)** | 180 V |
+
+Nothing was tuned for that. It is the current of a stage that should always
+have been there, and it is the second time on this amplifier that a plate
+sitting high turned out to be a missing load rather than a wrong resistor --
+the first was the phase inverter's, which became `PI_STANDING_LOAD`.
+
+Both channels are now built by one function, `deluxe::front_end`, because on the
+drawing they *are* one circuit twice: same 68 k jacks, same 100 kΩ plate, same
+1.5 kΩ / 25 µF cathode, same stack, same 1 MΩ Volume. They differ in exactly two
+things, and the sheet is unambiguous about both -- the Vibrato channel carries
+the 47 pF across its Volume and the Normal channel does not, and the reverb and
+the tremolo hang on the Vibrato channel's second stage, joining the Normal
+channel only at the mixer, *after* the intensity tap.
+
+So **the Normal channel has no reverb and no tremolo**, which is what the
+amplifier does, and those two controls rest rather than appearing as greyed
+knobs. `deluxe::Channel` says which channel the jacks feed; the other stays in
+the network with its jacks open -- grid returned through the same 34 kΩ + 1 MΩ
+the High jack presents, because with no plug in it that is the same network --
+and its Volume resting at zero.
+
+Selectable as `Circuit::DeluxeNormal` (`amp_fender_deluxe_ab763_normal`,
+display **American Deluxe Normal**), matched to the same `PowerSpec::DELUXE_6V6`,
+with one preset, *Blackface Normal*. The circuit now declares eight controls:
+the five the panel reaches and the quiet channel's three, which `tests/deluxe.rs`
+asserts so that a ninth would still mean a Middle pot had appeared.
+
+## Session 2026-09-22 (cont.) -- the JC-120's VAS, and three Windows reports
+
+**The one node the power amplifier was waiting on is read.** Rendered at 260 %
+of the native 1334 ppi scan, **there is no junction dot** where the R76/R75
+vertical crosses the output line -- the vertical is the same width above and
+below it, against four unmistakable filled junctions in the same crop. So the
+string R78 1.5 k / R82 6.8 k / R76 3.9 k / R75 6.8 k runs from +VE down to the
+`Vbe` multiplier *past* the output without touching it, and C43's 47 µF is the
+only path between them. That makes it a **bootstrap**: the VAS's collector load
+is held a constant voltage above the output and behaves as a current source. A
+divider across the output would have done the opposite, and the two are not
+worth confusing. `docs/models/jazz_120.md` carries the diagram; nothing else in
+that amplifier is unread now.
+
+### Three reports from a Windows user, and one cause behind two of them
+
+**"There is no cursor in the preset-name box."** Two separate faults, and the
+first guess at it was wrong -- recorded because the thing that corrected it was
+one sentence from the person who reported it.
+
+The dialog built its `Textbox` and never focused it, so the box came up not
+editing at all. That was fixed with `.on_build(|cx| cx.focus())`, and it is a
+real fix: on a host that does not hand the plugin window keyboard focus by
+itself, there was otherwise nothing to type into. But it was not the reported
+symptom, and the report said so: *"if I click somewhere in the middle of the
+text and hit delete it deletes there where I clicked."* A box that deletes the
+character you clicked in front of is editing, and its caret is tracking. The
+caret was not missing. It was **invisible**.
+
+`caret_color` is a style property, and an unset colour property in vizia reads
+back as `rgba(0, 0, 0, 0)` -- so the caret was drawn on every frame in
+transparent black, and the selection highlight with it. vizia's own themes set
+both, but this editor is created with `ViziaTheming::None` precisely so that
+nothing arrives looking like a default toolkit, and the one sheet it does add
+was about the scrollbar, which had gone invisible for exactly the same reason.
+The caret rules now live in that sheet beside it, rather than being set on the
+view, because vizia blinks the caret by toggling a `caret` class and a rule is
+what that class has to act on -- inline would have made it visible and left it
+staring.
+
+**"Presets do not save and no `GainStageFx\Presets` folder appears."** follows
+from the first fault rather than from the path code: with nothing focused there
+was no name, and `presets::save` rejects an empty name *before* it calls
+`create_dir_all`, so nothing was written and no folder ever appeared.
+
+The path itself was never wrong, and `tests/store.rs` now proves it rather than
+asserting it: it checks the preset directory does **not** exist before the first
+save and **is** a directory after it, so "saving creates the folder" is a test
+rather than a reading of the source.
+
+**Two Windows-only hazards found while there**, both now covered by unit tests
+that run on any platform:
+
+* `preset_dir`'s Windows rule was behind `#[cfg(windows)]`, so it was only ever
+  compiled on the platform nobody here develops on. Both rules are now selected
+  with `cfg!` and take their environment variables as arguments, which makes
+  them pure functions with tests.
+* `file_stem` mapped the forbidden *characters* but not the reserved *names*.
+  `CON`, `AUX`, `NUL`, `COM1`..`LPT9` are devices on Windows, not files -- Win32
+  resolves them before the filesystem sees them and the `.json` does not help --
+  so a preset called `Aux` could not be saved there. Those stems now get an
+  underscore. Windows' other rule, that a trailing dot or space is stripped
+  silently, needs no code: `trim` takes the spaces and the character map has
+  already turned the dot into an underscore. A trim added for it was removed
+  once a test showed it could never fire.
+
+**Two tests on the stylesheet**, because nothing else would ever report it.
+`Context::add_stylesheet` returns `Ok(())` whatever happens and the parse
+behind it is `if let Ok(..)`, so one missing semicolon does not break one rule:
+it silently discards **the whole sheet**. Both things in that sheet are
+invisible when they are missing rather than wrong -- a scrollbar with no width,
+a caret drawn in transparent black -- and nobody would see which had gone.
+vizia imports its own parser privately so the test cannot call it; it checks
+the structure, which is what a typo breaks, and that some `caret-color` in the
+sheet is not transparent. Both were verified to fail when the rule is removed
+and when a semicolon is dropped.
+
+**The CLAP install folder is correct and was not changed.** `%COMMONPROGRAMFILES%\CLAP`
+and `%LOCALAPPDATA%\Programs\Common\CLAP` are the two locations `clap/entry.h`
+names, and the VST3 pair matches Steinberg's. What was wrong was the **Windows
+readme**: it documented a flat copy while `install.exe` uses a `BurningTreeC`
+subfolder, which is what the Linux readme has always said about its own
+installer. Someone checking where the plugin went would have looked in
+`Common Files\CLAP`, found only a folder, and reasonably concluded it had gone
+somewhere else. The readme now states both paths in full, says hosts search
+subfolders, and notes that `install.exe` prints where it put each file.
+
+**The JC-120's power amplifier: attempted, wrong, withdrawn.** With the
+bootstrap settled the netlist was written -- and it took Q12 and Q14 for a
+current mirror on the strength of them being a complementary pair drawn side by
+side, which is an inference, not a reading. The DC solve rejected it in one
+run: both differential-pair collectors within a volt of the negative rail.
+
+A proper look says Q12 is not in the signal path at all. Its emitter is on the
+bootstrapped node, its base on the R79/R76 divider and its collector on Q14's
+base -- an overcurrent limiter that stays off until the drop across R79 reaches
+a `Vbe`. Q14 is the voltage amplifier stage. The pair drives Q14's base and Q12
+clamps it, which is the opposite of what was built.
+
+`src/circuits/jc120_power.rs` was **removed rather than left in the tree**. A
+power amplifier that solves to a wrong operating point is worse than none,
+because the next thing that happens to it is being wired up. What remains
+unread is one node -- where Q14's emitter returns, and how the `Vbe` multiplier
+and the two drivers sit across it -- and it wants a dedicated pass rather than
+a fourth inference. The device specifications read off the parts list
+(`PNP_2SA970_GR`, `PNP_2SA1015_GR`, `NPN_2SD669_AC`, `PNP_2SB649_AC`,
+`NPN_2SC4386`, `PNP_2SA1671`) are kept: those are readings, and they are what
+the rebuild will use.
+
+**So the junctions are measured now, not judged.** Two wrong netlists in a row
+came from the same thing -- deciding by eye whether a crossing carried a
+junction dot -- so `tools/schematic/trace.py` settles it in the pixels instead.
+It measures the stroke width, separates dots from wires by morphology, joins
+wires into electrical nodes with union-find, and draws the result back over the
+scan in colour so the reconstruction can be checked rather than trusted.
+
+The rule it encodes is the one that matters: a dot joins everything passing
+through it, and a wire that *ends* on another is joined whether or not a dot is
+drawn, because a corner and a T are connections by construction -- you cannot
+cross and stop. Only a crossing where both wires continue needs the dot.
+
+On the JC-120's power amplifier it finds 51 junction dots and resolves the
+board into nine clean nodes, and the two things that were in doubt fall out of
+it: **C43 joins the R78/R82 junction to the output and nothing else does** --
+the bootstrap, measured -- and **R88 joins the output to the inverting base**,
+which is where the gain calculation said the feedback resistor was.
+
+It found its own limits too, and they are written down: connector boxes are
+rectangles whose edges read as wires, and shorted every row of W8 together
+until the crop excluded them. That is why the overlay exists.
+
+What remains on that amplifier is no longer topology. It is which terminal of
+each transistor sits on which of those nodes -- a reading against a known node
+list rather than against a picture. The netlist gets written from the list.

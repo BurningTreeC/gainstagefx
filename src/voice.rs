@@ -28,8 +28,8 @@ use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerPr
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, deluxe, distortion_plus,
-    dr103, evh5150, heavy_metal, iron, markiic, metal_zone, neve, plexi, power, preamp, rectifier,
-    rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    dr103, evh5150, heavy_metal, iron, jazz120, markiic, metal_zone, neve, plexi, power, preamp,
+    rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
@@ -136,12 +136,28 @@ pub enum Gain {
     /// a quarter of the power. Vibrato channel, with the spring tank and the
     /// optical tremolo. See `circuits::deluxe`.
     Deluxe,
+    /// Roland JC-120 Jazz Chorus, CH-1, the clean channel. The
+    /// current-production JC-120UT/JT. See `circuits::jazz120`.
+    ///
+    /// The first solid-state guitar amplifier in the catalogue, and the first
+    /// with no valve power stage behind it: its two 60 W transistor amplifiers
+    /// and its bucket-brigade chorus are separate work, so `Matched` resolves
+    /// to nothing here and the channel hands straight over to the tone
+    /// section. What is modelled is the part that makes the sound -- two
+    /// 2SK184 stages around a passive network with far more authority than a
+    /// Fender stack has.
+    Jazz120,
+    /// The AB763 Deluxe's *other* channel: two knobs, a Volume, no bright
+    /// capacitor, and neither the reverb nor the tremolo -- both of those hang
+    /// on the Vibrato channel's second stage and join this one only at the
+    /// mixer, after the intensity tap. See `circuits::deluxe`.
+    DeluxeNormal,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 28] = [
+    pub const ALL: [Gain; 30] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -170,6 +186,8 @@ impl Gain {
         Gain::Hm2,
         Gain::Mt2,
         Gain::Deluxe,
+        Gain::Jazz120,
+        Gain::DeluxeNormal,
     ];
 
     pub fn name(self) -> &'static str {
@@ -202,6 +220,8 @@ impl Gain {
             Gain::Hm2 => "Boss HM-2",
             Gain::Mt2 => "Boss MT-2",
             Gain::Deluxe => "Deluxe Reverb",
+            Gain::Jazz120 => "Jazz Chorus JC-120",
+            Gain::DeluxeNormal => "Deluxe Reverb, Normal",
         }
     }
 
@@ -219,6 +239,8 @@ impl Gain {
             Gain::Screamer => ts808::DRIVE,
             Gain::Twin => twin::VOLUME,
             Gain::Deluxe => deluxe::VOLUME,
+            Gain::Jazz120 => jazz120::VOLUME,
+            Gain::DeluxeNormal => deluxe::VOLUME,
             Gain::Muff => bigmuff::SUSTAIN,
             Gain::Brit800 => brit800::VOLUME,
             Gain::American312 => american312::GAIN,
@@ -263,7 +285,7 @@ impl Gain {
     /// missing; it is this one.
     pub fn drive_name(self) -> &'static str {
         match self {
-            Gain::Twin | Gain::Deluxe => "VOLUME",
+            Gain::Twin | Gain::Deluxe | Gain::Jazz120 | Gain::DeluxeNormal => "VOLUME",
             Gain::Muff => "SUSTAIN",
             Gain::Boogie => "LEAD DRIVE",
             Gain::Peavey => "PRE GAIN",
@@ -339,7 +361,11 @@ impl Gain {
             Gain::Twin => Some((twin::BASS, twin::MIDDLE, twin::TREBLE)),
             // No Middle control: the AB763 Deluxe grounds its stack through a
             // fixed 6.8 k resistor, so the panel's Middle knob is greyed out.
-            Gain::Deluxe => Some((deluxe::BASS, usize::MAX, deluxe::TREBLE)),
+            Gain::Deluxe | Gain::DeluxeNormal => Some((deluxe::BASS, usize::MAX, deluxe::TREBLE)),
+            // All three, and they have more authority than a Fender stack:
+            // the slope resistor feeds two caps into two entry points rather
+            // than one. See `circuits::jazz120`.
+            Gain::Jazz120 => Some((jazz120::BASS, jazz120::MIDDLE, jazz120::TREBLE)),
             Gain::Brit800 => Some((brit800::BASS, brit800::MIDDLE, brit800::TREBLE)),
             Gain::Plexi => Some((plexi::BASS, plexi::MIDDLE, plexi::TREBLE)),
             // No middle control: the stack has a 10 k resistor where a Fender
@@ -434,7 +460,7 @@ impl Gain {
             Gain::Boogie => Some(&power::PowerSpec::MARKIIC),
             Gain::Peavey => Some(&power::PowerSpec::EVH5150),
             Gain::Twin => Some(&power::PowerSpec::TWIN),
-            Gain::Deluxe => Some(&power::PowerSpec::DELUXE_6V6),
+            Gain::Deluxe | Gain::DeluxeNormal => Some(&power::PowerSpec::DELUXE_6V6),
             Gain::Brit800 => Some(&power::PowerSpec::BRIT_EL34),
             Gain::Plexi => Some(&power::PowerSpec::PLEXI_EL34),
             Gain::AC30 => Some(&power::PowerSpec::AC30_EL84),
@@ -471,6 +497,8 @@ impl Gain {
                 | Gain::DR103
                 | Gain::Recto
                 | Gain::Deluxe
+                | Gain::Jazz120
+                | Gain::DeluxeNormal
         )
     }
 
@@ -544,6 +572,81 @@ impl Gain {
         }
     }
 
+    /// The switched input jacks, where the circuit has a pair.
+    ///
+    /// Both AB763s and the Jazz 120. The AB763s answer out of `ab763()` so
+    /// their numbers stay in one place; the Jazz 120 is the simpler case and
+    /// states its own.
+    pub fn input_jacks(self) -> Option<InputJacks> {
+        if self == Gain::Jazz120 {
+            // R1 33 k on HIGH and R2 68 k on LOW into the same node, and the
+            // sheet's own sensitivities beside them.
+            return Some(InputJacks {
+                series: jazz120::INPUT_SERIES_SLOT,
+                high_series: jazz120::INPUT_HIGH_SERIES_OHMS,
+                low_series: jazz120::INPUT_LOW_SERIES_OHMS,
+                jack_load: None,
+                grid_shunt: None,
+                high_label: "High (-30 dBm)",
+                low_label: "Low (-20 dBm)",
+            });
+        }
+        if self == Gain::DeluxeNormal {
+            // The Normal channel's jacks are the Vibrato channel's, part for
+            // part; only the channel behind them differs.
+            return Some(InputJacks {
+                series: deluxe::INPUT_SERIES_SLOT,
+                high_series: deluxe::INPUT_HIGH_SERIES_OHMS,
+                low_series: deluxe::INPUT_LOW_SERIES_OHMS,
+                jack_load: Some((
+                    deluxe::INPUT_JACK_LOAD_SLOT,
+                    deluxe::INPUT_HIGH_JACK_LOAD_OHMS,
+                    deluxe::INPUT_OPEN_OHMS,
+                )),
+                grid_shunt: Some((
+                    deluxe::INPUT_GRID_SHUNT_SLOT,
+                    deluxe::INPUT_LOW_GRID_SHUNT_OHMS,
+                    deluxe::INPUT_OPEN_OHMS,
+                )),
+                high_label: "High 1 (1 MOhm)",
+                low_label: "Low 2 (-6 dB)",
+            });
+        }
+        let a = self.ab763()?;
+        Some(InputJacks {
+            series: a.input_series,
+            high_series: a.high_series,
+            low_series: a.low_series,
+            jack_load: Some((a.input_jack_load, a.high_jack_load, a.open)),
+            grid_shunt: Some((a.input_grid_shunt, a.low_grid_shunt, a.open)),
+            high_label: "High 1 (1 MOhm)",
+            low_label: "Low 2 (-6 dB)",
+        })
+    }
+
+    /// The Bright switch, where the panel has one rather than a capacitor
+    /// soldered in. The Deluxe has the capacitor and no switch, so it is
+    /// `None` there and the panel greys the control.
+    pub fn bright_switch(self) -> Option<BrightSwitch> {
+        if self == Gain::Jazz120 {
+            // SW2 does not switch C7 in and out: it shorts R4 so the 330 pF
+            // couples fully. See `circuits::jazz120`.
+            return Some(BrightSwitch {
+                slot: jazz120::BRIGHT_SLOT,
+                on: jazz120::BRIGHT_ON_OHMS,
+                off: jazz120::BRIGHT_OFF_OHMS,
+                on_label: "On (330 pF)",
+            });
+        }
+        let (slot, on, off) = self.ab763()?.bright?;
+        Some(BrightSwitch {
+            slot,
+            on,
+            off,
+            on_label: "On (120 pF)",
+        })
+    }
+
     /// Whether this voice has a reverb tank and a tremolo of its own.
     ///
     /// Only the Twin does. The panel greys the three controls everywhere
@@ -580,6 +683,38 @@ pub struct Ab763 {
     pub tank_return_aux: usize,
     pub reverb: usize,
     pub intensity: usize,
+}
+
+/// A switched pair of input jacks. See `Gain::input_jacks`.
+///
+/// Every amplifier that has two jacks has them for the same reason and wires
+/// them differently. An AB763 switches three parts at once -- the series
+/// resistance, the jack's own load and the grid shunt -- because the unused
+/// jack's normalling rearranges the pair of 68 k stoppers. A JC-120 has two
+/// resistors into one node and nothing else, so the last two are `None` there
+/// rather than slots that would have to be invented.
+#[derive(Clone, Copy, Debug)]
+pub struct InputJacks {
+    pub series: usize,
+    pub high_series: f64,
+    pub low_series: f64,
+    /// Slot, value with this jack in use, value with it open.
+    pub jack_load: Option<(usize, f64, f64)>,
+    pub grid_shunt: Option<(usize, f64, f64)>,
+    /// What the panel calls them.
+    pub high_label: &'static str,
+    pub low_label: &'static str,
+}
+
+/// A Bright switch that is a real part in the netlist. See
+/// `Gain::bright_switch`.
+#[derive(Clone, Copy, Debug)]
+pub struct BrightSwitch {
+    pub slot: usize,
+    /// The value with the switch closed, and with it open.
+    pub on: f64,
+    pub off: f64,
+    pub on_label: &'static str,
 }
 
 /// Which part does the amplifying, for the channels built around one.
@@ -899,7 +1034,7 @@ impl PowerAmp {
                 Gain::AC30 => Some(PowerModel::AC30EL84),
                 Gain::DR103 => Some(PowerModel::DR103EL34),
                 Gain::Recto => Some(PowerModel::Recto6L6),
-                Gain::Deluxe => Some(PowerModel::AmericanDeluxe6V6),
+                Gain::Deluxe | Gain::DeluxeNormal => Some(PowerModel::AmericanDeluxe6V6),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1375,7 +1510,15 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // Loaded by the phase inverter's grid leak, which is where the
         // drawing hands over. See `twin.rs`.
         Gain::Twin => twin::build(10_000.0, 1_000_000.0),
-        Gain::Deluxe => deluxe::build(10_000.0, 1_000_000.0),
+        // 2 MOhm, not the usual 1 MOhm: what the AB763 Deluxe's 0.001 uF works
+        // into is the inverter's 1 M + 1 M grid-leak chain, and that pair sets
+        // the bottom corner of the hand-off.
+        Gain::Deluxe => deluxe::build(10_000.0, 2_000_000.0),
+        // CN3 into the main amplifier board, which is where the sheet hands
+        // over. See `circuits::jazz120`.
+        Gain::Jazz120 => jazz120::build(10_000.0, 1_000_000.0),
+        // The same amplifier through its other channel, and the same hand-off.
+        Gain::DeluxeNormal => deluxe::build_channel(deluxe::Channel::Normal, 10_000.0, 2_000_000.0),
         Gain::Muff => bigmuff::build(&bigmuff::RAMS_HEAD, 10_000.0, 470_000.0),
         Gain::Boogie => markiic::build(10_000.0, 1_000_000.0),
         // Not a nominal load: the 5150's tone stack really does hang 33 k on
@@ -2437,7 +2580,7 @@ impl Chain {
         // The Deluxe's reverb transformer secondary sits at a different MNA
         // index, so it is resolved here beside the Twin's rather than looked up
         // per sample.
-        let deluxe_tank_send = deluxe::build(10_000.0, 1_000_000.0)
+        let deluxe_tank_send = deluxe::build(10_000.0, 2_000_000.0)
             .expect("Deluxe catalogue builds")
             .unknown_named(deluxe::SEND)
             .expect("Deluxe has the reverb-transformer secondary");
@@ -2976,7 +3119,10 @@ impl Chain {
         // switching transients. Keep one fixed calibration conversion for the
         // Twin instead, and let the modelled pot determine the actual level.
         let trim = self.power_trim();
-        let make_up_drive = if self.voice == Gain::Twin {
+        // Both AB763 amplifiers put their Drive parameter on the physical
+        // channel Volume pot, so both keep one fixed calibration conversion and
+        // let the modelled pot decide the level, exactly as the hardware does.
+        let make_up_drive = if self.voice.ab763().is_some() {
             TWIN_VOLUME_CALIBRATION_REFERENCE
         } else {
             self.drive
@@ -3000,7 +3146,8 @@ impl Chain {
     /// handed about the same level. The Twin is intentionally excluded: its
     /// Drive parameter is the physical channel Volume pot and its make-up is
     /// fixed at `TWIN_VOLUME_CALIBRATION_REFERENCE`, so Twin Volume is allowed
-    /// to change level like the hardware.
+    /// to change level like the hardware. The American Deluxe is excluded for
+    /// the same reason: its Drive is its Volume too.
     /// The power stage was moved in front of the make-up for exactly that
     /// reason and the comment there says so; the iron was left behind it and
     /// the same argument was never applied. Reported from a DAW as the Iron
@@ -3728,18 +3875,25 @@ impl Chain {
     /// those same two 68 k parts a divider, so the guitar sees about 136 kΩ
     /// and the valve grid receives roughly half the voltage.
     fn set_twin_input(&mut self, low: bool) {
-        let Some(ab763) = self.voice.ab763() else {
+        let Some(jacks) = self.voice.input_jacks() else {
             return;
         };
         let sim = &mut self.gains[self.gain];
-        if low {
-            sim.set_value(ab763.input_series, ab763.low_series);
-            sim.set_value(ab763.input_jack_load, ab763.open);
-            sim.set_value(ab763.input_grid_shunt, ab763.low_grid_shunt);
-        } else {
-            sim.set_value(ab763.input_series, ab763.high_series);
-            sim.set_value(ab763.input_jack_load, ab763.high_jack_load);
-            sim.set_value(ab763.input_grid_shunt, ab763.open);
+        sim.set_value(
+            jacks.series,
+            if low {
+                jacks.low_series
+            } else {
+                jacks.high_series
+            },
+        );
+        // The AB763 switches two more parts with the jack; the Jazz 120's two
+        // jacks are two resistors into one node and switch nothing else.
+        if let Some((slot, in_use, open)) = jacks.jack_load {
+            sim.set_value(slot, if low { open } else { in_use });
+        }
+        if let Some((slot, in_use, open)) = jacks.grid_shunt {
+            sim.set_value(slot, if low { in_use } else { open });
         }
     }
 
@@ -3748,8 +3902,8 @@ impl Chain {
     fn set_twin_bright(&mut self, bright: bool) {
         // `None` where the capacitor is soldered in, as on the Deluxe: the
         // switch is not this amplifier's and the control does nothing.
-        if let Some((slot, fitted, open)) = self.voice.ab763().and_then(|a| a.bright) {
-            self.gains[self.gain].set_value(slot, if bright { fitted } else { open });
+        if let Some(sw) = self.voice.bright_switch() {
+            self.gains[self.gain].set_value(sw.slot, if bright { sw.on } else { sw.off });
         }
     }
 

@@ -1,4 +1,4 @@
-//! Fender Deluxe Reverb AB763, Vibrato channel.
+//! Fender Deluxe Reverb AB763, both channels.
 //!
 //! Read value by value off the original Fender drawing at 600 dpi; the sheet is
 //! in `docs/schematics/fender_deluxe_reverb_ab763.pdf` and the checkpoint is
@@ -22,6 +22,21 @@
 //!   triode.
 //! * the tremolo shunt hangs on the mixer plate through 220 kΩ *then* 0.1 µF,
 //!   where the Twin couples first and mixes after.
+//!
+//! **Both channels are built, and either can be the one that is played.** The
+//! drawing's two channels are the same circuit twice over -- same 68 k jacks,
+//! same 100 kΩ plate, same 1.5 kΩ cathode, same stack, same 1 MΩ Volume -- and
+//! they differ in exactly two things: the Vibrato channel carries the 47 pF
+//! bright capacitor across its Volume and the Normal channel does not, and the
+//! reverb and the tremolo hang off the Vibrato channel's second stage, joining
+//! the Normal channel only at the mixer, *after* the intensity tap. So the
+//! Normal channel has no reverb and no tremolo, which is what the amplifier
+//! does.
+//!
+//! Whichever channel is selected, the other stays in the network with its
+//! jacks open and its Volume down. That is not decoration: the two second
+//! stages share one 820 Ω / 25 µF cathode (node [A]), both first stages hang
+//! on the same dropper chain, and the quiet channel's 220 kΩ loads the mixer.
 
 use crate::dsp::netlist::{Adjust, Circuit, CoreSpec, Fault, Netlist, Taper, TriodeSpec};
 
@@ -35,6 +50,68 @@ pub const VOLUME: usize = 2;
 pub const REVERB: usize = 3;
 /// Stock 50 kΩ reverse-audio Vibrato Intensity control.
 pub const INTENSITY: usize = 4;
+/// The *other* channel's three, which no panel reaches. They are real pots in
+/// the network because the quiet channel is really there; they rest where a
+/// player leaves a channel they are not using, which is with its Volume down.
+pub const OTHER_TREBLE: usize = 5;
+pub const OTHER_BASS: usize = 6;
+pub const OTHER_VOLUME: usize = 7;
+
+/// Which channel the jacks feed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channel {
+    /// The one with the reverb and the tremolo on it.
+    Vibrato,
+    /// The one without. Two knobs and a Volume.
+    Normal,
+}
+
+/// Where one channel's front end lives in the network. The two are the same
+/// circuit, so they are built by the same code and differ only in their node
+/// names and in the 47 pF.
+#[derive(Clone, Copy)]
+struct ChannelNodes {
+    grid: &'static str,
+    plate: &'static str,
+    cathode: &'static str,
+    t_top: &'static str,
+    t_bot: &'static str,
+    slope: &'static str,
+    b_bot: &'static str,
+    ts_out: &'static str,
+    /// The Volume wiper, which is the second stage's grid.
+    wiper: &'static str,
+    /// The 47 pF across the Volume. The Vibrato channel has it; the Normal
+    /// channel does not, and that is the whole of the difference in the front
+    /// end. It belongs to the channel, not to the one being played.
+    bright: bool,
+}
+
+const VIBRATO_NODES: ChannelNodes = ChannelNodes {
+    grid: "v1_g",
+    plate: "v1_p",
+    cathode: "v1_k",
+    t_top: "t_top",
+    t_bot: "t_bot",
+    slope: "slope",
+    b_bot: "b_bot",
+    ts_out: "ts_out",
+    wiper: "vol",
+    bright: true,
+};
+
+const NORMAL_NODES: ChannelNodes = ChannelNodes {
+    grid: "n1_g",
+    plate: "n1_p",
+    cathode: "n1_k",
+    t_top: "n_t_top",
+    t_bot: "n_t_bot",
+    slope: "n_slope",
+    b_bot: "n_b_bot",
+    ts_out: "n_ts_out",
+    wiper: "normal2_g",
+    bright: false,
+};
 
 /// Adjustable slots for the two stock Vibrato-channel input jacks. Jack 1
 /// (High) parallels the pair of 68 kΩ grid stoppers to 34 kΩ and presents 1 MΩ
@@ -61,10 +138,19 @@ pub const RETURN: &str = "tank_out";
 pub const REVERB_SEND_PLATE: &str = "v2_p";
 /// Useful diagnostic nodes.
 pub const MIX_GRID: &str = "mix";
-/// The mixer plate, which is what the 0.001 µF in `PowerSpec::DELUXE_6V6`
-/// couples to. On this drawing the two 220 kΩ mixing resistors and the tremolo
-/// shunt all hang on this same node.
-pub const MIXER_TO_PI: &str = "v4b_p";
+/// The mixer plate. On this drawing the Normal channel's 220 kΩ mixing
+/// resistor and the tremolo's 220 kΩ shunt both hang on this same node, and it
+/// sits at about 188 V.
+pub const MIXER_PLATE: &str = "v4b_p";
+/// The channel's hand-off, on the far side of the drawing's 0.001 µF.
+///
+/// The module boundary is drawn *after* that capacitor rather than before it,
+/// for two reasons. It is where the signal stops being at 188 V, and every
+/// other circuit in this plugin hands off an AC signal -- one that does not
+/// would thump on the first sample of every session while the capacitor
+/// charged. And the capacitor is counted exactly once: `PowerSpec::DELUXE_6V6`
+/// therefore carries a short in its `pi_couple` rather than a second one.
+pub const MIXER_TO_PI: &str = "pi_in";
 
 const V7025: TriodeSpec = TriodeSpec::ECC83;
 const V12AT7: TriodeSpec = TriodeSpec::ECC81;
@@ -116,6 +202,8 @@ const DRY_BYPASS_C: f64 = 10e-12;
 const MIX_GRID_LEAK: f64 = 220_000.0;
 const CHANNEL_MIX_R: f64 = 220_000.0;
 const NORMAL_COUPLING: f64 = 0.047e-6;
+/// The drawing's 0.001 µF from the mixer plate to the inverter's grid.
+const PI_COUPLING: f64 = 0.001e-6;
 const TREMOLO_COUPLING: f64 = 0.1e-6;
 const INTENSITY_POT: f64 = 50_000.0;
 
@@ -132,16 +220,70 @@ const FIRST_BYPASS: f64 = 25e-6;
 /// reverb recovery stage and the mixer.
 const SHARED_CATHODE: f64 = 820.0;
 const SHARED_BYPASS: f64 = 25e-6;
+/// The grid return of a channel with nothing plugged into it.
+///
+/// The same network the High jack presents, because it *is* that network with
+/// no plug in it: jack 1's switching contact leaves the two 68 kΩ stoppers
+/// paralleled to 34 kΩ and the 1 MΩ to ground behind them. 34 k + 1 M. (Read
+/// off `INPUT_HIGH_SERIES_OHMS` and `INPUT_HIGH_JACK_LOAD_OHMS` above, which
+/// are the same two parts.)
+const OPEN_JACK_RETURN: f64 = INPUT_HIGH_SERIES_OHMS + INPUT_HIGH_JACK_LOAD_OHMS;
 
-/// Build the AB763 Deluxe Vibrato channel as one electrically coupled network.
-fn complete_netlist(source: f64, load: f64) -> Netlist {
-    let mut net = Netlist::new("Deluxe Reverb AB763 complete Vibrato channel");
+/// One channel's front end: the first stage, the stack and the Volume. The two
+/// channels are the same circuit on the drawing, so they are the same code
+/// here; `bright` is the 47 pF the Vibrato channel has and the Normal has not,
+/// and the three control numbers say whether this is the channel being played.
+fn front_end(net: &mut Netlist, n: ChannelNodes, (treble, bass, volume): (usize, usize, usize)) {
+    net.resistor(n.cathode, "gnd", FIRST_CATHODE)
+        .capacitor(n.cathode, "gnd", FIRST_BYPASS)
+        .resistor("bplus_d", n.plate, PLATE_LOAD)
+        .triode(n.plate, n.grid, n.cathode, V7025);
 
-    // Stock switched input jacks.
+    // The stack, with a fixed 6.8 kΩ where a Twin has its Middle pot.
+    net.capacitor(n.plate, n.t_top, TREBLE_CAP)
+        .pot(n.t_top, n.ts_out, n.t_bot, TREBLE_POT, Taper::Audio, treble)
+        .resistor(n.plate, n.slope, SLOPE_R)
+        .capacitor(n.slope, n.t_bot, BASS_CAP)
+        .capacitor(n.slope, n.b_bot, MID_CAP)
+        .pot(
+            n.t_bot,
+            n.b_bot,
+            n.b_bot,
+            BASS_POT,
+            Taper::ReverseAudio,
+            bass,
+        )
+        .resistor(n.b_bot, "gnd", MID_R)
+        .pot(n.ts_out, n.wiper, "gnd", VOLUME_POT, Taper::Audio, volume);
+
+    if n.bright {
+        // Permanent, not switched: the Deluxe's panel has no Bright switch.
+        net.capacitor(n.ts_out, n.wiper, BRIGHT_CAP);
+    }
+}
+
+/// Build the AB763 Deluxe as one electrically coupled network, with the jacks
+/// on the stated channel and the other one quiet but present.
+fn complete_netlist(channel: Channel, source: f64, load: f64) -> Netlist {
+    let (played, quiet) = match channel {
+        Channel::Vibrato => (VIBRATO_NODES, NORMAL_NODES),
+        Channel::Normal => (NORMAL_NODES, VIBRATO_NODES),
+    };
+    let mut net = Netlist::new(match channel {
+        Channel::Vibrato => "Deluxe Reverb AB763 complete Vibrato channel",
+        Channel::Normal => "Deluxe Reverb AB763 complete Normal channel",
+    });
+
+    // Stock switched input jacks, on whichever channel is being played.
     net.input("jack", source);
-    let input_series = net.adjustable("jack", "v1_g", Adjust::Resistor, INPUT_HIGH_SERIES_OHMS);
+    let input_series = net.adjustable(
+        "jack",
+        played.grid,
+        Adjust::Resistor,
+        INPUT_HIGH_SERIES_OHMS,
+    );
     let jack_load = net.adjustable("jack", "gnd", Adjust::Resistor, INPUT_HIGH_JACK_LOAD_OHMS);
-    let grid_shunt = net.adjustable("v1_g", "gnd", Adjust::Resistor, INPUT_OPEN_OHMS);
+    let grid_shunt = net.adjustable(played.grid, "gnd", Adjust::Resistor, INPUT_OPEN_OHMS);
     debug_assert_eq!(input_series, INPUT_SERIES_SLOT);
     debug_assert_eq!(jack_load, INPUT_JACK_LOAD_SLOT);
     debug_assert_eq!(grid_shunt, INPUT_GRID_SHUNT_SLOT);
@@ -163,30 +305,17 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
         // has 16 uF across it, so at audio frequencies it is already a short.
         .resistor("bplus_c", "gnd", PI_STANDING_LOAD);
 
-    // V1, Vibrato channel first gain stage: 100 kΩ plate, 1.5 kΩ / 25 µF.
-    net.resistor("v1_k", "gnd", FIRST_CATHODE)
-        .capacitor("v1_k", "gnd", FIRST_BYPASS)
-        .resistor("bplus_d", "v1_p", PLATE_LOAD)
-        .triode("v1_p", "v1_g", "v1_k", V7025);
-
-    // The stack, with a fixed 6.8 kΩ where a Twin has its Middle pot.
-    net.capacitor("v1_p", "t_top", TREBLE_CAP)
-        .pot("t_top", "ts_out", "t_bot", TREBLE_POT, Taper::Audio, TREBLE)
-        .resistor("v1_p", "slope", SLOPE_R)
-        .capacitor("slope", "t_bot", BASS_CAP)
-        .capacitor("slope", "b_bot", MID_CAP)
-        .pot(
-            "t_bot",
-            "b_bot",
-            "b_bot",
-            BASS_POT,
-            Taper::ReverseAudio,
-            BASS,
-        )
-        .resistor("b_bot", "gnd", MID_R)
-        .pot("ts_out", "vol", "gnd", VOLUME_POT, Taper::Audio, VOLUME)
-        // Permanent, not switched.
-        .capacitor("ts_out", "vol", BRIGHT_CAP);
+    // Both channels' front ends, the played one on the panel's knobs and the
+    // quiet one on its own three.
+    front_end(&mut net, played, (TREBLE, BASS, VOLUME));
+    front_end(&mut net, quiet, (OTHER_TREBLE, OTHER_BASS, OTHER_VOLUME));
+    // Nothing is plugged into the other channel, so its grid returns through
+    // its own jacks rather than through an adjustable the panel cannot reach.
+    net.resistor(quiet.grid, "gnd", OPEN_JACK_RETURN)
+        // A channel nobody is using is a channel turned down.
+        .rest(OTHER_VOLUME, 0.0)
+        .rest(OTHER_TREBLE, 0.5)
+        .rest(OTHER_BASS, 0.5);
 
     // V2, the Vibrato second stage, sharing its 820 Ω / 25 µF cathode with the
     // Normal channel's second stage. Node [A] on the drawing. The Normal side
@@ -200,7 +329,6 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
         .capacitor("vol", "shared_a_k", ECC83_CGK)
         .capacitor("v2_p", "shared_a_k", ECC83_CAK)
         .triode("v2_p", "vol", "shared_a_k", V7025)
-        .resistor("normal2_g", "gnd", 1_000_000.0)
         .resistor("bplus_d", "normal2_p", PLATE_LOAD)
         .triode("normal2_p", "normal2_g", "shared_a_k", V7025);
 
@@ -251,15 +379,26 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
             REVERB,
         )
         .resistor("rv_wiper", MIX_GRID, WET_MIX_R)
-        .resistor("bplus_d", MIXER_TO_PI, PLATE_LOAD)
-        .triode(MIXER_TO_PI, MIX_GRID, "shared_e_k", V7025);
+        .resistor("bplus_d", MIXER_PLATE, PLATE_LOAD)
+        .triode(MIXER_PLATE, MIX_GRID, "shared_e_k", V7025);
 
-    // The optical tremolo, in the order this drawing has it: 220 kΩ off the
-    // mixer plate, then 0.1 µF into the 50 kΩ reverse-audio Intensity pot. The
-    // photoresistor is an audio-rate variable resistor stamped in Newton, so it
-    // changes the node's real loading rather than multiplying the output.
-    net.resistor(MIXER_TO_PI, "trem_r", CHANNEL_MIX_R)
-        .capacitor("trem_r", "intensity_top", TREMOLO_COUPLING)
+    // The optical tremolo. The roach is one package holding a neon lamp and a
+    // photoresistor: the oscillator drives the lamp through 10 M and 100 k,
+    // and the cell shunts the signal through the 50 kΩ reverse-audio Intensity
+    // control. The cell is an audio-rate variable resistor stamped in Newton,
+    // so it changes the node's real loading rather than multiplying the output
+    // after the valve.
+    //
+    // The 0.1 µF and the 220 kΩ are in this order -- couple first, mix after --
+    // and that is a decision rather than a reading. At the resolution of the
+    // Fender sheet the two parts could be taken either way round, and the two
+    // ways are not equivalent: with the 220 kΩ *before* the intensity tap the
+    // cell is isolated from the signal by a quarter of a megohm and the whole
+    // tremolo measures 0.14 dB deep, against the Twin's 7.65 dB through the
+    // identical AB763 roach. A Deluxe whose tremolo cannot be heard is not a
+    // Deluxe, so it is modelled the way the Twin's AB763 drawing shows the same
+    // circuit. See `docs/models/american_deluxe.md`.
+    net.capacitor(MIXER_PLATE, "intensity_top", TREMOLO_COUPLING)
         .pot(
             "intensity_top",
             "intensity_wiper",
@@ -278,20 +417,43 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
 
     // The quiet Normal channel still reaches the mixer plate through its own
     // 0.047 µF and 220 kΩ, so it loads this node the way it does in the amp.
+    // Both channels reach the inverter through their own 220 kΩ, the Vibrato
+    // side from the intensity tap so the photocell has authority over what
+    // gets there.
     net.capacitor("normal2_p", "normal_mix", NORMAL_COUPLING)
-        .resistor("normal_mix", MIXER_TO_PI, CHANNEL_MIX_R)
+        .resistor("normal_mix", "channel_mix", CHANNEL_MIX_R)
+        .resistor("intensity_top", "channel_mix", CHANNEL_MIX_R)
+        // The hand-off: the drawing's 0.001 uF into the inverter's grid-leak
+        // chain, which `load` stands for. See `MIXER_TO_PI`.
+        .capacitor("channel_mix", MIXER_TO_PI, PI_COUPLING)
         .resistor(MIXER_TO_PI, "gnd", load)
         .rest(INTENSITY, 1.0);
+
+    // The reverb and the tremolo are the Vibrato channel's, and they join the
+    // Normal channel only at the mixer -- after the intensity tap. So on the
+    // Normal channel they are not controls that happen to be greyed out: the
+    // amplifier has not got them there, and they rest.
+    if channel == Channel::Normal {
+        net.rest(REVERB, 0.0);
+    }
 
     net
 }
 
 pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
-    complete_netlist(source, load).build(MIXER_TO_PI)
+    build_channel(Channel::Vibrato, source, load)
+}
+
+pub fn build_channel(channel: Channel, source: f64, load: f64) -> Result<Circuit, Fault> {
+    complete_netlist(channel, source, load).build(MIXER_TO_PI)
 }
 
 /// The complete channel with an internal node brought out, for stage-by-stage
 /// probing without a second approximation of the circuit.
 pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
-    complete_netlist(source, load).build(at)
+    tap_channel(Channel::Vibrato, source, load, at)
+}
+
+pub fn tap_channel(channel: Channel, source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
+    complete_netlist(channel, source, load).build(at)
 }

@@ -13,6 +13,7 @@ pub mod dr103;
 pub mod evh5150;
 pub mod heavy_metal;
 pub mod iron;
+pub mod jazz120;
 pub mod jfet;
 pub mod markiic;
 pub mod metal_zone;

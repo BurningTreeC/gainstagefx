@@ -171,6 +171,37 @@ impl JfetSpec {
         idss: 0.6e-3,
         pinch_off: -0.8,
     };
+    /// The 2SK117, GR rank: the small-signal JFET of most Japanese studio and
+    /// instrument electronics of the period.
+    ///
+    /// Both numbers come out of Toshiba's sheet rather than being chosen.
+    /// `idss` is the middle of the GR rank's published 2.6-6.5 mA. The
+    /// pinch-off is then *derived* from the sheet's other figure: for a
+    /// square-law JFET the transconductance at zero gate bias is
+    /// `2 Idss / |Vp|`, and the sheet gives `|Yfs| = 15 mS` typical at
+    /// `Vgs = 0`, so `|Vp| = 2 x 4.5 mA / 15 mS = 0.6 V` -- which sits inside
+    /// the sheet's own 0.2-1.5 V spread for the part.
+    pub const J2SK117_GR: JfetSpec = JfetSpec {
+        idss: 4.5e-3,
+        pinch_off: -0.6,
+    };
+    /// The 2SK184: both JFETs of a Roland JC-120's CH-1, and the same part in
+    /// a great many Boss pedals.
+    ///
+    /// DOCUMENTED, and the same two numbers as the 2SK117 above, because
+    /// Toshiba publishes the same two figures for it -- a 2.6-6.5 mA GR rank
+    /// and `|yfs| = 15 mS` typical at `Vgs = 0` -- so the derivation runs
+    /// identically. It is kept separate rather than aliased because the part
+    /// in the amplifier is a 2SK184 and a later datasheet reading should be
+    /// able to move one without moving the other.
+    ///
+    /// The JC-120 sheet checks it: with these numbers the input stage idles
+    /// its drain near the middle of the +VO rail and gives 20.7 dB into the
+    /// tone network, against the 20 dB the sheet's own two test points imply.
+    pub const J2SK184: JfetSpec = JfetSpec {
+        idss: 4.5e-3,
+        pinch_off: -0.6,
+    };
     /// A large-signal part, for a stage that has to drive something.
     pub const J113: JfetSpec = JfetSpec {
         idss: 20.0e-3,
@@ -233,6 +264,16 @@ impl BipolarSpec {
         reverse_beta: 4.0,
         early: 100.0,
     };
+    /// The 2SC1815, GR rank, and its close relative the 2SC2240 -- the small
+    /// signal NPNs a JC-120 is built out of. Toshiba ranks the part by gain
+    /// and the GR rank is 200-400; this is its middle. The Early voltage and
+    /// the saturation current are the family's, as for the parts above.
+    pub const NPN_2SC1815_GR: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-14,
+        forward_beta: 300.0,
+        reverse_beta: 3.0,
+        early: 100.0,
+    };
     /// A general purpose small-signal NPN, for where a circuit only needs
     /// "a transistor".
     pub const NPN: BipolarSpec = BipolarSpec {
@@ -240,6 +281,59 @@ impl BipolarSpec {
         forward_beta: 200.0,
         reverse_beta: 3.0,
         early: 80.0,
+    };
+    /// The 2SA970, GR rank: Toshiba's low-noise PNP, and the input pair of a
+    /// JC-120's power amplifier. Beta is the middle of the GR rank's published
+    /// 200-400; the Early voltage is the figure a small-signal audio PNP of
+    /// this family carries and is ESTIMATED, which a long-tailed pair's
+    /// common-mode rejection is not sensitive to.
+    pub const PNP_2SA970_GR: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-14,
+        forward_beta: 300.0,
+        reverse_beta: 3.0,
+        early: 120.0,
+    };
+    /// The 2SA1015, GR rank: the complement of the 2SC1815 above, and paired
+    /// with it in the JC-120's voltage amplifier stage. Same ranks, same
+    /// figures mirrored.
+    pub const PNP_2SA1015_GR: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-14,
+        forward_beta: 300.0,
+        reverse_beta: 3.0,
+        early: 100.0,
+    };
+    /// A complementary driver pair, the 2SD669 and 2SB649 of the JC-120's
+    /// output stage. Medium-power parts: beta is lower than a small-signal
+    /// one's and falls with current, which the Early term stands in for here.
+    /// WIDELY REPORTED ranks, 60-320 for the AC grade; the middle of it.
+    pub const NPN_2SD669_AC: BipolarSpec = BipolarSpec {
+        saturation: 2.0e-14,
+        forward_beta: 150.0,
+        reverse_beta: 4.0,
+        early: 80.0,
+    };
+    pub const PNP_2SB649_AC: BipolarSpec = BipolarSpec {
+        saturation: 2.0e-14,
+        forward_beta: 150.0,
+        reverse_beta: 4.0,
+        early: 80.0,
+    };
+    /// The output pair, 2SC4386 and 2SA1671. Power transistors: a large
+    /// saturation current and a beta of about a hundred, which is what holds
+    /// the drivers' current where the 0.33 ohm emitter resistors need it.
+    /// ESTIMATED from the class of part; the sheet gives the types and no
+    /// curves, and the feedback loop around them is what sets the gain.
+    pub const NPN_2SC4386: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-12,
+        forward_beta: 100.0,
+        reverse_beta: 4.0,
+        early: 60.0,
+    };
+    pub const PNP_2SA1671: BipolarSpec = BipolarSpec {
+        saturation: 1.0e-12,
+        forward_beta: 100.0,
+        reverse_beta: 4.0,
+        early: 60.0,
     };
 }
 

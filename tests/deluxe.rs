@@ -13,7 +13,8 @@ use gainstagefx::dsp::time::Simulation;
 
 const RATE: f64 = 96_000.0;
 const SOURCE: f64 = 10_000.0;
-const LOAD: f64 = 1_000_000.0;
+// The inverter's 1 M + 1 M grid-leak chain: see `voice::build_voice`.
+const LOAD: f64 = 2_000_000.0;
 
 fn sim() -> Simulation {
     let mut s = Simulation::new(deluxe::build(SOURCE, LOAD).expect("Deluxe builds"), RATE);
@@ -49,7 +50,7 @@ fn the_drawing_s_operating_point_is_reproduced() {
         ("v1_p", 170.0),
         ("v2_p", 180.0),
         ("recov_p", 180.0),
-        (deluxe::MIXER_TO_PI, 180.0),
+        (deluxe::MIXER_PLATE, 180.0),
         ("v1_k", 1.3),
         ("shared_a_k", 1.3),
         ("shared_e_k", 1.3),
@@ -83,10 +84,19 @@ fn the_drawing_s_operating_point_is_reproduced() {
 #[test]
 fn the_stack_scoops_the_middle_and_has_no_control_to_fill_it() {
     let mut s = sim();
-    let low = level(&mut s, 80.0);
+    for hz in [
+        40.0, 60.0, 80.0, 110.0, 150.0, 220.0, 300.0, 400.0, 600.0, 1000.0, 5000.0,
+    ] {
+        println!("deluxe_sweep,{hz:.0}Hz={:.2}dB", level(&mut s, hz));
+    }
+    // 150 Hz, not 80: the 0.001 uF hand-off into the inverter's 1 M + 1 M leak
+    // chain is a high-pass at about 80 Hz, so a probe there measures that
+    // corner rather than the tone stack. 150 Hz is clear of it and still well
+    // below the stack's dip.
+    let low = level(&mut s, 150.0);
     let scoop = level(&mut s, 400.0);
     let high = level(&mut s, 5_000.0);
-    println!("deluxe_stack,80Hz={low:.1}dB,400Hz={scoop:.1}dB,5kHz={high:.1}dB");
+    println!("deluxe_stack,150Hz={low:.1}dB,400Hz={scoop:.1}dB,5kHz={high:.1}dB");
     assert!(
         low > scoop + 2.0,
         "the bottom should sit above the scoop: {low:.1} vs {scoop:.1}"
@@ -95,12 +105,15 @@ fn the_stack_scoops_the_middle_and_has_no_control_to_fill_it() {
         high > scoop + 2.0,
         "the top should sit above the scoop: {high:.1} vs {scoop:.1}"
     );
-    // Only five controls exist on this circuit; a sixth would mean a Middle pot
-    // had been added that the drawing does not have.
+    // Eight controls: the five the panel reaches -- Treble, Bass, Volume,
+    // Reverb, Intensity -- and the three of the *other* channel, which is in
+    // the network but has no knob. A ninth would mean a Middle pot had been
+    // added that the drawing does not have.
     assert_eq!(
         deluxe::build(SOURCE, LOAD).expect("builds").controls,
-        5,
-        "the AB763 Deluxe has Treble, Bass, Volume, Reverb and Intensity -- no Middle"
+        8,
+        "the AB763 Deluxe has Treble, Bass, Volume, Reverb and Intensity -- no \
+         Middle -- plus the quiet channel's three"
     );
 }
 
@@ -198,4 +211,65 @@ fn it_solves_at_every_supported_rate() {
             assert!(s.process(x).is_finite(), "{rate} at {k}");
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Through the whole chain
+// ---------------------------------------------------------------------------
+
+use gainstagefx::voice::{Chain, Gain, Settings, Tone as Stack};
+
+/// The optical tremolo has to be audible, and about as deep as the Twin's.
+///
+/// Both amplifiers use the same AB763 roach -- a lamp and a photoresistor
+/// across the signal -- so a Deluxe that modulates by a fraction of a decibel
+/// where a Twin modulates by several is not a quieter tremolo, it is a wiring
+/// error. This measures the peak-to-trough swing of a steady tone through the
+/// whole chain and compares the two.
+#[test]
+fn the_tremolo_is_as_deep_as_the_twin_s() {
+    fn depth_db(circuit: Gain) -> f64 {
+        let rate = 48_000.0;
+        let mut chain = Chain::new(rate);
+        chain.apply(&Settings {
+            gain: circuit,
+            drive: 0.4,
+            tone: Stack::Off,
+            speed: 0.5,
+            intensity: 1.0,
+            oversampling: 1,
+            ..Settings::default()
+        });
+        chain.settle();
+        // Two seconds: several tremolo cycles at any speed setting.
+        let mut envelope: Vec<f64> = Vec::new();
+        let mut peak = 0.0f64;
+        let window = (rate / 200.0) as usize;
+        for k in 0..(rate as usize * 2) {
+            let x = 0.05 * (k as f64 * 0.09).sin();
+            peak = peak.max(chain.process(x).abs());
+            if k % window == window - 1 {
+                envelope.push(peak);
+                peak = 0.0;
+            }
+        }
+        // Discard the first half second, which is the chain settling.
+        let tail = &envelope[envelope.len() / 4..];
+        let high = tail.iter().cloned().fold(0.0f64, f64::max);
+        let low = tail.iter().cloned().fold(f64::MAX, f64::min);
+        20.0 * (high / low.max(1e-12)).log10()
+    }
+
+    let twin = depth_db(Gain::Twin);
+    let deluxe = depth_db(Gain::Deluxe);
+    println!("tremolo_depth,twin={twin:.2}dB,deluxe={deluxe:.2}dB");
+    assert!(
+        twin > 3.0,
+        "the Twin's tremolo should be several dB deep, got {twin:.2}"
+    );
+    assert!(
+        deluxe > 3.0,
+        "the Deluxe's tremolo is only {deluxe:.2} dB deep against the Twin's \
+         {twin:.2} dB -- the roach is not reaching the signal"
+    );
 }

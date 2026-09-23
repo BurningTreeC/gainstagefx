@@ -20,7 +20,6 @@
 //! block boundary, against the same render with the knob left alone. Whatever
 //! comes back is not the knob.
 
-use gainstagefx::circuits::twin;
 use gainstagefx::dsp::measure::Tone;
 use gainstagefx::dsp::time::Simulation;
 use gainstagefx::voice::{self, Gain};
@@ -314,8 +313,12 @@ fn every_control_is_either_reachable_or_given_a_resting_position() {
         if let Some(((lo, _), (hi, _))) = gain.own_colour_mix() {
             reachable.extend([lo, hi]);
         }
-        if gain.has_reverb_and_tremolo() {
-            reachable.extend([twin::REVERB, twin::INTENSITY]);
+        // The Twin's and the Deluxe's numbers are not the same -- the Twin has
+        // a Middle control and the Deluxe has not, so everything after it is
+        // shifted by one. Asking the voice for its own is the only way this
+        // stays true when a third AB763 arrives.
+        if let Some(ab763) = gain.ab763() {
+            reachable.extend([ab763.reverb, ab763.intensity]);
         }
         let rested: Vec<usize> = netlist.resting.iter().map(|&(which, _)| which).collect();
         for control in 0..netlist.controls {

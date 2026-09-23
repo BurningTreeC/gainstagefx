@@ -146,6 +146,12 @@ impl CabinetProfile {
         default_speaker: &SpeakerProfile::AMERICAN_CERAMIC,
     };
 
+    /// WIDELY REPORTED: a blackface Deluxe Reverb of this period shipped with a
+    /// Jensen C12N or an Oxford 12K5 depending on date and order, so `Matched`
+    /// resolves to the same ceramic Jensen the Twin's cabinet does rather than
+    /// to the alnico P12R it used to. The '65 reissue's C12K is a later part
+    /// and is deliberately not substituted for either.
+    /// See `docs/models/american_deluxe.md`.
     pub const AMERICAN_OPEN_112: CabinetProfile = CabinetProfile {
         id: "cab_fender_deluxe_open_112",
         name: "American Open 1x12",
@@ -159,7 +165,7 @@ impl CabinetProfile {
         open_fraction: 0.45,
         slant: 0.0,
         leakage_q: 7.0,
-        default_speaker: &SpeakerProfile::AMERICAN_VINTAGE_12,
+        default_speaker: &SpeakerProfile::AMERICAN_CERAMIC,
     };
 
     pub const CLOSED_112: CabinetProfile = CabinetProfile {

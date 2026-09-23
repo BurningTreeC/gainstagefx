@@ -54,27 +54,55 @@ pub fn level(gain: Gain, power_amp: PowerAmp) -> f64 {
 }
 
 fn main() {
-    let overrides = [
-        PowerAmp::Bypass,
-        PowerAmp::Cali6L6,
-        PowerAmp::American6L6Clean,
-        PowerAmp::American6L6HighGain,
-        PowerAmp::BritEL34,
-        PowerAmp::BritPlexiEL34,
-        PowerAmp::AC30EL84,
-        PowerAmp::DR103EL34,
-        PowerAmp::Recto6L6,
-        PowerAmp::Recto6L6Tube,
+    // Derived from the enum rather than written out, so appending a power
+    // amplifier cannot silently print a row that is one column short. It did:
+    // the American Deluxe 6V6 was added, this list was a hand-written literal,
+    // and the generator produced ten columns for an eleven-column table.
+    let overrides: Vec<PowerAmp> = PowerAmp::ALL
+        .into_iter()
+        .filter(|amp| *amp != PowerAmp::Matched)
+        .collect();
+    // Only for the doc comment, and checked against the list above so the two
+    // cannot drift apart either.
+    let column_names: &[&str] = &[
+        "Bypass",
+        "Cali 6L6",
+        "American 6L6 Clean",
+        "American 6L6 High-Gain",
+        "Brit EL34",
+        "Brit Plexi EL34",
+        "AC30 EL84",
+        "DR103 EL34",
+        "Recto 6L6",
+        "Recto 6L6 Tube",
+        "American Deluxe 6V6",
     ];
+    assert_eq!(
+        column_names.len(),
+        overrides.len(),
+        "the column names in powertrim.rs have fallen behind PowerAmp::ALL"
+    );
     println!("// Measured by `examples/powertrim.rs`. Do not edit by hand.");
     println!("/// Level change, dB, of each power override relative to the voice's own path,");
-    println!("/// by `Gain::ALL` row; columns Bypass, Cali 6L6, American 6L6 Clean,");
-    println!("/// American 6L6 High-Gain, Brit EL34, Brit Plexi EL34, AC30 EL84, DR103 EL34,");
-    println!("/// Recto 6L6, Recto 6L6 Tube. See `Chain::power_trim`.");
+    println!(
+        "/// by `Gain::ALL` row; columns {}.",
+        column_names.join(", ")
+    );
+    println!("/// See `Chain::power_trim`.");
+    // These are measured decibels. A row that happens to contain 3.14 is not a
+    // programmer reaching for pi from memory, which is what `approx_constant`
+    // is for, and the American Deluxe's Bypass column measured exactly that.
+    println!("#[allow(");
+    println!("    clippy::approx_constant,");
+    println!("    reason = \"measured decibels; a 3.14 here is a measurement, not pi\"");
+    println!(")]");
     // Tied to the gain list rather than written as a number, so that appending
     // a circuit fails to compile instead of indexing past the end of this table
     // at runtime -- which is what it did when six were appended at once.
-    println!("pub const POWER_TRIM_DB: [[f64; 10]; crate::voice::GAINS] = [");
+    println!(
+        "pub const POWER_TRIM_DB: [[f64; {}]; crate::voice::GAINS] = [",
+        overrides.len()
+    );
     for (row_index, gain) in Gain::ALL.into_iter().enumerate() {
         let reference = level(gain, PowerAmp::Matched);
         assert!(

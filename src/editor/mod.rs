@@ -568,33 +568,42 @@ fn circuit(cx: &mut Context) {
     // together, which is what a valve amplifier on low mains does.
     grid.dropdown(cx, 0, 3, "mains", |p| &p.mains, Choice::Mains, true);
 
-    // The Twin's two switched input jacks are part of the amplifier wiring,
-    // not an arbitrary gain trim. Keep the control visible but grey for every
-    // other model so the panel does not change shape when circuits are changed.
+    // Switched input jacks are part of the amplifier's wiring, not an
+    // arbitrary gain trim, so the two selectors carry the values the circuit
+    // in use actually switches. Both stay visible and go grey where the
+    // amplifier has not got them, so the panel does not change shape when
+    // circuits are changed -- and they are separate: the American Deluxe has
+    // the jacks but its Bright capacitor is soldered in, so the first is live
+    // there and the second is not.
     Binding::new(
         cx,
-        Panel::params.map(|p| p.circuit.value() == Circuit::Twin),
-        move |cx, live| {
-            let live = live.get(cx);
-            grid.caption(cx, 1, 3, "sensitivity", live);
+        Panel::params.map(|p| p.circuit.value()),
+        move |cx, circuit| {
+            let voice = circuit.get(cx).voice();
+            let jacks = voice.input_jacks();
+            let bright = voice.bright_switch();
+            grid.caption(cx, 1, 3, "sensitivity", jacks.is_some());
             selector(
                 cx,
                 Grid::right(),
                 grid.y(3),
                 Grid::right_w(),
                 |p| &p.twin_low_input,
-                vec!["High 1 (1 MΩ)", "Low 2 (-6 dB)"],
-                live,
+                vec![
+                    jacks.map_or("High 1 (1 MΩ)", |j| j.high_label),
+                    jacks.map_or("Low 2 (-6 dB)", |j| j.low_label),
+                ],
+                jacks.is_some(),
             );
-            grid.caption(cx, 1, 4, "bright", live);
+            grid.caption(cx, 1, 4, "bright", bright.is_some());
             selector(
                 cx,
                 Grid::right(),
                 grid.y(4),
                 Grid::right_w(),
                 |p| &p.twin_bright,
-                vec!["Off", "On (120 pF)"],
-                live,
+                vec!["Off", bright.map_or("On (120 pF)", |b| b.on_label)],
+                bright.is_some(),
             );
         },
     );
@@ -831,6 +840,18 @@ pub fn describe(circuit: Circuit) -> String {
         Circuit::Mt2 => {
             "Two gain stages and seven filters, with a three band \
                           equaliser whose middle sweeps."
+        }
+        Circuit::Deluxe => {
+            "A 60s American blackface circuit at a quarter of the Twin's \
+                          power: two 6V6 behind a valve rectifier."
+        }
+        Circuit::Jazz120 => {
+            "The clean channel of a 70s Japanese solid-state amp: two \
+                          JFET stages, no valves, no sag."
+        }
+        Circuit::DeluxeNormal => {
+            "The same blackface amp through its plain channel: no bright \
+                          capacitor, no reverb, no tremolo."
         }
     }
     .to_string()

@@ -614,6 +614,20 @@ impl View for SizeRow {
 /// like a default toolkit -- and with no theme the bar has no width, no
 /// colour and no thumb. It is there, and it is invisible, so the list scrolls
 /// with no sign that it can.
+/// The text caret is the same story, and the reason it is here rather than
+/// set on the `Textbox` itself.
+///
+/// An unset colour property in vizia reads back as `rgba(0, 0, 0, 0)`, so with
+/// no theme the caret was drawn on every frame in transparent black -- and the
+/// selection highlight with it. That is exactly what was reported: clicking
+/// into the middle of a name and pressing delete removed the right character,
+/// because the box was editing and the caret was tracking; you simply could
+/// not see it.
+///
+/// It goes in the sheet rather than on the view because vizia blinks the caret
+/// by toggling a `caret` class on and off, and a rule is what that class has
+/// to act on. Setting the colour inline would have made it visible and left it
+/// staring, never blinking.
 pub const SCROLLBAR: &str = r#"
 scrollbar {
     width: 8px;
@@ -623,6 +637,13 @@ scrollbar .thumb {
     width: 8px;
     background-color: #ffffff40;
     corner-radius: 4px;
+}
+textbox {
+    caret-color: transparent;
+    selection-color: #ff8a3c55;
+}
+textbox:checked.caret {
+    caret-color: #e8eef4;
 }
 "#;
 
@@ -802,7 +823,21 @@ pub fn dialogs(cx: &mut Context) {
                         .on_submit(|cx, text, _| {
                             cx.emit(SessionEvent::Draft(text));
                             cx.emit(SessionEvent::Confirm);
-                        });
+                        })
+                        // Focus it the moment the dialog opens.
+                        //
+                        // Without this the box is built unfocused, and a vizia
+                        // `Textbox` only draws its caret and only accepts keys
+                        // once it is in edit mode -- which it enters on
+                        // `FocusIn`. So the dialog came up with no cursor in
+                        // it, and on a host that does not hand the plugin
+                        // window keyboard focus by itself there was no way to
+                        // type a name at all. `save` rejects an empty name
+                        // *before* it creates the directory, so the report
+                        // that reached us was two things at once: no cursor,
+                        // and no `GainStageFx\Presets` folder ever appearing.
+                        // One cause.
+                        .on_build(|cx| cx.focus());
                 }
                 Dialog::Overwrite => {
                     note(
@@ -931,5 +966,86 @@ impl View for Backdrop {
                 meta.consume();
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SCROLLBAR;
+
+    /// The stylesheet has to be well formed, because nothing will say so if it
+    /// is not.
+    ///
+    /// `Context::add_stylesheet` returns `Ok(())` whatever happens, and the
+    /// parse behind it is `if let Ok(stylesheet) = StyleSheet::parse(..)` --
+    /// so one missing semicolon does not break one rule, it silently discards
+    /// **the whole sheet**. Both things in it are invisible when they are
+    /// missing rather than wrong: a scrollbar with no width, and a caret drawn
+    /// in transparent black. Nobody would see which had gone.
+    ///
+    /// vizia imports its own parser privately, so this cannot call it. What it
+    /// can do is the structure, which is what a typo actually breaks.
+    #[test]
+    fn the_stylesheet_is_well_formed() {
+        let mut depth = 0i32;
+        for (line, text) in SCROLLBAR.lines().enumerate() {
+            let text = text.trim();
+            if text.is_empty() {
+                continue;
+            }
+            if text.ends_with('{') {
+                depth += 1;
+                continue;
+            }
+            if text == "}" {
+                depth -= 1;
+                assert!(
+                    depth >= 0,
+                    "line {} closes a rule that never opened",
+                    line + 1
+                );
+                continue;
+            }
+            assert!(
+                depth > 0,
+                "line {} is a declaration outside any rule",
+                line + 1
+            );
+            assert!(
+                text.ends_with(';'),
+                "line {} has no semicolon, which discards the whole sheet: {text}",
+                line + 1
+            );
+            assert!(
+                text.matches(':').count() >= 1,
+                "line {} is not a declaration: {text}",
+                line + 1
+            );
+        }
+        assert_eq!(depth, 0, "a rule is left open");
+    }
+
+    /// The caret is the one rule whose absence looks exactly like the bug it
+    /// was added for, so it is named here rather than only described.
+    ///
+    /// An unset colour property in vizia reads back as `rgba(0, 0, 0, 0)`, and
+    /// this editor runs with `ViziaTheming::None` -- so with no rule the caret
+    /// is drawn every frame in transparent black. Typing works, clicking
+    /// works, delete lands where you clicked, and there is no cursor.
+    #[test]
+    fn the_caret_has_a_colour_to_be_drawn_in() {
+        assert!(
+            SCROLLBAR.contains("textbox:checked.caret"),
+            "vizia blinks the caret by toggling a `caret` class, so the colour \
+             has to hang off that selector or it will not blink"
+        );
+        let visible = SCROLLBAR
+            .lines()
+            .filter(|line| line.trim().starts_with("caret-color:"))
+            .any(|line| !line.contains("transparent"));
+        assert!(
+            visible,
+            "every caret-color in the sheet is transparent, which is the bug"
+        );
     }
 }

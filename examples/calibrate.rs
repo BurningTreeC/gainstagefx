@@ -74,6 +74,23 @@ fn intent(gain: Gain) -> f64 {
         // substantially cleaner than the British amplifiers at a matched
         // output level.
         Gain::Twin => 2.0,
+        // A Deluxe Reverb is the other side of the same design. Twenty-two
+        // watts behind a valve rectifier break up where eighty-five do not, so
+        // this is deliberately well above the Twin's figure. Like the Twin it
+        // states its input level below, so this number documents the intent
+        // rather than driving the search.
+        Gain::Deluxe => 12.0,
+        // The same amplifier through the channel without the bright capacitor:
+        // a little darker into the same power stage, and no reason for a
+        // different figure. It states its input level below as well.
+        Gain::DeluxeNormal => 12.0,
+        // The JC-120 is the cleanest thing in the catalogue and its whole
+        // reputation rests on that: a solid-state amplifier with no sag, no
+        // valve compression and 43 dB of gain across the channel does not
+        // break up until it hits its rail, and then it does so abruptly. Like
+        // the two Fenders it states its input level below, so this number
+        // documents the intent rather than driving the search.
+        Gain::Jazz120 => 1.0,
         Gain::Muff => 45.0,
         // Neither of these is used any more -- both amplifiers state their
         // input level instead, see `stated_level` -- and they are left here
@@ -163,6 +180,12 @@ fn stated_level(gain: Gain) -> Option<f64> {
             Some(GUITAR_VOLTS)
         }
         Gain::Twin => Some(GUITAR_VOLTS),
+        // The same guitar into the same kind of front end.
+        Gain::Deluxe | Gain::DeluxeNormal => Some(GUITAR_VOLTS),
+        // And into the JC-120's HIGH jack, which is what the sheet's own
+        // nominal level describes: -30 dBm, 24.5 mV rms. A guitar is louder
+        // than Roland's nominal and that is the point of the 680 k input.
+        Gain::Jazz120 => Some(GUITAR_VOLTS),
         // A guitar into the front of an amplifier. The same guitar.
         //
         // The Mark IIC+ was at 2.13 V, which is not a guitar and is not

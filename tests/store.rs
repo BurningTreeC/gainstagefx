@@ -49,7 +49,30 @@ fn saved_presets_survive_the_round_trip() {
         "a saved preset should carry the oversampling: measured, it is part of \
          how the pedals sound rather than only what they cost"
     );
+    // The folder the presets go in does not exist yet -- only the temporary
+    // directory above it does -- so this is also the check that `save` creates
+    // it. A user reported on Windows that no `GainStageFx\\Presets` ever
+    // appeared; `save` does call `create_dir_all`, but it does so *after*
+    // rejecting an empty name, so a dialog that could not be typed into left
+    // no folder behind and looked like a path bug. See `editor::session`.
+    let target = presets::preset_dir().expect("a preset directory on this platform");
+    assert!(
+        target.starts_with(&dir),
+        "the test should be pointing `preset_dir` at its own temporary \
+         directory, not at {}",
+        target.display()
+    );
+    assert!(
+        !target.exists(),
+        "nothing has been saved yet, so {} should not exist",
+        target.display()
+    );
     presets::save(&captured).expect("saves");
+    assert!(
+        target.is_dir(),
+        "saving a preset has to create {} on the way",
+        target.display()
+    );
 
     let all = presets::load_all(&params);
     assert_eq!(all.len(), PRESETS.len() + 1);
@@ -99,6 +122,36 @@ fn saved_presets_survive_the_round_trip() {
         "a preset should come back under the name it was given, whatever the \
          file had to be called"
     );
+
+    // --- names Windows treats as devices -----------------------------------
+    // `CON`, `AUX`, `NUL`, `COM1`..`LPT9` are not file names on Windows: the
+    // Win32 layer resolves them to hardware before it reaches the filesystem,
+    // and the extension does not help. `Aux.json` therefore cannot be created
+    // there, so the stem gets an underscore. Checked on every platform because
+    // the rule lives in `file_stem` and a Linux-only test would not see it.
+    for reserved in ["CON", "aux", "NUL", "com1", "Lpt9", "prn"] {
+        let preset = presets::capture(&params, reserved);
+        presets::save(&preset)
+            .unwrap_or_else(|err| panic!("a preset called {reserved} should save: {err}"));
+        let all = presets::load_all(&params);
+        assert!(
+            all.iter().any(|p| p.name == reserved),
+            "a preset called {reserved} should come back under that name"
+        );
+        presets::delete(reserved).unwrap_or_else(|err| panic!("{reserved} deletes: {err}"));
+    }
+
+    // Windows also strips a trailing dot or space from a file name without
+    // saying so, which would leave the file under a name nothing looks for.
+    let trailing = presets::capture(&params, "Clean.");
+    presets::save(&trailing).expect("a name ending in a dot still saves");
+    assert!(
+        presets::load_all(&params)
+            .iter()
+            .any(|p| p.name == "Clean."),
+        "a name ending in a dot should come back intact"
+    );
+    presets::delete("Clean.").expect("deletes");
 
     // --- delete -------------------------------------------------------------
     presets::delete("Test Sound").expect("deletes");

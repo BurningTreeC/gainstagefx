@@ -669,6 +669,124 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Blackface Clean")
     },
+    // The other AB763. Same stack, same spring, same optical tremolo, a
+    // quarter of the power -- so where the Twin stays clean this one starts to
+    // move, and that is the whole reason to have both. One 12 in an open back,
+    // which is what the amplifier is.
+    //
+    // Volume sits low because the Drive parameter here is the physical channel
+    // Volume pot, as on the Twin: it is the amplifier's own control, not a
+    // normalised gain.
+    Preset {
+        drive: 0.30,
+        circuit: Circuit::Deluxe,
+        tone: ToneStack::Off,
+        // No Middle control on this amplifier: the stack grounds through a
+        // fixed 6.8 k resistor, so the panel's Middle knob is greyed out and
+        // the value here is inert.
+        bass: 0.55,
+        mid: 0.5,
+        treble: 0.65,
+        reverb: 0.32,
+        cab_model: CabModel::AmericanOpen112,
+        // The C12N, which is what a blackface Deluxe of this period shipped
+        // with -- not the alnico P12R. See docs/models/american_deluxe.md.
+        speaker: SpeakerModel::AmericanCeramic,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        // Measured by `examples/presetlevel`, not chosen: this is what puts
+        // the preset on the catalogue's mean.
+        output_trim: -1.0,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Blackface Deluxe")
+    },
+    // The sound the amplifier is known for: the Volume far enough up that the
+    // 6V6s and the GZ34 are both working, so picking harder moves the tone and
+    // not just the level. The tremolo running underneath it.
+    Preset {
+        drive: 0.62,
+        circuit: Circuit::Deluxe,
+        tone: ToneStack::Off,
+        bass: 0.50,
+        mid: 0.5,
+        treble: 0.60,
+        reverb: 0.25,
+        speed: 0.42,
+        intensity: 0.80,
+        cab_model: CabModel::AmericanOpen112,
+        // The C12N, which is what a blackface Deluxe of this period shipped
+        // with -- not the alnico P12R. See docs/models/american_deluxe.md.
+        speaker: SpeakerModel::AmericanCeramic,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.04,
+        // The Volume is twice as far up as the preset above and the power
+        // stage is working, so it needs more of a trim. Measured.
+        output_trim: -5.0,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Deluxe Breakup")
+    },
+    // The other end of the catalogue entirely: the first solid-state
+    // amplifier here, and the one whose reputation is for never doing
+    // anything. CH-1 wide open is 43 dB of gain with no valve compression
+    // behind it, so the Volume sits where the channel is loud and still
+    // linear, and the amplifier's own three-band stack does the voicing --
+    // it has far more authority than a Fender's, which is why Bass and
+    // Treble are nearer noon here than on the two blackface presets.
+    //
+    // No power stage: the JC-120's two 60 W transistor amplifiers are not
+    // built yet, so Matched resolves to nothing and the channel hands
+    // straight over. The cabinet is the nearest open-back 2x12 and a ceramic
+    // 12 in it; the Roland 30-103D is APPROXIMATED by the C12N until its own
+    // driver is measured. See docs/models/jazz_120.md.
+    Preset {
+        drive: 0.55,
+        circuit: Circuit::Jazz120,
+        tone: ToneStack::Off,
+        // BRI off, which is how Roland's own test points are taken and how
+        // the amplifier is usually played. It is not a dead control here --
+        // SW2 shorts R4 and the 330 pF couples fully -- so it is worth
+        // reaching for, but not as the default voicing.
+        twin_bright: false,
+        bass: 0.5,
+        mid: 0.5,
+        treble: 0.5,
+        cab_model: CabModel::AmericanOpen212,
+        speaker: SpeakerModel::AmericanCeramic,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.05,
+        mic_b: MicModel::Ribbon121,
+        mic_b_position: 0.5,
+        mic_b_distance: 0.25,
+        mic_blend: 0.25,
+        // The other direction: no power stage behind this one, so the chain
+        // loses what every valve amplifier here gains. Measured, not guessed.
+        output_trim: 4.0,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Jazz Clean")
+    },
+    // The AB763's other channel, which is the amplifier with everything taken
+    // off it: no bright capacitor across the Volume, no reverb, no tremolo.
+    // What is left is the stack, the two stages and the 6V6s, which is why
+    // this is the one to put a pedal in front of. Treble sits higher than on
+    // the Vibrato-channel presets because there is no 47 pF helping it along.
+    Preset {
+        drive: 0.45,
+        circuit: Circuit::DeluxeNormal,
+        tone: ToneStack::Off,
+        // No Middle control on this amplifier either: the value is inert.
+        bass: 0.55,
+        mid: 0.5,
+        treble: 0.70,
+        cab_model: CabModel::AmericanOpen112,
+        speaker: SpeakerModel::AmericanCeramic,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.04,
+        // Measured. The Normal channel is the quieter of the two -- no 47 pF
+        // driving the second stage -- so it wants a little more, not less.
+        output_trim: 1.0,
+        oversampling: Oversampling::Off,
+        ..base("Amplifier", "Blackface Normal")
+    },
     // The same amplifier with its tremolo running: the completed circuit puts
     // its ~2 % clean-core point at Volume 0.17 with this tone/mic voicing.
     // Reverb 0.38 is about -10 dB wet/dry, and Intensity 0.94 measures about
@@ -1566,6 +1684,7 @@ use nih_plug::params::Params;
 use nih_plug::prelude::ParamPtr;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 /// The group saved presets appear under. Their own section at the foot of the
@@ -1612,25 +1731,32 @@ const EXCLUDED: [&str; 0] = [];
 /// roaming profile, and a preset is exactly the kind of thing that should
 /// roam.
 pub fn preset_dir() -> Option<PathBuf> {
-    #[cfg(windows)]
-    {
-        windows_preset_dir()
-    }
-    #[cfg(not(windows))]
-    {
-        xdg_preset_dir()
+    // `cfg!` rather than `#[cfg]`, so both rules are compiled on both
+    // platforms and the Windows one can be tested from a Linux machine. It is
+    // the rule a report arrived about, and a rule only ever compiled on the
+    // platform nobody here develops on is a rule nobody can check.
+    if cfg!(windows) {
+        windows_preset_dir(std::env::var_os("APPDATA"), std::env::var_os("USERPROFILE"))
+    } else {
+        xdg_preset_dir(
+            std::env::var_os("XDG_CONFIG_HOME"),
+            std::env::var_os("HOME"),
+        )
     }
 }
 
 /// `%APPDATA%\GainStageFx\Presets`, falling back to deriving the roaming
 /// directory from `%USERPROFILE%` for the rare host that clears `APPDATA`.
-#[cfg(windows)]
-fn windows_preset_dir() -> Option<PathBuf> {
-    let base = std::env::var_os("APPDATA")
+///
+/// Takes the two variables rather than reading them, so the rule is a pure
+/// function and its test does not have to touch the environment every other
+/// test in the binary is also reading.
+fn windows_preset_dir(appdata: Option<OsString>, userprofile: Option<OsString>) -> Option<PathBuf> {
+    let base = appdata
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
         .or_else(|| {
-            std::env::var_os("USERPROFILE")
+            userprofile
                 .map(PathBuf::from)
                 .filter(|path| path.is_absolute())
                 .map(|home| home.join("AppData").join("Roaming"))
@@ -1641,12 +1767,11 @@ fn windows_preset_dir() -> Option<PathBuf> {
 /// `$XDG_CONFIG_HOME/gainstagefx/presets`, or `~/.config` below it. This is
 /// also what macOS gets: it is where presets have always been written there,
 /// and moving them would lose everyone's.
-#[cfg(not(windows))]
-fn xdg_preset_dir() -> Option<PathBuf> {
-    let base = std::env::var_os("XDG_CONFIG_HOME")
+fn xdg_preset_dir(config_home: Option<OsString>, home: Option<OsString>) -> Option<PathBuf> {
+    let base = config_home
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
+        .or_else(|| home.map(|home| PathBuf::from(home).join(".config")))?;
     Some(base.join("gainstagefx").join("presets"))
 }
 
@@ -1985,7 +2110,27 @@ pub fn name_taken(name: &str, presets: &[Stored]) -> bool {
         .any(|preset| preset.name.trim().eq_ignore_ascii_case(name))
 }
 
+/// The MS-DOS device names, which Windows still resolves before it looks at
+/// the filesystem. `CON.json` is not a file there: it is the console, and
+/// opening it for writing fails whatever directory you are in. The extension
+/// does not save you -- the rule is applied to the stem.
+const WINDOWS_DEVICE_NAMES: [&str; 22] = [
+    "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+];
+
 /// Turns a preset name into something safe to use as a file name.
+///
+/// Everything but letters, digits, space, hyphen and underscore becomes an
+/// underscore, which covers the characters Windows forbids as well as the ones
+/// Unix minds. Two Windows-only rules on top of that, because a preset called
+/// `Aux` or `Clean.` is a name somebody will really use:
+///
+/// Windows' reserved device names then need one rule of their own: a stem that
+/// *is* one gets an underscore appended. Its other rule -- that a trailing dot
+/// or space is stripped silently, which would leave the file under a name
+/// nothing looks for -- needs no code, because `trim` has taken the spaces and
+/// the map above has already turned the dot into an underscore.
 fn file_stem(name: &str) -> String {
     let stem: String = name
         .trim()
@@ -1999,8 +2144,119 @@ fn file_stem(name: &str) -> String {
         })
         .collect();
     if stem.is_empty() {
-        "preset".to_string()
-    } else {
-        stem
+        return "preset".to_string();
+    }
+    if WINDOWS_DEVICE_NAMES
+        .iter()
+        .any(|device| stem.eq_ignore_ascii_case(device))
+    {
+        return format!("{stem}_");
+    }
+    stem
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where a Windows host actually looks.
+    ///
+    /// The rule went in after saving a preset there failed with "no config
+    /// directory": `preset_dir` used the Unix `$XDG_CONFIG_HOME`/`$HOME` rule,
+    /// and neither is normally set on Windows. Worse, a host started from a
+    /// Unix-style shell *did* find `$HOME` and wrote presets somewhere no
+    /// Windows DAW session would look again.
+    ///
+    /// Checked with a path that is absolute on whatever platform is running
+    /// the test, because `Path::is_absolute` answers by the host's rules and a
+    /// `C:\` path is not absolute to a Linux build. What is under test here is
+    /// the shape of the result, not that check.
+    #[test]
+    fn the_windows_preset_directory_is_under_appdata() {
+        let appdata = std::env::temp_dir().join("Roaming");
+        let dir = windows_preset_dir(Some(appdata.clone().into_os_string()), None)
+            .expect("APPDATA is enough on its own");
+        assert_eq!(dir, appdata.join("GainStageFx").join("Presets"));
+    }
+
+    /// And the fallback, for the rare host that clears `APPDATA`.
+    #[test]
+    fn a_cleared_appdata_falls_back_to_the_user_profile() {
+        let profile = std::env::temp_dir().join("user");
+        let from_profile =
+            windows_preset_dir(None, Some(profile.clone().into_os_string())).expect("a fallback");
+        let from_appdata = windows_preset_dir(
+            Some(profile.join("AppData").join("Roaming").into_os_string()),
+            Some(profile.into_os_string()),
+        )
+        .expect("the direct route");
+        assert_eq!(
+            from_profile, from_appdata,
+            "deriving the roaming directory from USERPROFILE has to land in the \
+             same place APPDATA points at"
+        );
+        assert_eq!(
+            windows_preset_dir(None, None),
+            None,
+            "with neither variable set there is nowhere to save, and saying so \
+             beats writing to the current directory"
+        );
+    }
+
+    /// A relative value is a host bug, and following it would scatter presets
+    /// through whatever directory the DAW happened to start in.
+    #[test]
+    fn a_relative_setting_is_refused_rather_than_followed() {
+        assert_eq!(
+            windows_preset_dir(Some(OsString::from("AppData")), None),
+            None
+        );
+        assert_eq!(xdg_preset_dir(Some(OsString::from(".config")), None), None);
+    }
+
+    /// Unix and macOS keep the rule they have always had, because moving it
+    /// would lose everyone's saved presets.
+    #[test]
+    fn the_unix_preset_directory_is_unchanged() {
+        let home = std::env::temp_dir().join("home");
+        assert_eq!(
+            xdg_preset_dir(Some(home.join(".config").into_os_string()), None),
+            Some(home.join(".config").join("gainstagefx").join("presets"))
+        );
+        assert_eq!(
+            xdg_preset_dir(None, Some(home.clone().into_os_string())),
+            Some(home.join(".config").join("gainstagefx").join("presets"))
+        );
+    }
+
+    /// The file name a preset gets, for the names Windows will not accept.
+    ///
+    /// `CON`, `AUX`, `NUL`, `COM1`..`LPT9` are not file names there: Win32
+    /// resolves them to hardware before the filesystem sees them, and the
+    /// `.json` does not help.
+    #[test]
+    fn reserved_names_become_usable_file_names() {
+        for reserved in ["CON", "con", "AUX", "nul", "COM1", "lpt9", "PRN"] {
+            let stem = file_stem(reserved);
+            assert!(
+                stem.ends_with('_'),
+                "{reserved} is a device on Windows, not a file: got {stem}"
+            );
+        }
+        // Not reserved, only beginning with one.
+        assert_eq!(file_stem("Console"), "Console");
+        assert_eq!(file_stem("Aux Send"), "Aux Send");
+    }
+
+    /// And the characters no filesystem here will take. A trailing dot needs
+    /// no rule of its own: it is not alphanumeric, so it has already become an
+    /// underscore by the time Windows would have stripped it.
+    #[test]
+    fn awkward_characters_become_underscores() {
+        assert_eq!(file_stem("Lead / Solo: \"hot\""), "Lead _ Solo_ _hot_");
+        assert_eq!(file_stem("Clean."), "Clean_");
+        assert_eq!(file_stem("  Clean  "), "Clean");
+        assert_eq!(file_stem("   "), "preset");
+        assert_eq!(file_stem("..."), "___");
     }
 }

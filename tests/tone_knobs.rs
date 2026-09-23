@@ -23,7 +23,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 12] = [
+const OWN: [(Circuit, [bool; 3]); 15] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     (Circuit::Plexi, [true, true, true]),
@@ -31,6 +31,14 @@ const OWN: [(Circuit, [bool; 3]); 12] = [
     (Circuit::DR103, [true, true, true]),
     (Circuit::Recto, [true, true, true]),
     (Circuit::Twin, [true, true, true]),
+    // The other AB763. No Middle: the Deluxe's stack grounds through a fixed
+    // 6.8 k where the Twin has a pot, so that knob is dark.
+    (Circuit::Deluxe, [true, false, true]),
+    // Its Normal channel is the same stack.
+    (Circuit::DeluxeNormal, [true, false, true]),
+    // All three, and with more authority than any Fender stack here: the
+    // Jazz 120's slope resistor feeds two caps into two entry points.
+    (Circuit::Jazz120, [true, true, true]),
     (Circuit::Screamer, [false, false, true]),
     (Circuit::Muff, [false, false, true]),
     (Circuit::Green9, [false, false, true]),

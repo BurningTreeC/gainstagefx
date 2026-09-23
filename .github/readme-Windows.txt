@@ -7,6 +7,20 @@ Run install.exe from this folder. It installs into
 Common Files\CLAP and Common Files\VST3 when run as administrator, and into
 your own AppData folder otherwise. Both are searched by every host.
 
+It puts the plugins in a folder named after the vendor, so after installing
+as administrator you will find them at
+
+  C:\Program Files\Common Files\CLAP\BurningTreeC\GainStageFx.clap
+  C:\Program Files\Common Files\VST3\BurningTreeC\GainStageFx.vst3
+
+and without administrator rights at
+
+  %LOCALAPPDATA%\Programs\Common\CLAP\BurningTreeC\GainStageFx.clap
+  %LOCALAPPDATA%\Programs\Common\VST3\BurningTreeC\GainStageFx.vst3
+
+Those are the folders the CLAP and VST3 specifications name, and hosts search
+them including their subfolders. install.exe prints where it put each one.
+
 install.exe is not code signed, so Windows SmartScreen will say the publisher
 is unknown. Signing certificates cost money every year, which this project
 does not have. Click "More info" and then "Run anyway", or install by hand
@@ -23,7 +37,15 @@ Or, without administrator rights, into
   %LOCALAPPDATA%\Programs\Common\CLAP
   %LOCALAPPDATA%\Programs\Common\VST3
 
-Create the folder first if it does not exist.
+Create the folder first if it does not exist. A BurningTreeC subfolder works
+too, and is what install.exe uses.
+
+
+Where your saved presets go
+---------------------------
+%APPDATA%\GainStageFx\Presets, one .json file per preset. The folder is
+created the first time a preset is saved successfully, so it will not be there
+before then.
 
 If your DAW does not list CLAP plugins, see
 https://github.com/free-audio/clap#hosts
