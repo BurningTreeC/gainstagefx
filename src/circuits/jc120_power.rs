@@ -24,7 +24,7 @@
 //!  +VE ─R68─R72─ D11                 └─ R88 from the output    └─ Q13 base
 //!            │        (a fixed drop in the model -- see `D_RAIL_DROP`)
 //!            │
-//!            └─ R78 ─ boot ─ R82 ─ n1 ─ R76 ─ n11 ─ R75 ─ n3 ─ Q13 ─ R83 ─ -VE
+//!            └─ R78 ─ boot ─ R82 ─ n1 ─ R76∥R79 ─ n11 ─ R75 ─ n3 ─ Q13 ─ R83 ─ -VE
 //!                      │              │                    │
 //!                   C43 to out    Q10 base            Q11 base
 //! ```
@@ -157,11 +157,53 @@ const FEEDBACK_BLOCK: f64 = 4.7e-6; // C48
 const LOAD_TOP: f64 = 1_500.0; // R78, from the supply
 const LOAD_UPPER: f64 = 6_800.0; // R82, to the upper driver's base
 const BOOTSTRAP: f64 = 47e-6; // C43, to the output
-/// R76 and R75, the spreader's own divider between the two driver bases.
-const SPREAD_UPPER: f64 = 3_900.0;
-const SPREAD_LOWER: f64 = 6_800.0;
+/// R76, R79 and R75, the spreader's own divider between the two driver bases.
+///
+/// **R76 and R79 are both 3.9 k and both sit between the upper driver's base
+/// and the sense node**, so the upper leg is 1.95 k and not 3.9 k. R79 was
+/// missing here until 2026-09-23, and the consequence was not subtle: with the
+/// upper leg twice its real value the spreader held the driver bases 1.48 V
+/// apart where a Darlington output stage needs four base-emitter junctions'
+/// worth, about 2.4 V. The PNP half of the output stage sat at **-0.34 V of
+/// base-emitter bias -- reverse biased, fully off** -- while the NPN half
+/// carried the whole 9.6 mA idle on its own.
+///
+/// So the amplifier was single-ended with a dead zone across every zero
+/// crossing: audibly, crossover distortion on a famously clean amplifier, and
+/// numerically, an ill-conditioned solve every time the signal passed through
+/// zero. Real playing does that constantly at every level, which is why a
+/// recorded DI take produced 150,000 fallbacks where a synthetic sine produced
+/// 1,400.
+///
+/// Read off the sheet with `tools/schematic/trace.py`, which found the two
+/// junction dots R79 hangs from at (13537, 5363) and (13537, 5582) on page 7
+/// of the service notes. DOCUMENTED.
+const SPREAD_UPPER_A: f64 = 3_900.0; // R76
+const SPREAD_UPPER_B: f64 = 3_900.0; // R79, in parallel with it
+const SPREAD_LOWER: f64 = 6_800.0; // R75
 /// C44, across the whole spreader: the audio goes past it, the bias does not.
 const SPREAD_BYPASS: f64 = 0.068e-6;
+/// The two spreader transistors' output capacitances, `Cob`, from their
+/// data sheets: 3.5 pF for the 2SA1015 and 2.0 pF for the 2SC1815, both typical
+/// at `Vcb = 10 V`.
+///
+/// **These are here because without them the node between them is not a node.**
+/// Q12's collector meets Q14's base and nothing else -- that is what the sheet
+/// draws, and it is fine on a board, where every junction has capacitance and
+/// every track has stray. In a solver it is a node held only by two
+/// reverse-biased junctions' leakage, around 1e-12 S each, so any imbalance
+/// between them moves it by a billion volts; measured, `q14_b` reached
+/// **-1.06e9 V** as soon as the output stage was biased hard enough to drive
+/// the spreader into cutoff at clipping, and the solve went with it -- 43.6
+/// Newton passes a sample and thirty-one million fallbacks.
+///
+/// Five picofarads is nothing at audio, and that is the point: it changes no
+/// response anywhere, and it raises that node's conductance from 1e-12 S to
+/// about 5e-7 S, which is the difference between an ill-conditioned row and a
+/// well-posed one. DOCUMENTED, from the two parts' own data sheets, rather
+/// than a number chosen to make the solve behave.
+const Q_SPREAD_P_COB: f64 = 3.5e-12;
+const Q_SPREAD_N_COB: f64 = 2.0e-12;
 
 // --- the voltage amplifier stage ----------------------------------------
 const VAS_EMITTER: f64 = 68.0; // R83
@@ -222,10 +264,14 @@ fn complete_netlist(source: f64, load: f64) -> Netlist {
     // sits across the pair of them and Q12 senses their junction and drives
     // it, so the two bases are held a fixed distance apart. C44 carries the
     // audio straight across.
-    net.resistor(UPPER_DRIVE, "n11", SPREAD_UPPER)
+    net.resistor(UPPER_DRIVE, "n11", SPREAD_UPPER_A)
+        .resistor(UPPER_DRIVE, "n11", SPREAD_UPPER_B)
         .resistor("n11", LOWER_DRIVE, SPREAD_LOWER)
         .bipolar_pnp("q14_b", "n11", UPPER_DRIVE, Q_SPREAD_P)
         .bipolar(UPPER_DRIVE, "q14_b", LOWER_DRIVE, Q_SPREAD_N)
+        // The two parts' own collector-base capacitance. See `Q_SPREAD_P_COB`.
+        .capacitor("q14_b", "n11", Q_SPREAD_P_COB)
+        .capacitor("q14_b", UPPER_DRIVE, Q_SPREAD_N_COB)
         .capacitor(UPPER_DRIVE, LOWER_DRIVE, SPREAD_BYPASS);
 
     // Q13, the voltage amplifier stage: base straight off the pair's

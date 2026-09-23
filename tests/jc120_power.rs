@@ -140,11 +140,16 @@ fn the_operating_point_is_what_the_topology_requires() {
     // The bias spreader has to hold the two driver bases apart by enough to
     // turn on four base-emitter junctions' worth of output stage, and not so
     // much that it runs away.
+    //
+    // This range used to be 0.8..3.0, and it was far too loose to mean
+    // anything: at 1.48 V the whole PNP half of the output stage was reverse
+    // biased and the test passed. Two driver junctions and two output
+    // junctions is about 2.4 V, so that is what is asked for.
     let spread = at(UPPER_DRIVE) - at(LOWER_DRIVE);
     assert!(
-        (0.8..3.0).contains(&spread),
-        "the spreader holds the driver bases {spread:.2} V apart, which will \
-         either not turn the output stage on or not turn it off"
+        (2.2..3.0).contains(&spread),
+        "the spreader holds the driver bases {spread:.2} V apart, which is not \
+         four base-emitter junctions' worth"
     );
 
     // And the bootstrap sits up near the supply, holding the collector load
@@ -154,6 +159,56 @@ fn the_operating_point_is_what_the_topology_requires() {
         boot > 0.5 * RAIL_VOLTS,
         "the bootstrapped node is at {boot:.1} V, which is not above the output"
     );
+}
+
+/// **Both halves of the output stage conduct at idle**, which is what makes it
+/// a complementary stage rather than two single-ended ones taking turns.
+///
+/// This is the check the spread-voltage assertion above could not make, and
+/// the defect it would have caught is the reason it exists. R79 -- 3.9 k, in
+/// parallel with R76 -- was missing from the netlist, so the spreader held
+/// 1.48 V instead of 2.4 V; the NPN half carried the entire 9.6 mA idle and
+/// the PNP half sat at **-0.34 V of base-emitter bias, reverse biased and
+/// fully off**. The amplifier was single-ended with a dead zone across every
+/// zero crossing: crossover distortion on an amplifier whose whole reputation
+/// is being clean, and an ill-conditioned solve every time the signal passed
+/// through zero. A recorded DI take put 150,000 fallbacks a minute through it.
+///
+/// See `docs/models/jazz_120.md`.
+#[test]
+fn both_halves_of_the_output_stage_are_turned_on() {
+    let circuit = jc120_power::build(SOURCE, LOAD).expect("builds");
+    let mut s = Simulation::new(circuit.clone(), RATE);
+    assert!(s.find_operating_point(), "the DC solve converges");
+    let at = |name: &str| {
+        let n = circuit
+            .unknown_named(name)
+            .unwrap_or_else(|| panic!("{name} is a node"));
+        s.voltage_at(n)
+    };
+
+    // The NPN output device wants its base above its emitter, the PNP wants
+    // its emitter above its base, and both want about a silicon junction.
+    let npn = at("out_n_b") - at("e_n");
+    let pnp = at("e_p") - at("out_p_b");
+    for (half, volts) in [("NPN", npn), ("PNP", pnp)] {
+        assert!(
+            volts > 0.4,
+            "the {half} half of the output stage idles at {volts:.3} V of \
+             base-emitter bias, which is not turned on"
+        );
+    }
+
+    // And neither is turned on so hard that the stage is running class A into
+    // its own heatsink: a volt would be amps through a 0.33 ohm emitter
+    // resistor.
+    for (half, volts) in [("NPN", npn), ("PNP", pnp)] {
+        assert!(
+            volts < 0.75,
+            "the {half} half idles at {volts:.3} V, which is not a bias, it is \
+             a short"
+        );
+    }
 }
 
 /// Solid-state, so nothing in it depends on the sample rate.

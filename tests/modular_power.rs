@@ -10,12 +10,39 @@ fn signal(k: usize) -> f64 {
 
 #[test]
 fn matched_resolution_and_bypass_follow_the_preamp() {
+    // `Gain::power_stage()` answers a *narrower* question than `Matched` does:
+    // it names a valve `PowerSpec`, and two voices have an output block that is
+    // not one -- the Jazz 120's complementary transistor amplifier and the
+    // 73P's line driver. So the relationship is containment, not equality.
+    //
+    // It was equality here until 2026-09-23, and that is precisely the split
+    // that had those two voices *calibrated* with their output stage by
+    // `examples/calibrate` and *played* without it by `Chain`, because the two
+    // asked different questions and got different answers. See `build_power`.
     for gain in Gain::ALL {
-        assert_eq!(
-            PowerAmp::Matched.resolved(gain).is_some(),
-            gain.power_stage().is_some()
-        );
+        if gain.power_stage().is_some() {
+            assert!(
+                PowerAmp::Matched.resolved(gain).is_some(),
+                "{} has a valve power stage but Matched resolves to nothing",
+                gain.name()
+            );
+        }
         assert_eq!(PowerAmp::Bypass.resolved(gain), None);
+    }
+
+    // And the two whose output block is not a valve stage resolve anyway,
+    // which is the whole point of the correction.
+    for gain in [Gain::Jazz120, Gain::Neve] {
+        assert!(
+            gain.power_stage().is_none(),
+            "{} is not a valve power stage",
+            gain.name()
+        );
+        assert!(
+            PowerAmp::Matched.resolved(gain).is_some(),
+            "{} has an output block and Matched must find it",
+            gain.name()
+        );
     }
 }
 
@@ -69,13 +96,24 @@ fn bypass_stops_every_power_solve_but_keeps_the_studio_line_driver() {
     }
 }
 
+/// Bypassing an output stage a voice has not got must be exactly nothing.
+///
+/// The subject used to be `Gain::Neve`, and that stopped being the right one on
+/// 2026-09-23: the 73P's OUTPUT block -- two BC109C into a TIP3055 and the
+/// VTB1148 -- is now in that voice's path, so bypassing it is a real change and
+/// the test below asserts that instead. A microphone preamplifier with no
+/// output block of any kind is what this one was always about.
 #[test]
 fn studio_power_bypass_is_an_exact_noop() {
     let base = Settings {
-        gain: Gain::Neve,
+        gain: Gain::Studio,
         tone: Tone::Off,
         ..Settings::default()
     };
+    assert!(
+        PowerAmp::Matched.resolved(Gain::Studio).is_none(),
+        "this test needs a voice with no output block"
+    );
     let mut a = Chain::new(48000.0);
     let mut b = Chain::new(48000.0);
     a.apply(&base);
@@ -87,6 +125,43 @@ fn studio_power_bypass_is_an_exact_noop() {
     b.settle();
     for k in 0..4096 {
         assert_eq!(a.process(signal(k)), b.process(signal(k)));
+    }
+}
+
+/// And bypassing one a voice *has* must be audible, which is the other half of
+/// the same statement. The 73P is the case that was wrong: its output block was
+/// in the calibration and not in the path, so switching it out did nothing at
+/// all while the make-up still took out a gain that was never applied.
+#[test]
+fn bypassing_an_output_block_a_voice_has_changes_the_sound() {
+    for gain in [Gain::Neve, Gain::Jazz120] {
+        let base = Settings {
+            gain,
+            tone: Tone::Off,
+            ..Settings::default()
+        };
+        let mut matched = Chain::new(48000.0);
+        let mut bypassed = Chain::new(48000.0);
+        matched.apply(&base);
+        bypassed.apply(&Settings {
+            power_amp: PowerAmp::Bypass,
+            ..base
+        });
+        matched.settle();
+        bypassed.settle();
+        matched.find_operating_point();
+        bypassed.find_operating_point();
+        let mut difference = 0.0f64;
+        for k in 0..4096 {
+            let x = signal(k);
+            difference = difference.max((matched.process(x) - bypassed.process(x)).abs());
+        }
+        assert!(
+            difference > 1e-6,
+            "{} sounds the same with its output block bypassed, so it is not \
+             in the path",
+            gain.name()
+        );
     }
 }
 

@@ -615,6 +615,101 @@ as well as dirtier, which is what the pot does.
 | -6 dBFS | 10,831 µs | 987 µs | 331 | **0** |
 | 0 dBFS | 10,168 µs | 1,605 µs | 420 | **1** |
 
+## Half the output stage was switched off, 2026-09-23
+
+Found by measuring with a **real DI take** instead of synthetic attacks, and by
+running the measurement **at real time** instead of flat out. Both of those
+changes mattered, and neither of them is about the circuit.
+
+### What the synthetic test could not see
+
+A plucked-sine generator is a poor model of playing. The take used here --
+31 seconds of a guitar DI at 48 kHz -- has a **crest factor of 19.8 dB**, long
+quiet decays between phrases, and consequently spends most of its life near
+zero. A synthetic pluck at four notes a second never really goes quiet, so it
+sat away from the crossover region and never asked the output stage the hard
+question.
+
+Measured on the same preset at the same level:
+
+| material | power-stage fallbacks |
+|---|---:|
+| synthetic attacks | 1,361 |
+| the DI take | **149,740** |
+
+A hundred and ten times more, from the same code at the same level.
+
+Running the harness **paced** rather than flat out is the other half. A loop
+that processes blocks back to back keeps the core's caches hot and its
+predictors trained; a host hands over a block every 1,333 µs and leaves the
+core idle in between. On this machine -- governor `performance`, so this is not
+clock scaling -- pacing costs roughly half as much again per callback. That is
+locality, and a DAW pays it too.
+
+### R79, and what its absence did
+
+`tools/schematic/trace.py` on page 7 of the service notes found two junction
+dots at **(13537, 5363)** and **(13537, 5582)** -- one on the upper driver's
+base rail and one on the spreader's sense node -- with the label `R79 3.9K`
+between them. **R79 is in parallel with R76**, and it was missing here.
+
+With the upper leg at 3.9 k instead of 1.95 k, the spreader held the two driver
+bases **1.48 V** apart. A Darlington output stage needs four base-emitter
+junctions, about 2.4 V. What that meant, measured at the operating point:
+
+| | before | after |
+|---|---:|---:|
+| spreader voltage | 1.48 V | **2.42 V** |
+| NPN half, base-emitter | +0.581 V | +0.583 V |
+| **PNP half, base-emitter** | **-0.341 V** | **+0.515 V** |
+| idle current, NPN / PNP | 9.60 / **0.00** mA | 10.34 / 0.74 mA |
+
+The PNP half was **reverse biased and completely off**. The amplifier was
+running single-ended with a dead zone across every zero crossing -- audibly,
+crossover distortion on an amplifier whose entire reputation is being clean;
+numerically, an ill-conditioned solve every time the signal passed through
+zero, which real playing does constantly at every level. That is why the
+fallback count was high even at **-24 dBFS**, nowhere near clipping.
+
+**Four of the six sheet-derived tests passed throughout.** The printed 26 dB
+gain, the printed input and output levels, the distortion trend and the
+clipping point are all measured with the amplifier well away from crossover,
+so none of them could see it. `both_halves_of_the_output_stage_are_turned_on`
+now checks the thing they could not, and the spreader's assertion was tightened
+from `0.8..3.0` V -- which passed at 1.48 -- to `2.2..3.0`.
+
+### And then the node between the two spreader transistors
+
+Correcting the bias exposed a second defect underneath it. Q12's collector
+meets Q14's base and **nothing else** -- that is what the sheet draws, and it is
+perfectly fine on a board where every junction has capacitance and every track
+has stray. In a solver it is a node held only by two reverse-biased junctions'
+leakage, about 1e-12 S each. Once the output stage was biased hard enough to
+drive the spreader into cutoff at clipping, any imbalance between those two
+moved the node by a billion volts: `q14_b` reached **-1.06e9 V**, the amplifier
+latched against its rails and stopped crossing zero, and the solve went to 43.6
+Newton passes a sample and thirty-one million fallbacks.
+
+The fix is the two parts' own **collector-base capacitance**, `Cob`, from their
+data sheets -- 3.5 pF for the 2SA1015 and 2.0 pF for the 2SC1815. Five
+picofarads changes no response anywhere at audio, and it raises that node's
+conductance from 1e-12 S to about 5e-7 S, which is the difference between an
+ill-conditioned row and a well-posed one.
+
+### Where the power stage ended up
+
+Sine into the speaker-loaded stage, one second at each level:
+
+| input | before today | after | | |
+|---|---|---|---|---|
+| | passes / fallbacks | passes / fallbacks | output | zero crossings |
+| 1.0 V | 2.31 / 10 | **2.09 / 0** | ±16.1 V | 221 |
+| 3.0 V | 4.21 / 2,969 | **2.49 / 2** | ±38.7 V | 221 |
+| 5.0 V | 5.16 / 4,242 | **2.66 / 733** | ±41.3 V | 221 |
+| 8.0 V | — | **2.80 / 1,566** | ±42.1 V | 221 |
+
+It clips and recovers at every level now, instead of latching.
+
 ### What is still open
 
 The published input sensitivities do not come out of the network. The sheet

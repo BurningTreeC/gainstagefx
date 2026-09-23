@@ -1,5 +1,142 @@
 # Implementation progress
 
+## 2026-09-23 (evening) — half the JC-120's output stage was switched off
+
+The user supplied a real DI take and asked for the deadline test to use it, and
+to be **live** — audio arriving in real time rather than a buffer processed flat
+out. Both changes were necessary and both found things. The synthetic harness
+was measuring the wrong circuit in the wrong conditions.
+
+### What changed in the harness
+
+`examples/stutter.rs` now takes an optional WAV and a list of preset names, and
+**paces itself**: each callback waits for its slot, so the core gets the same
+idle gap between blocks it gets under a host. A minimal RIFF/WAVE reader is in
+the example rather than a new dependency — the plugin does not read files and
+should not grow a crate that does just so a measurement can.
+
+Both changes matter and neither is about the circuit:
+
+- **Material.** The take is 31 s of guitar DI with a **crest factor of 19.8 dB**
+  and long quiet decays. A synthetic pluck never really goes quiet, so it sat
+  away from the crossover region. Same preset, same level: **1,361** fallbacks
+  on synthetic material, **149,740** on the take.
+- **Pacing.** Flat out keeps the caches hot and the predictors trained. Paced,
+  the same work costs roughly half as much again per callback. The governor is
+  `performance` at 4.5 GHz here, so this is locality, not clock scaling — and a
+  DAW pays it too.
+
+### R79 was missing, and the PNP half of the output stage was off
+
+`tools/schematic/trace.py` on page 7 found two junction dots at (13537, 5363)
+and (13537, 5582) with `R79 3.9K` between them: **in parallel with R76**. With
+the upper leg at 3.9 k instead of 1.95 k the spreader held 1.48 V where a
+Darlington output stage needs about 2.4 V.
+
+| at the operating point | before | after |
+|---|---:|---:|
+| spreader voltage | 1.48 V | **2.42 V** |
+| NPN half, base-emitter | +0.581 V | +0.583 V |
+| **PNP half, base-emitter** | **−0.341 V** | **+0.515 V** |
+| idle current NPN / PNP | 9.60 / **0.00** mA | 10.34 / 0.74 mA |
+
+Reverse biased and completely off. The amplifier was single-ended with a dead
+zone across every zero crossing — crossover distortion on an amplifier whose
+whole reputation is being clean, and an ill-conditioned solve every time the
+signal crossed zero, which is why the fallbacks were high even at −24 dBFS
+where nothing is near clipping.
+
+**Four of the six sheet-derived tests passed throughout this.** Gain, the
+printed test points, the distortion trend and the clipping point are all
+measured away from crossover. `both_halves_of_the_output_stage_are_turned_on`
+checks what they could not, and the spreader assertion was tightened from
+`0.8..3.0` V — which passed at 1.48 — to `2.2..3.0`. Both bite when R79 is
+removed again.
+
+### The node between the two spreader transistors
+
+Fixing the bias exposed a second defect underneath. Q12's collector meets Q14's
+base and nothing else — which is what the sheet draws and is fine on a board,
+where every junction has capacitance. In a solver it is a node held by two
+reverse-biased junctions' leakage, ~1e-12 S each. Biased properly, the spreader
+now cuts off at clipping, and `q14_b` went to **−1.06e9 V**: the amplifier
+latched against its rails, stopped crossing zero, and the solve hit 43.6 passes
+a sample and 31.5 million fallbacks.
+
+The fix is the two parts' own data-sheet `Cob` — 3.5 pF for the 2SA1015, 2.0 pF
+for the 2SC1815. Five picofarads changes nothing at audio and raises that node's
+conductance by five orders of magnitude.
+
+### The power stage now
+
+| sine in | before today | after |
+|---|---|---|
+| 1.0 V | 2.31 passes / 10 fb | **2.09 / 0** |
+| 3.0 V | 4.21 / 2,969 | **2.49 / 2** |
+| 5.0 V | 5.16 / 4,242 | **2.66 / 733** |
+| 8.0 V | — | **2.80 / 1,566** |
+
+It clips and recovers at every level instead of latching, and the output keeps
+crossing zero 221 times a second at 110 Hz throughout.
+
+### Where it left the two presets, live, on the take
+
+One callback at a time, 64 samples at 48 kHz against a 1,333 µs budget, the
+take's peak scaled to each level. The as-recorded level is −11.5 dBFS peak, so
+the −12 dBFS row is the take as it was played.
+
+| | −12 dBFS missed, before | after |
+|---|---:|---:|
+| Jazz Chorus | 290 | **79** |
+| Jazz Chorus, power-stage unsettled | 8,054 | **152** |
+| Deluxe Breakup | 208 | 208 — unchanged |
+
+The Jazz 120 improved by three quarters and the Deluxe not at all, which is
+right: the defect was the Jazz 120's. The Deluxe's cost is what the morning's
+work already established — the GZ34 rectifier, 44 % of its power stage — plus
+the locality cost of running paced, which is about half as much again per
+callback and which no amount of circuit work removes.
+
+**What is still not fixed.** The Jazz 120's power stage still records 102,434
+fallbacks over the take at −12 dBFS. They are concentrated where the take's
+transients drive it into clipping, which is what the amplifier does; the
+isolated stage now takes 0 fallbacks at 1 V, 2 at 3 V and 733 at 5 V over a
+full second of sine, so what remains is transient-driven rather than a standing
+defect. At −24 dBFS, where nothing clips, it is 722 over the whole take against
+29,608 before. Both presets still miss callbacks at the as-recorded level —
+0.34 % of them for the Jazz 120 and 0.90 % for the Deluxe — and that is
+audible. This is better, not finished.
+
+### Two stale tests, and how they were missed
+
+`tests/modular_power.rs` had been failing since the morning's `build_power`
+correction and was not caught, because every verification run that day was a
+*targeted* list of targets and that one was never on it. Both failures were the
+tests asserting the behaviour the correction deliberately changed:
+
+- `matched_resolution_and_bypass_follow_the_preamp` required
+  `Matched.resolved(gain).is_some() == gain.power_stage().is_some()`. Those are
+  different questions -- `power_stage()` names a valve `PowerSpec`, and two
+  voices have an output block that is not one -- and requiring them to be equal
+  is *exactly* the split the correction was about. It now asserts containment,
+  plus that the Jazz 120 and the 73P resolve although neither is a valve stage.
+- `studio_power_bypass_is_an_exact_noop` used `Gain::Neve` as its subject and
+  required bypassing its power stage to change nothing. That was true only while
+  the 73P's output block was missing from the path. The subject is now
+  `Gain::Studio`, which genuinely has no output block, and a new test asserts
+  the other half: bypassing a block a voice *does* have must be audible.
+
+The lesson is the obvious one and it is recorded rather than excused: a change
+to what a shared accessor means needs the whole suite, not a list of the targets
+that seem related.
+
+### A note on method
+
+The lesson worth keeping is that the *material* and the *pacing* of a
+measurement are part of the measurement. A synthetic signal that never goes
+quiet cannot find a crossover defect, and a loop that never idles cannot find a
+locality cost. Both were reported by a player long before either was measured.
+
 ## 2026-09-23 (later still) — the Drive knob, and what the Deluxe's cost actually is
 
 ### The Jazz 120's Drive was cancelling itself
