@@ -268,9 +268,7 @@ impl Model for Session {
                 SessionEvent::OpenSave => {
                     self.open = false;
                     self.refresh();
-                    // Offered under the name it already has, which is what
-                    // somebody tweaking a sound and saving it expects.
-                    self.draft = self.current.clone();
+                    self.draft = offered_name(&self.current);
                     self.error.clear();
                     self.dialog = Dialog::Save;
                 }
@@ -308,8 +306,30 @@ impl Model for Session {
                     Dialog::None => {}
                 },
             }
+            // The name box is the only thing in the panel that types, and it
+            // exists exactly while the save dialog does. On Windows this is
+            // what gets it the keyboard: a host's message loop sees every key
+            // before the plugin, and some keep the letters for their own
+            // shortcuts -- which is how a box that took Delete and the arrows
+            // could not be typed into. See `vendor/baseview/src/win/text_input.rs`.
+            // Every other platform ignores it. Repeating an unchanged state
+            // does nothing, so it is simply kept in step here.
+            baseview::set_text_input(self.dialog == Dialog::Save);
             meta.consume();
         });
+    }
+}
+
+/// What the save dialog offers as the name.
+///
+/// The name the sound already has, which is what somebody tweaking a sound and
+/// saving it expects -- unless nothing has been loaded, when the strip's dash
+/// is not a name and offering it only leaves something to delete first.
+fn offered_name(current: &str) -> String {
+    if current == presets::NONE {
+        String::new()
+    } else {
+        current.to_string()
     }
 }
 
@@ -830,13 +850,15 @@ pub fn dialogs(cx: &mut Context) {
                         // `Textbox` only draws its caret and only accepts keys
                         // once it is in edit mode -- which it enters on
                         // `FocusIn`. So the dialog came up with no cursor in
-                        // it, and on a host that does not hand the plugin
-                        // window keyboard focus by itself there was no way to
-                        // type a name at all. `save` rejects an empty name
-                        // *before* it creates the directory, so the report
-                        // that reached us was two things at once: no cursor,
-                        // and no `GainStageFx\Presets` folder ever appearing.
-                        // One cause.
+                        // it. `save` rejects an empty name *before* it creates
+                        // the directory, so the report that reached us was two
+                        // things at once: no cursor, and no
+                        // `GainStageFx\Presets` folder ever appearing.
+                        //
+                        // This is vizia's focus, inside the panel. Whether the
+                        // keys reach the panel at all is the operating system's
+                        // focus, and on Windows that is the job of the
+                        // `set_text_input` call in `Session::event`.
                         .on_build(|cx| cx.focus());
                 }
                 Dialog::Overwrite => {
@@ -971,7 +993,16 @@ impl View for Backdrop {
 
 #[cfg(test)]
 mod tests {
-    use super::SCROLLBAR;
+    use super::{offered_name, SCROLLBAR};
+    use crate::presets;
+
+    /// Reported as "a little * or - in the input": saving from scratch offered
+    /// the strip's dash as the name.
+    #[test]
+    fn saving_from_scratch_offers_no_name() {
+        assert_eq!(offered_name(presets::NONE), "");
+        assert_eq!(offered_name("Console Channel"), "Console Channel");
+    }
 
     /// The stylesheet has to be well formed, because nothing will say so if it
     /// is not.

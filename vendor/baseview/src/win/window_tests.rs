@@ -4,13 +4,18 @@ use super::*;
 use crate::EventStatus;
 use winapi::um::winuser::SendMessageW;
 
-struct Recorder(Rc<RefCell<Vec<MouseEvent>>>, Rc<RefCell<Vec<WindowInfo>>>);
+struct Recorder(
+    Rc<RefCell<Vec<MouseEvent>>>,
+    Rc<RefCell<Vec<WindowInfo>>>,
+    Rc<RefCell<Vec<keyboard_types::KeyboardEvent>>>,
+);
 impl WindowHandler for Recorder {
     fn on_frame(&mut self, _: &mut crate::Window) {}
     fn on_event(&mut self, _: &mut crate::Window, event: Event) -> EventStatus {
         match event {
             Event::Mouse(event) => self.0.borrow_mut().push(event),
             Event::Window(WindowEvent::Resized(info)) => self.1.borrow_mut().push(info),
+            Event::Keyboard(event) => self.2.borrow_mut().push(event),
             _ => {}
         }
         EventStatus::Captured
@@ -21,40 +26,49 @@ struct Fixture {
     state: Rc<WindowState>,
     events: Rc<RefCell<Vec<MouseEvent>>>,
     sizes: Rc<RefCell<Vec<WindowInfo>>>,
+    keys: Rc<RefCell<Vec<keyboard_types::KeyboardEvent>>>,
 }
 
 impl Fixture {
     fn new() -> Self {
+        Self::inside(null_mut())
+    }
+
+    /// Embedded in `parent`, as a plugin's window is in the host's.
+    fn inside(parent: HWND) -> Self {
         unsafe {
             let class = register_wnd_class();
             assert_ne!(class, 0);
+            let style = if parent.is_null() { winapi::um::winuser::WS_POPUP } else { WS_CHILD };
             // No WS_VISIBLE: exercise native capture/message dispatch without
             // putting test windows on the user's desktop.
-            let hwnd = CreateWindowExW(0, class as _, [0u16].as_ptr(), winapi::um::winuser::WS_POPUP,
-                0, 0, 200, 100, null_mut(), null_mut(), null_mut(), null_mut());
+            let hwnd = CreateWindowExW(0, class as _, [0u16].as_ptr(), style,
+                0, 0, 200, 100, parent, null_mut(), null_mut(), null_mut());
             assert!(!hwnd.is_null(), "native test window could not be created");
             let events = Rc::new(RefCell::new(Vec::new()));
             let sizes = Rc::new(RefCell::new(Vec::new()));
+            let keys = Rc::new(RefCell::new(Vec::new()));
             let state = Rc::new(WindowState {
                 hwnd, window_class: class,
                 window_info: RefCell::new(WindowInfo::from_logical_size(Size::new(200.0, 100.0), 1.0)),
                 _parent_handle: None,
                 keyboard_state: RefCell::new(KeyboardState::new()),
+                text_input: TextInput::new(),
                 pressed_buttons: Cell::new(Buttons::default()),
                 pending_releases: Cell::new(Buttons::default()),
                 cursor_inside: Cell::new(false),
-                handler: RefCell::new(Some(Box::new(Recorder(Rc::clone(&events), Rc::clone(&sizes))))),
+                handler: RefCell::new(Some(Box::new(Recorder(Rc::clone(&events), Rc::clone(&sizes), Rc::clone(&keys))))),
                 pending_events: RefCell::new(VecDeque::new()),
                 _drop_target: RefCell::new(None),
                 scale_policy: WindowScalePolicy::ScaleFactor(1.0),
-                dw_style: winapi::um::winuser::WS_POPUP,
+                dw_style: style,
                 deferred_tasks: RefCell::new(VecDeque::new()),
                 draining_tasks: Cell::new(false),
                 #[cfg(feature = "opengl")]
                 gl_context: None,
             });
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Rc::into_raw(Rc::clone(&state)) as _);
-            Self { state, events, sizes }
+            Self { state, events, sizes, keys }
         }
     }
 
@@ -88,7 +102,7 @@ impl WindowHandler for DuringFrame {
 impl Fixture {
     fn during_frame(&self, action: impl FnMut(&mut crate::Window) + 'static) {
         *self.state.handler.borrow_mut() = Some(Box::new(DuringFrame {
-            recorder: Recorder(self.events.clone(), self.sizes.clone()),
+            recorder: Recorder(self.events.clone(), self.sizes.clone(), self.keys.clone()),
             action: Box::new(action),
         }));
     }
@@ -322,4 +336,163 @@ fn requested_resize_notifies_the_renderer_and_matches_the_native_client() {
             assert_eq!(rect.bottom - rect.top, expected.physical_size().height as i32);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard input past a host that filters it
+// ---------------------------------------------------------------------------
+
+use keyboard_types::{Key, KeyState};
+use winapi::um::winuser::{PeekMessageW, SetFocus, PM_REMOVE};
+
+/// Type letters at `hwnd` through a host's message loop, reduced to the one
+/// habit that matters: it translates and dispatches key-downs as usual, but
+/// keeps every `WM_CHAR` for itself instead of dispatching it -- as a host
+/// does that takes letters for its own shortcuts. Each key is released only
+/// after its press has been handled, as a finger would. Returns the keyboard
+/// messages the host's loop saw.
+fn type_through_host(hwnd: HWND, letters: &[u8]) -> Vec<UINT> {
+    let mut seen = Vec::new();
+    for &letter in letters {
+        // Set 1 scan codes, which are not in alphabetical order.
+        let scan: LPARAM = match letter {
+            b'A' => 0x1E,
+            b'B' => 0x30,
+            b'C' => 0x2E,
+            _ => unreachable!(),
+        };
+        let down = 1 | (scan << 16);
+        let up = down | (1 << 30) | (1 << 31);
+        for (message, lparam) in [(WM_KEYDOWN, down), (WM_KEYUP, up)] {
+            unsafe { PostMessageW(hwnd, message, letter as WPARAM, lparam); }
+            host_loop(&mut seen);
+        }
+    }
+    seen
+}
+
+fn host_loop(seen: &mut Vec<UINT>) {
+    unsafe {
+        let mut msg: MSG = std::mem::zeroed();
+        while PeekMessageW(&mut msg, null_mut(), 0, 0, PM_REMOVE) != 0 {
+            if matches!(msg.message, WM_KEYDOWN | WM_KEYUP | WM_CHAR) {
+                seen.push(msg.message);
+            }
+            if msg.message == WM_CHAR {
+                continue;
+            }
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+}
+
+/// The text the window was given, as a text field would insert it.
+fn typed(window: &Fixture) -> String {
+    window
+        .keys
+        .borrow()
+        .iter()
+        .filter(|e| e.state == KeyState::Down)
+        .filter_map(|e| match &e.key {
+            Key::Character(s) => Some(s.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Open or close the window's text field from inside a frame callback, which
+/// is where a toolkit's event handlers run.
+fn text_field(window: &Fixture, open: bool) {
+    window.during_frame(move |_| crate::set_text_input(open));
+    window.send(WM_TIMER, WIN_FRAME_TIMER, 0);
+}
+
+/// The reported fault, reproduced: with no text field open, nothing changes,
+/// and under this host every letter is lost -- while a key that makes no
+/// `WM_CHAR`, like Delete, would get through.
+#[test]
+fn a_host_that_keeps_characters_loses_every_letter() {
+    let window = Fixture::new();
+    let seen = type_through_host(window.state.hwnd, b"A");
+    assert_eq!(seen, [WM_KEYDOWN, WM_CHAR, WM_KEYUP], "the host must see the character");
+    assert_eq!(typed(&window), "", "the key-down was held back for a WM_CHAR that never came");
+}
+
+#[test]
+fn an_open_text_field_gets_its_letters_past_a_host_that_keeps_characters() {
+    let window = Fixture::new();
+    text_field(&window, true);
+    let seen = type_through_host(window.state.hwnd, b"CAB");
+    assert_eq!(typed(&window), "cab");
+    assert!(seen.is_empty(), "the host saw {seen:?} while the field was open");
+}
+
+#[test]
+fn closing_the_text_field_gives_the_host_its_keys_back() {
+    let window = Fixture::new();
+    text_field(&window, true);
+    text_field(&window, false);
+    let seen = type_through_host(window.state.hwnd, b"A");
+    assert_eq!(seen, [WM_KEYDOWN, WM_CHAR, WM_KEYUP]);
+    assert_eq!(typed(&window), "");
+}
+
+#[test]
+fn only_the_window_with_the_open_field_takes_its_keys() {
+    let typing = Fixture::new();
+    let other = Fixture::new();
+    text_field(&typing, true);
+    let seen = type_through_host(other.state.hwnd, b"A");
+    assert_eq!(seen, [WM_KEYDOWN, WM_CHAR, WM_KEYUP]);
+}
+
+#[test]
+fn outside_a_callback_there_is_no_window_to_open_a_field_in() {
+    let window = Fixture::new();
+    crate::set_text_input(true);
+    assert_eq!(super::super::text_input::hook_users(), 0);
+    let seen = type_through_host(window.state.hwnd, b"A");
+    assert_eq!(seen, [WM_KEYDOWN, WM_CHAR, WM_KEYUP]);
+}
+
+#[test]
+fn the_text_field_takes_the_focus_and_gives_it_back() {
+    // Stands in for the host's window, which had the keyboard first.
+    let host = Fixture::new();
+    let window = Fixture::inside(host.state.hwnd);
+    unsafe { SetFocus(host.state.hwnd) };
+    assert_eq!(unsafe { GetFocus() }, host.state.hwnd);
+
+    text_field(&window, true);
+    assert_eq!(unsafe { GetFocus() }, window.state.hwnd, "keys go to the focused window");
+
+    // Using the host and clicking back into the field brings the keyboard back.
+    unsafe { SetFocus(host.state.hwnd) };
+    window.send(WM_LBUTTONDOWN, 0, position(5, 5));
+    window.send(WM_LBUTTONUP, 0, position(5, 5));
+    assert_eq!(unsafe { GetFocus() }, window.state.hwnd);
+
+    text_field(&window, false);
+    assert_eq!(unsafe { GetFocus() }, host.state.hwnd, "the host's shortcuts need it back");
+}
+
+#[test]
+fn the_hook_lasts_exactly_as_long_as_an_open_field_needs_it() {
+    use super::super::text_input::hook_users;
+    let first = Fixture::new();
+    let second = Fixture::new();
+    assert_eq!(hook_users(), 0);
+    text_field(&first, true);
+    assert_eq!(hook_users(), 1);
+    text_field(&first, true);
+    assert_eq!(hook_users(), 1, "opening an open field again is not a second user");
+    text_field(&second, true);
+    assert_eq!(hook_users(), 2, "one hook per thread, shared");
+    text_field(&first, false);
+    assert_eq!(hook_users(), 1, "the second field is still open");
+    // A window closed with its field still open must not leave the hook
+    // behind: it would outlive the plugin whose code it points into.
+    drop(second);
+    assert_eq!(hook_users(), 0);
 }

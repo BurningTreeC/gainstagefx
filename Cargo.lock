@@ -1491,6 +1491,7 @@ dependencies = [
 name = "gainstagefx"
 version = "0.24.0"
 dependencies = [
+ "baseview",
  "nih_plug",
  "nih_plug_vizia",
  "serde",

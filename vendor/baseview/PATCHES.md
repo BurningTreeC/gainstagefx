@@ -40,6 +40,36 @@ embedded plugin windows:
   message dispatch. `src/lib.rs` also enables the platform-independent button
   tests on Linux. `src/win/mod.rs` declares the new helper.
 
+Text entry (`src/win/text_input.rs`, `src/text_input.rs`) lets a text field be
+typed into under a host that filters the keyboard:
+
+- A host's message loop takes every keystroke out of the queue before the
+  plugin sees it. Some translate and dispatch the key-down, then keep the
+  `WM_CHAR` for their own shortcuts. `keyboard.rs` holds each key-down back
+  until its `WM_CHAR` arrives, so every letter was lost while Delete and the
+  arrows, which make no `WM_CHAR`, still worked. That was the reported fault.
+- `baseview::set_text_input(bool)` is new public API, called from inside a
+  window handler callback; the window being dispatched is found through a
+  destructor-free thread-local set in `wnd_proc`. It is a no-op on Linux and
+  macOS, and outside a callback.
+- While it is on, a `WH_GETMESSAGE` hook on the window's thread takes
+  `WM_KEYDOWN`/`WM_KEYUP`/`WM_CHAR` addressed to that window inside the host's
+  own `GetMessage`/`PeekMessage`, calls `TranslateMessage` on key-downs itself
+  (so dead keys, Shift and Caps Lock come from the layout as usual) and calls
+  `wnd_proc` directly. The host receives `WM_NULL`. `Alt` combinations stay
+  with the host. Windows are recognised by this copy's own `wnd_proc` address,
+  so another plugin's baseview windows are never touched.
+- This is upstream's approach (RustAudio/baseview#212, after JUCE), narrowed:
+  upstream hooks for as long as any window is open, which takes the space bar
+  from a host's transport whenever the plugin has focus. Here the hook exists
+  only while a field is open. It is shared per thread and reference-counted,
+  and removed when the last field closes or its window is destroyed, so it
+  cannot outlive the DLL whose code it points into.
+- The window takes Win32 focus when a field opens, and again on a click while
+  one is open. The previous focus is read with `GetFocus()` beforehand,
+  because `SetFocus`'s return value is already the new window once
+  activation has run. It is restored when the field closes.
+
 All other upstream implementation files, including Linux/macOS window handling,
 are unchanged. The root Cargo patch also unifies NIH-plug's optional standalone
 backend onto this revision; the standalone feature is compile-checked. The
@@ -72,6 +102,17 @@ the opposite order before protecting the task drain. Both pass under Wine with
 the fixes. The Windows packaging job runs the native backend tests with
 OpenGL enabled before bundling. Wine validation does not replace testing the
 released VST3/CLAP in the affected Windows host.
+
+The text-entry regressions drive a host loop that translates and dispatches
+key-downs but keeps every `WM_CHAR`. Without a field open it loses the letter,
+which reproduces the report. With one open, "CAB" arrives as `cab` and the
+host sees none of it. Further tests cover a closed field handing keys back, a
+second window keeping its keys, a call outside a callback doing nothing, focus
+moving into a child window and back to its parent, and the hook's reference
+count down to zero when a window is destroyed mid-entry. With the hook
+disabled, the typing and hook-count tests fail. All pass under Wine, with
+and without `opengl`. None of this replaces typing a name in the reporting
+user's Windows host.
 
 Native resize reentrancy follows Microsoft's documented
 [window notifications from SetWindowPos](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)

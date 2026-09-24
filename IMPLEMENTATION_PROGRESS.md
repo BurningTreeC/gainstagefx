@@ -1,5 +1,63 @@
 # Implementation progress
 
+## 2026-09-24 — the preset-name box that took Delete but not letters
+
+The same Windows user reported again after the caret fix: *"there is a little
+\* or - in the input but I can't type anything in. I can move my cursor in front
+of it and hit delete (it goes away)."* Loading a factory preset and saving it
+under its own name worked, so the path was fine; only typing failed.
+
+**Delete and the arrows working while letters do not is the whole diagnosis.**
+A Windows host's message loop takes every keystroke out of the queue before a
+plugin sees it. The reporting host translates and dispatches the key-down, then
+keeps the `WM_CHAR` that `TranslateMessage` made, because letters are its
+shortcuts. baseview's keyboard code holds each key-down back until the
+`WM_CHAR` behind it arrives, since that is how it learns which character a key
+made. So every letter was held for a message that never came. Delete and the
+arrows make no `WM_CHAR`, are delivered on the key-down, and worked. The entry
+below diagnosed the caret correctly; it was invisible. But the claim that the
+missing focus made typing impossible was wrong for this host: the window had
+the keyboard all along.
+
+This was reproduced before anything was changed. A native test under Wine
+drives a host loop that keeps `WM_CHAR`, and the letter was lost exactly as
+reported.
+
+**The fix is in `vendor/baseview`, not in vizia or the editor.** Upstream
+baseview solved this in RustAudio/baseview#212 (after our pinned revision) with
+a `WH_GETMESSAGE` hook. It runs inside the host's own `GetMessage`, takes
+keystrokes addressed to the plugin's window before the host can, and leaves the
+host a `WM_NULL`. JUCE has done the same for years. It is backported
+here with one narrowing. Upstream hooks for as long as the window is open,
+which would take the space bar from the host's transport whenever the panel had
+focus. Here the hook exists only while a text field is open. The editor
+switches it with a new `baseview::set_text_input` call, kept in step with the
+save dialog in `Session::event`. While it is on, the window also takes Win32
+focus, so a host that never hands the plugin the keyboard works too. The
+previous focus is given back when the dialog closes. `vendor/baseview/PATCHES.md`
+has the mechanics.
+
+Two details were found by tests rather than by reading:
+
+- `SetFocus` reports the *new* window as the previous focus when the window's
+  top level had to be activated first, so the focus to return to is read with
+  `GetFocus()` before moving it.
+- The hook is reference-counted per thread and removed when the last field
+  closes or its window is destroyed mid-entry. A hook left behind would point
+  into an unloaded plugin and crash the host. A test destroys a window with
+  its field open and checks that the count reaches zero.
+
+**The dash.** Saving from scratch offered the strip's `-` (the "nothing loaded"
+marker) as the name, which is the "\* or -" in the report. It is now an empty
+box (`offered_name`, with a test).
+
+**Verified:** backend tests under Wine, 22 of 22, with and without `opengl`.
+With the hook disabled, the typing and hook-count tests fail. CI runs the
+same tests on real Windows before packaging. The plugin cross-checks for
+`x86_64-pc-windows-gnu`, and clippy is clean with `-D warnings`. **Not
+verified:** typing a name in the reporting user's host, which is the only test
+that settles it. The host was not named in either report.
+
 ## 2026-09-23 (evening) — half the JC-120's output stage was switched off
 
 The user supplied a real DI take and asked for the deadline test to use it, and

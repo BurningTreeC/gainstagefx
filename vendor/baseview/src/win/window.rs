@@ -15,7 +15,7 @@ use winapi::um::winuser::{
     WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SHOWWINDOW, WM_SIZE, WM_SYSCHAR, WM_SYSKEYDOWN, WM_SYSKEYUP,
     WM_TIMER, WM_USER, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WS_CAPTION, WS_CHILD,
     WS_CLIPSIBLINGS, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_POPUPWINDOW, WS_SIZEBOX, WS_VISIBLE,
-    XBUTTON1, XBUTTON2, WM_CAPTURECHANGED, WM_CANCELMODE, WM_KILLFOCUS,
+    XBUTTON1, XBUTTON2, WM_CAPTURECHANGED, WM_CANCELMODE, WM_KILLFOCUS, GetFocus,
     TrackMouseEvent, TRACKMOUSEEVENT, TME_LEAVE, WM_MOUSELEAVE,
     VK_LBUTTON, VK_MBUTTON, VK_RBUTTON, VK_XBUTTON1, VK_XBUTTON2, SM_SWAPBUTTON,
 };
@@ -35,6 +35,7 @@ use raw_window_handle::{
 const BV_WINDOW_MUST_CLOSE: UINT = WM_USER + 1;
 const BV_RELEASE_LOST_BUTTONS: UINT = WM_USER + 2;
 
+use super::text_input::{Dispatching, TextInput};
 use crate::{
     Event, MouseButton, MouseCursor, MouseEvent, PhyPoint, PhySize, ScrollDelta, Size, WindowEvent,
     WindowHandler, WindowInfo, WindowOpenOptions, WindowScalePolicy,
@@ -124,7 +125,7 @@ impl Drop for ParentHandle {
     }
 }
 
-unsafe extern "system" fn wnd_proc(
+pub(super) unsafe extern "system" fn wnd_proc(
     hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM,
 ) -> LRESULT {
     if msg == WM_CREATE {
@@ -138,6 +139,8 @@ unsafe extern "system" fn wnd_proc(
         // this invocation's state alive until all its callbacks have returned.
         Rc::increment_strong_count(window_state_ptr);
         let window_state = Rc::from_raw(window_state_ptr);
+        // Declared after the state it points at, so it is dropped first.
+        let _dispatching = Dispatching::enter(&window_state);
         let result = wnd_proc_inner(hwnd, msg, wparam, lparam, &window_state);
 
         if msg == WM_NCDESTROY {
@@ -262,6 +265,12 @@ unsafe fn wnd_proc_inner(
             if let Some(button) = button {
                 let event = match msg {
                     WM_LBUTTONDOWN | WM_MBUTTONDOWN | WM_RBUTTONDOWN | WM_XBUTTONDOWN => {
+                        // A click back into an open text field after using
+                        // the host must bring the keyboard with it.
+                        if window_state.text_input.is_active() && GetFocus() != hwnd {
+                            window_state.deferred_tasks.borrow_mut().push_back(WindowTask::TakeFocus);
+                        }
+
                         // Capture the mouse cursor on button down
                         pressed.insert(button);
                         window_state.pressed_buttons.set(pressed);
@@ -467,6 +476,8 @@ pub(super) struct WindowState {
     window_info: RefCell<WindowInfo>,
     _parent_handle: Option<ParentHandle>,
     keyboard_state: RefCell<KeyboardState>,
+    /// Whether a text field is open. See `text_input.rs`.
+    pub(super) text_input: TextInput,
     pressed_buttons: Cell<Buttons>,
     pending_releases: Cell<Buttons>,
     cursor_inside: Cell<bool>,
@@ -505,6 +516,16 @@ impl WindowState {
             let event = self.pending_events.borrow_mut().pop_front();
             let Some(event) = event else { break; };
             handler.on_event(&mut window, event);
+        }
+    }
+
+    /// Open or close a text field in this window: while one is open, its
+    /// keystrokes reach it past a host that would keep them. The focus moves
+    /// once the callback that asked has returned, like a resize.
+    pub(super) fn set_text_input(&self, active: bool) {
+        if self.text_input.set(active) {
+            let task = if active { WindowTask::TakeFocus } else { WindowTask::ReturnFocus };
+            self.deferred_tasks.borrow_mut().push_back(task);
         }
     }
 
@@ -645,6 +666,8 @@ impl WindowState {
                     )
                 };
             }
+            WindowTask::TakeFocus => unsafe { self.text_input.take_focus(self.hwnd) },
+            WindowTask::ReturnFocus => unsafe { self.text_input.return_focus(self.hwnd) },
         }
     }
 }
@@ -656,6 +679,10 @@ pub(super) enum WindowTask {
     /// Resize the window to the given size. The size is in logical pixels. DPI scaling is applied
     /// automatically.
     Resize(Size),
+    /// Give this window the keyboard focus while a text field is open.
+    TakeFocus,
+    /// Give the focus back to where it was before the text field took it.
+    ReturnFocus,
 }
 
 pub struct Window<'a> {
@@ -784,6 +811,7 @@ impl Window<'_> {
                 window_info: RefCell::new(window_info),
                 _parent_handle: parent_handle,
                 keyboard_state: RefCell::new(KeyboardState::new()),
+                text_input: TextInput::new(),
                 pressed_buttons: Cell::new(Buttons::default()),
                 pending_releases: Cell::new(Buttons::default()),
                 cursor_inside: Cell::new(false),
