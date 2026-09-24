@@ -1,5 +1,78 @@
 # Implementation progress
 
+## 2026-09-24 (later) — Machine Rage '92 was the wrong amplifier: the Brit 2205
+
+The owner reported *Machine Rage '92* "much too clean", with the instruction to find
+out why rather than turn something up.
+
+**It was not a bug.** Traced end to end, every value arrived where it was meant to.
+The preset stood on the Brit 800, which is the single-channel **2203**, at Preamp 0.65
+and Master 0.7. Measured with a new column in `examples/presetdirt.rs` that plays
+each preset with its power stage bypassed, the 2203's preamplifier made only
+**19.3 %** of the 34 % its whole amplifier made. The rest came from pushing a 100 W
+power stage into compression, which is heard as loud rather than dirty. Morello's
+amplifier is a **JCM800 2205**, used on its **boost channel** only. That channel has a
+**diode-biased second stage** (a 1N4007 across the cathode resistor, on a 470 k plate)
+and a **diode clipper** (a W005 bridge with a 1N4007 across it, through 27 k). The
+2203 has neither, and Marshall's own manual gives the boost channel a 0.4 mV minimum
+clipping level.
+
+**The 2205 was researched and built, not approximated.** Marshall's CAD drawings of
+the preamp (issue 2, 18-5-88) and the output stage (issue 2, 4-5-88) are legible
+value by value. There are two genuinely different 2205 circuits under one model
+number (the change came late in 1984); the model is the later one, which is PLAUSIBLE
+for Morello's undated mid-80s unit rather than DOCUMENTED. `docs/models/brit_2205.md`
+has the checkpoint. Things established by measuring rather than reading:
+
+- **The tone stack matches the manual.** Middle and Bass are rheostats to ground and
+  the stack is driven from a plate through 10 k, unlike the 2203's. The manual's
+  published swings (Treble 28 dB, Middle 15 dB, Bass 23 dB) come out as 27.8, 15.9
+  and 21.3 dB.
+- **The 1981 sheet's 50 W supply is wrong for this amplifier.** It prints 365 V on
+  the same mains transformer part number; built that way the power stage made
+  **31 W** against the 2205's own rating of 70 W at 4 %. Measured 50 W JCM800s run
+  460 V plates and 450 V screens, which gives 34 W at 1.5 % and 60 W flat out. The
+  preamp rail is derived from that through the drawn droppers (the inverter's 2.47 mA
+  was measured to do it); V1B then reads 86.8 V / 0.51 V against an owner's 83 V /
+  0.52 V.
+- **The bridge clipper folds exactly.** For identical junctions, three Shockley
+  diodes in series are one diode with three times the emission coefficient. Built as
+  two diodes instead of five, it matches the bridge as drawn to 0.05 % (a test).
+  Its knee is 1.36 V, not the 1.9 V the forward voltages suggest, because 27 k allows
+  so little current.
+
+**The preset**, rebuilt from the reported panel (Gain 9, Bass 10, Middle 10, Treble
+7, boost Volume 6), EMGs as +3 dB, a G12T-75 standing in for the unmodelled G12K-85:
+
+| | THD out | DI THD | preamp alone | two-tone residual | DI crest change |
+|---|---:|---:|---:|---:|---:|
+| before | 25.8 % | 34.0 % | 19.3 % | 15.1 % | -3.1 dB |
+| after | 47.4 % | 41.1 % | 40.7 % | 19.1 % | -1.0 dB |
+
+It now sits between Recto Rhythm and Puppet Master '86, below Plexi Cranked, at
++1.2 dB against the catalogue mean. The name is unchanged, so saved sessions still
+find it. Renders of the old and new preset on a synthetic riff:
+`cargo run --release --example presetdirt -- --write DIR "Machine Rage '92"`.
+
+**Solver.** On the riff at 48 kHz, 5.22 passes a sample in the preamplifier and 3.63
+in the power stage, 1,862 line-search fallbacks in 384,000 solves, none unsettled or
+non-finite. That is in line with the other amplifier presets: Brit Lead 9.1 passes a
+sample across both circuits, Plexi Cranked 10.0, Puppet Master '86 11.1. No solver
+code was changed.
+
+**Wiring** follows every appended amplifier before it: `amp_jcm800_2205` and
+`power_2205_el34` appended to their enums; `Gain::ALL`, `PowerModel` and `PowerAmp`
+appended; `CALIBRATION` regenerated (every existing row identical) and
+`POWER_TRIM_DB` regenerated against a zeroed table with a new column (every existing
+value identical); the panel's description, the tone-knob table and the power-trim
+test's list extended.
+
+**Tests run** (targeted, not the whole suite): `brit2205` 11, `album_presets` 4 (new),
+`tone_knobs`, `power_trim`, `master`, `knobs`, `modular_power`, `modular_state`,
+`devices`, `chorus`, `presets` 22, `voice` 15 (re-measures every calibration row),
+`legacy_baseline` (unchanged), the editor's unit tests; clippy with `-D warnings`;
+`cargo fmt --check`. All pass.
+
 ## 2026-09-24 — the preset-name box that took Delete but not letters
 
 The same Windows user reported again after the caret fix: *"there is a little

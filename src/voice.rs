@@ -27,9 +27,9 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, bigmuff, brit800, cabinet, clipper, console_e, deluxe, distortion_plus,
-    dr103, evh5150, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone, neve, plexi,
-    power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    ac30, american312, bigmuff, brit2205, brit800, cabinet, clipper, console_e, deluxe,
+    distortion_plus, dr103, evh5150, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone,
+    neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
@@ -153,12 +153,17 @@ pub enum Gain {
     /// on the Vibrato channel's second stage and join this one only at the
     /// mixer, after the intensity tap. See `circuits::deluxe`.
     DeluxeNormal,
+    /// Marshall JCM800 2205, the 50 W split-channel head: its boost channel,
+    /// in the later (1985-89) circuit. A diode-biased second stage and a
+    /// bridge-rectifier clipper the single-channel 2203 does not have, and its
+    /// own 50 W power stage, the Brit 2205 EL34. See `circuits::brit2205`.
+    Brit2205,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 30] = [
+    pub const ALL: [Gain; 31] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -189,6 +194,7 @@ impl Gain {
         Gain::Deluxe,
         Gain::Jazz120,
         Gain::DeluxeNormal,
+        Gain::Brit2205,
     ];
 
     pub fn name(self) -> &'static str {
@@ -223,6 +229,7 @@ impl Gain {
             Gain::Deluxe => "Deluxe Reverb",
             Gain::Jazz120 => "Jazz Chorus JC-120",
             Gain::DeluxeNormal => "Deluxe Reverb, Normal",
+            Gain::Brit2205 => "JCM800 2205",
         }
     }
 
@@ -244,6 +251,7 @@ impl Gain {
             Gain::DeluxeNormal => deluxe::VOLUME,
             Gain::Muff => bigmuff::SUSTAIN,
             Gain::Brit800 => brit800::VOLUME,
+            Gain::Brit2205 => brit2205::GAIN,
             Gain::American312 => american312::GAIN,
             Gain::ConsoleE => console_e::GAIN,
             Gain::Tube610 => tube610::LEVEL,
@@ -295,7 +303,7 @@ impl Gain {
             Gain::American312 | Gain::ConsoleE => "GAIN",
             Gain::Tube610 => "LEVEL",
             Gain::Plexi | Gain::AC30 | Gain::DR103 => "VOLUME",
-            Gain::Recto => "GAIN",
+            Gain::Recto | Gain::Brit2205 => "GAIN",
             _ => "DRIVE",
         }
     }
@@ -342,6 +350,9 @@ impl Gain {
             Gain::DR103 => Some(Level::Circuit(dr103::MASTER)),
             // The red channel's master, in the preamplifier as the sheet has it.
             Gain::Recto => Some(Level::Circuit(rectifier::MASTER)),
+            // The later 2205's master is VR10, in the preamplifier ahead of the
+            // loop and V4A, which is where the drawing has it.
+            Gain::Brit2205 => Some(Level::Circuit(brit2205::MASTER)),
             Gain::Green9 => Some(Level::Circuit(ts808::LEVEL)),
             Gain::Rat => Some(Level::Circuit(rodent::VOLUME)),
             Gain::FuzzFace => Some(Level::Circuit(round_fuzz::VOLUME)),
@@ -374,6 +385,7 @@ impl Gain {
             Gain::AC30 => Some((ac30::BASS, usize::MAX, ac30::TREBLE)),
             Gain::DR103 => Some((dr103::BASS, dr103::MIDDLE, dr103::TREBLE)),
             Gain::Recto => Some((rectifier::BASS, rectifier::MIDDLE, rectifier::TREBLE)),
+            Gain::Brit2205 => Some((brit2205::BASS, brit2205::MIDDLE, brit2205::TREBLE)),
             // The TS808 and the Muff have a single tone control, which the
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
@@ -467,6 +479,7 @@ impl Gain {
             Gain::AC30 => Some(&power::PowerSpec::AC30_EL84),
             Gain::DR103 => Some(&power::PowerSpec::DR103_EL34),
             Gain::Recto => Some(&power::PowerSpec::RECTO_6L6),
+            Gain::Brit2205 => Some(&power::PowerSpec::BRIT_2205_EL34),
             _ => None,
         }
     }
@@ -500,6 +513,7 @@ impl Gain {
                 | Gain::Deluxe
                 | Gain::Jazz120
                 | Gain::DeluxeNormal
+                | Gain::Brit2205
         )
     }
 
@@ -971,10 +985,12 @@ pub enum PowerModel {
     /// behind that voice, and a voice's block has to be in its path or its
     /// calibration is describing something that is not being played.
     British73Out,
+    /// The JCM800 2205's two EL34s. See `power::PowerSpec::BRIT_2205_EL34`.
+    Brit2205EL34,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 12] = [
+    pub const ALL: [PowerModel; 13] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -987,6 +1003,7 @@ impl PowerModel {
         PowerModel::AmericanDeluxe6V6,
         PowerModel::Jazz120SS,
         PowerModel::British73Out,
+        PowerModel::Brit2205EL34,
     ];
 
     /// The valve stage this model is, where it is one.
@@ -1009,6 +1026,7 @@ impl PowerModel {
             Self::Recto6L6 => &power::PowerSpec::RECTO_6L6,
             Self::Recto6L6Tube => &power::PowerSpec::RECTO_6L6_TUBE,
             Self::AmericanDeluxe6V6 => &power::PowerSpec::DELUXE_6V6,
+            Self::Brit2205EL34 => &power::PowerSpec::BRIT_2205_EL34,
             Self::Jazz120SS | Self::British73Out => return None,
         })
     }
@@ -1051,6 +1069,7 @@ impl PowerModel {
             Self::AmericanDeluxe6V6 => 9,
             Self::Jazz120SS => 10,
             Self::British73Out => 11,
+            Self::Brit2205EL34 => 12,
         }
     }
 
@@ -1072,6 +1091,7 @@ impl PowerModel {
             Self::AmericanDeluxe6V6 => voice_index(Gain::Deluxe, Diode::Silicon, Amplifier::Valve),
             Self::Jazz120SS => voice_index(Gain::Jazz120, Diode::Silicon, Amplifier::Valve),
             Self::British73Out => voice_index(Gain::Neve, Diode::Silicon, Amplifier::Valve),
+            Self::Brit2205EL34 => voice_index(Gain::Brit2205, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -1092,10 +1112,11 @@ pub enum PowerAmp {
     Recto6L6,
     Recto6L6Tube,
     AmericanDeluxe6V6,
+    Brit2205EL34,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -1108,6 +1129,7 @@ impl PowerAmp {
         Self::Recto6L6,
         Self::Recto6L6Tube,
         Self::AmericanDeluxe6V6,
+        Self::Brit2205EL34,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -1124,6 +1146,7 @@ impl PowerAmp {
                 Gain::Deluxe | Gain::DeluxeNormal => Some(PowerModel::AmericanDeluxe6V6),
                 Gain::Jazz120 => Some(PowerModel::Jazz120SS),
                 Gain::Neve => Some(PowerModel::British73Out),
+                Gain::Brit2205 => Some(PowerModel::Brit2205EL34),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1137,6 +1160,7 @@ impl PowerAmp {
             Self::Recto6L6 => Some(PowerModel::Recto6L6),
             Self::Recto6L6Tube => Some(PowerModel::Recto6L6Tube),
             Self::AmericanDeluxe6V6 => Some(PowerModel::AmericanDeluxe6V6),
+            Self::Brit2205EL34 => Some(PowerModel::Brit2205EL34),
         }
     }
 }
@@ -1623,6 +1647,9 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::Neve => neve::build(150.0, 10_000.0),
         // Loaded by the Master Volume's 1 M, which the power stage begins with.
         Gain::Brit800 => brit800::build(10_000.0, 1_000_000.0),
+        // Loaded by what the inverter presents through C25: R41's 330 k in
+        // parallel with the power netlist's wide-open 1 M master track.
+        Gain::Brit2205 => brit2205::build(10_000.0, 250_000.0),
         // A 150 ohm microphone into the card, and a modern line input after it.
         Gain::American312 => american312::build(150.0, 10_000.0),
         Gain::ConsoleE => console_e::build(150.0, 10_000.0),
@@ -3050,6 +3077,7 @@ impl Chain {
             PowerAmp::Recto6L6 => 8,
             PowerAmp::Recto6L6Tube => 9,
             PowerAmp::AmericanDeluxe6V6 => 10,
+            PowerAmp::Brit2205EL34 => 11,
         };
         let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
         10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)

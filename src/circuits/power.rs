@@ -343,6 +343,94 @@ impl PowerSpec {
         cut_rest: 0.0,
     };
 
+    /// The JCM800 2205's, from Marshall's "2205 STD Output Stage & PSU", issue 2
+    /// of 4-5-88: the matched power stage of the Brit 2205 preamplifier
+    /// (`circuits::brit2205`). See `docs/models/brit_2205.md`.
+    ///
+    /// The 2203's family with half the valves, and an inverter that is not the
+    /// 2203's:
+    ///
+    /// - **Two EL34s**, one a side, for 50 W.
+    /// - **No master here.** The later 2205 has its master in the
+    ///   preamplifier, ahead of the loop and V4A, so this stage begins at
+    ///   C25 with the track wide open, as the Rectifier's does.
+    /// - **Low grid leaks**: R41 330 k on the driven grid and R44 120 k on the
+    ///   other, where the 2203 has 1 M each, with a 22 k tail (R45) above the
+    ///   4k7 (R48) and 100 pF (C33) across the plates.
+    /// - The same 100 k of feedback from the 4 ohm tap and the same 22 k
+    ///   presence as the 2203.
+    pub const BRIT_2205_EL34: PowerSpec = PowerSpec {
+        name: "Brit 2205 EL34 (JCM800 2205, 1988)",
+        // The master is VR10, in the preamplifier. Wide open, so it is not one.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 22e-9, // C25
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 330_000.0,  // R41
+        pi_leak_lower: 120_000.0,  // R44
+        pi_cathode: 470.0,         // R43
+        pi_tail: 22_000.0,         // R45
+        pi_tail_lower: 4_700.0,    // R48
+        pi_cross: 0.1e-6,          // C30
+        pi_plate_driven: 82_000.0, // R49
+        pi_plate_other: 100_000.0, // R50
+        // ESTIMATED: X, behind R59 10 k from the screen node; derived in
+        // `brit2205::RAIL`.
+        pi_supply: crate::circuits::brit2205::RAIL,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 100e-12, // C33
+        couple: 22e-9,         // C32, C34
+        grid_leak: 220_000.0,  // R52, R53
+        // One valve a side: the drawing's values as they stand.
+        stopper: 5_600.0,         // R60, R61
+        screen_resistor: 1_000.0, // R62, R63
+        tubes_per_side: 1.0,
+        tube: PentodeSpec::EL34,
+        // ESTIMATED: RV1 is a 22 k preset, so what the amplifier documents is
+        // a current, not a voltage. Set for 38 mA and 17 W a valve at idle
+        // (`examples/brit2205_op.rs`), inside the 32-40 mA a 460 V JCM800 is
+        // biased to; Ampbooks' 2204 analysis gets its 40 mA at -40 V from a
+        // real valve, and the catalogue's EL34 fit needs -36 V for the same.
+        bias: -36.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // WIDELY REPORTED: 50 W JCM800s measure about 460 V at the plates and
+        // 450 V at the screens (Ampbooks' 2204 analysis; owners' readings of
+        // 425-475 V by year and transformer). The 2205 sheet takes the plates
+        // off the reservoir, ahead of the T3 choke, and the screens behind it.
+        // The 1981 sheet's 50 W stage prints 365 V, which no measured amplifier
+        // and not the 2205's own rating of 70 W at 4 % bear out; see the log.
+        plate_supply: 460.0,
+        screen_supply: 450.0,
+        // ESTIMATED, as for the 2203.
+        supply_resistance: 100.0,
+        rectifier: None,
+        reservoir: 50e-6, // C43
+        screen_resistance: 100.0,
+        screen_reservoir: 50e-6, // C43, the screen node's
+        // PUBLISHED-PARAMETER DERIVED replacement iron: Hammond 1750N, the 50 W
+        // JMP/JCM800 drop-in, 3.2 k plate to plate; half-primary copper 41.74
+        // and 43.14 ohm; 18.3 H and 13.41 mH at 1 kHz. The original 789-139's
+        // data is not public. Into the 4 ohm tap: sqrt(3200 / 4).
+        ratio: 28.284_271_247_461_902,
+        primary_resistance: 42.44,
+        primary_inductance: 18.3,
+        leakage: 13.41e-3 / 800.0,
+        // Sized, like the 2203's, to just hold rated power at 70 Hz: 50 W into
+        // 4 ohm is 20 V peak.
+        saturation_volts: 20.0,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 4.0,
+        feedback: 100_000.0,    // R47, from the 4 ohm tap
+        presence_pot: 22_000.0, // VR11
+        presence_cap: 0.1e-6,   // C31
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+    };
+
     /// The AC30/6 Top Boost's, from the 1974 Dallas drawing Sc/V/1313, checked
     /// against the 1971 Vox Sound Limited sheet. The matched power stage of the
     /// Brit AC30 preamplifier (`circuits::ac30`). See `docs/models/brit_ac30.md`.

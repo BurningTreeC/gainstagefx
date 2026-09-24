@@ -76,6 +76,7 @@ fn main() {
         "Recto 6L6",
         "Recto 6L6 Tube",
         "American Deluxe 6V6",
+        "Brit 2205 EL34",
     ];
     assert_eq!(
         column_names.len(),

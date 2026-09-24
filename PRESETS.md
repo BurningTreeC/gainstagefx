@@ -181,18 +181,51 @@ Sources: [The gear used by Randy Rhoads on Blizzard of Ozz (Guitar.com)](https:/
 ### Machine Rage '92 (group Alternative)
 
 Target inspiration: Rage Against the Machine, *Rage Against the Machine* (1992), Tom
-Morello's rhythm sound. Producer Garth Richardson.
+Morello's rhythm sound. Producer Garth Richardson. **Rebuilt 2026-09-24** after the
+owner reported it "much too clean"; the reason and the measurements are below.
 
 | Stage | Rig | Evidence | Preset |
 |---|---|---|---|
-| Guitar | "Arm The Homeless", a 1986 Performance Guitar build with EMG pickups; a 1982 Telecaster for drop-D tracks | WIDELY REPORTED | nominal input |
-| Preamp / power | a Marshall **2205** head: "It's identical. It's unchanged, for every RATM album, every Audioslave song, every show" (Morello) | WIDELY REPORTED, and the quote is his | Brit 800 - **APPROXIMATED**: the model is the 100 W single-channel 2203, and the 2205 is the two-channel 50 W amplifier of the same family and year. Its extra preamp stage is not modeled |
-| Pedals | a DOD EQ as a boost, Whammy, Cry Baby, DOD delay, flanger | WIDELY REPORTED | none. The EQ-as-boost is not modeled, and nothing else here is on the rhythm sound |
-| Cabinet / speaker | a Peavey 4x12 | WIDELY REPORTED | Oversized 4x12, Matched - APPROXIMATED (no Peavey cabinet profile) |
+| Guitar | "Arm The Homeless", a 1986 Performance Guitar build; "Then I put some EMG pickups in it" (Morello); a 1982 Telecaster for drop-D tracks | DOCUMENTED (Morello to MusicRadar) for the EMGs; models not stated | input trim +3 dB - PLAUSIBLE: an active pickup is a hotter source than a passive one, by an amount no source gives |
+| Amplifier | a **50 W JCM800 2205**, bought after his first Marshall was stolen in 1988, settings found in rehearsal in "1988 or '89", marked on the panel, and never changed: "It's identical. It's unchanged, for every RATM album, every Audioslave song, every show" | DOCUMENTED (Morello: Premier Guitar 2008; MusicRadar) | **Brit 2205**, the 2205's boost channel in its later (1985-89) circuit. Which circuit his amplifier carries is PLAUSIBLE: its build date is not documented |
+| Channel | the **boost channel only** | WIDELY REPORTED (Neural DSP, who modelled the amplifier with him) | the model is the boost channel |
+| Knobs | Gain 9, boost Volume 6, Treble 7, Middle 10, Bass 10, Presence 7; the Master's setting is not established | WIDELY REPORTED (Neural DSP); other secondary sources conflict with it and with each other | Drive 0.9, Bass 1.0, Middle 1.0, Treble 0.7; boost Volume 0.6 is the circuit's resting position; Master 0.5, the calibrated rest. **Presence is not settable** in the plugin (it rests with the power stage) |
+| Power | the 2205's own two EL34s | DOCUMENTED (it is the amplifier) | Matched, which is the Brit 2205 EL34 |
+| Pedals | a DOD FX40B EQ, "flat, level slightly raised", for solos; Whammy, Cry Baby, delay, flanger | WIDELY REPORTED | none: nothing here is on the rhythm sound, and the EQ is a solo boost |
+| Cabinet / speaker | a 1987 Peavey 4x12 with Celestion **G12K-85**s | WIDELY REPORTED (Premier Guitar Rig Rundown) | Oversized 4x12 with **Brit T75** (the G12T-75) - APPROXIMATED: no Peavey cabinet or G12K-85 profile; the G12T-75 is the nearest documented Celestion, a high-power ceramic twelve of the same years |
+| Mics | not documented | - | Dynamic 57 and Dynamic 421, close - PLAUSIBLE |
 | Studio | tracked live with the amplifiers in back rooms and a PA in the live room (Garth Richardson) | DOCUMENTED | not modeled |
 
+**Why it was clean.** It stood on the Brit 800, the single-channel **2203**, at
+Preamp 0.65 and Master 0.7. Nothing was mis-wired and nothing mis-mapped: the 2203 is
+simply not the 2205's boost channel, which has a **diode-biased second stage** (a
+1N4007 across its cathode resistor, 470 k plate) and a **diode clipper** (a bridge
+rectifier with a 1N4007 across it, through 27 k) that the 2203 does not -- Marshall's
+own manual gives the boost channel a minimum clipping level of 0.4 mV. On the 2203 the
+preamplifier made less than half the distortion, and the rest came from pushing a
+100 W power stage into compression, which is heard as loud rather than dirty.
+
+Measured by `examples/presetdirt.rs` at the nominal level (220 Hz THD; residual is
+the two-tone 110/170 Hz share not explained by a linear copy; crest is the riff's
+crest factor change at the DI):
+
+| | THD out | DI THD | preamp alone | residual | crest | level |
+|---|---:|---:|---:|---:|---:|---:|
+| before: Brit 800, Drive 0.65, Master 0.7, trim -11 | 25.8 % | 34.0 % | **19.3 %** | 15.1 % | -3.1 dB | -9.3 dB |
+| after: Brit 2205, Gain 0.9, Master 0.5, trim -8 | 47.4 % | 41.1 % | **40.7 %** | 19.1 % | -1.0 dB | -6.3 dB |
+
+The preamplifier now does the distorting, as on the real amplifier, and the riff
+keeps more of its dynamics (the crest factor falls by 1 dB instead of 3). It sits
+between Recto Rhythm (35.1 % DI) and Puppet Master '86 (44.1 %), below Plexi Cranked
+(49.7 %): distorted rock, not a wall. `tests/album_presets.rs` holds the preamp and
+whole-amplifier figures, the residual, and the solver's health on the riff.
+
 Sources: [The gear used on Rage Against The Machine's debut (Guitar.com)](https://guitar.com/features/artist-rigs/the-gear-used-on-rage-against-the-machine-self-titled-debut/),
-[All-Star Gear: Tom Morello's JCM800 (MusicRadar)](https://www.musicradar.com/news/guitars/all-star-gear-tom-morellos-arm-the-homeless-guitar-and-marshall-jcm800-amp-537090).
+[All-Star Gear: Tom Morello's JCM800 (MusicRadar)](https://www.musicradar.com/news/guitars/all-star-gear-tom-morellos-arm-the-homeless-guitar-and-marshall-jcm800-amp-537090),
+[Tom Morello Rig Rundown (Premier Guitar)](https://www.premierguitar.com/videos/rig-rundown/tom-morello),
+[Tom Morello's pedalboard and amp settings (Neural DSP)](https://neuraldsp.com/articles/tom-morello-pedalboard-and-amp-settings),
+[Tom Morello's Marshall JCM 800 2205 (Ground Guitar)](https://www.groundguitar.com/tom-morellos-guitars-and-gear/tom-morellos-marshall-jcm-800-2205-50w/),
+and the amplifier's own research log, [brit_2205.md](docs/models/brit_2205.md).
 
 ### Texas Storm '83 (`blues_1983_texas_storm`, group Blues)
 

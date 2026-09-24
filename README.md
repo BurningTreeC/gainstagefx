@@ -100,6 +100,7 @@ sources, where they disagree and what was approximated.
 | Tube 610 | A 1960s valve console channel: four triodes in two feedback loops, a transformer at each end | none |
 | American Twin | A 1960s blackface clean channel with spring reverb and optical tremolo | American 6L6 Clean |
 | Brit 800 | An early-80s British 100 W master-volume lead preamp: four triodes, a cathode follower into its own stack | Brit EL34 |
+| Brit 2205 | The boost channel of a mid-80s British 50 W two-channel head: a diode-biased second stage and a diode clipper, then the stack, the master and a make-up stage | Brit 2205 EL34 |
 | Brit Plexi | A late-60s British 100 W lead amp with no master: the bright channel's three triodes into its own stack, so the Volume decides how hard the power valves work | Brit Plexi EL34 |
 | Brit AC30 | A 60s British 30 W combo: a top-boost valve into a stack with no middle control, then self-biased power valves with no feedback loop at all | AC30 EL84 |
 | Brit DR103 | A British 100 W head built for headroom: five triodes, a master volume, and an inverter the driver holds still so it cannot shift its bias | DR103 EL34 |
@@ -215,6 +216,7 @@ records says the amplifier ran at 80 to 85 volts.
 | American 6L6 High-Gain | Four 6L6s, feedback and presence |
 | Brit EL34 | Four EL34s from a 1981 British 100 W master-volume drawing; the Brit 800's own |
 | Brit Plexi EL34 | Four EL34s from a 1970 drawing of the non-master head: no master, four times the 2203's feedback, a 5 k presence; the Brit Plexi's own |
+| Brit 2205 EL34 | Two EL34s from a 1988 drawing of the 50 W two-channel head: its own low-leak inverter, feedback from the 4 Ω tap; the Brit 2205's own |
 | AC30 EL84 | Four EL84s sharing a 50 ohm cathode resistor, no feedback loop, and a cut control across the inverter; the Brit AC30's own |
 | DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop, with the inverter direct-coupled to the preamplifier; the Brit DR103's own |
 | Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing; the Cali Rectifier's own |
@@ -296,6 +298,7 @@ hardware behind them at all.
 | American Deluxe | Fender Deluxe Reverb AB763 (blackface), vibrato channel | [american_deluxe.md](docs/models/american_deluxe.md) |
 | American Deluxe Normal | the same amplifier through its Normal channel: no bright cap, no reverb, no tremolo | [american_deluxe.md](docs/models/american_deluxe.md) |
 | Brit 800 | Marshall JCM800 2203 100 W, 1981 drawing | [brit_800.md](docs/models/brit_800.md) |
+| Brit 2205 | Marshall JCM800 2205 50 W, boost channel, later circuit, 1987/88 drawings | [brit_2205.md](docs/models/brit_2205.md) |
 | Brit Plexi | Marshall 1959 Super Lead 100 W, bright channel, 1970 drawing | [brit_plexi.md](docs/models/brit_plexi.md) |
 | Brit AC30 | Vox AC30/6 Top Boost, brilliant channel | [brit_ac30.md](docs/models/brit_ac30.md) |
 | Brit DR103 | Hiwatt DR103 Custom 100, brilliant channel, Issue 4 | [brit_dr103.md](docs/models/brit_dr103.md) |
@@ -329,6 +332,7 @@ hardware behind them at all.
 | American 6L6 High-Gain | 5150: ECC83 inverter, four 6L6GC, 39 k feedback | [american_5150.md](docs/models/american_5150.md) |
 | Brit EL34 | JCM800 2203: four EL34 at −42 V, feedback from the 4 Ω tap | [brit_el34.md](docs/models/brit_el34.md) |
 | Brit Plexi EL34 | 1959 Super Lead: the same iron with no master, 47 k feedback | [brit_plexi.md](docs/models/brit_plexi.md) |
+| Brit 2205 EL34 | JCM800 2205: two EL34 at −36 V, 330 k / 120 k inverter leaks, Hammond 1750N replacement-iron data | [brit_2205.md](docs/models/brit_2205.md) |
 | AC30 EL84 | AC30 Top Boost: four cathode-biased EL84, no feedback loop, cut control, GZ34 rectifier | [brit_ac30.md](docs/models/brit_ac30.md) |
 | DR103 EL34 | Hiwatt DR103: four EL34, inverter direct-coupled to its driver | [brit_dr103.md](docs/models/brit_dr103.md) |
 | *(matched to Jazz 120)* | Roland JC-120: 60 W complementary transistor amplifier, 2SC4386/2SA1671, bootstrapped VAS | [jazz_120.md](docs/models/jazz_120.md) |

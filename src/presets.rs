@@ -1449,19 +1449,32 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Blizzard '80")
     },
-    // One master-volume British head and one 4x12, unchanged for every record
-    // the band made, with the guitar's own volume doing the rest. See PRESETS.md.
+    // One 50 W two-channel British head, its boost channel only, and one 4x12,
+    // with the settings marked on the panel in 1988 and never moved since.
+    // It stood on the single-channel 2203 until 2026-09-24 and sounded too
+    // clean for the plain reason that a 2203 turned up is not a 2205's boost
+    // channel: no diode-biased stage and no clipper. See PRESETS.md and
+    // docs/models/brit_2205.md.
     Preset {
-        circuit: Circuit::Brit800,
+        circuit: Circuit::Brit2205,
         power_amp: PowerAmp::Matched,
-        drive: 0.65,
-        master: 0.7,
-        bass: 0.45,
-        mid: 0.55,
+        // Gain 9, Bass 10, Middle 10, Treble 7: the reported panel. The boost
+        // Volume's 6 is the circuit's own resting position.
+        drive: 0.9,
+        // Where his Master sits is not established; the middle is where the
+        // voice was calibrated, and the boost channel does the distorting.
+        master: 0.5,
+        // EMG pickups, which Morello names; an active pickup is a hotter
+        // source than a passive one, by an amount no source gives.
+        input_trim: 3.0,
+        bass: 1.0,
+        mid: 1.0,
         treble: 0.7,
         tone: ToneStack::Off,
         cab_model: CabModel::Oversized,
-        speaker: SpeakerModel::Matched,
+        // No G12K-85 is modelled; the G12T-75 is the nearest documented
+        // Celestion, a high-power ceramic twelve of the same years.
+        speaker: SpeakerModel::BritT75,
         mic_a: MicModel::Dynamic57,
         mic_a_position: 0.25,
         mic_a_distance: 0.02,
@@ -1469,7 +1482,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_position: 0.4,
         mic_b_distance: 0.03,
         mic_blend: 0.35,
-        output_trim: -11.0,
+        output_trim: -8.0,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Machine Rage '92")
     },

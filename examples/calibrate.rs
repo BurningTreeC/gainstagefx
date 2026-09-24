@@ -113,6 +113,10 @@ fn intent(gain: Gain) -> f64 {
         Gain::Neve => 3.0,
         // States its level like the other amplifiers; see `stated_level`.
         Gain::Brit800 | Gain::Plexi | Gain::AC30 => 25.0,
+        // The 2205's boost channel is a much hotter preamplifier than the
+        // 2203's, and it is stated at a guitar's level like the rest; this
+        // figure documents the intent rather than driving the search.
+        Gain::Brit2205 => 40.0,
         // Built not to distort: a lower intent, like the studio preamplifiers.
         Gain::DR103 => 10.0,
         // Microphone preamplifiers, like the Console and the 73P: barely working
@@ -251,6 +255,8 @@ fn stated_level(gain: Gain) -> Option<f64> {
         Gain::DR103 => Some(GUITAR_VOLTS),
         // And into the red channel of a two-channel American head.
         Gain::Recto => Some(GUITAR_VOLTS),
+        // And into the boost channel of a two-channel British head.
+        Gain::Brit2205 => Some(GUITAR_VOLTS),
         _ => None,
     }
 }

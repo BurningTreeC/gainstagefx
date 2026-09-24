@@ -136,6 +136,11 @@ pub enum Circuit {
     #[id = "amp_fender_deluxe_ab763_normal"]
     #[name = "American Deluxe Normal"]
     DeluxeNormal,
+    // Appended. The JCM800 2205's boost channel: the same family as the Brit
+    // 800 and a different preamplifier, with its own 50 W power stage.
+    #[id = "amp_jcm800_2205"]
+    #[name = "Brit 2205"]
+    Brit2205,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -198,9 +203,10 @@ impl Circuit {
             Circuit::Deluxe => "American Deluxe",
             Circuit::Jazz120 => "Jazz 120",
             Circuit::DeluxeNormal => "American Deluxe Normal",
+            Circuit::Brit2205 => "Brit 2205",
         }
     }
-    pub const ALL: [Circuit; 30] = [
+    pub const ALL: [Circuit; 31] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -231,6 +237,7 @@ impl Circuit {
         Circuit::Deluxe,
         Circuit::Jazz120,
         Circuit::DeluxeNormal,
+        Circuit::Brit2205,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -265,6 +272,7 @@ impl Circuit {
             Circuit::Deluxe => voice::Gain::Deluxe,
             Circuit::Jazz120 => voice::Gain::Jazz120,
             Circuit::DeluxeNormal => voice::Gain::DeluxeNormal,
+            Circuit::Brit2205 => voice::Gain::Brit2205,
         }
     }
 
@@ -388,10 +396,13 @@ pub enum PowerAmp {
     #[id = "power_deluxe_6v6"]
     #[name = "American Deluxe 6V6"]
     AmericanDeluxe6V6,
+    #[id = "power_2205_el34"]
+    #[name = "Brit 2205 EL34"]
+    Brit2205EL34,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -404,6 +415,7 @@ impl PowerAmp {
         Self::Recto6L6,
         Self::Recto6L6Tube,
         Self::AmericanDeluxe6V6,
+        Self::Brit2205EL34,
     ];
 
     pub fn name(self) -> &'static str {
@@ -424,6 +436,7 @@ impl PowerAmp {
             Self::Recto6L6 => voice::PowerAmp::Recto6L6,
             Self::Recto6L6Tube => voice::PowerAmp::Recto6L6Tube,
             Self::AmericanDeluxe6V6 => voice::PowerAmp::AmericanDeluxe6V6,
+            Self::Brit2205EL34 => voice::PowerAmp::Brit2205EL34,
         }
     }
 }

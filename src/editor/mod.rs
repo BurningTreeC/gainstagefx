@@ -853,6 +853,10 @@ pub fn describe(circuit: Circuit) -> String {
             "The same blackface amp through its plain channel: no bright \
                           capacitor, no reverb, no tremolo."
         }
+        Circuit::Brit2205 => {
+            "Modeled after an 80s British 50 W two-channel head's boost \
+                          channel: a diode-biased stage and a clipper."
+        }
     }
     .to_string()
 }
