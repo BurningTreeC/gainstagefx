@@ -590,10 +590,13 @@ pub enum CabModel {
     #[id = "cab_marshall_1936"]
     #[name = "Closed 2x12"]
     Closed212,
+    #[id = "cab_roland_jc120_212"]
+    #[name = "Jazz Open 2x12"]
+    JazzOpen212,
 }
 
 impl CabModel {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Legacy,
         Self::Bypass,
         Self::Brit1960,
@@ -606,6 +609,7 @@ impl CabModel {
         Self::AmericanOpen112,
         Self::Closed112,
         Self::Closed212,
+        Self::JazzOpen212,
     ];
 
     pub fn name(self) -> &'static str {
@@ -627,6 +631,7 @@ impl CabModel {
             Self::AmericanOpen112 => voice::CabinetChoice::Model(&P::AMERICAN_OPEN_112),
             Self::Closed112 => voice::CabinetChoice::Model(&P::CLOSED_112),
             Self::Closed212 => voice::CabinetChoice::Model(&P::CLOSED_212),
+            Self::JazzOpen212 => voice::CabinetChoice::Model(&P::JAZZ_OPEN_212),
         }
     }
 }
@@ -662,10 +667,13 @@ pub enum SpeakerModel {
     #[id = "spk_jensen_p12n"]
     #[name = "American Alnico"]
     AmericanAlnico,
+    #[id = "spk_roland_30_103d"]
+    #[name = "Jazz 12"]
+    Jazz12,
 }
 
 impl SpeakerModel {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Matched,
         Self::Bypass,
         Self::BritV30,
@@ -675,6 +683,7 @@ impl SpeakerModel {
         Self::AmericanVintage10,
         Self::AmericanCeramic,
         Self::AmericanAlnico,
+        Self::Jazz12,
     ];
 
     pub fn name(self) -> &'static str {
@@ -693,6 +702,7 @@ impl SpeakerModel {
             Self::AmericanVintage10 => voice::SpeakerChoice::Model(&P::AMERICAN_VINTAGE_10),
             Self::AmericanCeramic => voice::SpeakerChoice::Model(&P::AMERICAN_CERAMIC),
             Self::AmericanAlnico => voice::SpeakerChoice::Model(&P::AMERICAN_ALNICO),
+            Self::Jazz12 => voice::SpeakerChoice::Model(&P::JAZZ_12),
         }
     }
 }

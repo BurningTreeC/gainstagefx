@@ -795,4 +795,8 @@ and the line is then measured against them:
   board's own 120-500 ms sweep and the panel's Speed reaches it, but SW3's third
   position has no control on the plugin's panel yet. It needs a selector rather
   than a knob, and the Tone section's second row is full.
-- The Roland 30-103D is still APPROXIMATED by the American ceramic 12".
+- ~~The Roland 30-103D is still APPROXIMATED by the American ceramic 12".~~
+  **Resolved 2026-09-24.** The amplifier's own cabinet (Jazz Open 2x12, Roland's
+  documented 750 x 540 x 270 mm) and driver (Jazz 12, the 30-103D) are built, and both Jazz
+  presets play through them. The driver's voicing is fitted to a published measurement of
+  a JC-120 through its return jack, to 1.16 dB rms; see `speakers.md` and `cabinets.md`.

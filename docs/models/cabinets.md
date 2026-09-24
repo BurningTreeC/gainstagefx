@@ -74,6 +74,7 @@ and 3 % bracing (ESTIMATED), and less 8 % for the 1960A slant.
 | `cab_fender_deluxe_open_112` | American Open 1x12 | 622 x 445 x 241 (DOC retail) | 19.0 (EST) | 1 | 0 x -20 (EST) | open 45 % (EST) | American Vintage 12 (TUNED choice) |
 | `cab_marshall_1912` | Closed 1x12 | 500 x 470 x 290 (DOC retail) | 15.9 (EST) | 1 | 0 x 0 | closed | Brit V30 (TUNED choice) |
 | `cab_marshall_1936` | Closed 2x12 | 750 x 600 x 310 (DOC retail) | 15.9 (EST) | 2 | +-167 x 0 (DERIVED) | closed | Brit T75 (TUNED choice) |
+| `cab_roland_jc120_212` | Jazz Open 2x12 | 750 x 540 x 270 (DOC, Roland) | 18.0 (EST) | 2 | +-166 x -40 (DERIVED/EST) | open 40 % (EST) | Jazz 12 (DOC complement) |
 
 "TUNED choice" defaults are voicing choices for the Matched speaker selection, **not**
 claims about factory complements. The AB763 Twin/Deluxe original speaker fitments were not
@@ -93,3 +94,27 @@ verified from a primary source.
   constants). The resonance levels are TUNED small (+-1-2 dB).
 - Baffle step: low shelf of up to -6 dB below `c / (pi W)`, blended in with distance as
   `d / (d + W/2)`.
+
+## Jazz Open 2x12: the Roland JC-120's cabinet (2026-09-24)
+
+- **Dimensions DOCUMENTED.** Roland's JC-120/JC-160 service notes, fifth edition:
+  **750 (W) x 540 (H) x 270 (D) mm without casters**, 28 kg, speakers 30 cm x 2. The 2000
+  JC-120UT/JT notes give 760 x 622 x 280 mm and 31.2 kg: the same box on its casters (the
+  82 mm difference is the casters). Local copies in `docs/schematics/roland_jc120*.pdf`;
+  the older editions are scans without a text layer and were read by OCR.
+- **Complement DOCUMENTED.** Two Roland **30-103D** (part 041-019), the Jazz 12; see
+  `speakers.md`. This is the one cabinet in the table whose Matched speaker is a factory
+  complement read off the manufacturer's own parts list.
+- **Open back WIDELY REPORTED.** Owners describe a "fairly shallow, open-back" cabinet
+  whose front and rear waves cancel at low frequency, and one documented enclosing it; one
+  retail review says closed. Roland's parts list has a single backboard (089-070), and a
+  1982 repair write-up (Atomium Amps) describes a stapled cabinet with an MDF back panel,
+  so the back is part covered. **How much is open is ESTIMATED at 40 %**, as for the
+  Fender Twin's cabinet.
+- **Driver centres DERIVED/ESTIMATED.** Horizontally by this log's equal-gap rule from a
+  283 mm cutout across 714 mm inside: +-166 mm. Vertically 40 mm below centre, half the
+  control strip across the top of the front (ESTIMATED from photographs).
+- **Panel thickness ESTIMATED** at 18 mm.
+
+The one published measurement of the cabinet (the speaker log's) is near-field, so it
+says little about the open back; the open fraction stays an estimate.

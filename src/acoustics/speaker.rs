@@ -275,8 +275,44 @@ impl SpeakerProfile {
         },
     };
 
+    /// Roland 30-103D, the JC-120's 12-inch driver. 30 cm and 8 ohm DOCUMENTED
+    /// (Roland service notes, every edition from 1979 to 2000); no manufacturer
+    /// data beyond that exists publicly. Re is the catalogue's median, and the
+    /// coil, Mms and Qms are the priors the Celestions use; Fs is the
+    /// catalogue's median and Bl gives its median Qts of 0.8 (all ESTIMATED:
+    /// the measurement below cannot see them). The breakup voicing is FITTED,
+    /// by `examples/jazz_speaker_fit.rs`, to a published near-field
+    /// measurement of a JC-120 through its return input -- the amplifier's own
+    /// power stage into these speakers in this cabinet -- reproduced inside the
+    /// model at the measurement's placement. See `docs/models/speakers.md`.
+    pub const JAZZ_12: SpeakerProfile = SpeakerProfile {
+        id: "spk_roland_30_103d",
+        name: "Jazz 12",
+        inspiration: "Roland 30-103D, 8 ohm (JC-120, 1975 onward)",
+        re: 6.68,
+        l1: 0.44804e-3,
+        r1: 44.048,
+        l2: 1.22136e-3,
+        r2: 6.1927,
+        fs: 85.0,
+        qms: 9.73,
+        mms: 28.0e-3,
+        bl: 10.72,
+        sd: 490.9e-4,
+        // 1.16 dB rms against the measurement from 90 Hz to 12 kHz.
+        breakup: Breakup {
+            peaks: [
+                pk(510.0, 6.54, 1.95),
+                pk(3642.0, 8.58, 2.76),
+                pk(10172.0, 12.0, 2.52),
+            ],
+            lowpass_hz: 10344.0,
+            lowpass_q: 0.50,
+        },
+    };
+
     /// Every implemented driver, in the order stable ids were assigned.
-    pub const ALL: [&'static SpeakerProfile; 7] = [
+    pub const ALL: [&'static SpeakerProfile; 8] = [
         &Self::BRIT_V30,
         &Self::BRIT_GREEN_25,
         &Self::BRIT_T75,
@@ -284,6 +320,7 @@ impl SpeakerProfile {
         &Self::AMERICAN_VINTAGE_10,
         &Self::AMERICAN_CERAMIC,
         &Self::AMERICAN_ALNICO,
+        &Self::JAZZ_12,
     ];
 
     /// The data sets are 8 ohm parts.

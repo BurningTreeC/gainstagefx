@@ -738,9 +738,9 @@ pub const PRESETS: &[Preset] = &[
     //
     // Matched resolves to the amplifier's own 60 W complementary transistor
     // output stage, which is in the path with the speaker's impedance solved
-    // inside it. The cabinet is the nearest open-back 2x12 and a ceramic
-    // 12 in it; the Roland 30-103D is APPROXIMATED by the C12N until its own
-    // driver is measured. See docs/models/jazz_120.md.
+    // inside it. The cabinet is the amplifier's own: Roland's open-back 2x12
+    // with its two 30-103Ds, fitted to a measurement of a JC-120 through its
+    // return jack. See docs/models/jazz_120.md and docs/models/speakers.md.
     Preset {
         // Where the amplifier is clean, which is the whole of its reputation
         // and was not where this preset sat. Measured: 1.6 % distortion here
@@ -765,8 +765,8 @@ pub const PRESETS: &[Preset] = &[
         bass: 0.5,
         mid: 0.5,
         treble: 0.5,
-        cab_model: CabModel::AmericanOpen212,
-        speaker: SpeakerModel::AmericanCeramic,
+        cab_model: CabModel::JazzOpen212,
+        speaker: SpeakerModel::Matched,
         mic_a_position: 0.35,
         mic_a_distance: 0.05,
         mic_b: MicModel::Ribbon121,
@@ -777,7 +777,9 @@ pub const PRESETS: &[Preset] = &[
         // output stage in the path. Re-measured 2026-09-23 after the Drive
         // knob stopped being cancelled by the make-up: the preset now sits
         // where the amplifier is clean, which is quieter, so it needs more.
-        output_trim: 6.0,
+        // Re-measured 2026-09-24 on the amplifier's own cabinet and speakers,
+        // which put it 1.9 dB under the Fender cabinet it replaced.
+        output_trim: 8.0,
         oversampling: Oversampling::Off,
         // SW3 in its OFF position. The chorus is the next preset down: this
         // one is the channel, and a clean amplifier that always chorused
@@ -803,15 +805,15 @@ pub const PRESETS: &[Preset] = &[
         mid: 0.5,
         treble: 0.5,
         chorus: 1.0,
-        cab_model: CabModel::AmericanOpen212,
-        speaker: SpeakerModel::AmericanCeramic,
+        cab_model: CabModel::JazzOpen212,
+        speaker: SpeakerModel::Matched,
         mic_a_position: 0.35,
         mic_a_distance: 0.05,
         mic_b: MicModel::Ribbon121,
         mic_b_position: 0.5,
         mic_b_distance: 0.25,
         mic_blend: 0.25,
-        output_trim: 6.0,
+        output_trim: 8.0,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Jazz Chorus")
     },

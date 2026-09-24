@@ -231,10 +231,10 @@ combinations does not mean chasing the fader.
 ## Speaker, cabinet and microphones
 
 **Cabinet:** Legacy (the old resistor load and Combo/Stack filter, the default),
-Bypass (the driver on an open baffle), or one of ten cabinets with real
+Bypass (the driver on an open baffle), or one of eleven cabinets with real
 dimensions and driver layouts: Brit 1960 4x12, Cali Oversized 4x12, Brit Closed
 4x12, Brit Green 4x12, Brit V30 4x12, Oversized 4x12, American Open 2x12,
-American Open 1x12, Closed 1x12, Closed 2x12.
+American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12.
 
 Bypass there means *no box*, not no speaker: the driver still radiates, on an
 open baffle, and a microphone still picks it up, which is why it does not sound
@@ -243,7 +243,7 @@ row's own Bypass, and that is bit-identical to Legacy/Off (a test says so).
 
 **Speaker:** Matched (the cabinet's own driver), Bypass (the power stage's
 output, a DI), or Brit V30, Brit Green 25, Brit T75, American Vintage 12,
-American Vintage 10, American Ceramic, American Alnico. Each is a Thiele–Small
+American Vintage 10, American Ceramic, American Alnico, Jazz 12. Each is a Thiele–Small
 electrical and mechanical model with a lossy voice coil, fitted to the
 manufacturer's impedance and response data where it is published and estimated
 where it is not, and its impedance is solved inside the power
@@ -353,8 +353,9 @@ published and estimated where they are not ([cabinets.md](docs/models/cabinets.m
 | Cali Oversized 4x12 | Mesa/Boogie Rectifier Standard | American Vintage 10 | Jensen P10R |
 | American Open 2x12 | Fender Twin Reverb combo | American Ceramic | Jensen C12N |
 | American Open 1x12 | Fender '65 Deluxe Reverb | American Alnico | Jensen P12N |
-| Closed 1x12 | Marshall 1912 | | |
+| Closed 1x12 | Marshall 1912 | Jazz 12 | Roland 30-103D (the JC-120's) |
 | Closed 2x12 | Marshall 1936 | | |
+| Jazz Open 2x12 | Roland JC-120 combo | | |
 | Oversized 4x12 | *generic* | | |
 | Combo / Stack (Legacy) | *generic* filters, kept for old sessions | | |
 

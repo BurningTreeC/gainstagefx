@@ -200,7 +200,36 @@ impl CabinetProfile {
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
-    pub const ALL: [&'static CabinetProfile; 10] = [
+    /// The Roland JC-120's own cabinet: a shallow open-back 2x12 combo.
+    ///
+    /// DOCUMENTED, Roland's JC-120/JC-160 service notes (fifth edition): 750 W
+    /// x 540 H x 270 D mm without casters, two 30 cm speakers (30-103D, part
+    /// 041-019), one backboard (089-070). The 2000 JC-120UT/JT notes give
+    /// 760 x 622 x 280 mm, which is the same box standing on its casters.
+    /// Open back: WIDELY REPORTED by owners, including one who documented
+    /// closing it; how much of it the backboard covers is ESTIMATED, as for the
+    /// Fender combos. Panel thickness ESTIMATED (a stapled MDF-backed box, per a
+    /// 1982 repair write-up). Driver centres DERIVED as for the other cabinets --
+    /// equal gaps across the internal width from a 283 mm cutout -- and lowered
+    /// by half the control strip across the top of the front, ESTIMATED.
+    /// See `docs/models/cabinets.md`.
+    pub const JAZZ_OPEN_212: CabinetProfile = CabinetProfile {
+        id: "cab_roland_jc120_212",
+        name: "Jazz Open 2x12",
+        inspiration: "Roland JC-120 Jazz Chorus open-back 2x12 combo cabinet",
+        width: 0.750,
+        height: 0.540,
+        depth: 0.270,
+        wall: 0.018,
+        drivers: 2,
+        positions: [(-0.166, -0.040), (0.166, -0.040), (0.0, 0.0), (0.0, 0.0)],
+        open_fraction: 0.40,
+        slant: 0.0,
+        leakage_q: 7.0,
+        default_speaker: &SpeakerProfile::JAZZ_12,
+    };
+
+    pub const ALL: [&'static CabinetProfile; 11] = [
         &Self::BRIT_1960,
         &Self::CALI_OVERSIZED,
         &Self::BRIT_CLOSED,
@@ -211,6 +240,7 @@ impl CabinetProfile {
         &Self::AMERICAN_OPEN_112,
         &Self::CLOSED_112,
         &Self::CLOSED_212,
+        &Self::JAZZ_OPEN_212,
     ];
 
     pub fn internal(&self) -> (f64, f64, f64) {

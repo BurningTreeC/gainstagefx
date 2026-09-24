@@ -62,6 +62,15 @@ cone radiation -> speaker breakup voicing (3 peaks + LP, normalised at 600 Hz)
 | Mode/panel frequencies, baffle-step corner, compliance, delays, piston directivity form | PHYSICS DERIVED |
 | Mode/panel levels, HF radiating radius 0.4 a, rear gain rule, diffraction corner | TUNED / APPROXIMATED |
 
+**Known limitation (found 2026-09-24).** Piston directivity is one pole. For a
+microphone close to one cone of a multi-driver cabinet, a *neighbouring* cone -- a few
+tens of centimetres away and nearly 90 degrees off its axis -- is then only about 8 dB
+down at 2-5 kHz, where a real 12-inch piston is more than 20 dB down, and its delayed
+arrival draws comb-filter notches into the close-miked response. Fitting the Jazz 12 to a
+measured JC-120 found them (notches at 0.6, 2.0 and 3.4 kHz against a measured peak at
+3.6 kHz); see `docs/models/speakers.md`. It affects every multi-driver cabinet at close
+range and is not changed here, because changing it moves every existing preset.
+
 ## Advanced controls (prepared, not exposed)
 
 `CabinetProfile` holds width, height, depth, wall thickness, driver count and layout,

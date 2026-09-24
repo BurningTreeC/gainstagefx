@@ -95,6 +95,7 @@ committing it.
 | American Vintage 10 | `spk_jensen_p10r` | 6.68 | 0.299 | 35.77 | 0.674 | 4.40 | 97 | 14.83 | 15.2 | 5.83 | 330.1 | PUBLISHED; coil FITTED |
 | American Ceramic | `spk_jensen_c12n` | 6.05 | 0.463 | 46.77 | 1.430 | 6.67 | 113 | 7.52 | 29.9 | 10.46 | 490.9 | PUBLISHED; coil FITTED |
 | American Alnico | `spk_jensen_p12n` | 6.03 | 0.433 | 41.33 | 1.013 | 5.71 | 90 | 4.36 | 30.9 | 10.62 | 490.9 | PUBLISHED; coil FITTED |
+| Jazz 12 | `spk_roland_30_103d` | 6.68 | 0.448 | 44.05 | 1.221 | 6.19 | 85 | 9.73 | 28.0 | 10.72 | 490.9 | size/impedance DOCUMENTED; rest ESTIMATED; voicing FITTED to a measurement (below) |
 
 Derived Celestion Qes / Qts / Zmax: V30 0.445 / 0.426 / 167 ohm, Green 25 0.902 / 0.825 / 79 ohm,
 T75 0.856 / 0.787 / 84 ohm. These fall inside the analogue-driver bounds.
@@ -110,6 +111,7 @@ Breakup voicing (peaking fc Hz / gain dB / Q; low-pass fc / Q), EMPIRICALLY TUNE
 | p10r | 1058/+5.48/2.22, 2526/+11.32/0.91, 4093/+12.00/1.07 | 7553/1.20 | 1.44 |
 | c12n | 1108/+8.94/1.81, 2092/+12.00/2.12, 3497/+10.45/1.27 | 5829/2.13 | 1.48 |
 | p12n | 1006/+8.69/2.44, 2436/+10.70/1.71, 3632/+12.00/1.45 | 6156/1.54 | 1.61 |
+| roland_30_103d | 510/+6.54/1.95, 3642/+8.58/2.76, 10172/+12.00/2.52 | 10344/0.50 | 1.16 (90 Hz-12 kHz, near-field, see below) |
 
 ## Referencing the load to the amplifier
 
@@ -161,3 +163,68 @@ Test coverage: `tests/speaker_load.rs::speaker_loaded_power_is_bounded_and_settl
 It runs 4 power stages, 3 loads, 48 and 192 kHz, and 4 drive cases, and asserts finite
 output below 150 V with at most 0.1 % unsettled samples. The one remaining unsettled sample
 is Twin into a V30 at 48 kHz, 40 V at 7 kHz.
+
+## Jazz 12: the Roland 30-103D (2026-09-24)
+
+The JC-120's own driver, added so the Jazz presets stop playing through a Jensen
+C12N in a Fender cabinet.
+
+1. **Device / revision.** Roland **30-103D**, 12 inch, 8 ohm: Roland part 041-019
+   in the 1979 third-edition and later JC-120/JC-160 service notes, and
+   **30-103D-3** (part 22410204, "8OHM") for the JC-120JT and the newer JC-120UT in
+   the 2000 notes. The older UT briefly used a **12-4782 (G1208F01)** instead, and the
+   JC-120A R&P a **C1230 (307454)**; neither is modelled.
+2. **Primary data found?** Size and impedance only (the service notes above, local
+   copies in `docs/schematics/roland_jc120*.pdf`). No Thiele/Small data, sensitivity or
+   response plot has been published by Roland or any supplier. A 60 W rating appears in
+   dealer listings of pulled drivers (SECONDARY).
+3. **Best source for the sound.** A measurement, not a data sheet:
+   [tomachikeita, "ジャズコ(JC-120)リターン差しの周波数特性を測定"](https://tomachikeita.hatenablog.com/entry/2024/09/25/140335)
+   (2024-09-25). A JC-120 driven through its RETURN jack -- its own flat transistor
+   power stage, none of the preamp -- into its own two speakers, a calibrated measurement
+   microphone (Sonarworks Reference 4) about 9 cm off the centre of one cone and about
+   4 cm from the grille, REW. SECONDARY: one unit of unknown year. The author names the
+   sharp peaks at **3.6 kHz and 9.2 kHz** as the amplifier's characteristic hardness.
+4. **Cross-check.** None for the driver itself. The Gear Page thread "Roland JC-120 /
+   JC-160 speaker frequency response" exists but is paywalled. The measured curve's
+   shape is in line with the owner reports of a bright, hard 12-inch.
+5. **Values used.** Table above. The curve was digitised from the plot's own REW grid
+   (422 px a decade, 14.8 px a dB, the red trace read column by column) at twelfth-octave
+   points; the 100 points are in `tests/support/jazz_measurement.rs`.
+6. **Fitted, and how.** The Celestion recipe fits a far-field manufacturer plot against
+   a lumped piston model, and does not apply to a near-field curve inside a cabinet. So
+   `examples/jazz_speaker_fit.rs` draws **the plugin's own path at the measurement's
+   placement** -- the voltage-driven driver's motional response, differentiated as the
+   chain does, then `AcousticStage` with an ideal omni at position 0.72 (9 / 12.5 cm) and
+   4 cm in the Jazz Open 2x12 -- and fits the breakup voicing (three peaks and the
+   low-pass, inside the same bounds as the other profiles) by Nelder-Mead to the curve,
+   smoothed over a sixth of an octave, from **90 Hz to 12 kHz**, level offset removed.
+   Result **1.16 dB rms**, closer than any Celestion profile follows its plot. The model
+   puts the upper peak at 3,552 Hz and the top one at 10.0 kHz, with the trough between
+   (`tests/jazz_cabinet.rs`).
+7. **Approximated, and two things the fit found.**
+   - **Fs and Bl are priors, not fitted.** A first fit that included the low end drove Fs
+     to its 45 Hz bound: below about 90 Hz a near-field measurement of a combo on a floor
+     is the floor as much as the speaker. Fs is the catalogue's median (85 Hz) and Bl gives
+     the catalogue's median Qts (0.80). Re is the catalogue's median (6.68 ohm); the coil,
+     Mms and Qms are the Celestion priors. All ESTIMATED.
+   - **Fitted through one cone, not two.** Fitted through the two-driver cabinet the result
+     was 2.0 dB rms with every peak at its +12 dB bound, filling comb-filter notches at 0.6,
+     2.0 and 3.4 kHz that the measurement does not have. They come from the far cone: at
+     4 cm from one 12-inch cone the other, 42 cm away and about 80 degrees off its axis,
+     is more than 10 dB down at low frequencies and much more above 2 kHz, where a piston
+     that size is sharply directional. `AcousticStage` models piston directivity as a
+     single pole (`CABINET_MODEL.md`), which leaves the far cone only about 8 dB down with
+     0.76 ms more delay. The measurement is the near cone and its own rear wave, so the
+     voicing is fitted through a one-driver copy of the cabinet (`FIT_CABINET`). **The
+     one-pole directivity is a limitation of the shared placement model and affects every
+     multi-driver cabinet at close range; it is recorded here and in `CABINET_MODEL.md`,
+     not changed, because changing it moves every existing preset.**
+   - The voicing is fitted at one off-centre placement through the stage's own
+     off-centre dulling (the `HF_RADIUS` corner, 2.6 kHz there). Where that tuned
+     approximation differs from the real cone, the voicing carries the difference to
+     other placements. The top peak and the low-pass Q sit at their bounds, as five of the
+     other seven profiles' peaks do.
+8. **Why.** No manufacturer data exists. One careful measurement of the real amplifier,
+   reproduced inside the model rather than read as if it were a data sheet, is the best
+   evidence available, and it is labelled as what it is.

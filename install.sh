@@ -38,7 +38,7 @@ done
 
 if [ "$build" = true ]; then
     echo "Building $PACKAGE..."
-    (cd "$project_dir" && cargo xtask bundle "$PACKAGE" --release)
+    (cd "$project_dir" && cargo xtask bundle "$PACKAGE" --profile release-lto)
 fi
 
 # Copies one bundle into place. Deletes the destination first and copies with

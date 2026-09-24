@@ -1,5 +1,54 @@
 # Implementation progress
 
+## 2026-09-24 (evening) — the JC-120's own cabinet and speakers
+
+The Jazz presets were playing through the Fender Twin's cabinet and a Jensen C12N,
+labelled as stand-ins. Both of the JC-120's own parts are now built: **Jazz Open 2x12**
+(`cab_roland_jc120_212`) and **Jazz 12** (`spk_roland_30_103d`), appended to their
+parameters.
+
+**What is documented.** Roland's own service notes, every edition in
+`docs/schematics/` (the older scans read by OCR): 750 x 540 x 270 mm without casters,
+two 30 cm **30-103D** drivers, 8 ohm, one backboard. The open back is WIDELY REPORTED
+by owners. Nothing about the driver beyond its size and impedance has ever been
+published.
+
+**Where the sound came from instead.** A published near-field measurement of a JC-120
+through its RETURN jack: its own flat transistor power stage into its own speakers,
+calibrated microphone 9 cm off one cone's centre and 4 cm out, REW. The curve was
+digitised from the plot's own grid, and `examples/jazz_speaker_fit.rs` fits the breakup
+voicing by **drawing the plugin's own path at that placement** rather than reading the
+curve as if it were a far-field data sheet. The result is **1.16 dB rms** from 90 Hz to
+12 kHz, with the measurement's two named peaks where it has them (3.55 and 10.0 kHz in
+the model, against 3.6 and 9.2). `tests/jazz_cabinet.rs` holds the fit, the peaks,
+Roland's geometry, the presets' use of both parts, and the JC-120 stage driving them at
+all five rates.
+
+**Two things the fit found**, both recorded rather than tuned away:
+
+- **The low end is the floor.** Fitted down to 55 Hz, Fs ran to its 45 Hz bound. Below
+  about 90 Hz a near-field measurement of a combo standing on a floor is not evidence of
+  the driver's resonance. Fs, Bl and Re are therefore the catalogue's medians (Qts 0.80),
+  labelled ESTIMATED.
+- **The stage's one-pole piston directivity overstates a neighbouring cone at close
+  range.** Fitted through the two-driver cabinet, every peak went to its +12 dB bound
+  filling comb notches at 0.6, 2.0 and 3.4 kHz that the measurement does not have. The
+  far cone arrives only about 8 dB down, where a real 12-inch piston 80 degrees off axis
+  is more than 20 dB down above 2 kHz. The voicing is fitted through one cone, which is
+  what the measurement is. The limitation is shared by every multi-driver cabinet and is
+  written into `CABINET_MODEL.md` rather than changed, because changing it moves every
+  preset.
+
+**The presets.** Jazz Clean and Jazz Chorus now use the Jazz Open 2x12 with Matched
+(the Jazz 12). The new rig is 1.9 dB quieter than the Fender stand-in was, so both
+output trims went from +6 to +8 dB, which puts them back at the catalogue mean.
+
+**Tests run** (targeted): `jazz_cabinet` 5 (new), `settings`, `chorus`, `acoustics`,
+`acoustic_chain` (every power model into every cabinet, now including this one),
+`speaker_load` (every driver's impedance, now including this one), `presets`,
+`album_presets`, `tone_knobs`. All pass. Clippy with `-D warnings` and `cargo fmt
+--check` clean.
+
 ## 2026-09-24 (later) — Machine Rage '92 was the wrong amplifier: the Brit 2205
 
 The owner reported *Machine Rage '92* "much too clean", with the instruction to find
