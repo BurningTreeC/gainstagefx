@@ -75,6 +75,7 @@ and 3 % bracing (ESTIMATED), and less 8 % for the 1960A slant.
 | `cab_marshall_1912` | Closed 1x12 | 500 x 470 x 290 (DOC retail) | 15.9 (EST) | 1 | 0 x 0 | closed | Brit V30 (TUNED choice) |
 | `cab_marshall_1936` | Closed 2x12 | 750 x 600 x 310 (DOC retail) | 15.9 (EST) | 2 | +-167 x 0 (DERIVED) | closed | Brit T75 (TUNED choice) |
 | `cab_roland_jc120_212` | Jazz Open 2x12 | 750 x 540 x 270 (DOC, Roland) | 18.0 (EST) | 2 | +-166 x -40 (DERIVED/EST) | open 40 % (EST) | Jazz 12 (DOC complement) |
+| `cab_peavey_412m` | American Closed 4x12 | 765 x 816 x 362 (PLAUS, owner) | 19.0 (EST) | 4 | +-168 x +-177 (DERIVED) | closed (DOC) | Brit K85 (PLAUS complement) |
 
 "TUNED choice" defaults are voicing choices for the Matched speaker selection, **not**
 claims about factory complements. The AB763 Twin/Deluxe original speaker fitments were not
@@ -94,6 +95,39 @@ verified from a primary source.
   constants). The resonance levels are TUNED small (+-1-2 dB).
 - Baffle step: low shelf of up to -6 dB below `c / (pi W)`, blended in with distance as
   `d / (d + W/2)`.
+
+## American Closed 4x12: a late-80s Peavey 412M (2026-09-25)
+
+For *Machine Rage '92*: "a 1987 Peavey 4x12 cabinet with Celestion G12K-85 speakers"
+([Premier Guitar's Rig Rundown](https://www.premierguitar.com/videos/rig-rundown/tom-morello)),
+WIDELY REPORTED. Checkpoint:
+
+1. **Revision.** Peavey's straight-fronted, closed-back 4x12 of the Butcher/VTM years,
+   the **412M**. The source names neither the model nor the front; the 412M and its slant
+   412MS are the Peavey 4x12s of those years that shipped with G12K-85s (period units
+   are sold as "Peavey VTM/Butcher 412 ... Celestion G12K-85", "412MS ... original
+   Celestion G12K-85 speakers"): PLAUSIBLE. Straight is chosen because the slant's
+   geometry would add an estimate for no evidence.
+2. **Original drawing found?** No drawing; Peavey's 412M/412MS sheet (a later
+   Sheffield-loaded edition, `assets.peavey.com/literature/manuals/1346_412M MS page.pdf`)
+   documents "closed-back mono/stereo speaker cabinets", 16 ohm mono, and carries a
+   handwritten "7 ply plywood". It gives no dimensions.
+3. **Best source for the size.** An owner's measurement of a 412M, **30.125 W x 32.125 H x
+   14.25 D in** (765 x 816 x 362 mm), reported on the Peavey forum: PLAUSIBLE.
+4. **Cross-check.** Peavey's published 4x12 shells of later years are the same box: the
+   Penta 412 is 30 x 32 x 14.125 in and the XXL 412 30.125 x 32 in (retail listings of
+   Peavey's figures). The 1960 and the Rectifier Standard bracket it.
+5. **Values.** The table row above. Driver centres by the equal-gap rule from a 283 mm
+   cutout: 727 mm inside gives +-168 mm across, 778 mm inside gives +-177 mm up and down.
+6. **Exact.** Closed, four drivers, straight.
+7. **Estimated.** Panel thickness 19 mm (a 3/4 in board, the sheet's seven-ply); bracing
+   and displacement as for every cabinet here.
+8. **Why.** The size is an owner's measurement that agrees with Peavey's own later
+   figures to an eighth of an inch, and nothing about the sound of a closed 4x12 depends
+   on the last centimetre.
+
+The Matched speaker is the **Brit K85** (the G12K-85; `speakers.md`), the cabinet's
+documented complement for *this* rig and a plausible one for the model generally.
 
 ## Jazz Open 2x12: the Roland JC-120's cabinet (2026-09-24)
 

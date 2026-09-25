@@ -1,11 +1,11 @@
 //! The 5150 lead preamp, measured stage by stage.
-use gainstagefx::circuits::evh5150::{self, PRE, TONE_STACK_INPUT};
+use gainstagefx::circuits::evh5150::{self, POST_LOAD, PRE};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
 const RATE: f64 = 96_000.0;
 
 fn at(node: &str, hz: f64, volts: f64, pre: f64) -> measure::Measured {
-    let c = evh5150::tap(10_000.0, TONE_STACK_INPUT, node).expect("builds");
+    let c = evh5150::tap(10_000.0, POST_LOAD, node).expect("builds");
     let mut sim = Simulation::new(c, RATE);
     sim.set_control(PRE, pre);
     let tone = Tone::near(RATE, 16_384, hz, volts);

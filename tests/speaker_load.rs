@@ -283,7 +283,11 @@ fn speaker_loaded_power_is_bounded_and_settles_under_abuse() {
         &PowerSpec::EVH5150,
         &PowerSpec::PLEXI_EL34,
         &PowerSpec::AC30_EL84,
-        &PowerSpec::DR103_EL34,
+        // The DR103's stage from its inverter, which is where these 40 V go on
+        // every other stage. Since 2026-09-25 the full DR103 stage begins at
+        // V3a, a preamp valve its own preamplifier drives with 12 V at most;
+        // `tests/dr103.rs` holds that one to what it can actually be given.
+        &PowerSpec::DR103_EL34_RETURN,
         &PowerSpec::RECTO_6L6,
     ] {
         for (profile, mounting) in &loads {

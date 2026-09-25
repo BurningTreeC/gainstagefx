@@ -77,9 +77,8 @@ fn the_three_tone_controls_each_own_their_band() {
         db("out", &[(control, 1.0)], hz) - db("out", &[(control, 0.0)], hz)
     };
     let low = range(LOW, 100.0);
-    // The middle is measured at the top of its sweep, which is where it is
-    // deepest: its leg's series resistance is the swept one, so the band gets
-    // shallower as it moves down. See `the_mid_freq_control_moves_the_centre`.
+    // The middle at the top of its sweep; it is as deep everywhere else (see
+    // `the_mid_freq_control_moves_the_centre`).
     let mid = db("out", &[(MIDDLE, 1.0), (MID_FREQ, 1.0)], 4_800.0)
         - db("out", &[(MIDDLE, 0.0), (MID_FREQ, 1.0)], 4_800.0);
     let high = range(HIGH, 6_000.0);
@@ -118,17 +117,11 @@ fn the_post_distortion_stage_is_double_peaked() {
 }
 
 /// The Mid Freq control moves where the middle band works, which is the whole
-/// point of it and the one control in the plugin that does.
-///
-/// Both sections of the dual gang sweep one gyrator, so its inductance goes as
-/// `R^2` and the centre as `1/R` -- the Wien bridge's own law -- while
-/// `Q = sqrt(C_gyr / Cs)` stays put. Computed from the values: 4877 Hz with the
-/// knob down and 206 Hz with it up, against a published 4.7 kHz and 240 Hz.
-///
-/// What this arrangement does *not* hold is the depth: the leg's series
-/// resistance is the swept one, so the band is deep at the top of the sweep and
-/// shallow at the bottom, where the original's is even. That is recorded in
-/// `docs/models/metal_zone.md` rather than hidden here.
+/// point of it and the one control in the plugin that does -- and since the
+/// factory U2a/U2b stage replaced the swept gyrator (2026-09-25), the band is
+/// as deep at the bottom of the sweep as at the top, as the original's is.
+/// The gyrator managed +12 dB at 4 kHz with the knob up and +1.3 dB at 250 Hz
+/// with it down.
 #[test]
 fn the_mid_freq_control_moves_the_centre() {
     let lift = |freq: f64, hz: f64| {
@@ -151,6 +144,19 @@ fn the_mid_freq_control_moves_the_centre() {
         "the centre did not move: up {:+.1}, down {:+.1}",
         up_high - up_low,
         down_high - down_low
+    );
+    // Even depth: the published +-15 dB at both ends of the sweep.
+    assert!(
+        up_high > 12.0,
+        "only {up_high:+.1} dB at the top of the sweep"
+    );
+    assert!(
+        down_low > 12.0,
+        "only {down_low:+.1} dB at the bottom of the sweep"
+    );
+    assert!(
+        down_low > down_high + 10.0,
+        "turned down it should work low"
     );
 }
 

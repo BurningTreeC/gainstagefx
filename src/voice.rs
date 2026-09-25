@@ -29,7 +29,8 @@ use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     ac30, american312, bigmuff, brit2205, brit800, cabinet, clipper, console_e, deluxe,
     distortion_plus, dr103, evh5150, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone,
-    neve, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808, tube610, twin,
+    neve, orange_dist, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808,
+    tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
@@ -158,12 +159,16 @@ pub enum Gain {
     /// bridge-rectifier clipper the single-channel 2203 does not have, and its
     /// own 50 W power stage, the Brit 2205 EL34. See `circuits::brit2205`.
     Brit2205,
+    /// Boss DS-1, the TA7136P original (`circuits::orange_dist`). A pedal, so
+    /// it sits with the others in spirit; it is appended here, not beside
+    /// them, so no voice index above it moves.
+    Ds1,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 31] = [
+    pub const ALL: [Gain; 32] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -195,6 +200,7 @@ impl Gain {
         Gain::Jazz120,
         Gain::DeluxeNormal,
         Gain::Brit2205,
+        Gain::Ds1,
     ];
 
     pub fn name(self) -> &'static str {
@@ -230,6 +236,7 @@ impl Gain {
             Gain::Jazz120 => "Jazz Chorus JC-120",
             Gain::DeluxeNormal => "Deluxe Reverb, Normal",
             Gain::Brit2205 => "JCM800 2205",
+            Gain::Ds1 => "Boss DS-1",
         }
     }
 
@@ -265,6 +272,7 @@ impl Gain {
             Gain::DistPlus => distortion_plus::DISTORTION,
             Gain::Hm2 => heavy_metal::DIST,
             Gain::Mt2 => metal_zone::DIST,
+            Gain::Ds1 => orange_dist::DIST,
             _ => clipper::GAIN,
         }
     }
@@ -359,6 +367,7 @@ impl Gain {
             Gain::DistPlus => Some(Level::Circuit(distortion_plus::VOLUME)),
             Gain::Hm2 => Some(Level::Circuit(heavy_metal::LEVEL)),
             Gain::Mt2 => Some(Level::Circuit(metal_zone::LEVEL)),
+            Gain::Ds1 => Some(Level::Circuit(orange_dist::LEVEL)),
             _ => None,
         }
     }
@@ -386,6 +395,8 @@ impl Gain {
             Gain::DR103 => Some((dr103::BASS, dr103::MIDDLE, dr103::TREBLE)),
             Gain::Recto => Some((rectifier::BASS, rectifier::MIDDLE, rectifier::TREBLE)),
             Gain::Brit2205 => Some((brit2205::BASS, brit2205::MIDDLE, brit2205::TREBLE)),
+            // The original 5150's own stack, off its preamp sheet (2026-09-25).
+            Gain::Peavey => Some((evh5150::BASS, evh5150::MIDDLE, evh5150::TREBLE)),
             // The TS808 and the Muff have a single tone control, which the
             // Treble knob takes.
             Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
@@ -394,6 +405,8 @@ impl Gain {
             // The Rodent's is a **filter**: it runs the other way, and
             // `tone_runs_backwards` is how the knob is made to agree with it.
             Gain::Rat => Some((usize::MAX, usize::MAX, rodent::FILTER)),
+            // A Big-Muff-style blend with a scoop in the middle, like the Muff's.
+            Gain::Ds1 => Some((usize::MAX, usize::MAX, orange_dist::TONE)),
             // The Heavy Metal's Colour Mix has dedicated plugin parameters.
             // Do not multiplex them onto Bass/Treble: those three remain the
             // optional plugin tone stack and the HM-2 pair is independent.
@@ -514,6 +527,7 @@ impl Gain {
                 | Gain::Jazz120
                 | Gain::DeluxeNormal
                 | Gain::Brit2205
+                | Gain::Ds1
         )
     }
 
@@ -958,7 +972,10 @@ pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
 /// Output stages that are nobody's matched stage, and so have no voice to
 /// borrow a resistor-loaded simulation from. They sit after the catalogue in
 /// `Chain::powers`, in this order.
-pub const EXTRA_POWER_SPECS: [&power::PowerSpec; 1] = [&power::PowerSpec::RECTO_6L6_TUBE];
+pub const EXTRA_POWER_SPECS: [&power::PowerSpec; 2] = [
+    &power::PowerSpec::RECTO_6L6_TUBE,
+    &power::PowerSpec::DR103_EL34_RETURN,
+];
 
 /// How many of them there are.
 pub const EXTRA_POWERS: usize = EXTRA_POWER_SPECS.len();
@@ -987,10 +1004,14 @@ pub enum PowerModel {
     British73Out,
     /// The JCM800 2205's two EL34s. See `power::PowerSpec::BRIT_2205_EL34`.
     Brit2205EL34,
+    /// The DR103's stage as another preamplifier meets it: from the inverter,
+    /// without the Hiwatt's own V3a. What `PowerAmp::DR103EL34` means behind
+    /// anything but the DR103. See `power::PowerSpec::DR103_EL34_RETURN`.
+    DR103EL34Return,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 13] = [
+    pub const ALL: [PowerModel; 14] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -1004,6 +1025,7 @@ impl PowerModel {
         PowerModel::Jazz120SS,
         PowerModel::British73Out,
         PowerModel::Brit2205EL34,
+        PowerModel::DR103EL34Return,
     ];
 
     /// The valve stage this model is, where it is one.
@@ -1027,8 +1049,15 @@ impl PowerModel {
             Self::Recto6L6Tube => &power::PowerSpec::RECTO_6L6_TUBE,
             Self::AmericanDeluxe6V6 => &power::PowerSpec::DELUXE_6V6,
             Self::Brit2205EL34 => &power::PowerSpec::BRIT_2205_EL34,
+            Self::DR103EL34Return => &power::PowerSpec::DR103_EL34_RETURN,
             Self::Jazz120SS | Self::British73Out => return None,
         })
+    }
+
+    /// What the stage's presence slot is called on its panel, if it has one.
+    /// See `power::PowerSpec::presence_name`.
+    pub fn presence_name(self) -> Option<&'static str> {
+        self.spec().and_then(power::PowerSpec::presence_name)
     }
 
     /// The speaker-loaded circuit for this stage, whatever kind it is. One
@@ -1070,6 +1099,7 @@ impl PowerModel {
             Self::Jazz120SS => 10,
             Self::British73Out => 11,
             Self::Brit2205EL34 => 12,
+            Self::DR103EL34Return => 13,
         }
     }
 
@@ -1092,6 +1122,8 @@ impl PowerModel {
             Self::Jazz120SS => voice_index(Gain::Jazz120, Diode::Silicon, Amplifier::Valve),
             Self::British73Out => voice_index(Gain::Neve, Diode::Silicon, Amplifier::Valve),
             Self::Brit2205EL34 => voice_index(Gain::Brit2205, Diode::Silicon, Amplifier::Valve),
+            // After the Recto's valve-rectifier stage in `EXTRA_POWER_SPECS`.
+            Self::DR103EL34Return => VOICES + 1,
         }
     }
 }
@@ -1156,7 +1188,13 @@ impl PowerAmp {
             Self::BritEL34 => Some(PowerModel::BritEL34),
             Self::BritPlexiEL34 => Some(PowerModel::BritPlexiEL34),
             Self::AC30EL84 => Some(PowerModel::AC30EL84),
-            Self::DR103EL34 => Some(PowerModel::DR103EL34),
+            // Behind the DR103 it is that amplifier's own stage, V3a and all;
+            // behind anything else, the stage from its inverter on.
+            Self::DR103EL34 => Some(if preamp == Gain::DR103 {
+                PowerModel::DR103EL34
+            } else {
+                PowerModel::DR103EL34Return
+            }),
             Self::Recto6L6 => Some(PowerModel::Recto6L6),
             Self::Recto6L6Tube => Some(PowerModel::Recto6L6Tube),
             Self::AmericanDeluxe6V6 => Some(PowerModel::AmericanDeluxe6V6),
@@ -1188,6 +1226,8 @@ pub enum Pedal {
     HeavyMetal,
     /// The Boss MT-2 (`circuits::metal_zone`). Five, and three of them tone.
     MetalZone,
+    /// The Boss DS-1, TA7136P original (`circuits::orange_dist`).
+    OrangeDist,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
@@ -1246,7 +1286,7 @@ const fn one_tone(
 const NO_TONES: [Option<ToneKnob>; PEDAL_TONES] = [None, None, None, None];
 
 impl Pedal {
-    pub const ALL: [Pedal; 9] = [
+    pub const ALL: [Pedal; 10] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
@@ -1256,9 +1296,10 @@ impl Pedal {
         Pedal::YellowDist,
         Pedal::HeavyMetal,
         Pedal::MetalZone,
+        Pedal::OrangeDist,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 8;
+    const SLOTS: usize = 9;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -1271,6 +1312,7 @@ impl Pedal {
             Pedal::YellowDist => Some(5),
             Pedal::HeavyMetal => Some(6),
             Pedal::MetalZone => Some(7),
+            Pedal::OrangeDist => Some(8),
         }
     }
 
@@ -1297,7 +1339,10 @@ impl Pedal {
     /// attempt to linearise them changed the response, and the later rail-fallback
     /// shortcut was much slower than the original solver. Keep this host-rate
     /// guard until each MT-2 stage is independently proven safe or is split into
-    /// a dedicated stage-level processor.
+    /// a dedicated stage-level processor. Its factory Middle stage (2026-09-25)
+    /// added two more rail-aware amplifiers and took the boundary from 22 to 29:
+    /// the same passes a sample, and on a loaded machine 17.8 to 24.1 % alone and
+    /// 46.8 to 54.0 % in front of the Cali IIC+ at 1x.
     ///
     /// So the chain keeps them at the host rate for now, exactly as it keeps the
     /// modelled amplifiers under `MODELLED_MAX_OVERSAMPLING`, and for the same
@@ -1332,7 +1377,8 @@ impl Pedal {
             4 => round_fuzz::build(10_000.0, 470_000.0),
             5 => distortion_plus::build(10_000.0, 470_000.0),
             6 => heavy_metal::build(10_000.0, 470_000.0),
-            _ => metal_zone::build(10_000.0, 470_000.0),
+            7 => metal_zone::build(10_000.0, 470_000.0),
+            _ => orange_dist::build(10_000.0, 470_000.0),
         }
     }
 
@@ -1386,7 +1432,7 @@ impl Pedal {
             },
             // Four tone controls, which is what the slot was widened to carry:
             // three bands and the sweep that moves the middle one.
-            _ => PedalControls {
+            7 => PedalControls {
                 drive: metal_zone::DIST,
                 tones: [
                     Some(ToneKnob {
@@ -1411,6 +1457,13 @@ impl Pedal {
                     }),
                 ],
                 level: metal_zone::LEVEL,
+            },
+            // One tone control, a blend with a scoop in the middle; the box
+            // calls it TONE.
+            _ => PedalControls {
+                drive: orange_dist::DIST,
+                tones: one_tone(orange_dist::TONE, "tone", false),
+                level: orange_dist::LEVEL,
             },
         }
     }
@@ -1643,7 +1696,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // Not a nominal load: the 5150's tone stack really does hang 33 k on
         // the far side of R89, and leaving it out would flatter the model by
         // twenty four decibels.
-        Gain::Peavey => evh5150::build(10_000.0, evh5150::TONE_STACK_INPUT),
+        Gain::Peavey => evh5150::build(10_000.0, evh5150::POST_LOAD),
         Gain::Neve => neve::build(150.0, 10_000.0),
         // Loaded by the Master Volume's 1 M, which the power stage begins with.
         Gain::Brit800 => brit800::build(10_000.0, 1_000_000.0),
@@ -1668,6 +1721,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::DistPlus => distortion_plus::build(10_000.0, 470_000.0),
         Gain::Hm2 => heavy_metal::build(10_000.0, 470_000.0),
         Gain::Mt2 => metal_zone::build(10_000.0, 470_000.0),
+        Gain::Ds1 => orange_dist::build(10_000.0, 470_000.0),
     }
 }
 
@@ -2293,6 +2347,9 @@ pub struct Settings {
     /// The circuit's own level control, where it has one. Half is where the
     /// voice was calibrated; see `Chain::set_master`.
     pub master: f64,
+    /// The power stage's presence (the AC30's cut), where it has one. Half is
+    /// where the stage was voiced; see `Chain::set_presence`.
+    pub presence: f64,
     /// The Mark IIC+'s five graphic equaliser sliders, bottom band first.
     /// Centred is flat; only that amplifier has them.
     pub graphic: [f64; 5],
@@ -2338,6 +2395,7 @@ impl Default for Settings {
             cabinet: Cabinet::Off,
             drive: 0.5,
             master: MASTER_MIDDLE,
+            presence: 0.5,
             graphic: [0.5; 5],
             bass: 0.5,
             mid: 0.5,
@@ -2483,6 +2541,8 @@ pub struct Chain {
     drive: f64,
     /// Where the panel's Master knob is. See `set_master`.
     master: f64,
+    /// Where the panel's Presence knob is. See `set_presence`.
+    presence: f64,
     /// The Mark IIC+'s five band graphic equaliser, between its preamplifier
     /// and its power stage. Linear, so it costs one substitution a sample.
     /// Only that amplifier has one; see `Gain::has_graphic`.
@@ -2537,6 +2597,7 @@ impl Chain {
         debug_assert_eq!(self.requested_oversampling, source.requested_oversampling);
         debug_assert_eq!(self.drive, source.drive);
         debug_assert_eq!(self.master, source.master);
+        debug_assert_eq!(self.presence, source.presence);
         debug_assert_eq!(self.out_of_target, source.out_of_target);
         debug_assert_eq!(self.reverb, source.reverb);
         debug_assert_eq!(self.speed, source.speed);
@@ -2811,6 +2872,7 @@ impl Chain {
             rate,
             drive: 0.5,
             master: MASTER_MIDDLE,
+            presence: 0.5,
             master_lift: 1.0,
             graphic: Simulation::new(
                 markiic::graphic(SOURCE, LOAD).expect("the graphic EQ builds"),
@@ -2994,8 +3056,10 @@ impl Chain {
             );
         }
         self.acoustic_settings = *a;
-        // The master control may now live in a different simulation.
+        // The master and presence controls may now live in a different
+        // simulation.
         self.set_master(self.master);
+        self.set_presence(self.presence);
     }
 
     pub fn is_radiating(&self) -> bool {
@@ -3261,6 +3325,34 @@ impl Chain {
         // The speaker-loaded twin of that power stage carries the same control.
         if let (Level::Power(which), Some(model)) = (level, resolved) {
             self.loaded[model.slot()].sim.set_control(which, position);
+        }
+    }
+
+    /// The power stage's presence control, from the panel's Presence knob.
+    ///
+    /// Until 2026-09-25 nothing set it, so every stage played with its pot
+    /// wherever the netlist rests it -- half its travel, or the AC30's cut at
+    /// 0.2 -- and every calibration and preset level was measured there. So
+    /// the knob maps exactly as the Master does (`master_position`): its middle
+    /// **is** that resting position, bit-identical to before there was a knob,
+    /// and the ends reach the ends of the pot. For the half-way stages that is
+    /// the pot's own rotation, so a player's "presence 7" is 0.7 here.
+    ///
+    /// A stage with nothing in that slot -- the AB763s, the transistor stages,
+    /// Bypass -- is left alone, and the panel greys the knob for it. The
+    /// DR103's presence is its driver's and rests at half, like the rest.
+    pub fn set_presence(&mut self, knob: f64) {
+        self.presence = knob.clamp(0.0, 1.0);
+        let Some(model) = self.power_selection.resolved(self.voice) else {
+            return;
+        };
+        if model.presence_name().is_none() {
+            return;
+        }
+        let loaded = &mut self.loaded[model.slot()].sim;
+        for sim in self.powers[self.power].as_mut().into_iter().chain([loaded]) {
+            let rest = sim.resting_position(power::PRESENCE).unwrap_or(0.5);
+            sim.set_control(power::PRESENCE, Self::master_position(rest, self.presence));
         }
     }
 
@@ -3681,6 +3773,7 @@ impl Chain {
         self.set_power_amp(s.power_amp);
         self.set_acoustic(&s.acoustic);
         self.set_master(s.master);
+        self.set_presence(s.presence);
         self.set_graphic(s.graphic);
         self.set_iron(s.iron);
         self.set_tone_section(s.tone);

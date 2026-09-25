@@ -141,6 +141,11 @@ pub enum Circuit {
     #[id = "amp_jcm800_2205"]
     #[name = "Brit 2205"]
     Brit2205,
+    // Appended. The Boss DS-1 as a circuit in its own right, like every other
+    // pedal in the slot.
+    #[id = "pedal_boss_ds1_circuit"]
+    #[name = "Orange Dist"]
+    Ds1,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -204,9 +209,10 @@ impl Circuit {
             Circuit::Jazz120 => "Jazz 120",
             Circuit::DeluxeNormal => "American Deluxe Normal",
             Circuit::Brit2205 => "Brit 2205",
+            Circuit::Ds1 => "Orange Dist",
         }
     }
-    pub const ALL: [Circuit; 31] = [
+    pub const ALL: [Circuit; 32] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -238,6 +244,7 @@ impl Circuit {
         Circuit::Jazz120,
         Circuit::DeluxeNormal,
         Circuit::Brit2205,
+        Circuit::Ds1,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -273,6 +280,7 @@ impl Circuit {
             Circuit::Jazz120 => voice::Gain::Jazz120,
             Circuit::DeluxeNormal => voice::Gain::DeluxeNormal,
             Circuit::Brit2205 => voice::Gain::Brit2205,
+            Circuit::Ds1 => voice::Gain::Ds1,
         }
     }
 
@@ -306,7 +314,8 @@ impl Circuit {
             | voice::Gain::FuzzFace
             | voice::Gain::DistPlus
             | voice::Gain::Hm2
-            | voice::Gain::Mt2 => Kind::Pedal,
+            | voice::Gain::Mt2
+            | voice::Gain::Ds1 => Kind::Pedal,
             voice::Gain::Neve
             | voice::Gain::American312
             | voice::Gain::ConsoleE
@@ -515,10 +524,13 @@ pub enum PedalModel {
     #[id = "pedal_boss_mt2"]
     #[name = "Metal Zone"]
     MetalZone,
+    #[id = "pedal_boss_ds1"]
+    #[name = "Orange Dist"]
+    OrangeDist,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
@@ -528,6 +540,7 @@ impl PedalModel {
         Self::RoundFuzz,
         Self::HeavyMetal,
         Self::MetalZone,
+        Self::OrangeDist,
     ];
 
     pub fn name(self) -> &'static str {
@@ -545,6 +558,7 @@ impl PedalModel {
             Self::YellowDist => voice::Pedal::YellowDist,
             Self::HeavyMetal => voice::Pedal::HeavyMetal,
             Self::MetalZone => voice::Pedal::MetalZone,
+            Self::OrangeDist => voice::Pedal::OrangeDist,
         }
     }
 }
@@ -593,10 +607,13 @@ pub enum CabModel {
     #[id = "cab_roland_jc120_212"]
     #[name = "Jazz Open 2x12"]
     JazzOpen212,
+    #[id = "cab_peavey_412m"]
+    #[name = "American Closed 4x12"]
+    AmericanClosed412,
 }
 
 impl CabModel {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Legacy,
         Self::Bypass,
         Self::Brit1960,
@@ -610,6 +627,7 @@ impl CabModel {
         Self::Closed112,
         Self::Closed212,
         Self::JazzOpen212,
+        Self::AmericanClosed412,
     ];
 
     pub fn name(self) -> &'static str {
@@ -632,6 +650,7 @@ impl CabModel {
             Self::Closed112 => voice::CabinetChoice::Model(&P::CLOSED_112),
             Self::Closed212 => voice::CabinetChoice::Model(&P::CLOSED_212),
             Self::JazzOpen212 => voice::CabinetChoice::Model(&P::JAZZ_OPEN_212),
+            Self::AmericanClosed412 => voice::CabinetChoice::Model(&P::AMERICAN_CLOSED_412),
         }
     }
 }
@@ -670,10 +689,13 @@ pub enum SpeakerModel {
     #[id = "spk_roland_30_103d"]
     #[name = "Jazz 12"]
     Jazz12,
+    #[id = "spk_celestion_g12k85"]
+    #[name = "Brit K85"]
+    BritK85,
 }
 
 impl SpeakerModel {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Matched,
         Self::Bypass,
         Self::BritV30,
@@ -684,6 +706,7 @@ impl SpeakerModel {
         Self::AmericanCeramic,
         Self::AmericanAlnico,
         Self::Jazz12,
+        Self::BritK85,
     ];
 
     pub fn name(self) -> &'static str {
@@ -703,6 +726,7 @@ impl SpeakerModel {
             Self::AmericanCeramic => voice::SpeakerChoice::Model(&P::AMERICAN_CERAMIC),
             Self::AmericanAlnico => voice::SpeakerChoice::Model(&P::AMERICAN_ALNICO),
             Self::Jazz12 => voice::SpeakerChoice::Model(&P::JAZZ_12),
+            Self::BritK85 => voice::SpeakerChoice::Model(&P::BRIT_K85),
         }
     }
 }
@@ -1133,6 +1157,14 @@ pub struct GainStageParams {
     #[id = "master"]
     pub master: FloatParam,
 
+    /// The power stage's presence control -- the AC30's cut -- where it has
+    /// one. **Half is where the stage was voiced**, exactly as for the
+    /// Master: nothing set it before 2026-09-25, and every level in the
+    /// plugin was measured with it resting there. See `Chain::set_presence`.
+    /// Greyed for a stage with nothing in that slot.
+    #[id = "presence"]
+    pub presence: FloatParam,
+
     // --- 3b The Mark IIC+'s graphic equaliser -----------------------------
     // Five sliders, bottom band first, centred is flat. Only that amplifier
     // has them; the panel greys them for everything else. They are here rather
@@ -1256,6 +1288,16 @@ impl GainStageParams {
     /// Whether the speaker, cabinet and microphone controls are in use.
     pub fn physical_cabinet(&self) -> bool {
         self.cab_model.value() != CabModel::Legacy && self.speaker.value() != SpeakerModel::Bypass
+    }
+
+    /// What the Presence knob turns on the power stage in the path, or `None`
+    /// where there is nothing for it to turn. See `PowerSpec::presence_name`.
+    pub fn presence_name(&self) -> Option<&'static str> {
+        self.power_amp
+            .value()
+            .voice()
+            .resolved(self.circuit.value().voice())
+            .and_then(voice::PowerModel::presence_name)
     }
 
     pub fn master_enabled(&self) -> bool {
@@ -1409,6 +1451,7 @@ impl Default for GainStageParams {
 
             drive: position("Drive", 0.5),
             master: position("Master", 0.5),
+            presence: position("Presence", 0.5),
 
             eq60: position("EQ 60 Hz", 0.5),
             eq240: position("EQ 240 Hz", 0.5),

@@ -96,6 +96,7 @@ committing it.
 | American Ceramic | `spk_jensen_c12n` | 6.05 | 0.463 | 46.77 | 1.430 | 6.67 | 113 | 7.52 | 29.9 | 10.46 | 490.9 | PUBLISHED; coil FITTED |
 | American Alnico | `spk_jensen_p12n` | 6.03 | 0.433 | 41.33 | 1.013 | 5.71 | 90 | 4.36 | 30.9 | 10.62 | 490.9 | PUBLISHED; coil FITTED |
 | Jazz 12 | `spk_roland_30_103d` | 6.68 | 0.448 | 44.05 | 1.221 | 6.19 | 85 | 9.73 | 28.0 | 10.72 | 490.9 | size/impedance DOCUMENTED; rest ESTIMATED; voicing FITTED to a measurement (below) |
+| Brit K85 | `spk_celestion_g12k85` | 7.0 | 0.448 | 44.05 | 1.221 | 6.19 | 85 | 9.73 | 28.0 | 14.16 | 490.9 | Re/Fs PUBLISHED (for the G12K-100); rest ESTIMATED as for the Celestions (below) |
 
 Derived Celestion Qes / Qts / Zmax: V30 0.445 / 0.426 / 167 ohm, Green 25 0.902 / 0.825 / 79 ohm,
 T75 0.856 / 0.787 / 84 ohm. These fall inside the analogue-driver bounds.
@@ -112,6 +113,7 @@ Breakup voicing (peaking fc Hz / gain dB / Q; low-pass fc / Q), EMPIRICALLY TUNE
 | c12n | 1108/+8.94/1.81, 2092/+12.00/2.12, 3497/+10.45/1.27 | 5829/2.13 | 1.48 |
 | p12n | 1006/+8.69/2.44, 2436/+10.70/1.71, 3632/+12.00/1.45 | 6156/1.54 | 1.61 |
 | roland_30_103d | 510/+6.54/1.95, 3642/+8.58/2.76, 10172/+12.00/2.52 | 10344/0.50 | 1.16 (90 Hz-12 kHz, near-field, see below) |
+| g12k85 | 2469/+11.85/1.14, 3577/+8.80/1.94, 5195/+7.03/5.73 | 6631/0.50 | 1.98 |
 
 ## Referencing the load to the amplifier
 
@@ -208,18 +210,16 @@ C12N in a Fender cabinet.
      is the floor as much as the speaker. Fs is the catalogue's median (85 Hz) and Bl gives
      the catalogue's median Qts (0.80). Re is the catalogue's median (6.68 ohm); the coil,
      Mms and Qms are the Celestion priors. All ESTIMATED.
-   - **Fitted through one cone, not two.** Fitted through the two-driver cabinet the result
-     was 2.0 dB rms with every peak at its +12 dB bound, filling comb-filter notches at 0.6,
-     2.0 and 3.4 kHz that the measurement does not have. They come from the far cone: at
-     4 cm from one 12-inch cone the other, 42 cm away and about 80 degrees off its axis,
-     is more than 10 dB down at low frequencies and much more above 2 kHz, where a piston
-     that size is sharply directional. `AcousticStage` models piston directivity as a
-     single pole (`CABINET_MODEL.md`), which leaves the far cone only about 8 dB down with
-     0.76 ms more delay. The measurement is the near cone and its own rear wave, so the
-     voicing is fitted through a one-driver copy of the cabinet (`FIT_CABINET`). **The
-     one-pole directivity is a limitation of the shared placement model and affects every
-     multi-driver cabinet at close range; it is recorded here and in `CABINET_MODEL.md`,
-     not changed, because changing it moves every existing preset.**
+   - **Fitted through one cone, not two.** The measurement is dominated by the cone the
+     microphone is in front of, so the voicing is fitted through a one-driver copy of the
+     cabinet (`FIT_CABINET`) and carries nothing of the second cone. Fitting it through
+     the two-driver cabinet first gave 2.0 dB rms with every peak at its +12 dB bound,
+     filling comb-filter notches at 0.6, 2.0 and 3.4 kHz that the measurement does not
+     have -- which is how the stage's far-cone error was found: one-pole directivity and
+     rim distances left the neighbouring cone only about 8 dB down. **Fixed the same day**
+     (`CABINET_MODEL.md`, "Near and far cones"): with the fix the whole two-cone model
+     follows the measurement to 1.58 dB rms (2.67 before), and
+     `tests/jazz_cabinet.rs` holds it.
    - The voicing is fitted at one off-centre placement through the stage's own
      off-centre dulling (the `HF_RADIUS` corner, 2.6 kHz there). Where that tuned
      approximation differs from the real cone, the voicing carries the difference to
@@ -228,3 +228,39 @@ C12N in a Fender cabinet.
 8. **Why.** No manufacturer data exists. One careful measurement of the real amplifier,
    reproduced inside the model rather than read as if it were a data sheet, is the best
    evidence available, and it is labelled as what it is.
+
+## Brit K85: the Celestion G12K-85 (2026-09-25)
+
+For *Machine Rage '92*'s "1987 Peavey 4x12 cabinet with Celestion G12K-85 speakers"
+(WIDELY REPORTED; see `cabinets.md`).
+
+1. **Revision.** The G12K-85, 8 ohm, the late-1970s-to-1990s ceramic 85 W twelve.
+2. **Original data found?** **No G12K-85 sheet.** Celestion's current **G12K-100**
+   (its "Legacy Guitar Speakers" range) is published with Re 7 ohm, Fs 85 Hz, 99 dB, a
+   44.5 mm round-copper coil, a 1.42 kg / 50 oz ceramic magnet, and an 8 ohm response
+   plot. That the G12K-100 *is* the G12K-85 re-rated is WIDELY REPORTED ("Celestion never
+   stopped making it and later reintroduced it as the G12K-100"), not stated by Celestion.
+   The size, magnet, coil and Fs all match the G12K-85 as sold, so this is treated as the
+   same driver with its data, not as a near relative -- the same standing as building the
+   G12T-75 from the current Classic-series sheet. If a G12K-85 sheet turns up, it wins.
+3. **Best source.** Celestion's G12K-100 brochure PDF (`celestion.com/product-brochure-pdf.php?id=902`)
+   and its plot (`celestion.com/wp-content/uploads/2019/09/G12K-100-copy.jpg`).
+4. **Cross-check.** Celestion's own period description, WIDELY QUOTED: the G12K-85 "is
+   exactly like the G12T-75, but with a larger (50oz) ceramic magnet, and a more focused
+   field". The fit agrees without being told: with the same priors and recipe, the
+   G12K-100's plot needs **Bl 14.16 against the G12T-75's 10.87** -- the stronger motor a
+   bigger magnet gives -- and its two main breakup peaks land at 2.47 and 3.58 kHz against
+   the T-75's 2.21 and 3.51 kHz.
+5. **Values.** The tables above.
+6. **Fitted, and how.** Exactly the Celestion recipe (`tools/speaker_fit/fit_speakers.py`,
+   entry `g12k85`), with one difference in how the plot was read: **not by eye**. The red
+   trace's pixels were read against the plot's own grid lines (decades at x = 240, 493 and
+   745 px, 5 dB per 25.2 px) every 1/12 octave from 21 Hz, 119 points. The tool's three
+   existing Celestion fits reproduce unchanged in the same run. Voicing error 1.98 dB rms,
+   300 Hz-7 kHz, at the top of the other Celestions' 1.41-1.96.
+7. **Checked in the plugin** (`tests/peavey_cabinet.rs`): drawn through the acoustic stage
+   on one cone of the Peavey, the presence peak is at 2.47 kHz, 8.9 dB over 1 kHz (the
+   plot: 8.5), and 7 kHz is 27.9 dB under it (the plot: 29 at 6.8 kHz).
+8. **Why.** The G12K-85 is the documented speaker of a documented rig, and the only
+   manufacturer data for its design is the G12K-100's.
+

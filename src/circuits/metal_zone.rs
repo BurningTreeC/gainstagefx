@@ -92,22 +92,44 @@ pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
 
-/// The original April 1991 U2a/U2b middle EQ, isolated for circuit validation.
+/// The original April 1991 U2a/U2b middle EQ on its own, for validating the
+/// stage the pedal is built with (`middle_stage`) against the AC solver.
 ///
-/// This is not yet connected to the production pedal. The factory Wien network
-/// has its own feedback amplifier; hanging a swept gyrator off the low/high EQ
-/// does not preserve its boost/cut depth. See `docs/models/metal_zone.md` for the
-/// original sheet, port definitions and outstanding integration work.
-///
-/// `MIDDLE` uses the existing estimated symmetric law. `MID_FREQ` here sweeps
-/// electrical gang resistance linearly, from 50 k to zero as the control rises;
-/// it deliberately does not claim a measured law for the factory C-taper pot.
-/// Both op-amps retain their rails. A small-signal AC reference may linearize
-/// them around zero, but a time-domain consumer must retain their headroom.
+/// Both op-amps keep their rails here; a small-signal AC reference may
+/// linearise them around zero.
 pub fn mid_eq_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("MT-2 April 1991 isolated middle EQ");
-    net.input("in", source)
-        .capacitor("in", "mid_in", 1e-6) // C011
+    net.input("in", source);
+    middle_stage(&mut net, "in", false);
+    net.resistor("u2a", "gnd", load);
+    net.build("u2a")
+}
+
+/// The Middle and Mid Freq controls: the factory U2a/U2b stage, from `from`
+/// to `u2a`. See `docs/models/metal_zone.md`.
+///
+/// U2a is an inverting unity-gain stage (R038, R035 47 k) whose non-inverting
+/// input is fed by a Wien bridge -- C036 in series with R048 and one gang,
+/// the other gang with R062 and C043 to ground -- and the Wien bridge is
+/// driven by U2b, a follower on the Middle control's wiper. Middle blends
+/// U2a's input against its output, so turned one way the bridge's band is
+/// added and turned the other it is taken away, by the same amount: **+-15 dB
+/// held across the whole sweep**, 240 Hz to 4.8 kHz, which is what the
+/// gyrator this replaced (2026-09-25) could not do.
+///
+/// `MIDDLE` uses the existing estimated symmetric law. `MID_FREQ` sweeps
+/// electrical gang resistance linearly, from 50 k to zero as the control
+/// rises, as the gyrator did; the factory pot is a C taper whose curve is not
+/// published. APPROXIMATED.
+///
+/// Both keep their rails in the pedal. U2b looks as though it could be built
+/// linear (`linear_u2b`) -- it follows a passive blend of U4A's output and
+/// U2a's, both rail-limited -- but those arrive through C011 and C037, and
+/// when the stages before them clip unevenly the capacitors carry the blend
+/// past the rail for a moment. Measured by the wide partition probe below:
+/// 6.4 mV of error, which is not numerical noise, so it stays rail-aware.
+fn middle_stage(net: &mut Netlist, from: &str, linear_u2b: bool) {
+    net.capacitor(from, "mid_in", 1e-6) // C011
         .resistor("mid_in", "u2a_m", 47_000.0) // R038
         .resistor("u2a", "u2a_m", 47_000.0) // R035
         .capacitor("u2a", "u2a_m", 100e-12) // C026
@@ -123,9 +145,13 @@ pub fn mid_eq_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
             100_000.0,
             Taper::Symmetric { span: 150.0 },
             MIDDLE,
-        )
-        .opamp("u2b", "mid_wiper", "u2b", SWING)
-        .capacitor("u2b", "mid_series", 0.022e-6) // C036
+        );
+    if linear_u2b {
+        net.linear_opamp("u2b", "mid_wiper", "u2b");
+    } else {
+        net.opamp("u2b", "mid_wiper", "u2b", SWING);
+    }
+    net.capacitor("u2b", "mid_series", 0.022e-6) // C036
         .resistor("mid_series", "mid_gang1", 2_200.0) // R048
         .rest(MID_FREQ, 0.5)
         .pot(
@@ -147,9 +173,7 @@ pub fn mid_eq_reference(source: f64, load: f64) -> Result<Circuit, Fault> {
         .resistor("mid_gang2", "gnd", 2_200.0) // R062
         .capacitor("mid_bridge", "gnd", 0.0082e-6) // C043
         .capacitor("mid_bridge", "u2a_p", 0.1e-6) // C038
-        .resistor("u2a_p", "gnd", 1_000_000.0) // R039, AC-referenced bias
-        .resistor("u2a", "gnd", load);
-    net.build("u2a")
+        .resistor("u2a_p", "gnd", 1_000_000.0); // R039, AC-referenced bias
 }
 
 #[cfg(test)]
@@ -160,11 +184,11 @@ pub fn build_full_newton_reference(source: f64, load: f64) -> Result<Circuit, Fa
 pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // U4A and U4B must remain rail-aware: the wide operating-envelope probe
     // shows real response changes when either stage is forced linear (U4B is
-    // especially visible around its 105 Hz resonance at large input). The
-    // swept-mid gyrator follower, however, remains reference-equivalent across
-    // the same frequency/level/control grid, so it can live in the linear
-    // Schur interior instead of enlarging the Newton boundary.
-    tap_impl(source, load, at, false, false, true)
+    // especially visible around its 105 Hz resonance at large input). So must
+    // U2b, the Middle stage's follower: forced linear it is 6.4 mV out at the
+    // wide probe's worst case (every control up, 105 Hz, 0.12 V) -- see
+    // `middle_stage` for why. Nothing in this pedal is partitioned now.
+    tap_impl(source, load, at, false, false, false)
 }
 
 #[cfg(test)]
@@ -173,9 +197,9 @@ fn build_partition_candidate(
     load: f64,
     linear_u4b: bool,
     linear_u4a: bool,
-    linear_gyrator: bool,
+    linear_u2b: bool,
 ) -> Result<Circuit, Fault> {
-    tap_impl(source, load, "out", linear_u4b, linear_u4a, linear_gyrator)
+    tap_impl(source, load, "out", linear_u4b, linear_u4a, linear_u2b)
 }
 
 fn tap_impl(
@@ -184,7 +208,7 @@ fn tap_impl(
     at: &str,
     linear_u4b: bool,
     linear_u4a: bool,
-    linear_gyrator: bool,
+    linear_u2b: bool,
 ) -> Result<Circuit, Fault> {
     let mut net = Netlist::new("Metal Zone");
 
@@ -321,63 +345,14 @@ fn tap_impl(
     .capacitor("w_high", "bhigh", 0.01e-6) // C044
     .resistor("bhigh", "gnd", 2_200.0); // R061
 
-    // VR02b Middle, over a Wien network whose corner the Mid Freq knob sweeps.
-    //
-    // A Wien bandpass is a series C-R into a parallel R-C, and its centre is
-    // 1 / (2 pi R sqrt(C1 C2)) -- so moving *both* resistances together moves
-    // the centre and leaves the shape alone. That is what the dual-gang VR02a
-    // is for, and here both halves carry the same control index, which is what
-    // ganged means. Measured from the values: 5.4 kHz with the knob down and
-    // 227 Hz with it up, against the published 4.7 kHz and 240 Hz.
-    // VR02b Middle, over a gyrator whose **both** resistances the Mid Freq gang
-    // sweeps at once. This is the one control in the plugin that moves where it
-    // works rather than how much.
-    //
-    // The original sweeps with a Wien bridge, and what makes that a *parametric*
-    // mid rather than merely a moving one is two properties together: its centre
-    // goes as `1/R`, and its Q does not move with it. A gyrator gives
-    // `L = R1 x R2 x C` and a leg of `Rs + sL` in series with `Cs`, so sweeping
-    // one resistance gives `f0` proportional to `1/sqrt(R)` -- a fifth of the
-    // span -- and a Q that slides with it. That was built, measured and thrown
-    // away.
-    //
-    // Sweeping **both** gyrator resistances together is the answer, and it is
-    // what the dual gang is for:
-    //
-    // - `L = R^2 C_gyr`, so `f0 = 1 / (2 pi R sqrt(C_gyr Cs))` -- proportional
-    //   to `1/R`, exactly as the Wien bridge;
-    // - the leg's series resistance is `R1 = R` and it moves with it, so
-    //   `Q = sqrt(C_gyr / Cs)` -- **a constant, set by the two capacitors and
-    //   nothing else.**
-    //
-    // With the drawing's own C036 .022 against a .01 series capacitor that is a
-    // Q of 1.48 held across the whole sweep, and 2.2 k to 52.2 k of gang gives
-    // **4877 Hz down to 206 Hz**, against a published 4.7 kHz to 240 Hz.
-    // Where the sweep sits when nothing turns it. The pedal slot gives it a
-    // knob; selected as a circuit it has bass, middle and treble and no fourth
-    // control, so it rests at noon -- which for a frequency sweep on a linear
-    // track is the middle of its range and not, as it would be on an audio
-    // track, twenty decibels down.
-    net.rest(MID_FREQ, 0.5)
-        .pot("boost", "w_mid", "cut", 100_000.0, Taper::Symmetric { span: 150.0 }, MIDDLE)
-        .capacitor("w_mid", "mid_leg", 0.01e-6) // the series capacitor, Cs
-        // R1: the leg's series resistance and half of the inductance.
-        .resistor("mid_leg", "mid_r1", 2_200.0) // R048
-        .pot("mid_r1", "gyr_out", "gyr_out", 50_000.0, Taper::Linear, MID_FREQ)
-        // C_gyr and R2: the other half.
-        .capacitor("mid_leg", "gyr_in", 0.022e-6) // C036
-        .resistor("gyr_in", "mid_r2", 2_200.0) // R062
-        .pot("mid_r2", "gnd", "gnd", 50_000.0, Taper::Linear, MID_FREQ)
-        // op-amp 2b, the follower the drawing puts here.
-        ;
-    if linear_gyrator {
-        net.linear_opamp("gyr_out", "gyr_in", "gyr_out");
-    } else {
-        net.opamp("gyr_out", "gyr_in", "gyr_out", SWING);
-    }
+    // --- the middle, U2a and U2b ------------------------------------------------------------
+    // Not a third leg on the equaliser's track: the factory middle is a stage
+    // of its own after it, with the Wien bridge in its own feedback, which is
+    // what holds its depth across the sweep. See `middle_stage`.
+    middle_stage(&mut net, "u4a", linear_u2b);
 
     // --- Level and the output buffer --------------------------------------------------------
-    net.resistor("u4a", "lvl_top", 22_000.0) // R014
+    net.resistor("u2a", "lvl_top", 22_000.0) // R014
         .rest(LEVEL, LEVEL_REST)
         .pot("lvl_top", "lvl", "gnd", 50_000.0, Taper::Audio, LEVEL) // VR04
         .capacitor("lvl", "b1", 10e-6) // C005
@@ -440,30 +415,34 @@ mod partition_tests {
         (before, after, worst)
     }
 
+    /// Every op-amp in the pedal is rail-aware since the factory middle stage
+    /// went in (2026-09-25), so production is the full-Newton reference: the
+    /// same boundary and the same samples.
     #[test]
-    fn production_mt2_partitions_only_safe_mid_gyrator_follower() {
+    fn production_mt2_is_the_full_newton_reference() {
         let (before, after, worst) = worst_difference(build(10_000.0, 470_000.0).unwrap());
-        assert_eq!(before, 25, "unexpected MT-2 reference Newton boundary");
-        assert_eq!(
-            after, 22,
-            "production MT-2 should remove only the mid gyrator follower from Newton"
-        );
+        assert_eq!(before, 29, "unexpected MT-2 reference Newton boundary");
+        assert_eq!(after, 29, "production MT-2 is not partitioned");
         assert!(
-            worst < 1e-8,
-            "production MT-2 mid-gyrator partition changed response: {worst:e}"
+            worst < 1e-12,
+            "production MT-2 differs from its reference: {worst:e}"
         );
     }
 
+    /// Why U2b is not partitioned: forced linear, it is millivolts out at the
+    /// wide probe's worst case -- every control up, 105 Hz, 0.12 V -- because
+    /// C011 and C037 carry its input past the rail when the stages before it
+    /// clip unevenly. The old gyrator follower was 1e-12 out at the same case.
     #[test]
-    fn production_mt2_mid_gyrator_partition_matches_wide_probe_worst_case() {
-        let mut production = Simulation::new(build(10_000.0, 470_000.0).unwrap(), 48_000.0);
+    fn a_linear_middle_follower_would_change_the_sound() {
+        let mut candidate = Simulation::new(
+            build_partition_candidate(10_000.0, 470_000.0, false, false, true).unwrap(),
+            48_000.0,
+        );
         let mut reference = Simulation::new(
             build_full_newton_reference(10_000.0, 470_000.0).unwrap(),
             48_000.0,
         );
-
-        // The wide candidate probe reported the follower's largest (still
-        // numerical-noise-sized) difference here: setting 1, 220 Hz, 30 mV.
         for (control, value) in [
             (DIST, 1.0),
             (LOW, 1.0),
@@ -472,19 +451,18 @@ mod partition_tests {
             (HIGH, 1.0),
             (LEVEL, 0.45),
         ] {
-            production.set_control(control, value);
+            candidate.set_control(control, value);
             reference.set_control(control, value);
         }
-
         let mut worst = 0.0_f64;
         for k in 0..4_096 {
             let t = k as f64 / 48_000.0;
-            let x = 0.03 * (std::f64::consts::TAU * 220.0 * t).sin();
-            worst = worst.max((production.process(x) - reference.process(x)).abs());
+            let x = 0.12 * (std::f64::consts::TAU * 105.0 * t).sin();
+            worst = worst.max((candidate.process(x) - reference.process(x)).abs());
         }
         assert!(
-            worst < 1e-8,
-            "production MT-2 mid-gyrator partition diverged at wide-probe worst case: {worst:e}"
+            worst > 1e-3,
+            "a linear U2b is now exact ({worst:e}); partition it"
         );
     }
 
@@ -502,8 +480,8 @@ mod partition_tests {
         for (name, flags) in [
             ("u4b_scoop", (true, false, false)),
             ("u4a_eq", (false, true, false)),
-            ("mid_gyrator_follower", (false, false, true)),
-            ("u4b_plus_mid_gyrator", (true, false, true)),
+            ("middle_follower_u2b", (false, false, true)),
+            ("u4b_plus_middle_follower", (true, false, true)),
         ] {
             let circuit =
                 build_partition_candidate(10_000.0, 470_000.0, flags.0, flags.1, flags.2).unwrap();
@@ -536,8 +514,8 @@ mod partition_tests {
 
         for (name, flags) in [
             ("u4b_scoop", (true, false, false)),
-            ("mid_gyrator_follower", (false, false, true)),
-            ("u4b_plus_mid_gyrator", (true, false, true)),
+            ("middle_follower_u2b", (false, false, true)),
+            ("u4b_plus_middle_follower", (true, false, true)),
         ] {
             let mut worst = 0.0_f64;
             let mut worst_case = (0usize, 0.0_f64, 0.0_f64);

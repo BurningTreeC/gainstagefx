@@ -132,6 +132,7 @@ fn intent(gain: Gain) -> f64 {
         Gain::DistPlus => 38.0,
         Gain::Hm2 => 45.0,
         Gain::Mt2 => 45.0,
+        Gain::Ds1 => 45.0,
     }
 }
 
@@ -180,9 +181,13 @@ fn stated_level(gain: Gain) -> Option<f64> {
         Gain::Screamer => Some(GUITAR_VOLTS),
         // And every other pedal, for the same reason: what goes into a pedal
         // is a guitar.
-        Gain::Green9 | Gain::Rat | Gain::FuzzFace | Gain::DistPlus | Gain::Hm2 | Gain::Mt2 => {
-            Some(GUITAR_VOLTS)
-        }
+        Gain::Green9
+        | Gain::Rat
+        | Gain::FuzzFace
+        | Gain::DistPlus
+        | Gain::Hm2
+        | Gain::Mt2
+        | Gain::Ds1 => Some(GUITAR_VOLTS),
         Gain::Twin => Some(GUITAR_VOLTS),
         // The same guitar into the same kind of front end.
         Gain::Deluxe | Gain::DeluxeNormal => Some(GUITAR_VOLTS),
@@ -513,23 +518,33 @@ fn main() {
     // Do NOT derive this from the average of the current catalogue. Adding a
     // model or recalibrating one model would then shift every existing voice,
     // which is exactly the kind of session-breaking change the legacy fixture
-    // is meant to catch. The 5150 is an unchanged long-lived guitar voice, so
-    // one frozen point on its make-up curve is the absolute reference. Relative
-    // matching is still measured for every voice; this one number only fixes
-    // the catalogue's overall output level.
+    // is meant to catch. One frozen point on one unchanged voice's make-up
+    // curve is the absolute reference. Relative matching is still measured for
+    // every voice; this one number only fixes the catalogue's overall level.
     //
-    // Knot 29 is also close to the legacy test's Drive=0.75 operating point.
-    // The value is from the 2026-09-16 broadband re-level baseline. Change it
-    // only when intentionally making a documented global output-level change.
+    // It was the 5150's knot 29 at -47.72 dB (the 2026-09-16 broadband
+    // re-level baseline). On 2026-09-25 the 5150 gained its own tone stack and
+    // stopped being an unchanged voice: anchored there, every other voice in
+    // the table moved by 6.4 dB. So the anchor moved to the JCM800 2203 -- a
+    // long-lived voice untouched that day -- at the value its knot 29 had in
+    // the table just before, which leaves every other voice where it was. The
+    // table prints -48.00; the unrounded value was found from the table's own
+    // rounding -- at -48.000, 113 entries elsewhere came out 0.01 dB up; at
+    // -48.002, 146 came out 0.01 dB down -- so -48.001, and nothing else in the
+    // table moves by more than that rounding. If this voice is ever changed,
+    // move the anchor again the same way: to an untouched voice, at its
+    // current value.
+    const ABSOLUTE_REFERENCE_VOICE: Gain = Gain::Brit800;
     const ABSOLUTE_REFERENCE_KNOT: usize = 29;
-    const ABSOLUTE_REFERENCE_MAKE_UP_DB: f64 = -47.72;
-    let peavey = (0..VOICES)
-        .find(|i| voice::voice_at(*i).0 == Gain::Peavey)
-        .expect("the Peavey/5150 calibration voice exists");
-    let anchor = ABSOLUTE_REFERENCE_MAKE_UP_DB - rows[peavey].2[ABSOLUTE_REFERENCE_KNOT];
+    const ABSOLUTE_REFERENCE_MAKE_UP_DB: f64 = -48.001;
+    let reference = (0..VOICES)
+        .find(|i| voice::voice_at(*i).0 == ABSOLUTE_REFERENCE_VOICE)
+        .expect("the anchor voice exists");
+    let anchor = ABSOLUTE_REFERENCE_MAKE_UP_DB - rows[reference].2[ABSOLUTE_REFERENCE_KNOT];
     println!(
-        "// Absolute level anchored to Peavey knot {ABSOLUTE_REFERENCE_KNOT} at \
-         {ABSOLUTE_REFERENCE_MAKE_UP_DB:.2} dB; see `calibrate.rs`."
+        "// Absolute level anchored to {} knot {ABSOLUTE_REFERENCE_KNOT} at \
+         {ABSOLUTE_REFERENCE_MAKE_UP_DB:.2} dB; see `calibrate.rs`.",
+        ABSOLUTE_REFERENCE_VOICE.name()
     );
     println!("// Catalogue additions/recalibrations do not move existing voices globally.");
     println!("pub const CALIBRATION: [Calibration; VOICES] = [");

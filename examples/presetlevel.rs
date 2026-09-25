@@ -11,6 +11,12 @@
 //! in the room, because 220 Hz fell in the trough between the pedal's bands.
 //!
 //! `cargo run --release --example presetlevel`
+//!
+//! A name fragment as the argument measures only the presets whose names
+//! contain it (the mean is then theirs), which is how one preset is re-levelled
+//! after its cabinet or speaker changes: measure it before and after, and move
+//! its `output_trim` by the difference.
+//! `cargo run --release --example presetlevel -- "Machine Rage"`
 
 use gainstagefx::params::PedalModel;
 use gainstagefx::presets::PRESETS;
@@ -19,8 +25,12 @@ use gainstagefx::voice::{Chain, NOMINAL_DBFS};
 const RATE: f64 = 96_000.0;
 
 fn main() {
+    let only = std::env::args().nth(1);
     let mut levels: Vec<(f64, &str, PedalModel, f32)> = Vec::new();
     for preset in PRESETS {
+        if only.as_deref().is_some_and(|o| !preset.name.contains(o)) {
+            continue;
+        }
         let mut chain = Chain::new(RATE);
         chain.apply(&preset.settings());
         chain.settle();
@@ -62,7 +72,7 @@ fn main() {
             format!("   trim {trim:+.0}")
         };
         println!(
-            "  {db:+7.1} dB  ({:+5.1} against the mean)  {name}{pedal}{trim}",
+            "  {db:+7.2} dB  ({:+5.1} against the mean)  {name}{pedal}{trim}",
             db - mean
         );
     }

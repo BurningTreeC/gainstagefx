@@ -126,8 +126,22 @@ impl Biquad {
 
     pub fn lowpass(rate: f64, fc: f64, q: f64) -> Self {
         let mut b = Self::IDENTITY;
-        b.set_matched(rate, fc, [0.0, 0.0, 1.0], 1.0 / q.max(0.05));
+        b.set_lowpass(rate, fc, q);
         b
+    }
+
+    /// Low-pass in place, keeping the state. An infinite corner is a wire.
+    pub fn set_lowpass(&mut self, rate: f64, fc: f64, q: f64) {
+        if !fc.is_finite() {
+            let (z1, z2) = (self.z1, self.z2);
+            *self = Self {
+                z1,
+                z2,
+                ..Self::IDENTITY
+            };
+            return;
+        }
+        self.set_matched(rate, fc, [0.0, 0.0, 1.0], 1.0 / q.max(0.05));
     }
 
     pub fn highpass(rate: f64, fc: f64, q: f64) -> Self {

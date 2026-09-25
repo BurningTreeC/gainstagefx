@@ -857,6 +857,10 @@ pub fn describe(circuit: Circuit) -> String {
             "Modeled after an 80s British 50 W two-channel head's boost \
                           channel: a diode-biased stage and a clipper."
         }
+        Circuit::Ds1 => {
+            "A transistor clips first and a diode pair clips what is \
+                          left, then a scoop: bright, tight distortion."
+        }
     }
     .to_string()
 }
@@ -954,12 +958,59 @@ fn drive(cx: &mut Context) {
     .color(Color::rgb(0xff, 0x8a, 0x3c))
     .hoverable(false);
 
-    let x = body_x() + 170.0 + (body_w() - 180.0) / 2.0;
+    // The power stage's presence -- the AC30's cut -- named after what the
+    // stage in the path has in that slot, and greyed where it has nothing:
+    // the AB763s, the transistor stages and Bypass. The DR103's is its
+    // driver's (`power::DriverSpec`). See `Chain::set_presence`.
+    Binding::new(
+        cx,
+        Panel::params.map(|p| p.presence_name()),
+        move |cx, name| {
+            let name = name.get(cx);
+            let live = name.is_some();
+            Knob::new(cx, Panel::params, |p| &p.presence, 21.0, live)
+                .position_type(PositionType::SelfDirected)
+                .left(Pixels(body_x() + 190.0 - 21.0))
+                .top(Pixels(top + 24.0 - 21.0));
+            label(
+                cx,
+                name.unwrap_or("PRESENCE"),
+                body_x() + 190.0,
+                top + 24.0 + 21.0 + 10.0,
+                9.5,
+                100.0,
+                if live { 0x9aa6b0 } else { 0x5a636b },
+            );
+        },
+    );
+    Label::new(
+        cx,
+        Panel::params.map(|p| {
+            if p.presence_name().is_some() {
+                format!("{:.0} %", p.presence.value() * 100.0)
+            } else {
+                String::from("--")
+            }
+        }),
+    )
+    .position_type(PositionType::SelfDirected)
+    .left(Pixels(body_x() + 190.0 - 50.0))
+    .top(Pixels(top + 24.0 + 21.0 + 21.0 - LABEL_H / 2.0))
+    .width(Pixels(100.0))
+    .height(Pixels(LABEL_H))
+    .child_left(Stretch(1.0))
+    .child_right(Stretch(1.0))
+    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .font_size(9.5)
+    .color(Color::rgb(0xff, 0x8a, 0x3c))
+    .hoverable(false);
+
+    let x = body_x() + 250.0 + (body_w() - 260.0) / 2.0;
     for (i, line) in [
         "All the way up on Drive is the sound the circuit is named for;",
         "down from there only cleans up, and the level is held across it.",
-        "Master is the device's own level knob, and half way is where the",
-        "voice was calibrated - so it starts where the voicing put it.",
+        "Master and Presence start at half, which is where the voice was",
+        "calibrated; Presence belongs to the power stage, where it has one.",
     ]
     .into_iter()
     .enumerate()
@@ -970,7 +1021,7 @@ fn drive(cx: &mut Context) {
             x,
             top + 10.0 + i as f32 * 16.0,
             9.5,
-            body_w() - 180.0,
+            body_w() - 260.0,
             0x86929c,
         );
     }

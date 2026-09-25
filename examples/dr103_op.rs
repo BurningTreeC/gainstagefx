@@ -1,14 +1,14 @@
 //! The Brit DR103's operating point: the one voltage its drawing gives is V2a's
-//! plate at 140 V.
+//! plate at 140 V. Then the power stage, which since 2026-09-25 begins at V3a
+//! (`power::DriverSpec::HIWATT_DR103`): V3a, the V3b reference that holds the
+//! inverter's grids, the inverter, and what the presence control does.
 //!
 //! `cargo run --release --example dr103_op`
 use gainstagefx::circuits::{dr103, power};
 use gainstagefx::dsp::time::Simulation;
 fn main() {
     let c = dr103::build(10_000.0, 1_000_000.0).unwrap();
-    let names = [
-        "n3", "n1", "v1_p", "v1_k", "v2_p", "v2_k", "cf1", "v3_p", "out",
-    ];
+    let names = ["n3", "n1", "v1_p", "v1_k", "v2_p", "v2_k", "cf1", "out"];
     let idx: Vec<_> = names.iter().map(|n| c.unknown_named(n).unwrap()).collect();
     let mut sim = Simulation::new(c, 48_000.0);
     println!("preamp settled {}", sim.find_operating_point());
@@ -17,7 +17,9 @@ fn main() {
     }
     let spec = &power::PowerSpec::DR103_EL34;
     let c = power::build(spec, 10_000.0).unwrap();
-    let names = ["pi_p1", "pi_p2", "pi_k", "pi_a", "ht", "on1"];
+    let names = [
+        "pi_p1", "pi_p2", "pi_k", "pi_a", "ht", "on1", "v3a_p", "v3a_k", "v3b_g", "v3b_k",
+    ];
     let idx: Vec<_> = names.iter().map(|n| c.unknown_named(n)).collect();
     let mut sim = Simulation::new(c, 48_000.0);
     println!("power settled {}", sim.find_operating_point());
@@ -37,8 +39,25 @@ fn main() {
         v[3] - v[2]
     );
 
-    // Small-signal gain of the preamplifier, against the Brit 800's.
+    // The presence control, through the whole power stage into its resistor.
     use gainstagefx::dsp::measure::{self, Tone};
+    println!("  power stage small signal (1 mV), presence 0 / 0.5 / 1:");
+    for hz in [100.0, 500.0, 1_000.0, 2_000.0, 4_000.0, 8_000.0] {
+        print!("    {hz:>6.0} Hz:");
+        for presence in [0.0, 0.5, 1.0] {
+            let mut sim = Simulation::new(power::build(spec, 10_000.0).unwrap(), 96_000.0);
+            sim.set_control(power::PRESENCE, presence);
+            sim.find_operating_point();
+            let tone = Tone::near(96_000.0, 16_384, hz, 1e-3);
+            print!(
+                " {:+6.1}",
+                measure::run(tone, 19_200, |x| sim.process(x)).gain_db()
+            );
+        }
+        println!();
+    }
+
+    // Small-signal gain of the preamplifier, against the Brit 800's.
     for (name, circuit, drive_control, controls) in [
         (
             "DR103",

@@ -71,6 +71,9 @@ pub struct Preset {
     /// The circuit's own level control, where its drawing has one. Half is
     /// where the voice was calibrated. See `Chain::set_master`.
     pub master: f32,
+    /// The power stage's presence (the AC30's cut). Half is where the stage
+    /// was voiced; see `Chain::set_presence`.
+    pub presence: f32,
     /// The Mark IIC+'s five graphic equaliser sliders, bottom band first.
     /// Centred is flat, and every preset for anything else leaves them there.
     pub graphic: [f32; 5],
@@ -153,6 +156,7 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         iron: Iron::Off,
         drive: 0.5,
         master: 0.5,
+        presence: 0.5,
         graphic: [0.5; 5],
         tone: ToneStack::Wide,
         bass: 0.5,
@@ -308,6 +312,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::AmericanOpen212,
         mic_a_position: 0.35,
         mic_a_distance: 0.03,
+        output_trim: 1.2,
         ..base("Crunch", "Edge of Breakup")
     },
     Preset {
@@ -330,6 +335,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::Brit1960,
         mic_a_position: 0.4,
         mic_a_angle: 15.0,
+        output_trim: 2.2,
         ..base("Crunch", "Classic Rock")
     },
     Preset {
@@ -340,6 +346,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b: MicModel::Ribbon121,
         mic_b_distance: 0.2,
         mic_blend: 0.3,
+        output_trim: 2.4,
         ..base("Crunch", "British Crunch")
     },
     Preset {
@@ -348,6 +355,7 @@ pub const PRESETS: &[Preset] = &[
         mid: 0.35,
         cab_model: CabModel::Closed212,
         mic_a_position: 0.5,
+        output_trim: 0.9,
         ..base("Crunch", "Hollow Crunch")
     },
     // --- High gain -------------------------------------------------------
@@ -361,6 +369,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::BritV30,
         mic_a_position: 0.3,
         mic_a_angle: 10.0,
+        output_trim: 2.4,
         ..base("High Gain", "Modern Rhythm")
     },
     // The one the whole exercise was aimed at. Three cascaded stages for the
@@ -377,7 +386,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::CaliOversized,
         mic_a_position: 0.25,
         mic_a_distance: 0.02,
-        output_trim: 2.5,
+        output_trim: 4.3,
         ..base("High Gain", "Scooped Metal")
     },
     Preset {
@@ -390,6 +399,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::BritClosed,
         mic_a_position: 0.35,
         mic_a_angle: 20.0,
+        output_trim: 2.2,
         ..base("High Gain", "Thrash Rhythm")
     },
     Preset {
@@ -402,6 +412,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b: MicModel::Ribbon121,
         mic_b_distance: 0.2,
         mic_blend: 0.4,
+        output_trim: 2.9,
         ..base("High Gain", "Lead Sustain")
     },
     Preset {
@@ -413,7 +424,7 @@ pub const PRESETS: &[Preset] = &[
         treble: 0.7,
         cab_model: CabModel::Oversized,
         mic_a_position: 0.2,
-        output_trim: 2.0,
+        output_trim: 3.6,
         ..base("High Gain", "Everything Up")
     },
     Preset {
@@ -426,6 +437,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a: MicModel::Dynamic906,
         mic_a_position: 0.25,
         mic_a_distance: 0.015,
+        output_trim: 1.7,
         ..base("High Gain", "Tight Low End")
     },
     // --- Overdrive -------------------------------------------------------
@@ -455,7 +467,7 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         // Twin Volume now changes real amplifier level. Preserve this preset
         // at its previously calibrated loudness with one fixed preset trim.
-        output_trim: -12.0,
+        output_trim: -10.8,
         ..base("Overdrive", "Green Overdrive")
     },
     // Little drive and a lot of level, into a British master-volume amplifier
@@ -475,6 +487,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_angle: 10.0,
         oversampling: Oversampling::Off,
+        output_trim: 3.1,
         ..base("Overdrive", "Screamer Boost")
     },
     Preset {
@@ -519,6 +532,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_distance: 0.05,
         oversampling: Oversampling::Four,
+        output_trim: 1.8,
         ..base("Overdrive", "Overdriven Combo")
     },
     // --- Distortion ------------------------------------------------------
@@ -531,6 +545,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::Closed212,
         mic_a_position: 0.35,
         oversampling: Oversampling::Four,
+        output_trim: 1.1,
         ..base("Distortion", "Classic Distortion")
     },
     Preset {
@@ -543,7 +558,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::CaliOversized,
         mic_a_position: 0.3,
         oversampling: Oversampling::Four,
-        output_trim: 2.0,
+        output_trim: 3.8,
         ..base("Distortion", "Scooped Pedal")
     },
     Preset {
@@ -555,6 +570,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.45,
         mic_a_distance: 0.04,
         oversampling: Oversampling::Four,
+        output_trim: 1.9,
         ..base("Distortion", "Woolly Fuzz")
     },
     Preset {
@@ -566,6 +582,7 @@ pub const PRESETS: &[Preset] = &[
         cab_model: CabModel::BritV30,
         mic_a_position: 0.3,
         oversampling: Oversampling::Four,
+        output_trim: 2.6,
         ..base("Distortion", "LED Wall")
     },
     Preset {
@@ -592,6 +609,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.25,
         mic_blend: 0.35,
         oversampling: Oversampling::Off,
+        output_trim: 2.7,
         ..base("Distortion", "Sustain Fuzz")
     },
     // --- Modelled amplifiers ---------------------------------------------
@@ -636,7 +654,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.25,
         mic_a_angle: 10.0,
         oversampling: Oversampling::Off,
-        output_trim: -4.5,
+        output_trim: -2.7,
         ..base("Amplifier", "Boutique Rhythm")
     },
     // --- American Twin ------------------------------------------------------
@@ -670,6 +688,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.3,
         mic_blend: 0.3,
         oversampling: Oversampling::Off,
+        output_trim: 1.2,
         ..base("Amplifier", "Blackface Clean")
     },
     // The other AB763. Same stack, same spring, same optical tremolo, a
@@ -779,7 +798,7 @@ pub const PRESETS: &[Preset] = &[
         // where the amplifier is clean, which is quieter, so it needs more.
         // Re-measured 2026-09-24 on the amplifier's own cabinet and speakers,
         // which put it 1.9 dB under the Fender cabinet it replaced.
-        output_trim: 8.0,
+        output_trim: 9.2,
         oversampling: Oversampling::Off,
         // SW3 in its OFF position. The chorus is the next preset down: this
         // one is the channel, and a clean amplifier that always chorused
@@ -813,7 +832,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_position: 0.5,
         mic_b_distance: 0.25,
         mic_blend: 0.25,
-        output_trim: 8.0,
+        output_trim: 9.2,
         oversampling: Oversampling::Off,
         ..base("Amplifier", "Jazz Chorus")
     },
@@ -867,13 +886,15 @@ pub const PRESETS: &[Preset] = &[
         // 0.17 setting the fixed 0.24 calibration reference is 3.64 dB lower
         // than the old drive-following make-up. +2.1 dB keeps the shipped
         // preset at the same calibrated level relative to Blackface Clean.
-        output_trim: 2.1,
+        output_trim: 3.1,
         ..base("Amplifier", "Blackface Throb")
     },
     Preset {
         drive: 0.90,
         circuit: Circuit::Peavey,
-        tone: ToneStack::Scooping,
+        // Its own stack since 2026-09-25; the knobs are the amplifier's LOW,
+        // MID and HIGH, scooped the way this preset always was.
+        tone: ToneStack::Off,
         bass: 0.70,
         mid: 0.15,
         treble: 0.75,
@@ -881,19 +902,25 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.3,
         mic_a_angle: 15.0,
         oversampling: Oversampling::Off,
-        output_trim: 2.5,
+        // 4.5 until 2026-09-25; the amplifier's own stack and feedback network
+        // in place of the generic stack after it are 8.94 dB louder, taken out.
+        output_trim: -4.44,
         ..base("Amplifier", "Ultra Lead")
     },
     Preset {
         drive: 0.75,
         circuit: Circuit::Peavey,
-        tone: ToneStack::Wide,
+        // Its own stack since 2026-09-25.
+        tone: ToneStack::Off,
         bass: 0.45,
         mid: 0.50,
         treble: 0.65,
         cab_model: CabModel::Oversized,
         mic_a_position: 0.3,
         oversampling: Oversampling::Off,
+        // 1.9 until 2026-09-25; the amplifier's own stack and feedback network
+        // in place of the generic stack after it are 5.86 dB louder, taken out.
+        output_trim: -3.96,
         ..base("Amplifier", "Ultra Rhythm")
     },
     // --- Brit 800 -------------------------------------------------------------
@@ -911,6 +938,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_distance: 0.025,
         oversampling: Oversampling::Off,
+        output_trim: 1.9,
         ..base("Amplifier", "Brit Crunch")
     },
     Preset {
@@ -927,6 +955,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.2,
         mic_blend: 0.3,
         oversampling: Oversampling::Off,
+        output_trim: 2.5,
         ..base("Amplifier", "Brit Lead")
     },
     // --- Brit Plexi -----------------------------------------------------------
@@ -944,6 +973,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_distance: 0.025,
         oversampling: Oversampling::Off,
+        output_trim: 2.7,
         ..base("Amplifier", "Plexi Crunch")
     },
     Preset {
@@ -959,6 +989,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.3,
         mic_blend: 0.3,
         oversampling: Oversampling::Off,
+        output_trim: 2.7,
         ..base("Amplifier", "Plexi Cranked")
     },
     // --- Brit AC30 -------------------------------------------------------------
@@ -978,6 +1009,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.4,
         mic_a_distance: 0.04,
         oversampling: Oversampling::Off,
+        output_trim: 1.0,
         ..base("Amplifier", "Chime Clean")
     },
     Preset {
@@ -995,6 +1027,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.25,
         mic_blend: 0.3,
         oversampling: Oversampling::Off,
+        output_trim: 1.3,
         ..base("Amplifier", "Chime Edge")
     },
     // --- Brit DR103 -------------------------------------------------------------
@@ -1014,6 +1047,9 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.4,
         mic_a_distance: 0.03,
         oversampling: Oversampling::Off,
+        // Re-trimmed 2026-09-25 when the DR103's driver moved into its power
+        // stage (`power::DriverSpec`): 0.08 dB louder.
+        output_trim: 2.22,
         ..base("Amplifier", "Hi-Headroom Clean")
     },
     Preset {
@@ -1030,6 +1066,9 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.4,
         mic_blend: 0.25,
         oversampling: Oversampling::Off,
+        // Re-trimmed 2026-09-25 when the DR103's driver moved into its power
+        // stage (`power::DriverSpec`): 0.43 dB quieter.
+        output_trim: 2.53,
         ..base("Amplifier", "Hi-Headroom Pushed")
     },
     // --- Cali Rectifier ----------------------------------------------------------
@@ -1049,6 +1088,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.3,
         mic_a_distance: 0.02,
         oversampling: Oversampling::Off,
+        output_trim: 2.0,
         ..base("Amplifier", "Recto Rhythm")
     },
     Preset {
@@ -1066,6 +1106,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.03,
         mic_blend: 0.4,
         oversampling: Oversampling::Off,
+        output_trim: 1.9,
         ..base("Amplifier", "Recto Lead")
     },
     // The console microphone preamplifier: two cascaded transistor stages with
@@ -1199,6 +1240,7 @@ pub const PRESETS: &[Preset] = &[
         pedal_tone: 0.5,
         pedal_level: 0.85,
         oversampling: Oversampling::Off,
+        output_trim: 2.3,
         ..base("Metal / Heavy", "Puppet Master '86")
     },
     // Two guitars in B standard through a Boss HM-2 with **every knob at ten**,
@@ -1276,8 +1318,11 @@ pub const PRESETS: &[Preset] = &[
         mic_b_angle: 0.0,
         mic_blend: 0.3,
         // Two pedals in series, each attenuating after it clips, so the chain
-        // arrives quiet. Measured with `examples/presetlevel.rs`.
-        output_trim: 0.0,
+        // arrives quiet. Measured with `examples/presetlevel.rs`. It was +0.5
+        // until the MT-2's factory middle stage (2026-09-25): boosted and swept
+        // into the low mids, where the old gyrator had little depth, it is
+        // 1.18 dB louder, taken out here.
+        output_trim: -0.68,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Slaughter '95")
     },
@@ -1304,6 +1349,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_angle: 0.0,
         mic_blend: 0.5,
         oversampling: Oversampling::Off,
+        output_trim: 2.9,
         ..base("Classic Rock", "Blackout '80")
     },
     // A germanium fuzz in front of a British 100 W head played loud, into a 4x12
@@ -1332,6 +1378,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_angle: 0.0,
         mic_blend: 0.35,
         oversampling: Oversampling::Off,
+        output_trim: 2.0,
         ..base("Psychedelic / Lead", "Experienced '67")
     },
     // A four-transistor fuzz with its sustain well down, into a 100 W head with
@@ -1363,7 +1410,9 @@ pub const PRESETS: &[Preset] = &[
         // loudest things in the catalogue; this is the trim that keeps it level
         // with the rest. Measured with `examples/presetlevel.rs`, and measured
         // again when the pedal slot's resting level moved under it.
-        output_trim: -1.0,
+        // Re-trimmed 2026-09-25 when the DR103's driver moved into its power
+        // stage (`power::DriverSpec`): 0.89 dB louder.
+        output_trim: 0.01,
         oversampling: Oversampling::Off,
         ..base("Psychedelic / Lead", "The Great Wall '79")
     },
@@ -1393,7 +1442,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_angle: 30.0,
         mic_blend: 0.3,
         // A variac takes the whole amplifier down, so this one is quiet.
-        output_trim: 3.0,
+        output_trim: 5.1,
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Brown '78")
     },
@@ -1418,7 +1467,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.4,
         mic_blend: 0.35,
         // A variac takes the whole amplifier down, so this one is quiet.
-        output_trim: 3.0,
+        output_trim: 5.4,
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Brown '84")
     },
@@ -1447,7 +1496,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.6,
         mic_blend: 0.3,
         // A variac again, so this one is quiet.
-        output_trim: 4.0,
+        output_trim: 5.9,
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Blizzard '80")
     },
@@ -1466,6 +1515,9 @@ pub const PRESETS: &[Preset] = &[
         // Where his Master sits is not established; the middle is where the
         // voice was calibrated, and the boost channel does the distorting.
         master: 0.5,
+        // Presence 7, the reported panel. The 2205's presence pot rests at half,
+        // so the knob is the pot's own rotation here.
+        presence: 0.7,
         // EMG pickups, which Morello names; an active pickup is a hotter
         // source than a passive one, by an amount no source gives.
         input_trim: 3.0,
@@ -1473,10 +1525,11 @@ pub const PRESETS: &[Preset] = &[
         mid: 1.0,
         treble: 0.7,
         tone: ToneStack::Off,
-        cab_model: CabModel::Oversized,
-        // No G12K-85 is modelled; the G12T-75 is the nearest documented
-        // Celestion, a high-power ceramic twelve of the same years.
-        speaker: SpeakerModel::BritT75,
+        // "A 1987 Peavey 4x12 cabinet with Celestion G12K-85 speakers": the
+        // late-80s Peavey 412M and its own G12K-85s, which is what Matched
+        // resolves to. See docs/models/cabinets.md.
+        cab_model: CabModel::AmericanClosed412,
+        speaker: SpeakerModel::Matched,
         mic_a: MicModel::Dynamic57,
         mic_a_position: 0.25,
         mic_a_distance: 0.02,
@@ -1484,7 +1537,10 @@ pub const PRESETS: &[Preset] = &[
         mic_b_position: 0.4,
         mic_b_distance: 0.03,
         mic_blend: 0.35,
-        output_trim: -8.0,
+        // -6.2 on the Oversized 4x12 and G12T-75; the Peavey and its G12K-85s
+        // measure 0.85 dB quieter and Presence 7 0.09 dB louder
+        // (`examples/presetlevel.rs`), both taken out here.
+        output_trim: -5.44,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Machine Rage '92")
     },
@@ -1516,7 +1572,7 @@ pub const PRESETS: &[Preset] = &[
         mic_blend: 0.35,
         // A fuzz into a master-volume head with the master wide open is the
         // loudest thing here by a distance; this is what levels it.
-        output_trim: -24.0,
+        output_trim: -22.0,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Pumpkin Dream '93")
     },
@@ -1622,6 +1678,7 @@ impl Preset {
             cabinet: self.cabinet.voice(),
             drive: self.drive as f64,
             master: self.master as f64,
+            presence: self.presence as f64,
             graphic: self.graphic.map(|g| g as f64),
             bass: self.bass as f64,
             mid: self.mid as f64,
@@ -1659,7 +1716,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 55] {
+    pub fn dials(&self) -> [(&'static str, f32); 56] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1687,6 +1744,7 @@ impl Preset {
             ("iron", self.iron.to_index() as f32),
             ("drive", self.drive),
             ("master", self.master),
+            ("presence", self.presence),
             ("eq60", self.graphic[0]),
             ("eq240", self.graphic[1]),
             ("eq750", self.graphic[2]),
@@ -2019,6 +2077,9 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     for id in ["mic_a_pan", "mic_b_pan"] {
         preset.values.entry(id.into()).or_insert(0.5);
     }
+    // The Presence knob arrived on 2026-09-25. Its middle is where every power
+    // stage rested before it existed, so an old preset keeps its sound there.
+    preset.values.entry("presence".into()).or_insert(0.5);
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {
             if let Some(index) = names.iter().position(|name| *name == saved) {

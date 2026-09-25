@@ -55,6 +55,21 @@
 //! and the right way to restore the rest is a fresh frozen capture of the
 //! corrected circuits -- a new fixture, deliberately taken, not a quiet
 //! regeneration of this one.
+//!
+//! **A fourth exception, 2026-09-25, and it leaves no voice compared.** The
+//! 5150 was built from Peavey's own preamp sheet with its tone stack left out:
+//! the drawing's stack stood unread and a 33 k resistor stood in for it, with
+//! the plugin's generic stack after the power stage. The stack is on the same
+//! sheet (`docs/models/american_5150.md`) and is now built, which changes the
+//! voice. That is a correction, and it is the last of the four.
+//!
+//! So this file no longer compares any sample, and says so rather than
+//! pretending. What it still does: it renders all four voices through the chain
+//! at every rate and amplitude and fails on a non-finite sample, and it holds
+//! the 5150's runs to the fallback budget below -- the solver's stability
+//! guard, counted on the voice as it is now. Restoring a sample-for-sample
+//! guard needs a fresh capture of the corrected circuits: a new fixture,
+//! deliberately taken by the owner, not a regeneration of this one.
 use gainstagefx::voice::{Chain, Gain, Settings, Tone};
 use std::f64::consts::TAU;
 
@@ -170,17 +185,14 @@ fn legacy_matched_output_is_preserved() {
         "the settled mask is the wrong length"
     );
 
-    // One of the four voices is still compared; see the header.
+    // No voice is compared any more; the 5150's runs still carry the solver's
+    // stability budget, counted on the voice as it is now. See the header.
     let guarded_runs = settled.len() / VOICES.len();
     let fell_back = settled
         .iter()
-        .zip(&captured_settled)
         .enumerate()
-        .filter(|(run, _)| {
-            let voice = VOICES[(*run / (4 * 5)) % VOICES.len()];
-            !matches!(voice, Gain::Boogie | Gain::Twin | Gain::Neve)
-        })
-        .filter(|(_, (now, then))| !**now || **then == 0)
+        .filter(|(run, _)| VOICES[(*run / (4 * 5)) % VOICES.len()] == Gain::Peavey)
+        .filter(|(_, now)| !**now)
         .count();
     assert!(
         fell_back <= FALLBACK_BUDGET,
@@ -196,11 +208,10 @@ fn legacy_matched_output_is_preserved() {
 
     for (index, (&actual, bytes)) in actual.iter().zip(expected_samples).enumerate() {
         let voice = VOICES[(index / BLOCK) % VOICES.len()];
-        // These three voices were deliberately changed after this fixture was
+        // All four voices were deliberately changed after this fixture was
         // captured, so their historical samples are not valid regression
-        // references. See the exceptions in the header. The 5150 is untouched
-        // and is what the fixture still guards.
-        if matches!(voice, Gain::Boogie | Gain::Twin | Gain::Neve) {
+        // references. See the exceptions in the header.
+        if matches!(voice, Gain::Boogie | Gain::Twin | Gain::Neve | Gain::Peavey) {
             continue;
         }
         // A run the solver did not settle is not reproducible on another
@@ -230,10 +241,11 @@ fn legacy_matched_output_is_preserved() {
         (error / energy.max(1e-30)).sqrt(),
         guarded_runs,
     );
-    let guarded_samples = actual.len() / VOICES.len();
-    assert!(
-        compared > guarded_samples * 3 / 4,
-        "only {compared} of {guarded_samples} guarded 5150/73P samples were comparable; too few for a useful regression guard",
+    // Nothing is compared since the fourth exception; this states it, so a
+    // voice quietly re-admitted above is noticed rather than trusted.
+    assert_eq!(
+        compared, 0,
+        "a voice is being compared against a stale capture"
     );
 }
 

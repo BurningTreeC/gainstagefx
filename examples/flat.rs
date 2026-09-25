@@ -27,7 +27,7 @@ fn main() {
     ] {
         print!("  {node:<9}");
         for p in steps {
-            match evh5150::tap(10_000.0, evh5150::TONE_STACK_INPUT, node) {
+            match evh5150::tap(10_000.0, evh5150::POST_LOAD, node) {
                 Ok(c) => {
                     let mut sim = Simulation::new(c, RATE);
                     sim.set_control(evh5150::PRE, p);

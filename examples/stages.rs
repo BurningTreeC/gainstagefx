@@ -40,7 +40,7 @@ fn main() {
     for node in ["v1a_p", "v1b_p", "v2a_p", "v2b_p", "v5a_p", "v5b_p", "out"] {
         print!("  {node:<10}");
         for p in [0.0, 0.5, 1.0] {
-            match evh5150::tap(10_000.0, evh5150::TONE_STACK_INPUT, node) {
+            match evh5150::tap(10_000.0, evh5150::POST_LOAD, node) {
                 Ok(c) => print!("{:>12.1}", gain_at(c, evh5150::PRE, p, 1_000.0)),
                 Err(e) => print!("{:>12}", format!("{e:?}")),
             }

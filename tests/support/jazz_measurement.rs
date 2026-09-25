@@ -161,13 +161,17 @@ pub fn target() -> Vec<(f64, f64)> {
 ///
 /// At 4 cm from one 12-inch cone the other, 42 cm away and about 80 degrees
 /// off its axis, is more than 10 dB down at low frequencies and far more above
-/// 2 kHz, where a piston that size is sharply directional. The stage models
-/// that directivity as one pole, which leaves the far cone only about 8 dB
-/// down with 0.76 ms more delay -- and so draws comb-filter notches at 0.6,
-/// 2.0 and 3.4 kHz that the measurement does not have, and a fit through the
-/// two-driver cabinet spends its peaks filling them. The measurement is the
-/// near cone and its own rear wave out of the open back, and that is what the
-/// voicing is fitted through. See `docs/models/speakers.md`.
+/// 2 kHz, where a piston that size is sharply directional. The measurement is
+/// the near cone and its own rear wave out of the open back, and that is what
+/// the voicing is fitted through, so that the driver's voicing does not carry
+/// anything of the cabinet's second cone.
+///
+/// When this was first written the stage modelled that directivity as one
+/// pole and measured the far cone from its nearest rim, which left it only
+/// about 8 dB down and drew comb-filter notches at 0.6, 2.0 and 3.4 kHz into
+/// the two-cone response; a fit through it spent its peaks filling them. Since
+/// the far-field fix (2026-09-24) the two-cone cabinet follows the measurement
+/// nearly as well as this one does -- `rms_error_in` holds it.
 pub const FIT_CABINET: CabinetProfile = CabinetProfile {
     drivers: 1,
     ..CabinetProfile::JAZZ_OPEN_212
@@ -231,12 +235,17 @@ pub fn modelled_in(
 /// offset (the measurement's absolute level is a REW target, not a
 /// sensitivity).
 pub fn rms_error(profile: SpeakerProfile) -> f64 {
+    rms_error_in(&FIT_CABINET, profile)
+}
+
+/// The same through a chosen cabinet.
+pub fn rms_error_in(cab: &'static CabinetProfile, profile: SpeakerProfile) -> f64 {
     let band: Vec<(f64, f64)> = target()
         .into_iter()
         .filter(|(f, _)| (FIT_LOW..=FIT_HIGH).contains(f))
         .collect();
     let freqs: Vec<f64> = band.iter().map(|(f, _)| *f).collect();
-    let model = modelled(profile, &freqs);
+    let model = modelled_in(cab, profile, &freqs);
     let diff: Vec<f64> = model.iter().zip(&band).map(|(m, (_, t))| m - t).collect();
     let offset = diff.iter().sum::<f64>() / diff.len() as f64;
     (diff.iter().map(|d| (d - offset).powi(2)).sum::<f64>() / diff.len() as f64).sqrt()

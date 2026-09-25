@@ -676,6 +676,7 @@ impl Plugin for GainStageFx {
             cabinet: self.params.cabinet.value().voice(),
             drive: self.params.drive.smoothed.next_step(samples) as f64,
             master: self.params.master.smoothed.next_step(samples) as f64,
+            presence: self.params.presence.smoothed.next_step(samples) as f64,
             graphic: [
                 self.params.eq60.smoothed.next_step(samples) as f64,
                 self.params.eq240.smoothed.next_step(samples) as f64,

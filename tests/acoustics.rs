@@ -485,3 +485,50 @@ fn microphone_panning_is_free_at_centre_and_separates_when_moved() {
         "both hard left leaves nothing right: {right_peak}"
     );
 }
+
+/// Close-miked, a multi-driver cabinet is its own cone in the treble.
+///
+/// A microphone a few centimetres from one cone is almost side-on to every
+/// other cone in the box, and a 12-inch piston does not radiate its treble
+/// sideways: at 90 degrees the disc's directivity `2 J1(x) / x` is down about
+/// 11 dB at 3 kHz and 20 dB and more above 4 kHz, with the model's own
+/// radiating radius. The neighbours' treble is then too quiet to comb-filter
+/// the close cone's. A directivity modelled as one pole fell 6 dB an octave
+/// instead and left them about 8 dB down with most of a millisecond more
+/// delay, which drew notches at 2.0 and 3.4 kHz into every close-miked 4x12
+/// and 2x12 -- found fitting the Jazz 12 to a measured JC-120. See
+/// `CABINET_MODEL.md`.
+#[test]
+fn a_close_microphone_hears_its_own_cone_above_2_5_khz() {
+    let freqs: Vec<f64> = (0..21)
+        .map(|i| 2_500.0 * 2f64.powf(i as f64 / 12.0))
+        .collect();
+    let mut worst = (0.0f64, "");
+    for cab in CabinetProfile::ALL.iter().filter(|c| c.drivers > 1) {
+        let alone: &'static CabinetProfile = Box::leak(Box::new(CabinetProfile {
+            drivers: 1,
+            ..**cab
+        }));
+        let levels = |c: &'static CabinetProfile| -> Vec<f64> {
+            let mut r = Rig::new(48_000.0, Some(c), &SpeakerProfile::BRIT_V30, MicSlot::Ideal);
+            r.place(0.3, 0.025, 0.0);
+            freqs.iter().map(|&f| r.level(f)).collect()
+        };
+        let (all, one) = (levels(cab), levels(alone));
+        let diff: Vec<f64> = all.iter().zip(&one).map(|(a, b)| a - b).collect();
+        let mean = diff.iter().sum::<f64>() / diff.len() as f64;
+        let ripple = diff.iter().map(|d| (d - mean).abs()).fold(0.0, f64::max);
+        println!("{:<28} {ripple:.2} dB", cab.id);
+        if ripple > worst.0 {
+            worst = (ripple, cab.id);
+        }
+    }
+    // 2026-09-24: 0.05-0.16 dB with the far-field directivity, against 4 to
+    // 13.5 dB with one pole and rim distances.
+    assert!(
+        worst.0 < 0.5,
+        "{} ripples {:.2} dB against its own cone",
+        worst.1,
+        worst.0
+    );
+}

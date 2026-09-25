@@ -1,5 +1,303 @@
 # Implementation progress
 
+## 2026-09-25 — the 5150: which one it is, its own stack, resonance and presence
+
+Owner's item 6: "5150 tone stack/revision".
+
+**The revision was never really open.** The log said the code's ULTRA labels pointed at
+the 5150 II. Peavey's original sheets ("VHALEN 120 PREAMP BD.", 81501510, 5-FEB-92,
+`docs/schematics/peavey_5150_evh.pdf`, 300 ppi) carry ULTRA PRE and ULTRA POST
+themselves, and every stage in `evh5150.rs` matches them designator for designator.
+The model is the original 5150.
+
+**The stack was legible all along**, at the scan's native 300 ppi: R89 into R24 33 k and
+C59 with R94 47 k, C14 470 pF and C60 100 pF to HIGH (250 k linear), R28 47 k slope, C18
+.022 to LOW (1 M audio, a variable resistor), C21 .022 to MID's wiper (50 k linear, R95
+47 k across it), and the output loaded by both post-gain pots. Built in `evh5150.rs`; its
+three controls are the amplifier's own (Bass/Middle/Treble on the panel). Measured: Bass
+9.3 dB of range at 80 Hz, Middle 7.6 at 600 Hz, Treble 9.8 at 5 kHz, a scoop at noon.
+
+**Resonance and the real presence** (sheets 1 and 2): R56 39 k from the transformer into
+VR8 RESONANCE (1 M audio, a variable resistor, C12 .0068 across it), C30 22 uF into the
+tail, and VR9 PRESENCE (10 k, C8 and C62) off the node between -- not the Marshall-style
+presence across the tail the model had. `power::FeedbackNetwork::PEAVEY_5150`; resonance
+is power control 2 and rests at noon (no panel knob). Measured: resonance up lifts 80 Hz
+against 1 kHz by 4.6 dB, presence up lifts 5 kHz by 4.7 dB.
+
+**The calibration anchor had to move.** `examples/calibrate.rs` fixed the whole
+catalogue's absolute level on the 5150's knot 29, "an unchanged long-lived voice".
+Regenerated after the change, every voice in the table moved by 6.4 dB. The anchor is now
+the JCM800 2203's knot 29 at the value it had in the table before (-48.002; the table
+prints -48.00), so only the 5150's row moves, and other voices by at most 0.01 dB of
+rounding. `POWER_TRIM_DB`: the 5150 row and the American 6L6 High-Gain column (its own
+feedback network) move; nothing else.
+
+**The legacy fixture no longer compares anything.** `tests/legacy_baseline.rs` compared
+only the 5150 sample for sample; this is the fourth recorded exception, and the file now
+guards finite output at every rate and the 5150's fallback budget (2 of 100 runs). A fresh
+capture of the corrected circuits is the owner's decision and was not taken.
+
+Presets: *Ultra Lead* and *Ultra Rhythm* now turn the amplifier's own stack (generic stack
+off), held at their levels. `tests/evh5150.rs` 10 tests; research log rewritten.
+
+## 2026-09-25 — the DR103's presence, and a driver that was wired from the wrong source
+
+Owner's item 6: "DR103 presence". The presence control is a loop from the feedback node
+back to V3a's plate, and V3a was in the preamplifier's netlist while the feedback node
+is in the power stage's -- a loop across the plugin's preamp/power boundary. Reading the
+factory sheet at 300 dpi to build it (`docs/schematics/hiwatt_100w_dr103.pdf`, page 4)
+showed the driver itself had been built from somewhere else:
+
+- **Issue 4**: V3a's plate couples into the inverter through **47 nF**; V3b carries no
+  signal -- its grid is on a divider from H.T. SUPPLY 3 (1 M up, 220 k down) and its
+  cathode holds both inverter grids, V4a's through **100 k** and V4b's through 1 M.
+- **As built on 2026-09-16**: V3b's grid on "1.8 M with 22 nF across it into 1 M" from
+  V3a's plate, driving the inverter directly through 1.1 M. That network is on neither
+  of Hiwatt's sheets; the research log had read the grid returns from Ampbooks because
+  the scan was "not legible at that point". It is legible at 300 dpi.
+
+**Built**: `power::DriverSpec::HIWATT_DR103` -- V3a, the V3b reference, the 47 nF, the
+100 k/1 M returns, 470 R + 10 nF on the feedback node, and the presence control (100 k
+linear, 100 nF to the feedback node, 1000 pF to V3a's plate, 470 R from the wiper) --
+inside the DR103 EL34 stage, so the loop closes in one netlist. `dr103.rs` now ends at the
+master's wiper, which V3a's grid takes without drawing current. `DRIVER_VOLTS` and the
+direct-coupled input are gone.
+
+**Only the Hiwatt gets V3a.** Built as above, "DR103 EL34" chosen behind any other
+preamplifier ran that preamplifier's output through the Hiwatt's own last preamp valve --
+29 dB hotter than before. So `PowerAmp::DR103EL34` resolves to a new internal model,
+`DR103EL34Return` (`PowerSpec::DR103_EL34_RETURN`, in `EXTRA_POWER_SPECS`), everywhere
+but behind the DR103: the same grid network, feedback and presence, with the input where
+V3a's plate would be -- through V3a's own output impedance, 68 k (DERIVED: rp 62.5 k plus
+101 x 1k5, against 100 k). With the plugin's generic 10 k there instead, the power stages'
+40 V abuse test put 27 unsettled samples in 9,600 into it, forcing grid current through a
+100 k return no valve plate could. Its column of `POWER_TRIM_DB` is back within 2 dB of
+where it was (Clean -16.60 -> -18.69).
+
+**The abuse test now drives the return variant** (`tests/speaker_load.rs`), which takes its
+40 V where every other stage does. The full stage begins at a preamp valve its own
+preamplifier drives with 11.8 V at most (82 Hz; under 1 V at 7 kHz --
+`examples/dr103_limits.rs`), and a new test holds it there: every control up, 12 dB over
+nominal, the power stage leaves at most 1 sample in 1,000 unsettled at 48 and 192 kHz. At
+that extreme, 7 kHz and 48 kHz, the whole amplifier leaves 33 of 9,600 unsettled against
+29 at HEAD -- they have moved from the power stage (now 1) to the preamplifier (32); at
+192 kHz none, before and after.
+
+**Measured** (`examples/dr103_op.rs`, `tests/dr103.rs` 9 tests): V2a's plate 145.8 V (the
+sheet: 140); V3a 1.55 mA; V3b's grid 83.9 V against its divider's 83.8, cathode 87.9 V; the
+inverter's grids 87.9 V and bias -1.17 V. Presence, 4 kHz against 200 Hz through the
+power stage: -2.0 dB down, -2.7 at half, **+7.4 dB up**. The chain plays at all five rates
+with no unsettled solve and no allocation. The Presence knob now reaches it.
+
+**Open, recorded in `brit_dr103.md`**: H.T. SUPPLY 3 is estimated at 465 V from the supply
+sheet (and V3a/V3b/the inverter now hang on it) while the preamp's one printed voltage
+needs its V1/V2 end near 300 V; Ampbooks' 73 V on the inverter's grids implies about
+380 V on the same divider. Not measured on an Issue 4 amplifier.
+
+`CALIBRATION`: only the DR103's row moved. `POWER_TRIM_DB`: the DR103 row (its preamp
+alone is 26 dB quieter now) and the DR103 EL34 column (the return variant). The three
+DR103 presets are held at their levels to 0.01 dB (Hi-Headroom Clean 2.3 -> 2.22,
+Pushed 2.1 -> 2.53, The Great Wall '79 0.9 -> 0.01), measured against HEAD in a worktree.
+
+## 2026-09-25 — a Presence knob
+
+Owner's item 7: "no amp in the plugin lets presets or the panel set Presence". Every
+power netlist already had a presence pot as control 0 (`power::PRESENCE`) -- and the
+AC30's **cut** control in the same slot -- and nothing ever set it, so each played at
+half its travel (the AC30's cut at its 0.2 rest).
+
+`presence` parameter (appended id), `Settings::presence`, `Preset::presence` (in `dials()`,
+56 entries now), `migrate()` defaults it to 0.5, and `Chain::set_presence`, which maps
+exactly as the Master does: **the knob's middle is the stage's resting position**, so
+every existing session, preset and calibration is bit-identical at 0.5, and for the
+half-resting stages the knob is the pot's own rotation. The panel draws it beside Master,
+labelled from the stage in the path (`PowerSpec::presence_name`): PRESENCE, CUT on the
+AC30, greyed where there is nothing -- the AB763s, the transistor stages, Bypass. (The
+DR103's presence was built the same day; see the entry above.)
+
+Measured (`tests/presence.rs`, 6 tests): presence up lifts 4 kHz against 200 Hz by 4.4 dB
+on the 2203's stage, 4.0 on the 2205's, 5.9 on the 5150's (9.6 on the 1959's, which has
+four times the feedback); the AC30's cut up takes 16 dB off the same span; the chain at
+0.5 is bit-identical after a detour to either end; it plays at all five rates.
+
+*Machine Rage '92* now carries Morello's reported **Presence 7** (0.7), 0.09 dB louder,
+trimmed back (output trim -5.35 to -5.44).
+
+## 2026-09-25 — the MT-2's factory middle stage, in the pedal
+
+Owner's item 6, first part. The Metal Zone's Middle and Mid Freq were a gyrator leg on the
+Low/High equaliser's track, whose depth ran from +14 dB at the top of the sweep to about
++1 dB at the bottom. The factory U2a/U2b stage -- an inverting unity stage with a Wien
+bridge, driven by a follower on the Middle wiper, in its non-inverting leg -- had been
+built in isolation (`mid_eq_reference`) on 2026-09-20 with tests nobody had run. Run now,
+they pass (+-15 dB held from 240 Hz to 4.8 kHz), and the stage is in the pedal between U4A
+and Level, where the drawing has it (`metal_zone::middle_stage`, shared by both).
+
+In the pedal: Middle up is +14.1 dB at 4 kHz with Mid Freq up and +14.9 dB at 250 Hz with
+it down (the gyrator: +12.2 and +1.3). High gained 3 dB of range because U4A's track now
+carries two legs, not three.
+
+**Nothing is partitioned now.** U2b looked safe to linearise -- it follows a blend of two
+rail-limited nodes -- but they come through coupling capacitors, and the wide probe put a
+linear U2b 6.4 mV out (every control up, 105 Hz, 0.12 V). Boundary 22 -> 29; passes a
+sample unchanged (4.63 -> 4.62, `examples/pedalcost.rs` now prints them); on a loaded
+machine the pedal alone went from 17.8 to 24.1 % of a channel, and 46.8 to 54.0 % in front
+of the Cali IIC+. It stays at the host rate.
+
+`CALIBRATION` and `POWER_TRIM_DB` regenerated to scratch and diffed: only the MT-2's rows
+move (make-up +0.09 dB; one power-trim column 0.01 dB). *Slaughter '95*, which runs its
+middle boosted into the low mids, is 1.18 dB louder and trimmed back (+0.5 to -0.68).
+The pedal's level on the low-chord probe is -1.89 dB at its 0.45 rest before and -1.97
+after (`examples/mt2level.rs`, new): the rest was set on an older probe and is left.
+
+## 2026-09-25 — Morello's Peavey 4x12 and its G12K-85s
+
+`cab_peavey_412m` (**American Closed 4x12**) and `spk_celestion_g12k85` (**Brit K85**),
+both appended; *Machine Rage '92* now plays through them (Matched), where it stood on the
+generic Oversized 4x12 with a G12T-75. `tests/peavey_cabinet.rs` (5 tests).
+
+**The speaker has no sheet of its own.** Celestion's current G12K-100 ("Legacy Guitar
+Speakers") is the only manufacturer data for the design -- Re 7, Fs 85, 99 dB, 44.5 mm
+coil, 50 oz ceramic, an 8 ohm plot -- and it is WIDELY REPORTED to be the G12K-85
+re-rated. Built from it by the Celestion recipe in `tools/speaker_fit/fit_speakers.py`,
+which reproduced the three existing Celestion fits unchanged in the same run. The plot
+was read **by pixel**, not by eye: the red trace against the plot's own grid lines,
+every 1/12 octave. The fit needs Bl 14.16 against the G12T-75's 10.87 with everything
+else equal -- the bigger-magnet T-75 Celestion's own description calls it -- and the
+voicing error is 1.98 dB rms (the others: 1.41-1.96). In the plugin's own path, one cone
+of the Peavey close-miked: the presence peak at 2.47 kHz, 8.9 dB over 1 kHz (plot 8.5),
+and 27.9 dB lower at 7 kHz (plot 29).
+
+**The cabinet is PLAUSIBLE, not documented.** The sources say "a 1987 Peavey 4x12", not
+which one; the 412M and 412MS are the Peaveys of those years that shipped G12K-85s, and
+the straight one is chosen. Closed back from Peavey's own sheet. Size an owner's
+measurement (30.125 x 32.125 x 14.25 in), which Peavey's own later 4x12 figures match to
+an eighth of an inch. The forum and listing pages with the figures refuse automated
+reads; the number came through a search index and is labelled accordingly.
+
+**Level held.** `examples/presetlevel.rs` now takes a name fragment. Machine Rage '92
+measured -6.34 dB before, -7.19 with the new pair, and -6.34 again with its output trim
+moved from -6.2 to -5.35. Tests run: `peavey_cabinet`, `acoustics`, `acoustic_chain`,
+`speaker_load`, `jazz_cabinet`, `album_presets`, `presets` -- all pass.
+
+## 2026-09-25 — research for four blocked presets, and what the rig research got wrong
+
+Owner's item 3: research the amplifiers the album presets are blocked on. Five logs,
+each with its eight-question checkpoint; nothing built.
+
+| Log | Device | Drawing | Verdict |
+|---|---|---|---|
+| [oregon_t.md](docs/models/oregon_t.md) | Sunn Model T | Sunn D-1029 A, 9/25/1973, with a voltage chart | cleared; needs a 6550 fit |
+| [brit_plexi_bass.md](docs/models/brit_plexi_bass.md) | Marshall 1992 Super Bass | Unicord 70-13-11, July 1970 | cleared as the stock amplifier |
+| [brum_100.md](docs/models/brum_100.md) | Laney Supergroup 100 Mk I | a 2008 trace of a 1969 unit | cleared on the trace; supply voltages missing |
+| [treble_boost.md](docs/models/treble_boost.md) | Dallas Rangemaster | none; values agreed across sources | cleared as the stock unit |
+| [brit_200.md](docs/models/brit_200.md) | Marshall 1967 Major | Unicord 70-02-12, July 1970 | cleared, and not needed |
+
+**The Major was never on those records.** PRESETS.md and the roadmap had the Major as the
+missing amplifier for *Desert Deaf '02*, *Californicated '99* and *Blood Sugar '91*. The
+rig accounts put an Ampeg VT-40 and V-4Bs on *Songs for the Deaf*, a 1965 JTM45 with a
+Super Bass on *Californication*, and two unnamed Marshall heads (guitar and bass) on
+*Blood Sugar Sex Magik*; the Major is Frusciante's later *live* amplifier. The tables are
+corrected, with the sources in `brit_200.md`.
+
+**Two presets want modified units whose modifications are not documented.** Iommi's
+Rangemaster was modified by "a guy in another band" for more sustain, and nobody
+recorded what he did. Adam Jones' Super Bass is described on forums both as stock and as
+rewired to Super Lead specs; the second would make it the existing Brit Plexi. The logs
+say so rather than invent a modification.
+
+**The Laney's factory sheet is behind a verification form** on Schematics Unlimited and
+was not retrieved; the trace on Dr Tube is complete and specific, and its two checkable
+features (split 1.5 k / 25 uF V1 cathodes, a Super-Bass-like 56 k / 22 nF stack) match
+independent accounts.
+
+Drawings are in `docs/schematics/` (git-ignored): `sunn_model_t.pdf`,
+`jmp_super_bass_100w_1992.pdf`, `major_1967u_lead_200w.pdf`, `major_1966_200w_pa.pdf`,
+`laney_Super_Group_100_Mk1_{preamp,pwramp,psu}.pdf` and the Tube Store copies.
+
+## 2026-09-25 — the Orange Dist: the Boss DS-1, from Boss's own drawing
+
+`pedal_boss_ds1` in the pedal slot and `pedal_boss_ds1_circuit` in the circuit list, both
+appended. `src/circuits/orange_dist.rs`, `tests/orange_dist.rs` (10 tests),
+`examples/ds1_op.rs` (stage-by-stage probe) and `examples/ds1level.rs` (the Level rest).
+
+**The first log was built on the wrong pedal.** ElectroSmash's analysis, which the
+2026-09-16 checkpoint relied on, draws the **DS-1A** -- a BA728N with a buffer, C5 68 nF,
+C7 100 pF, C8 .47 uF. Boss's service notes (December 1994, ManualsLib 1461407) carry both
+drawings: the DS-1 with a single **TA7136P** until serial JG8100 (November 1994), with
+C5 .47 uF, C7 250 pF and C8 1 uF, and the DS-1A after it. The booster, clipper, tone and
+buffers are the same parts in both -- including **R15**, 2.2 k in series with C11 in the
+tone's high-pass arm, which ElectroSmash's drawing leaves out. This is the TA7136P DS-1.
+
+**Toshiba's TA7136AP sheet settled the chip**: pin 2 non-inverting, pin 3 inverting,
+pin 1 the compensation node, pin 5 the bias (`I5 = (Vcc - Vee - 1.4) / R`, R12 27 k
+gives 281 uA against the intended 300), 92 dB open loop, and a maximum-output curve that
+reads +/-4.0 V on +/-4.5 V. The gain-bandwidth with Boss's 150 pF Miller capacitor is
+ESTIMATED at 2 MHz from the sheet's uncompensated open-loop curve; the circuit does not
+depend on it (C7 closes the loop at 6.4 kHz).
+
+**Measured** (`examples/ds1_op.rs`): the booster makes 34.8 dB at 1 kHz and 36.0 at
+3.3 kHz against ElectroSmash's 35; the gain stage runs 0.0 to 26.8 dB against its 26.5;
+the tone at noon notches -14.6 dB at 687 Hz. **One of ElectroSmash's figures is wrong**:
+it puts the booster's bass corner at 33 Hz (C3 against R6), but R7's shunt feedback
+divided by the stage's gain leaves about 3.5 k at the base, and the model's booster is
+20 dB at 100 Hz -- a corner near 800 Hz. Boss's own output check (a 200 Hz square wave,
+service notes p. 6) shows the output sagging back in each half cycle, which only a corner
+that high does. The booster alone at a guitar's level gives 19 % second harmonic: it
+clips first, and unevenly.
+
+`LEVEL_REST` = 0.348 (unity on the low chord; the linear Level pot follows a lot of
+gain). `CALIBRATION` and `POWER_TRIM_DB` regenerated to scratch files and diffed: every
+existing row reproduced exactly, one new row each. Tests run: `orange_dist`,
+`tone_knobs` (the DS-1 added to the single-tone pedals), `pedal_slot`, `power_trim`,
+`presets`, `settings`, `modular_state`, `voice`, `runtime_state` -- all pass.
+
+## 2026-09-24 (night) — close-miked multi-speaker cabinets were comb-filtered
+
+Found while fitting the Jazz 12 (entry below) and fixed on the owner's instruction.
+
+**The fault.** `AcousticStage` gave every cone the same treatment: level and delay from
+its nearest rim, directivity one pole on the breakup radius. That is a fair description
+of the cone a microphone is in front of. For every *other* cone of a close-miked
+cabinet -- tens of centimetres away and nearly 90 degrees off its axis -- it left the
+neighbour about 8 dB down and barely attenuated in the treble, where a 12-inch piston is
+sharply directional. Its delayed arrival comb-filtered the close cone. A new test put a
+number on it: close-miked, each **4x12 deviated from its own single cone by 9 to 13.5
+dB** above 2.5 kHz, the 2x12s by 4 to 5 dB.
+
+**The fix.** The two cases are now separate. The cone under the microphone is
+unchanged (so centre-to-edge placement behaves exactly as before). Any other cone is a
+far-field source: measured from its centre, with the rigid piston's own directivity
+`2 J1(x)/x` of the whole cone as a 4th-order Butterworth at the same -3 dB point -- the
+form `CABINET_MODEL.md` had always claimed and one pole was not. No placement can move a
+cone from one case to the other. `Biquad::set_lowpass` was added to change a section's
+corner in place.
+
+**Evidence, and how the radius was chosen.** The filter shape alone brought the 4x12s
+to 4-5.7 dB; the radius was the other half. Swept against the JC-120 measurement through
+its real two-cone cabinet, a far-field radius of the whole cone agreed best (1.58 dB rms,
+against 1.70 at 0.8 a, 1.85 at 0.6 a and **2.67 with the old code**), and measuring the
+far cone from its centre rather than its rim removed most of the low-mid error. All
+multi-driver cabinets now follow their own cone within **0.16 dB** above 2.5 kHz.
+
+**Tests.** `acoustics::a_close_microphone_hears_its_own_cone_above_2_5_khz` (new; failed
+at 13.52 dB before the fix, 0.5 dB threshold now) and
+`jazz_cabinet::the_whole_two_cone_cabinet_follows_the_measurement` (new). `acoustics`,
+`acoustic_chain`, `speaker_load`, `jazz_cabinet`, `chorus`, `settings`, `presets`,
+`album_presets` and `legacy_baseline` (the legacy path is untouched) pass; clippy and fmt
+clean.
+
+**Levels.** 45 close-miked presets came out 0.5-3.1 dB quieter, pushing the catalogue's
+span to 14.1 dB against the test's 14. Each one's output trim was raised by exactly its
+loss (measured before and after with `examples/presetlevel.rs`), which returns every
+preset to its previous level within 0.05 dB. The sound changed; the level matching did
+not.
+
+**Not changed, recorded.** A far cone at a moderate angle (a distant microphone's view
+of a 4x12) may now beam somewhat more above 3 kHz than a real cone, which radiates from
+less of itself above breakup. Below 1 kHz the shared distance law still leaves a
+neighbour about 3 dB louder than a baffled piston's near and far fields would.
+
 ## 2026-09-24 (evening) — the JC-120's own cabinet and speakers
 
 The Jazz presets were playing through the Fender Twin's cabinet and a Jensen C12N,

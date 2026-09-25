@@ -44,7 +44,7 @@ what is in it.
 |---|---|---|
 | **1 Input** | Trim, meter, noise reduction, pedal with drive/tone/level | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
 | **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
-| **3 Drive** | Drive, master, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
+| **3 Drive** | Drive, master, presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs. The second row belongs to the Twin. |
 | **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, pan, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
 | **6 Output** | Mix, level | The dry path is delayed to match, so mixing is a mix and not a comb filter. |
@@ -93,7 +93,7 @@ sources, where they disagree and what was approximated.
 | Green 808 | A 1970s green overdrive pedal: input buffer, clipping amp, tone and level, output buffer | none |
 | Ram Fuzz | A 1973 four-transistor fuzz | none |
 | Cali IIC+ | A 1980s Californian lead channel: six triodes through its lead return and recovery stage, its own stack and five-band graphic | Cali 6L6 |
-| American 5150 | A 1990s high-gain lead channel: six triodes, one run cold | American 6L6 High-Gain |
+| American 5150 | A 1990s high-gain lead channel: six triodes, one run cold, into its own tone stack | American 6L6 High-Gain |
 | British 73 | A transformer-coupled class-A microphone preamplifier and line driver | none (its line driver stays) |
 | American 312 | A console microphone preamplifier card: input transformer, one discrete op-amp, output transformer | none |
 | British 4K E | A 1980s console channel's microphone input: a 1:10 transformer into two op-amps around one gain pot | none |
@@ -111,8 +111,9 @@ sources, where they disagree and what was approximated.
 | Yellow Dist | One slow op-amp and a pair of germanium diodes to ground | none |
 | Heavy Metal | A gated distortion: two germanium diodes in series with the signal, and three gyrators | none |
 | Metal Zone | Two gain stages and seven filters, with a three-band equaliser whose middle sweeps | none |
+| Orange Dist | A transistor that clips first and a diode pair that clips what is left, with the bass cut before either and a scoop after | none |
 
-**Every pedal is also a circuit.** The eight in the pedal slot can each be
+**Every pedal is also a circuit.** The nine in the pedal slot can each be
 selected on their own, with nothing behind them — which is how a pedal into a
 desk was always recorded, and how an HM-2 into an MT-2 becomes expressible: one
 in the slot, the other as the circuit. The list is grouped under **PEDALS**,
@@ -168,9 +169,10 @@ overtakes it when driven hard.
 output resistors), **Rodent** (a hard-clipping distortion whose slow op-amp runs out
 of gain-bandwidth and slew rate, as the original's does), **Round Fuzz** (two
 germanium transistors), **Yellow Dist** (one slow op-amp and a pair of germanium
-diodes to ground), **Heavy Metal** (a gated distortion with two tone controls) and
+diodes to ground), **Heavy Metal** (a gated distortion with two tone controls),
 **Metal Zone** (two gain stages and seven filters, with a three-band equaliser
-whose middle sweeps),
+whose middle sweeps) and **Orange Dist** (a transistor booster that clips before
+the op-amp and diodes do, with the bass cut ahead of both),
 each with the knobs that pedal actually has, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
@@ -186,8 +188,9 @@ the pedal cuts off rather than fading.
 
 The slot is level matched the way the circuit list is. Each pedal's **Level**
 knob at noon is *unity through that pedal* — its own measured position, a little
-above half on all of them, because the level control of a pedal is an attenuator
-after a stage with gain. So switching pedals with the knobs where they are moves
+above half on most of them, because the level control of a pedal is an attenuator
+after a stage with gain (the Orange Dist's is a third of the way up its linear
+track, because it has a great deal of gain in front of it). So switching pedals with the knobs where they are moves
 the level by a few decibels rather than by ten, and what is left is the pedals
 being different pedals: a fuzz at half its drive really does make more than a
 clean boost does. And the pedal is fed a guitar whatever follows it, while the
@@ -213,12 +216,12 @@ records says the amplifier ran at 80 to 85 volts.
 | Bypass | No power stage: phase inverter, output valves, feedback and output transformer all skipped |
 | Cali 6L6 | Two 6L6s, long-tailed-pair inverter, feedback and presence |
 | American 6L6 Clean | Four 6L6s with a 12AT7 inverter and light feedback — the clean one |
-| American 6L6 High-Gain | Four 6L6s, feedback and presence |
+| American 6L6 High-Gain | Four 6L6s, with the feedback through a resonance network and the presence off it |
 | Brit EL34 | Four EL34s from a 1981 British 100 W master-volume drawing; the Brit 800's own |
 | Brit Plexi EL34 | Four EL34s from a 1970 drawing of the non-master head: no master, four times the 2203's feedback, a 5 k presence; the Brit Plexi's own |
 | Brit 2205 EL34 | Two EL34s from a 1988 drawing of the 50 W two-channel head: its own low-leak inverter, feedback from the 4 Ω tap; the Brit 2205's own |
 | AC30 EL84 | Four EL84s sharing a 50 ohm cathode resistor, no feedback loop, and a cut control across the inverter; the Brit AC30's own |
-| DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop, with the inverter direct-coupled to the preamplifier; the Brit DR103's own |
+| DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop; the inverter's grids held by a follower on its own divider, and the Hiwatt's presence loop back to the last preamp valve, which behind the Brit DR103 is built into this stage; the Brit DR103's own |
 | Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing; the Cali Rectifier's own |
 | Recto 6L6 Tube | The same stage with its rectifier switch on valve: two 5U4GB, so the rail sits lower and sags under a chord |
 
@@ -228,13 +231,23 @@ nonlinear core, and the feedback loop around all of it. Choosing one behind a
 different circuit is level matched against that circuit's own, so trying
 combinations does not mean chasing the fader.
 
+**Presence** turns the power stage's own presence control -- the one in its
+feedback loop -- and on the AC30 EL84 its **Cut** control instead, which is what
+that amplifier has in the same place. Half way is where the stage has always
+rested, so it changes nothing until it is moved; on most stages that is also the
+pot's own half, so a player's "presence 7" is 70 %. It is greyed where the stage
+has nothing there: the American 6L6 Clean and Deluxe 6V6 (an AB763 has no
+presence), the transistor stages, and Bypass. The DR103 EL34's is the Hiwatt's
+own, a loop from the feedback node back to the last preamp valve, which is why
+that power stage now begins at that valve.
+
 ## Speaker, cabinet and microphones
 
 **Cabinet:** Legacy (the old resistor load and Combo/Stack filter, the default),
 Bypass (the driver on an open baffle), or one of eleven cabinets with real
 dimensions and driver layouts: Brit 1960 4x12, Cali Oversized 4x12, Brit Closed
 4x12, Brit Green 4x12, Brit V30 4x12, Oversized 4x12, American Open 2x12,
-American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12.
+American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12, American Closed 4x12.
 
 Bypass there means *no box*, not no speaker: the driver still radiates, on an
 open baffle, and a microphone still picks it up, which is why it does not sound
@@ -243,7 +256,7 @@ row's own Bypass, and that is bit-identical to Legacy/Off (a test says so).
 
 **Speaker:** Matched (the cabinet's own driver), Bypass (the power stage's
 output, a DI), or Brit V30, Brit Green 25, Brit T75, American Vintage 12,
-American Vintage 10, American Ceramic, American Alnico, Jazz 12. Each is a Thiele–Small
+American Vintage 10, American Ceramic, American Alnico, Jazz 12, Brit K85. Each is a Thiele–Small
 electrical and mechanical model with a lossy voice coil, fitted to the
 manufacturer's impedance and response data where it is published and estimated
 where it is not, and its impedance is solved inside the power
@@ -293,7 +306,7 @@ hardware behind them at all.
 | Green 808 | Ibanez TS808 Tube Screamer (JRC4558D, 1N4148 pair, BC549 buffers) | [green_808.md](docs/models/green_808.md) |
 | Ram Fuzz | Electro-Harmonix Big Muff Pi, 1973 Ram's Head | [big_muff.md](docs/models/big_muff.md) |
 | Cali IIC+ | Mesa/Boogie Mark IIC+ lead channel, 60 W | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
-| American 5150 | Peavey EVH 5150 lead channel | [american_5150.md](docs/models/american_5150.md) |
+| American 5150 | Peavey EVH 5150, the original (1992), lead channel | [american_5150.md](docs/models/american_5150.md) |
 | American Twin | Fender Twin Reverb AB763 (blackface), vibrato channel | [american_twin.md](docs/models/american_twin.md) |
 | American Deluxe | Fender Deluxe Reverb AB763 (blackface), vibrato channel | [american_deluxe.md](docs/models/american_deluxe.md) |
 | American Deluxe Normal | the same amplifier through its Normal channel: no bright cap, no reverb, no tremolo | [american_deluxe.md](docs/models/american_deluxe.md) |
@@ -308,7 +321,7 @@ hardware behind them at all.
 | American 312 | API 312 microphone preamplifier card (2622, 2520, 2503) | [american_312.md](docs/models/american_312.md) |
 | British 4K E | SSL SL 4000 E channel amp, 82E01 microphone amplifier | [british_4k_e.md](docs/models/british_4k_e.md) |
 | Tube 610 | Universal Audio 610-A modular console preamplifier | [tube_610.md](docs/models/tube_610.md) |
-| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone | the pedals above, selectable as circuits in their own right | as listed under Pedals |
+| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
 **Pedals** (the slot in front of whatever is selected)
 
@@ -322,6 +335,7 @@ hardware behind them at all.
 | Round Fuzz | Arbiter Fuzz Face, germanium (1966–68) | [round_fuzz.md](docs/models/round_fuzz.md) |
 | Heavy Metal | Boss HM-2 Heavy Metal, the Japanese original | [heavy_metal.md](docs/models/heavy_metal.md) |
 | Metal Zone | Boss MT-2 Metal Zone | [metal_zone.md](docs/models/metal_zone.md) |
+| Orange Dist | Boss DS-1 Distortion, the TA7136P original (before the 1994 DS-1A) | [orange_dist.md](docs/models/orange_dist.md) |
 
 **Power stages**
 
@@ -329,7 +343,7 @@ hardware behind them at all.
 |---|---|---|
 | Cali 6L6 | Mark IIC+ 60 W: ECC83 inverter, two 6L6GC, feedback and presence | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
 | American 6L6 Clean | Twin Reverb AB763: ECC81 inverter, four 6L6GC, 820 Ω feedback | [american_twin.md](docs/models/american_twin.md) |
-| American 6L6 High-Gain | 5150: ECC83 inverter, four 6L6GC, 39 k feedback | [american_5150.md](docs/models/american_5150.md) |
+| American 6L6 High-Gain | 5150: ECC83 inverter, four 6L6GC, 39 k feedback through the resonance network (it rests at noon; no knob) | [american_5150.md](docs/models/american_5150.md) |
 | Brit EL34 | JCM800 2203: four EL34 at −42 V, feedback from the 4 Ω tap | [brit_el34.md](docs/models/brit_el34.md) |
 | Brit Plexi EL34 | 1959 Super Lead: the same iron with no master, 47 k feedback | [brit_plexi.md](docs/models/brit_plexi.md) |
 | Brit 2205 EL34 | JCM800 2205: two EL34 at −36 V, 330 k / 120 k inverter leaks, Hammond 1750N replacement-iron data | [brit_2205.md](docs/models/brit_2205.md) |
@@ -354,8 +368,9 @@ published and estimated where they are not ([cabinets.md](docs/models/cabinets.m
 | American Open 2x12 | Fender Twin Reverb combo | American Ceramic | Jensen C12N |
 | American Open 1x12 | Fender '65 Deluxe Reverb | American Alnico | Jensen P12N |
 | Closed 1x12 | Marshall 1912 | Jazz 12 | Roland 30-103D (the JC-120's) |
-| Closed 2x12 | Marshall 1936 | | |
+| Closed 2x12 | Marshall 1936 | Brit K85 | Celestion G12K-85 (from G12K-100 data) |
 | Jazz Open 2x12 | Roland JC-120 combo | | |
+| American Closed 4x12 | Peavey 412M, late 1980s | | |
 | Oversized 4x12 | *generic* | | |
 | Combo / Stack (Legacy) | *generic* filters, kept for old sessions | | |
 

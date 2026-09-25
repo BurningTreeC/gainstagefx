@@ -70,6 +70,10 @@ pub const PRESENCE: usize = 0;
 /// a phase inverter that wants about five.
 pub const MASTER: usize = 1;
 
+/// The resonance control, where a stage has one: only the Peavey 5150's
+/// (`FeedbackNetwork`). No panel knob; it rests at its `rest`.
+pub const RESONANCE: usize = 2;
+
 /// Everything that differs between one amplifier's power stage and another's.
 ///
 /// Grouped rather than passed as a row of bare numbers because they are all
@@ -212,6 +216,163 @@ pub struct PowerSpec {
     pub cut_cap: f64,
     /// Where the cut control rests, since the panel has no knob for it.
     pub cut_rest: f64,
+    /// A driver stage built inside the power stage, where the amplifier's own
+    /// presence loop needs one: only the Hiwatt's. `None` everywhere else. See
+    /// `DriverSpec`.
+    pub driver: Option<&'static DriverSpec>,
+    /// A feedback path of the Peavey kind, where the loop reaches the tail
+    /// through a resonance network and a coupling capacitor and the presence
+    /// control shunts the loop before it gets there. `None` is the Marshall
+    /// kind above (`feedback` straight to the tail, `presence_pot` across it).
+    pub feedback_network: Option<&'static FeedbackNetwork>,
+}
+
+/// The Peavey 5150's feedback path, from the original's preamp and tube-board
+/// sheets ("VHALEN 120 PREAMP BD.", 81501510, 5-FEB-92, sheets 1 and 2):
+///
+/// `feedback` (R56, 39 k) from the output transformer into **VR8 RESONANCE**,
+/// 1 M audio wired as a variable resistor with **C12 .0068** across it; then
+/// **C30 22 uF** into the tail (R57's node). At that middle node **VR9
+/// PRESENCE**, 10 k audio, hangs to ground with **C8 1 uF** to its top and
+/// **C62 .033** to its wiper.
+///
+/// Resonance up puts resistance in series with the loop below C12's corner, so
+/// the bottom is fed back less and comes up: the "depth" of this family.
+/// Presence up (wiper to ground) shunts the top of the loop away, so the top
+/// comes up. The clockwise arrows are the drawing's. C8's "1P10" is read as 1 uF
+/// (PLAUSIBLE); the others are DOCUMENTED.
+#[derive(Clone, Copy, Debug)]
+pub struct FeedbackNetwork {
+    pub resonance_pot: f64,
+    pub resonance_cap: f64,
+    /// Where the resonance control rests: there is no panel knob for it.
+    pub resonance_rest: f64,
+    pub coupling: f64,
+    pub presence_pot: f64,
+    pub presence_top_cap: f64,
+    pub presence_wiper_cap: f64,
+}
+
+impl FeedbackNetwork {
+    /// The original 5150's. The resonance rest is ESTIMATED: noon, where a
+    /// control nobody has set sits.
+    pub const PEAVEY_5150: FeedbackNetwork = FeedbackNetwork {
+        resonance_pot: 1_000_000.0,
+        resonance_cap: 0.0068e-6,
+        resonance_rest: 0.5,
+        coupling: 22e-6,
+        presence_pot: 10_000.0,
+        presence_top_cap: 1e-6,
+        presence_wiper_cap: 0.033e-6,
+    };
+}
+
+/// The last gain stage and the phase inverter's grid network, built inside the
+/// power stage rather than at the end of the preamplifier -- which is where
+/// the Hiwatt DR103's presence control needs them.
+///
+/// Hiwatt, "DR103 PREAMPLIFIER CIRCUIT DIAGRAM", Issue 4 (19/05/95), read at
+/// 300 dpi (`docs/schematics/hiwatt_100w_dr103.pdf`, page 4):
+///
+/// - **V3a** is a plain gain stage from the master's wiper: 100 k plate from
+///   H.T. SUPPLY 3, 1k5 cathode, unbypassed. Its plate goes through **47 nF**
+///   straight to the inverter's driven grid. That is the signal path.
+/// - **V3b** carries no signal. Its plate is on H.T. SUPPLY 3, its grid on a
+///   divider from the same rail (1 M up, 220 k down), its cathode on 220 k: a
+///   stiff direct voltage, about a fifth of the rail, which both inverter grids
+///   return to -- the driven one through **100 k**, the other through **1 M**.
+///   A grid held by a follower cannot drift when it is driven hard; that part of
+///   the Hiwatt legend is right, but the follower holds the grids, it does not
+///   drive them.
+/// - The feedback node (the 22 k / 2k2 tail junction, where the 16 ohm tap's
+///   10 k lands) has **470 R and 10 nF** in series to ground.
+/// - **PRESENCE**, 100 k linear: one end through **100 nF** to the feedback
+///   node, the other through **1000 pF** to V3a's plate, the wiper through
+///   **470 R** to ground. Turned up (wiper at the feedback end) it shunts the
+///   top of the band out of the loop, so less of it is fed back; turned down
+///   (wiper at the plate end) it hangs 1000 pF and 470 R across V3a's plate and
+///   takes the top off before the inverter. Which end is clockwise is not on the
+///   drawing; up is the bright end, as on every presence control. ESTIMATED.
+///
+/// The `1000 pF`'s last digit is damaged on the scan; four figures and "pF" are
+/// legible. PLAUSIBLE.
+///
+/// Until 2026-09-25 the model had V3b as the signal path -- its grid on "1.8 M
+/// with 22 nF across it into 1 M" from V3a's plate, which is on neither of
+/// Hiwatt's sheets -- and no presence at all.
+#[derive(Clone, Copy, Debug)]
+pub struct DriverSpec {
+    /// Whether V3a is built. The Hiwatt's own chain has it; another
+    /// preamplifier chosen in front of this power stage does not get it, and
+    /// drives V3a's plate node -- the inverter's coupling capacitor and the
+    /// presence loop -- through `plate_source` instead. See
+    /// `PowerSpec::DR103_EL34_RETURN`.
+    pub gain_stage: bool,
+    /// V3a's output impedance, which is what drives that node when V3a is not
+    /// built: its plate resistance with the unbypassed cathode,
+    /// `rp + (mu + 1) Rk`, against its 100 k load. DERIVED from the ECC83's
+    /// published rp 62.5 k and mu 100: 214 k in parallel with 100 k, 68 k. It
+    /// matters: the node carries the presence loop and the grid returns to a
+    /// stiff 100 k, and a stiffer source than a valve's plate drives grid
+    /// current no Hiwatt could.
+    pub plate_source: f64,
+    pub tube: TriodeSpec,
+    /// V3a's plate load and cathode resistor.
+    pub plate: f64,
+    pub cathode: f64,
+    /// V3a's plate to the driven inverter grid.
+    pub couple: f64,
+    /// V3b's grid divider from the rail, and its cathode load.
+    pub reference_upper: f64,
+    pub reference_lower: f64,
+    pub reference_load: f64,
+    /// From V3b's cathode to the driven grid, and to the other grid.
+    pub leak_driven: f64,
+    pub leak_other: f64,
+    /// The series resistor and capacitor from the feedback node to ground.
+    pub tail_shunt_r: f64,
+    pub tail_shunt_c: f64,
+    /// The presence control: its track, the capacitor to the feedback node,
+    /// the capacitor to V3a's plate, and the wiper's resistor to ground.
+    pub presence_pot: f64,
+    pub presence_feedback_cap: f64,
+    pub presence_plate_cap: f64,
+    pub presence_wiper: f64,
+    /// Where the presence control rests.
+    pub presence_rest: f64,
+}
+
+impl DriverSpec {
+    /// The Hiwatt DR103's, Issue 4. Every value DOCUMENTED except the presence
+    /// control's direction (ESTIMATED) and the 1000 pF's damaged digit
+    /// (PLAUSIBLE); see above.
+    pub const HIWATT_DR103: DriverSpec = DriverSpec {
+        gain_stage: true,
+        plate_source: 68_000.0,
+        tube: TriodeSpec::ECC83,
+        plate: 100_000.0,
+        cathode: 1_500.0,
+        couple: 47e-9,
+        reference_upper: 1_000_000.0,
+        reference_lower: 220_000.0,
+        reference_load: 220_000.0,
+        leak_driven: 100_000.0,
+        leak_other: 1_000_000.0,
+        tail_shunt_r: 470.0,
+        tail_shunt_c: 10e-9,
+        presence_pot: 100_000.0,
+        presence_feedback_cap: 100e-9,
+        presence_plate_cap: 1_000e-12,
+        presence_wiper: 470.0,
+        presence_rest: 0.5,
+    };
+
+    /// The same network with no V3a: what another preamplifier meets when it
+    /// is put in front of this power stage.
+    pub const HIWATT_DR103_RETURN: DriverSpec = DriverSpec {
+        gain_stage: false,
+        ..Self::HIWATT_DR103
+    };
 }
 
 impl PowerSpec {
@@ -268,6 +429,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The 1959 Super Lead's, as Unicord drew it in July 1970 (70-6-11 issue B):
@@ -341,6 +504,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The JCM800 2205's, from Marshall's "2205 STD Output Stage & PSU", issue 2
@@ -429,6 +594,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The AC30/6 Top Boost's, from the 1974 Dallas drawing Sc/V/1313, checked
@@ -514,6 +681,8 @@ impl PowerSpec {
         // A little cut, which is where an AC30 usually sits. The panel has no
         // knob for it yet.
         cut_rest: 0.2,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The DR103's, from Hiwatt's own output-stage (Issue 1, 1994) and power
@@ -529,15 +698,14 @@ impl PowerSpec {
         // The master volume is in the preamplifier, where the drawing has it.
         master: 1_000_000.0,
         master_rest: 1.0,
-        // No coupling capacitor: the driver's cathode follower holds the grids.
+        // The grid network is the driver's (`DriverSpec::HIWATT_DR103`): V3a's
+        // plate couples in through 47 nF and V3b holds both grids. These four
+        // are unused with a driver.
         pi_couple: 0.0,
-        // Where that follower's cathode sits (`circuits::dr103`, measured in
-        // `tests/dr103.rs`). Ampbooks reads about 73 V on the real amplifier.
-        driver_volts: crate::circuits::dr103::DRIVER_VOLTS,
+        driver_volts: 0.0,
         pi_stopper: 0.0,
-        // 100 k and 1 M in series from the driven grid to the junction.
-        pi_leak_upper: 1_100_000.0,
-        pi_leak_lower: 1_000_000.0,
+        pi_leak_upper: 0.0,
+        pi_leak_lower: 0.0,
         // The grid leaks return to the cathodes themselves.
         pi_cathode: 0.0,
         // 22 k from there to the tail node, 2k2 from the tail to ground, and the
@@ -547,9 +715,10 @@ impl PowerSpec {
         pi_cross: 100e-9,
         pi_plate_driven: 82_000.0,
         pi_plate_other: 91_000.0,
-        // H.T. SUPPLY 3. ESTIMATED: behind the supply sheet's 100 R and 1 k from
-        // the 480 V reservoir. The preamplifier's own rail is further down the
-        // chain; see `circuits::dr103::RAIL`.
+        // H.T. SUPPLY 3, which V3a, V3b and the inverter all hang on. ESTIMATED:
+        // behind the supply sheet's 100 R and 1 k from the 480 V reservoir. The
+        // preamplifier's V1 and V2 are further down the chain, behind the 10 k
+        // droppers; see `circuits::dr103::RAIL` for the conflict between the two.
         pi_supply: 465.0,
         // Issue 4 labels every preamp valve ECC83; the late-60s amplifier had an
         // ECC81 here. See the research log.
@@ -589,13 +758,31 @@ impl PowerSpec {
         speaker: 8.0,
         // 10 k from the 16 ohm tap, which is 7.07 k from the 8 ohm one.
         feedback: 7_071.0,
-        // The presence control is in the preamplifier's feedback path and is not
-        // built; see the research log.
+        // The presence control is the driver's, not this Marshall-style one.
         presence_pot: 0.0,
         presence_cap: 0.0,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: Some(&DriverSpec::HIWATT_DR103),
+        feedback_network: None,
+    };
+
+    /// The DR103's power stage as another preamplifier meets it: the Hiwatt's
+    /// inverter, grid network, feedback and presence, with the input where
+    /// V3a's plate would be rather than at V3a's grid. V3a is the Hiwatt's own
+    /// last preamp valve, and putting a whole second preamplifier's output
+    /// through it would be two preamplifiers, not a power amplifier.
+    ///
+    /// Its master is a 100 k track rather than 1 M: in a custom chain it rests
+    /// at `OVERRIDE_MASTER_REST`, and a 1 M wiper there would be a couple of
+    /// hundred kilohms of source into the 100 k grid return. APPROXIMATED, as
+    /// every override master is -- the amplifier has no return jack.
+    pub const DR103_EL34_RETURN: PowerSpec = PowerSpec {
+        name: "DR103 EL34 (from its inverter)",
+        master: 100_000.0,
+        driver: Some(&DriverSpec::HIWATT_DR103_RETURN),
+        ..Self::DR103_EL34
     };
 
     /// The Dual Rectifier's, from Mesa's own "DUAL RECTIFIER POWER AMP" sheet.
@@ -664,6 +851,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The same amplifier with its rectifier switch on VALVE rather than SILICON
@@ -736,6 +925,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The Peavey EVH 5150's, read off page 5 of Peavey's drawing at 200 dpi.
@@ -790,12 +981,15 @@ impl PowerSpec {
         core_sharpness: 7.0,
         speaker: 8.0,
 
-        feedback: 39_000.0,     // R56
-        presence_pot: 10_000.0, // VR9
-        presence_cap: 0.033e-6, // C62
+        feedback: 39_000.0, // R56
+        // The presence is the feedback network's (`FeedbackNetwork`).
+        presence_pot: 0.0,
+        presence_cap: 0.0,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: Some(&FeedbackNetwork::PEAVEY_5150),
     };
 
     /// The Mesa Boogie Mark IIC+'s.
@@ -871,6 +1065,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     /// The Fender Twin Reverb AB763's, off the manufacturer's schematic.
@@ -1010,6 +1206,8 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 
     pub const TWIN: PowerSpec = PowerSpec {
@@ -1091,11 +1289,36 @@ impl PowerSpec {
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
     };
 }
 
 /// The power amplifier as a netlist, taking volts at its input and giving
 /// volts across the speaker.
+impl PowerSpec {
+    /// What this stage's control 0 (`PRESENCE`) is on its own front panel,
+    /// or `None` where it has nothing there.
+    ///
+    /// Most have a **presence** control in the feedback loop. The AC30 has no
+    /// loop and puts a **cut** control across its output grids in the same
+    /// slot. The AB763s have neither (their presence capacitor is written as
+    /// an open circuit). The DR103's is part of its driver (`DriverSpec`).
+    pub fn presence_name(&self) -> Option<&'static str> {
+        if self.driver.is_some_and(|d| d.presence_pot > 0.0)
+            || self.feedback_network.is_some_and(|f| f.presence_pot > 0.0)
+        {
+            Some("PRESENCE")
+        } else if self.cut_pot > 0.0 {
+            Some("CUT")
+        } else if self.feedback > 0.0 && self.presence_pot > 0.0 && self.presence_cap > 1e-12 {
+            Some("PRESENCE")
+        } else {
+            None
+        }
+    }
+}
+
 pub fn build(spec: &PowerSpec, source: f64) -> Result<Circuit, Fault> {
     tap(spec, source, "spk")
 }
@@ -1222,7 +1445,26 @@ fn assemble(
     // hard it is played. `pi_couple` of zero says so, and then `pi_leak_upper`
     // and `pi_leak_lower` are those two resistors rather than a leak chain.
     let direct = spec.pi_couple <= 0.0;
-    if direct {
+    if let Some(d) = spec.driver {
+        // The Hiwatt's: V3a amplifies and couples in through a capacitor, V3b
+        // holds both grids and carries no signal. See `DriverSpec`. Without
+        // the gain stage the input stands where V3a's plate would.
+        if d.gain_stage {
+            net.resistor("v3a_k", "gnd", d.cathode)
+                .supply("v3a_p", d.plate, spec.pi_supply)
+                .triode("v3a_p", master_node, "v3a_k", d.tube);
+        } else {
+            net.resistor(master_node, "v3a_p", d.plate_source);
+        }
+        net.supply("v3b_g", d.reference_upper, spec.pi_supply)
+            .resistor("v3b_g", "gnd", d.reference_lower)
+            .supply("v3b_p", 1.0, spec.pi_supply)
+            .triode("v3b_p", "v3b_g", "v3b_k", d.tube)
+            .resistor("v3b_k", "gnd", d.reference_load)
+            .capacitor("v3a_p", "pi_a", d.couple)
+            .resistor("v3b_k", "pi_a", d.leak_driven)
+            .resistor("v3b_k", "pi_g2", d.leak_other);
+    } else if direct {
         net.resistor(master_node, "pi_a", spec.pi_leak_upper);
     } else {
         net.capacitor(master_node, "pi_a", spec.pi_couple).resistor(
@@ -1256,12 +1498,15 @@ fn assemble(
         "pi_b"
     };
     // The second grid comes off the same place the first one does: the leak
-    // junction when there is one, the driver when there is not.
-    net.resistor(
-        if direct { master_node } else { "pi_b" },
-        "pi_g2",
-        spec.pi_leak_lower,
-    );
+    // junction when there is one, the driver when there is not. (A driver
+    // stage has already returned it to V3b.)
+    if spec.driver.is_none() {
+        net.resistor(
+            if direct { master_node } else { "pi_b" },
+            "pi_g2",
+            spec.pi_leak_lower,
+        );
+    }
     // Where the tail lands: a node of its own when a feedback loop comes back to
     // it, ground when there is no loop to bring back.
     let tail = if spec.pi_tail_lower > 0.0 {
@@ -1522,7 +1767,35 @@ fn assemble(
     // removes treble *from the loop* -- which puts treble back in the output.
     // A presence control is the only tone control that works by taking
     // something away from the amplifier's own correction.
-    if spec.feedback > 0.0 {
+    if let (true, Some(f)) = (spec.feedback > 0.0, spec.feedback_network) {
+        // The Peavey's: R56 into the resonance network, then C30 into the tail,
+        // with the presence hanging off the node between. `pot(a, wiper, b)`
+        // puts `R f(p)` between wiper and `b`: resonance is a variable resistor
+        // that puts resistance in as it turns up (the reverse law, as a bass
+        // control's), presence has its wiper at ground turned up.
+        net.resistor("spk", "fb_r", spec.feedback) // R56
+            .capacitor("fb_r", "fb_p", f.resonance_cap) // C12
+            .rest(RESONANCE, f.resonance_rest)
+            .pot(
+                "fb_r",
+                "fb_p",
+                "fb_p",
+                f.resonance_pot,
+                Taper::ReverseAudio,
+                RESONANCE,
+            ) // VR8
+            .capacitor("fb_p", tail, f.coupling) // C30
+            .capacitor("fb_p", "pres_top", f.presence_top_cap) // C8
+            .capacitor("fb_p", "pres_w", f.presence_wiper_cap) // C62
+            .pot(
+                "gnd",
+                "pres_w",
+                "pres_top",
+                f.presence_pot,
+                Taper::Audio,
+                PRESENCE,
+            ); // VR9
+    } else if spec.feedback > 0.0 {
         net.resistor("spk", tail, spec.feedback);
         // Not every amplifier with a loop puts a presence control in it. The
         // Hiwatt's is in its preamplifier and is not built; see `circuits::dr103`.
@@ -1535,6 +1808,25 @@ fn assemble(
                 Taper::Audio,
                 PRESENCE,
             );
+        }
+        // The Hiwatt's feedback node and presence, which reach back to V3a's
+        // plate. `pot(a, wiper, b)` puts `R f(p)` between wiper and `b`, so
+        // turned up the wiper is at the feedback end. See `DriverSpec`.
+        if let Some(d) = spec.driver {
+            net.resistor(tail, "fb_shunt", d.tail_shunt_r)
+                .capacitor("fb_shunt", "gnd", d.tail_shunt_c)
+                .capacitor(tail, "pres_fb", d.presence_feedback_cap)
+                .rest(PRESENCE, d.presence_rest)
+                .pot(
+                    "pres_fb",
+                    "pres_w",
+                    "pres_plate",
+                    d.presence_pot,
+                    Taper::Linear,
+                    PRESENCE,
+                )
+                .resistor("pres_w", "gnd", d.presence_wiper)
+                .capacitor("pres_plate", "v3a_p", d.presence_plate_cap);
         }
     }
 

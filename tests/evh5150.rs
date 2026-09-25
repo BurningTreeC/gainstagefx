@@ -1,13 +1,13 @@
 //! The 5150 lead preamplifier, against what its schematic says.
 
-use gainstagefx::circuits::evh5150::{self, PRE, TONE_STACK_INPUT};
+use gainstagefx::circuits::evh5150::{self, BASS, MIDDLE, POST_LOAD, PRE, TREBLE};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::time::Simulation;
 
 const RATE: f64 = 96_000.0;
 
 fn at(node: &str, hz: f64, volts: f64, pre: f64) -> measure::Measured {
-    let c = evh5150::tap(10_000.0, TONE_STACK_INPUT, node).expect("builds");
+    let c = evh5150::tap(10_000.0, POST_LOAD, node).expect("builds");
     let mut sim = Simulation::new(c, RATE);
     sim.set_control(PRE, pre);
     let t = Tone::near(RATE, 16_384, hz, volts);
@@ -95,19 +95,19 @@ fn the_last_stage_is_a_unity_gain_driver() {
     );
 }
 
-/// R89 470 k into the stack's 33 k is twenty four decibels lost between the
-/// preamplifier and the tone controls, before the stack itself cuts anything.
+/// R89 470 k into R24's 33 k is twenty four decibels lost between the
+/// preamplifier and the tone controls, before the stack itself cuts anything
+/// -- and the stack, now built, loads that node further (its own input, and
+/// C59 with R94), so the loss is R24's and a few decibels more.
 #[test]
 fn the_tone_stack_is_handed_a_quiet_signal() {
     let out = at("out", 1_000.0, 1e-6, 1.0).gain_db();
     let stack = at("stack", 1_000.0, 1e-6, 1.0).gain_db();
-    let arithmetic = 20.0 * (TONE_STACK_INPUT / (470_000.0 + TONE_STACK_INPUT)).log10();
-    println!("{out:.1} dB to {stack:.1} dB, arithmetic says {arithmetic:.1}");
-    assert!(
-        ((stack - out) - arithmetic).abs() < 1.5,
-        "measured {:.1} dB against {arithmetic:.1} from the values",
-        stack - out
-    );
+    let r24 = 20.0 * (33_000.0f64 / (470_000.0 + 33_000.0)).log10();
+    let loss = stack - out;
+    println!("{out:.1} dB to {stack:.1} dB: {loss:.1} dB, R24 alone {r24:.1}");
+    assert!(loss < r24 + 0.5, "less than R24 alone: {loss:.1}");
+    assert!(loss > r24 - 6.0, "{loss:.1} dB against R24's {r24:.1}");
 }
 
 /// The bottom end is down on the midrange before any tone control is reached.
@@ -171,18 +171,88 @@ fn every_stage_reaches_an_operating_point() {
     for node in [
         "v1a_p", "pre_w", "v1b_p", "v2a_p", "v2b_p", "v5b_p", "out", "stack",
     ] {
-        let c = evh5150::tap(10_000.0, TONE_STACK_INPUT, node).expect("builds");
+        let c = evh5150::tap(10_000.0, POST_LOAD, node).expect("builds");
         let mut sim = Simulation::new(c, RATE);
         assert!(sim.find_operating_point(), "{node} never settled");
     }
 
     // Silence in, silence out -- at the jack, not at a plate, which sits some
     // hundreds of volts up by design.
-    let c = evh5150::tap(10_000.0, TONE_STACK_INPUT, "stack").expect("builds");
+    let c = evh5150::tap(10_000.0, POST_LOAD, "stack").expect("builds");
     let mut sim = Simulation::new(c, RATE);
     let mut worst: f64 = 0.0;
     for _ in 0..(RATE as usize / 4) {
         worst = worst.max(sim.process(0.0).abs());
     }
     assert!(worst < 0.05, "the output put out {worst:.4} on silence");
+}
+
+/// The drawing's own tone stack (built 2026-09-25): each control works its own
+/// end of the band, measured from the stack's input to the treble wiper at a
+/// microvolt with the other two at noon.
+#[test]
+fn the_stack_controls_each_work_their_band() {
+    let gain = |node: &str, controls: [f64; 4], hz: f64| {
+        let c = evh5150::tap(10_000.0, POST_LOAD, node).expect("builds");
+        let mut sim = Simulation::new(c, RATE);
+        for (which, v) in controls.iter().enumerate() {
+            sim.set_control(which, *v);
+        }
+        let t = Tone::near(RATE, 16_384, hz, 1e-6);
+        measure::run(t, (RATE / 4.0) as usize, |x| sim.process(x)).gain_db()
+    };
+    let through =
+        |controls: [f64; 4], hz: f64| gain("tone", controls, hz) - gain("stack", controls, hz);
+    let with = |which: usize, v: f64| {
+        let mut c = [0.5; 4];
+        c[which] = v;
+        c
+    };
+    let span =
+        |which: usize, hz: f64| through(with(which, 1.0), hz) - through(with(which, 0.0), hz);
+    let (bass, mid, treble) = (span(BASS, 80.0), span(MIDDLE, 600.0), span(TREBLE, 5_000.0));
+    println!("bass {bass:.1} dB at 80 Hz, middle {mid:.1} at 600 Hz, treble {treble:.1} at 5 kHz");
+    assert!(
+        bass > 8.0 && mid > 6.0 && treble > 8.0,
+        "{bass} {mid} {treble}"
+    );
+    // And each does more in its own band than the others do there.
+    assert!(bass > span(TREBLE, 80.0));
+    assert!(treble > span(BASS, 5_000.0));
+    // At noon the familiar shape: a scoop in the middle.
+    let noon = |hz| through([0.5; 4], hz);
+    let (lo, mid_noon, hi) = (noon(100.0), noon(500.0), noon(3_000.0));
+    println!("noon: {lo:.1} dB at 100 Hz, {mid_noon:.1} at 500 Hz, {hi:.1} at 3 kHz");
+    assert!(mid_noon < lo && mid_noon < hi, "no middle scoop at noon");
+}
+
+/// The power stage's feedback is the original's (built 2026-09-25): R56 into
+/// the resonance network (VR8 1 M with C12 .0068 across it), C30 into the
+/// tail, the presence (VR9 10 k with C8 and C62) off the node between.
+/// Resonance up feeds the bottom back less, so it comes up; presence up shunts
+/// the top out of the loop, so it comes up. Small signal, into the stage's
+/// resistor.
+#[test]
+fn resonance_lifts_the_bottom_and_presence_the_top() {
+    use gainstagefx::circuits::power::{self, PowerSpec, PRESENCE, RESONANCE};
+    let gain = |resonance: f64, presence: f64, hz: f64| {
+        let mut s = Simulation::new(power::build(&PowerSpec::EVH5150, 10_000.0).unwrap(), RATE);
+        s.set_control(RESONANCE, resonance);
+        s.set_control(PRESENCE, presence);
+        assert!(s.find_operating_point());
+        let t = Tone::near(RATE, 16_384, hz, 1e-3);
+        measure::run(t, (RATE / 4.0) as usize, |x| s.process(x)).gain_db()
+    };
+    let bottom = |r: f64| gain(r, 0.5, 80.0) - gain(r, 0.5, 1_000.0);
+    let top = |p: f64| gain(0.5, p, 5_000.0) - gain(0.5, p, 1_000.0);
+    let (r0, r1) = (bottom(0.0), bottom(1.0));
+    let (p0, p1) = (top(0.0), top(1.0));
+    println!("80 Hz over 1 kHz: {r0:+.1} dB resonance down, {r1:+.1} up");
+    println!("5 kHz over 1 kHz: {p0:+.1} dB presence down, {p1:+.1} up");
+    assert!(
+        r1 - r0 > 4.0,
+        "resonance moves the bottom by {:.1} dB",
+        r1 - r0
+    );
+    assert!(p1 - p0 > 3.0, "presence moves the top by {:.1} dB", p1 - p0);
 }

@@ -7,7 +7,7 @@ use gainstagefx::acoustics::speaker::SpeakerProfile;
 use gainstagefx::params::{CabModel, SpeakerModel};
 use gainstagefx::presets::PRESETS;
 use gainstagefx::voice::{CabinetChoice, Chain, SpeakerChoice, NOMINAL_DBFS};
-use measurement::{modelled, rms_error};
+use measurement::{modelled, rms_error, rms_error_in};
 
 /// The breakup voicing was fitted to a JC-120 measured through its return jack,
 /// and this holds the fit: drawn at the measurement's placement, the Jazz 12
@@ -18,6 +18,21 @@ fn the_jazz_12_draws_the_jc120_measurement() {
     let e = rms_error(SpeakerProfile::JAZZ_12);
     println!("{e:.3} dB rms");
     assert!(e < 1.3, "{e:.2} dB rms from the measurement");
+}
+
+/// The measurement is of a two-cone cabinet, and the whole two-cone model now
+/// follows it too: 1.58 dB rms, against 1.16 through the near cone alone. With
+/// the stage's old one-pole directivity and rim distances for the far cone it
+/// was 2.67 dB, with comb-filter notches the measurement does not have -- the
+/// one measurement of a real multi-driver cabinet this repository has, and the
+/// check on the far-field fix in `AcousticStage`. See `CABINET_MODEL.md`.
+#[test]
+fn the_whole_two_cone_cabinet_follows_the_measurement() {
+    let two = rms_error_in(&CabinetProfile::JAZZ_OPEN_212, SpeakerProfile::JAZZ_12);
+    let one = rms_error(SpeakerProfile::JAZZ_12);
+    println!("two cones {two:.3} dB rms, one {one:.3}");
+    assert!(two < 1.8, "{two:.2} dB rms through the two-cone cabinet");
+    assert!(two - one < 0.6, "the second cone costs {:.2} dB", two - one);
 }
 
 /// The measurement's author names two features as the JC-120's hardness: a

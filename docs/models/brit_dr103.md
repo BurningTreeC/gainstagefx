@@ -43,15 +43,17 @@ V2b: cathode follower, direct-coupled, 100k cathode load, 47 nF across its own 1
 tone stack from the follower: 1000pF and 220pF to TREBLE 220k lin, 220k and 22k around it,
   100k slope, 47 nF to BASS 470k log, 47 nF to MIDDLE 100k lin, 1000pF to ground
   treble wiper -- 22k -- MASTER VOLUME 220k lin
-V3a: 100k plate, 1k5 cathode        V3b: cathode follower, 220k cathode load
-  follower -- 47 nF -- phase inverter
-V4 long-tailed pair: 82k and 91k plates; grid A returns through 100k + 1M, grid B through
-  1M, both to the junction of the 22k cathode resistor and the 2k2 tail; 100 nF from that
-  junction to grid B; 47 nF from each plate to the output valves
+V3a: 100k plate from H.T. SUPPLY 3, 1k5 cathode (unbypassed); its plate -- 47 nF -- V4a grid
+V3b: NO SIGNAL. Plate on H.T. SUPPLY 3; grid on 1M from H.T. SUPPLY 3 and 220k to ground;
+  cathode on 220k. Its cathode holds both inverter grids: V4a through 100k, V4b through 1M
+V4 long-tailed pair: 82k and 91k plates; cathodes through 22k to the tail, 2k2 to ground;
+  100 nF from the tail to grid B; 47 nF from each plate to the output valves
 output: 22k grid stoppers (the Hiwatt signature), 100k grid leaks to a -38 V fixed bias,
   100 ohm screen stoppers, four EL34, Hiwatt TH7549/2 transformer, 4/8/16 ohm taps
-feedback: 10k from the 16 ohm tap to the 22k/2k2 junction
-presence: 100k lin with 100 nF and 470R/10nF, into the driver's grid (positive feedback)
+feedback: 10k from the 16 ohm tap to the 22k/2k2 junction, with 470R and 10nF in series
+  from that junction to ground
+presence: 100k lin; one end 100 nF to the feedback junction, the other 1000 pF to V3a's
+  plate, the wiper 470R to ground
 supply: silicon bridge, 2 x 220 uF 350 V, standby to HT1; 100R 5W to HT2; 470R 10W to the
   screens; 1k to HT3; 47k and 22k to the preamp rails; bias -38 V from its own winding
 ```
@@ -62,10 +64,11 @@ supply: silicon bridge, 2 x 220 uF 350 V, standby to HT1; 100R 5W to HT2; 470R 1
    stoppers, the 100 ohm screen stoppers, the four EL34s on fixed bias, and the 10k
    feedback loop.
 7. **Approximated and estimated.**
-   - **The presence control is not modelled.** It works by feeding high-frequency
-     feedback from the output transformer back into the *preamplifier's* cathode
-     follower, and the preamplifier and power stage are separate netlists here. Leaving
-     it out is a documented omission, not a substitution.
+   - **The presence control** (built 2026-09-25): a loop from the feedback junction back
+     to V3a's plate. To keep a loop inside one netlist, V3a and V3b are built in the power
+     stage (`power::DriverSpec::HIWATT_DR103`) and the preamplifier ends at the master's
+     wiper, which V3a's grid takes without drawing current. Which end of the track is
+     clockwise is not on the drawing: up is the bright end. ESTIMATED.
    - Supplies: the sheets give one preamp voltage (V2a's plate at 140 V) and no others.
      HT1 480 V ESTIMATED (Circuit Codex reads the sheet the same way), and the droppers
      are the sheet's.
@@ -75,11 +78,61 @@ supply: silicon bridge, 2 x 220 uF 350 V, standby to HT1; 100R 5W to HT2; 470R 1
      no Hiwatt winding data was found. The 16 ohm tap's 10 k feedback is built as 7.07 k
      from the 8 ohm tap, which passes the same current.
    - Phase inverter valve: ECC83 per the factory sheet (an ECC81 on the late-60s amp).
-8. **Why.** The presence loop crosses the model's preamp/power boundary; no transformer
-   data; the inverter's exact grid-return wiring was read from Ampbooks' description of
-   this amplifier rather than from the scan, which is not legible at that point.
+8. **Why.** No transformer data; the supply voltages are estimates (see below).
 
-## Measured (`tests/dr103.rs`, `examples/dr103_op.rs`)
+## The driver was wired wrong until 2026-09-25
+
+The first build read the inverter's grid returns from Ampbooks' description rather than
+from the scan, "which is not legible at that point". Rendered at 300 dpi from the same PDF
+(`docs/schematics/hiwatt_100w_dr103.pdf`, page 4) it is legible, and it is not what was
+built:
+
+| | Issue 4, at 300 dpi | built 2026-09-16 |
+|---|---|---|
+| signal into the inverter | V3a's plate through **47 nF** | V3b's cathode, direct |
+| V3b's grid | **1 M from H.T. SUPPLY 3, 220 k to ground** -- a fixed divider | 1.8 M with 22 nF across it from V3a's plate, 1 M to ground |
+| V4a's grid return | **100 k** to V3b's cathode | 1.1 M |
+| feedback junction | 2k2, plus **470 R + 10 nF** to ground | 2k2 |
+| presence | **built** | omitted |
+
+The "1.8 M with 22 nF" is on neither of Hiwatt's sheets, and Ampbooks may be describing
+another revision. So V3b is a DC reference and not a signal stage: it holds the grids a
+fixed fifth of the rail up, and the signal couples in through a capacitor from V3a. The
+"grid a follower holds cannot drift" description survives -- the follower does hold the
+grids -- but the grid is capacitor-coupled to its signal like everyone else's; what the
+Hiwatt has that the others do not is a stiff, low-impedance *return* for it.
+
+## The rail conflict
+
+H.T. SUPPLY 3 feeds V3a, V3b and the inverter directly and V1/V2 through two 10 k
+droppers. Two readings of it disagree:
+
+- The **supply sheet**: 480 V reservoir, 100 R to H.T. SUPPLY 2, 1 k to H.T. SUPPLY 3 --
+  about **465 V** under the preamp's ten-odd milliamps. The power stage uses this
+  (`pi_supply`).
+- The **preamp sheet's one voltage**, V2a's plate at 140 V, which needs the V1/V2 rail
+  near **300 V** (`dr103::RAIL`) with the drawing's 100 k plate and 1 k cathode.
+
+With 465 V, V3b's divider puts the inverter's grids at **88 V** and its bias at -1.2 V;
+Ampbooks reads a real one at 73 V and -2.1 V, which the same divider gives at about 380 V.
+Neither figure is measured on an Issue 4 amplifier; the model keeps the supply sheet's
+and records this.
+
+## Measured since the driver moved (2026-09-25; `tests/dr103.rs`, `examples/dr103_op.rs`)
+
+- V2a's plate 145.8 V (sheet: 140 V).
+- V3a 1.55 mA, plate 310 V; V3b's grid 83.9 V (the divider's 83.8), cathode 87.9 V; the
+  inverter's grids 87.9 V, bias -1.17 V, 216 V plate to cathode.
+- Presence, the power stage alone, 4 kHz against 200 Hz: -2.0 dB turned down, -2.7 dB at
+  half, **+7.4 dB turned up**; 8 kHz is taken away turned down.
+- The chain plays at all five rates with no unsettled solve and no allocation.
+- Behind any other preamplifier the stage is `DR103_EL34_RETURN`: the input stands at
+  V3a's plate through V3a's output impedance, 68 k (DERIVED), and V3a is not built.
+- At the extreme -- every control up, 12 dB over nominal, 7 kHz at 48 kHz -- the whole
+  amplifier leaves 33 of 9,600 samples unsettled against 29 before the change, now in the
+  preamplifier rather than the power stage (`examples/dr103_limits.rs`).
+
+## Measured before the driver moved (2026-09-16; superseded)
 
 - V2a's plate lands at 140.2 V against the sheet's 140 V, which is what the preamp rail
   (300 V) was set from.

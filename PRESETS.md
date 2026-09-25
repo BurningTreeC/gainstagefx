@@ -189,10 +189,10 @@ owner reported it "much too clean"; the reason and the measurements are below.
 | Guitar | "Arm The Homeless", a 1986 Performance Guitar build; "Then I put some EMG pickups in it" (Morello); a 1982 Telecaster for drop-D tracks | DOCUMENTED (Morello to MusicRadar) for the EMGs; models not stated | input trim +3 dB - PLAUSIBLE: an active pickup is a hotter source than a passive one, by an amount no source gives |
 | Amplifier | a **50 W JCM800 2205**, bought after his first Marshall was stolen in 1988, settings found in rehearsal in "1988 or '89", marked on the panel, and never changed: "It's identical. It's unchanged, for every RATM album, every Audioslave song, every show" | DOCUMENTED (Morello: Premier Guitar 2008; MusicRadar) | **Brit 2205**, the 2205's boost channel in its later (1985-89) circuit. Which circuit his amplifier carries is PLAUSIBLE: its build date is not documented |
 | Channel | the **boost channel only** | WIDELY REPORTED (Neural DSP, who modelled the amplifier with him) | the model is the boost channel |
-| Knobs | Gain 9, boost Volume 6, Treble 7, Middle 10, Bass 10, Presence 7; the Master's setting is not established | WIDELY REPORTED (Neural DSP); other secondary sources conflict with it and with each other | Drive 0.9, Bass 1.0, Middle 1.0, Treble 0.7; boost Volume 0.6 is the circuit's resting position; Master 0.5, the calibrated rest. **Presence is not settable** in the plugin (it rests with the power stage) |
+| Knobs | Gain 9, boost Volume 6, Treble 7, Middle 10, Bass 10, Presence 7; the Master's setting is not established | WIDELY REPORTED (Neural DSP); other secondary sources conflict with it and with each other | Drive 0.9, Bass 1.0, Middle 1.0, Treble 0.7; boost Volume 0.6 is the circuit's resting position; Master 0.5, the calibrated rest; **Presence 0.7** (the knob arrived 2026-09-25; the 2205's presence pot rests at half, so 0.7 is the pot's own rotation) |
 | Power | the 2205's own two EL34s | DOCUMENTED (it is the amplifier) | Matched, which is the Brit 2205 EL34 |
 | Pedals | a DOD FX40B EQ, "flat, level slightly raised", for solos; Whammy, Cry Baby, delay, flanger | WIDELY REPORTED | none: nothing here is on the rhythm sound, and the EQ is a solo boost |
-| Cabinet / speaker | a 1987 Peavey 4x12 with Celestion **G12K-85**s | WIDELY REPORTED (Premier Guitar Rig Rundown) | Oversized 4x12 with **Brit T75** (the G12T-75) - APPROXIMATED: no Peavey cabinet or G12K-85 profile; the G12T-75 is the nearest documented Celestion, a high-power ceramic twelve of the same years |
+| Cabinet / speaker | a 1987 Peavey 4x12 with Celestion **G12K-85**s | WIDELY REPORTED (Premier Guitar Rig Rundown) | **American Closed 4x12** (a late-80s Peavey 412M) with its Matched **Brit K85** (the G12K-85, built from Celestion's G12K-100 data) - PLAUSIBLE: which Peavey model is not stated, and the 412M's size is an owner's measurement (see docs/models/cabinets.md, speakers.md). Until 2026-09-25 this was the generic Oversized 4x12 with a G12T-75; the level is held (output trim -6.2 to -5.35 dB, the new pair's 0.85 dB) |
 | Mics | not documented | - | Dynamic 57 and Dynamic 421, close - PLAUSIBLE |
 | Studio | tracked live with the amplifiers in back rooms and a PA in the live room (Garth Richardson) | DOCUMENTED | not modeled |
 
@@ -285,12 +285,14 @@ planned modern-high-gain and bass work in [docs/ROADMAP.md](docs/ROADMAP.md).
 |---|---|
 | Appetite '87 | Rig research. Commonly said to be a rented, modified 1959T; the stock Brit Plexi is not that amplifier |
 | Dirty Chains '92 | Three amplifiers at once, none of them modeled: "Lows: Bogner Fish preamp/VHT amp ... mids: Bogner Ecstasy; highs: Rockman Pocket amp direct" (Dave Jerden), split three ways and recombined |
-| Unknown Garden '94 | A Sunn Model T for much of it, which is not modeled |
-| Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the Super Bass is not modeled and the record is the two together |
-| Never Mind '91, Seattle Ten '91 | The **Mesa/Boogie Studio Preamp** -- a rackmount preamplifier into a solid-state power amp (a Crown Power Base 2) into 4x12s -- which is not modeled. Research: [studio_pre.md](docs/models/studio_pre.md), which is blocked on a legible drawing. Earlier revisions of this table called it a "Studio .22 preamp"; there is no such product, and the Studio .22 is a different amplifier (an EL84 combo). The **Boss DS-1** those sessions also used is researched in [orange_dist.md](docs/models/orange_dist.md) |
-| Desert Deaf '02, Californicated '99, Blood Sugar '91 | Rig research; the documented amplifiers (a Marshall Major, an Ampeg VT) are not modeled |
+| Unknown Garden '94 | A Sunn Model T for much of it, which is not modeled. Researched and cleared on Sunn's own 1973 drawing: [oregon_t.md](docs/models/oregon_t.md); needs a 6550 fit first |
+| Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the record is the two together. The stock 1992 is researched and cleared ([brit_plexi_bass.md](docs/models/brit_plexi_bass.md)); what was done to this one is not documented -- forum accounts conflict between "stock" and "rewired to Super Lead specs", and the second would make it the existing Brit Plexi |
+| Never Mind '91, Seattle Ten '91 | The **Mesa/Boogie Studio Preamp** -- a rackmount preamplifier into a solid-state power amp (a Crown Power Base 2) into 4x12s -- which is not modeled. Research: [studio_pre.md](docs/models/studio_pre.md), which is blocked on a legible drawing. Earlier revisions of this table called it a "Studio .22 preamp"; there is no such product, and the Studio .22 is a different amplifier (an EL84 combo). The **Boss DS-1** those sessions also used is modelled (Orange Dist, [orange_dist.md](docs/models/orange_dist.md)), so only the preamplifier is missing |
+| Desert Deaf '02 | An Ampeg VT-40 and V-4B heads, and Peaveys -- not a Marshall Major, which an earlier revision of this table claimed ([brit_200.md](docs/models/brit_200.md) has the sources) |
+| Californicated '99 | A 1965 JTM45 with a Marshall Super Bass; neither is modeled (the Super Bass is researched: [brit_plexi_bass.md](docs/models/brit_plexi_bass.md)) |
+| Blood Sugar '91 | "Two Marshalls: a guitar head ... and a bass head", which models not stated; rig research |
 | Lead Airship II '69 | Rig research (the amplifier used on the record is disputed) |
-| Paranoia '70 | A Laney Supergroup preamp and a treble booster |
+| Paranoia '70 | A Laney Supergroup Mk I and a modified Dallas Rangemaster, presence, middle and treble on 10 and no bass. Both researched and cleared -- [brum_100.md](docs/models/brum_100.md) on a traced drawing, [treble_boost.md](docs/models/treble_boost.md) as the stock booster, because Iommi's modification is not documented |
 
 ## Catalogue update (2026-09-15)
 
@@ -321,6 +323,23 @@ Level (220 Hz, `tests/presets.rs`): the catalogue spans 10.8 dB (Blackout '80 lo
 `examples/presetlevel.rs` prints the whole list, which is how those trims are chosen.
 
 ## Level
+
+**2026-09-24, the close-mic fix.** Correcting how the other cones of a multi-driver
+cabinet reach a close microphone (`CABINET_MODEL.md`, "Near and far cones") made 45
+close-miked presets 0.5 to 3.1 dB quieter: the neighbours had been adding low-frequency
+energy they should not. Each of those presets' output trims was raised by exactly what
+it lost, measured by `examples/presetlevel.rs` before and after, so every preset sits
+where it did to within 0.05 dB and the catalogue mean is still -7.5 dB. The tone is what
+changed, not the level.
+
+**2026-09-25, circuit corrections.** Every preset whose sound changed was held at its
+level the same way, measured before (at HEAD, in a worktree) and after, to 0.01 dB:
+*Machine Rage '92* (the Peavey 4x12 and G12K-85s, then Presence 7: trim -6.2 to -5.44),
+*Slaughter '95* (the MT-2's factory middle stage: +0.5 to -0.68), *Hi-Headroom Clean*,
+*Hi-Headroom Pushed* and *The Great Wall '79* (the DR103's driver and presence: 2.3 to 2.22,
+2.1 to 2.53, 0.9 to 0.01), and *Ultra Lead* and *Ultra Rhythm*, which now turn the 5150's
+own stack instead of the generic one after the power stage (4.5 to -4.44, 1.9 to -3.96).
+`examples/presetlevel.rs` takes a name fragment for this.
 
 `tests/presets.rs::the_presets_are_level_matched` measures every factory preset through
 `Preset::settings()`, including pedal, power stage and cabinet, and requires the

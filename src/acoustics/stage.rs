@@ -39,6 +39,10 @@ const DISTANCE_MAKEUP: f64 = 0.5;
 const HF_RADIUS: f64 = 0.4;
 /// Piston directivity -3 dB point: `2 J1(x)/x = 0.707` at `x = ka sin(theta) = 2.2`.
 const PISTON_X: f64 = 2.2;
+/// A fourth-order Butterworth low-pass, as two sections: the shape a cone's
+/// directivity is given where the microphone is off the cone's disc. See
+/// `Path::beam`.
+const BEAM_Q: [f64; 2] = [0.541_196_1, 1.306_563];
 /// Samples over which control changes are ramped.
 const RAMP: usize = 64;
 /// Largest proximity boost the leaky integrator is allowed to give, as a ratio.
@@ -87,7 +91,24 @@ struct Path {
     delay: Ramped,
     omni: Ramped,
     gradient: Ramped,
+    /// The cone's directivity when the microphone is in front of its disc: the
+    /// near field, where the far-field law does not hold and one pole, TUNED to
+    /// what placement guides describe between centre and edge, stands in.
     directivity: OnePole,
+    /// And when it is not: a cone a few tens of centimetres to the side, which
+    /// is what every other cone in a close-miked cabinet is. There the disc's
+    /// own directivity applies, `2 J1(x) / x` of the whole cone -- 3 dB down at
+    /// `x = 2.2`, a null at 3.83 and side lobes 17.6 dB down and falling -- and
+    /// one pole on the breakup radius, which falls 6 dB an octave, left the
+    /// neighbours loud enough to comb-filter a close-miked 4x12 by nine to
+    /// thirteen decibels above 2.5 kHz. A fourth-order Butterworth at the same
+    /// -3 dB corner follows the main lobe to within a few decibels and puts
+    /// everything past it below the side lobes. `tests/acoustics.rs` holds the
+    /// close-miked cabinet to its own cone; `tests/jazz_cabinet.rs` holds the
+    /// two-cone JC-120 to a measurement of one.
+    beam: [Biquad; 2],
+    /// Whether `beam` is in the path.
+    far: bool,
     off_axis: OnePole,
     diffraction: OnePole,
     /// Absolute delay before the common minimum was removed, samples.
@@ -131,6 +152,9 @@ impl MicChannel {
     fn reset(&mut self) {
         for path in &mut self.paths {
             path.directivity.reset();
+            for bq in &mut path.beam {
+                bq.reset();
+            }
             path.off_axis.reset();
             path.diffraction.reset();
         }
@@ -429,39 +453,69 @@ impl AcousticStage {
                         omni: f64,
                         gradient: f64,
                         directivity: f64,
+                        far: bool,
                         off: f64,
                         diffraction: f64| {
                 path.absolute = delay;
                 path.omni.aim(omni, snap);
                 path.gradient.aim(gradient, snap);
-                path.directivity.set_lowpass(rate, directivity);
+                path.far = far;
+                if far {
+                    path.directivity.set_lowpass(rate, f64::INFINITY);
+                    for (bq, q) in path.beam.iter_mut().zip(BEAM_Q) {
+                        bq.set_lowpass(rate, directivity, q);
+                    }
+                } else {
+                    path.directivity.set_lowpass(rate, directivity);
+                }
                 path.off_axis.set_lowpass(rate, off);
                 path.diffraction.set_lowpass(rate, diffraction);
             };
             for &(x, y) in drivers {
-                // The whole cone moves together at low frequencies, so the level,
-                // arrival time and incidence come from the nearest point of the cone.
-                // Above breakup only the middle radiates, so the directivity is
-                // taken from the centre.
+                // The cone the microphone is in front of is in its near field: the
+                // whole cone moves together at low frequencies, so the level, arrival
+                // and incidence come from the point of it straight below the capsule,
+                // and above breakup only the middle radiates, so its directivity is
+                // the TUNED one-pole taken from the centre. Any other cone is off to
+                // the side, in its far field, where a piston is a source at its
+                // centre and its directivity is the disc's own (`Path::beam`).
+                //
+                // Measuring a neighbour from its nearest rim instead, as this did,
+                // left it 7.9 dB under the close cone at 4 cm where its centre puts
+                // it at 10.5 (and a baffled piston's near and far fields at 14),
+                // which comb-filtered the close cone's low mids.
+                //
+                // No placement moves a cone from one side of that line to the
+                // other: the microphone's position is clamped to its own cone, and
+                // every other cone's centre is more than a radius away because
+                // cones cannot overlap.
                 let (dx, dy) = (at.0 - x, at.1 - y);
                 let lateral = dx.hypot(dy);
-                let pull = if lateral > radius {
-                    radius / lateral
+                let far = lateral > radius;
+                let v = if far {
+                    (x - at.0, y - at.1, -at.2)
                 } else {
-                    1.0
+                    (0.0, 0.0, -at.2)
                 };
-                let v = (x + dx * pull - at.0, y + dy * pull - at.1, -at.2);
                 let length = (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt().max(0.005);
                 nearest = nearest.min(length);
                 let to_centre = (lateral * lateral + at.2 * at.2).sqrt().max(0.005);
                 let sin_theta = (lateral / to_centre).clamp(0.0, 1.0);
                 let cos_psi =
                     ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / length).clamp(-1.0, 1.0);
-                let directivity = if sin_theta > 1e-6 {
-                    PISTON_X * c / (TAU * hf_radius * sin_theta)
-                } else {
-                    f64::INFINITY
+                let piston = |a: f64| {
+                    if sin_theta > 1e-6 {
+                        PISTON_X * c / (TAU * a * sin_theta)
+                    } else {
+                        f64::INFINITY
+                    }
                 };
+                // A far cone is the textbook rigid piston of its whole radius.
+                // Above breakup a real cone radiates from less of itself and beams
+                // less than that at moderate angles; not measured, and recorded
+                // in `CABINET_MODEL.md`. At the near-90-degree angles of a close
+                // microphone's neighbours it is the whole story.
+                let directivity = piston(if far { radius } else { hf_radius });
                 let off = off_axis_corner(off_db, cos_psi);
                 let g = geometric(length);
                 push(
@@ -470,6 +524,7 @@ impl AcousticStage {
                     pa * g,
                     pb * g * cos_psi,
                     directivity,
+                    far,
                     off,
                     f64::INFINITY,
                 );
@@ -519,6 +574,7 @@ impl AcousticStage {
                         pa * g,
                         pb * g * cos_psi,
                         f64::INFINITY,
+                        false,
                         off,
                         diffraction,
                     );
@@ -605,6 +661,11 @@ impl AcousticStage {
                 }
                 let mut y = self.line.read(path.delay.now);
                 y = path.directivity.process(y);
+                if path.far {
+                    for bq in &mut path.beam {
+                        y = bq.process(y);
+                    }
+                }
                 y = path.off_axis.process(y);
                 y = path.diffraction.process(y);
                 omni += path.omni.now * y;

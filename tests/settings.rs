@@ -69,6 +69,10 @@ fn every_control_reaches_the_circuit() {
         cabinet: Cabinet::Off,
         drive: 0.5,
         master: 0.5,
+        // The base is a Distortion with no power stage, so presence reaches
+        // nothing here; `tests/presence.rs` is where it is proved to reach the
+        // stages that have one.
+        presence: 0.5,
         graphic: [0.5; 5],
         bass: 0.5,
         mid: 0.5,

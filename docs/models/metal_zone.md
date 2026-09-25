@@ -143,7 +143,10 @@ the sweep, and 2.2 k to 52.2 k of gang gives **4877 Hz down to 206 Hz**, against
 band is deep at the top of the sweep (+14 dB, against a published +-15) and shallow at the
 bottom (about 5 dB at noon), where the original's is even. Holding both the law and the
 depth needs the Middle to be its own stage with the Wien network in its feedback, rather
-than a leg on the shared equaliser track; that is the next piece of work on this pedal.
+than a leg on the shared equaliser track.
+
+**Replaced 2026-09-25 by the factory stage** (below): the gyrator described in this section
+is no longer in the pedal.
 
 ## Measured (`tests/metal_zone.rs`)
 
@@ -162,13 +165,39 @@ than a leg on the shared equaliser track; that is the next piece of work on this
   enough that one frequency says very little about how loud it is -- and it puts it 1.6 dB
   above no pedal at all, in the middle of the list.
 
-## Original middle EQ completion checkpoint (2026-09-20)
+## Original middle EQ completion checkpoint (2026-09-20; integrated 2026-09-25)
 
-The production pedal still uses the approximate gyrator described above. Codex has
-now implemented the bounded **isolated U2a/U2b mid-EQ netlist** as
-`metal_zone::mid_eq_reference`, plus boost/cut, center-flat and multi-rate
-small-signal AC/time tests. Those tests still need to be executed on the development
-machine; headroom/state/loading validation and production integration remain next.
+**Integrated.** The factory U2a/U2b stage is in the pedal (`metal_zone::middle_stage`),
+between U4A's Low/High equaliser and the Level network, as the drawing has it; the
+gyrator leg on U4A's track is gone. The isolated reference (`mid_eq_reference`) is the
+same builder, and its tests were run on 2026-09-25 and pass: +14.9/-15.0 dB at 240 Hz with
+the gang down, +15.4/-15.4 at 447 Hz at noon, +15.4/-15.6 at 4.8/6.2 kHz with it up;
+centred Middle within 0.65 dB of flat across the published range; AC and time domain
+agree within 0.1 dB at all five rates.
+
+In the whole pedal (`tests/metal_zone.rs`): Middle up against Middle centred is **+14.1 dB
+at 4 kHz with Mid Freq up and +14.9 dB at 250 Hz with it down** -- the gyrator gave +12.2
+and +1.3 -- and the High control's range grew from 31 to 34 dB, because U4A's track now
+carries two legs, as on the drawing, not three.
+
+**Headroom.** Both amplifiers keep their rails. U2b looked partitionable -- it follows a
+blend of two rail-limited nodes -- but they arrive through C011 and C037, and the wide
+partition probe measured a linear U2b 6.4 mV out with every control up at 105 Hz and
+0.12 V. So nothing in the pedal is partitioned now (boundary 29, from 22), held by
+`production_mt2_is_the_full_newton_reference`, with the measurement itself kept as
+`a_linear_middle_follower_would_change_the_sound`.
+
+**Cost** (`examples/pedalcost.rs`, interleaved runs on the same loaded machine): Newton
+passes per sample unchanged (4.63 before, 4.62 after); time per pass grows with the
+boundary, the pedal alone from 17.8 to 24.1 % of one channel's budget and in front of the
+Cali IIC+ from 46.8 to 54.0 %. It stays at the host rate (`Pedal::is_expensive`).
+
+**Level.** On the low-chord probe (`examples/mt2level.rs`) the pedal is -1.89 dB at its
+0.45 rest before and -1.97 dB after: the stage is unity when centred. The rest was set
+on an older probe and reads about 2 dB under unity on this one, before and after alike;
+it is not moved here.
+
+The checkpoint as written on 2026-09-20:
 
 1. **Revision:** original MT-2, Boss Service Notes **April 1991**, MT board
    75275252000 / PCB 22930117RT 1/2 and VR board 22930117RT 2/2. Not MT-2W.

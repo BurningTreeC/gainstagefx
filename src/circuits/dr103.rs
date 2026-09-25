@@ -13,8 +13,11 @@
 //! everything below the top of the guitar's range before any of it is amplified.
 //! The second stage drives a cathode follower into a Fender stack -- the same
 //! arrangement a Marshall uses -- and then, unlike a Marshall, there is a master
-//! volume, a further gain stage and a second cathode follower before the phase
-//! inverter.
+//! volume. This block ends at the master's wiper. The gain stage after it (V3a),
+//! the follower that holds the phase inverter's grids (V3b) and the presence
+//! control are built in the power stage (`power::DriverSpec::HIWATT_DR103`),
+//! because the presence control is a loop from the output transformer back to
+//! V3a's plate, and a loop has to be inside one netlist.
 //!
 //! What makes it a Hiwatt is what happens after that: 22 k grid stoppers on the
 //! output valves and a tight feedback loop, on a supply near 480 V. It is an
@@ -37,23 +40,20 @@ pub const MASTER: usize = 4;
 /// Where the master rests when the panel's Master knob is not turning it.
 pub const MASTER_REST: f64 = 0.5;
 
-/// H.T. SUPPLY 3, the preamplifier's rail. ESTIMATED: the sheets give one
-/// preamp voltage (V2a's plate at 140 V) and no rails. This is what stands the
-/// model's V2a plate at that figure; checked in `tests/dr103.rs`.
-pub const RAIL: f64 = 300.0;
-
-/// What the driver's cathode follower sits at, which is what holds the phase
-/// inverter's grids. The power stage is a separate netlist, so it is stated
-/// here and re-measured in `tests/dr103.rs`. Ampbooks reads 73 V at this point
-/// on a real DR103.
+/// H.T. SUPPLY 3 as the preamplifier's V1 and V2 see it. ESTIMATED: the sheets
+/// give one preamp voltage (V2a's plate at 140 V) and no rails. This is what
+/// stands the model's V2a plate at that figure; checked in `tests/dr103.rs`.
 ///
-/// The netlist's own output is taken after a capacitor, so what leaves this
-/// block is the signal alone and this is the voltage the power stage puts back.
-pub const DRIVER_VOLTS: f64 = 62.7;
+/// It is **in conflict** with the power stage's reading of the same node
+/// (`PowerSpec::DR103_EL34.pi_supply`, 465 V, from the supply sheet's 100 R and
+/// 1 k behind a 480 V reservoir), where V3a, V3b and the inverter hang. Both
+/// are estimates of one rail from different evidence; neither is measured. See
+/// `docs/models/brit_dr103.md`.
+pub const RAIL: f64 = 300.0;
 
 const ECC83: TriodeSpec = TriodeSpec::ECC83;
 
-/// The preamplifier from the BRILLIANT input to the second cathode follower.
+/// The preamplifier from the BRILLIANT input to the master's wiper.
 pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
     tap(source, load, "out")
 }
@@ -123,51 +123,12 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
 
     // --- the master volume -------------------------------------------------------
     // 22 k from the treble wiper into a 220 k linear track. This is the control
-    // the British competition did not have in 1969.
+    // the British competition did not have in 1969. Its wiper is V3a's grid,
+    // which is where this block ends: V3a draws no grid current in normal play,
+    // so the power stage can take the wiper's voltage as it stands.
     net.resistor("t_w", "master_top", 22_000.0)
         .rest(MASTER, MASTER_REST)
-        .pot(
-            "master_top",
-            "v3_g",
-            "gnd",
-            220_000.0,
-            Taper::Linear,
-            MASTER,
-        );
-
-    // --- V3a and the driver ---------------------------------------------------------
-    // The last gain stage, and then the cathode follower that is the reason this
-    // amplifier stays clean.
-    //
-    // Its grid is not on V3a's plate: it is on a divider, 1.8 M with 22 nF across
-    // it into 1 M to ground. The capacitor passes the signal, so nothing is lost;
-    // what the divider does is *lower the DC*, so the follower's cathode sits
-    // near 75 V. That is the voltage the phase inverter's grids are then held at,
-    // through resistors and with no coupling capacitor anywhere -- and a grid a
-    // follower holds cannot drift when it is driven hard. Every other amplifier
-    // here couples into its inverter through a capacitor, which charges on peaks
-    // and shifts the bias; this one cannot.
-    //
-    // The presence control feeds high frequencies from the output transformer
-    // back to this follower's grid. That loop crosses into the power stage's
-    // netlist and is not built. See the research log.
-    net.resistor("v3_k", "gnd", 1_500.0)
-        .resistor("n3", "v3_p", 100_000.0)
-        .triode("v3_p", "v3_g", "v3_k", ECC83)
-        .resistor("v3_p", "cf2_g", 1_800_000.0)
-        .capacitor("v3_p", "cf2_g", 22e-9)
-        .resistor("cf2_g", "gnd", 1_000_000.0)
-        .resistor("cf2", "gnd", 220_000.0)
-        .triode("n3", "cf2_g", "cf2", ECC83)
-        // The one part here that is not on the drawing. The follower's cathode
-        // sits at about 63 V, and every block in this plugin hands the next an
-        // alternating signal about zero -- so the direct voltage is taken off
-        // here and handed to the power stage as a number instead
-        // (`DRIVER_VOLTS`, `PowerSpec::driver_volts`), which is what puts it back
-        // on the inverter's grids. 1 uF into 1 M is a corner at 0.16 Hz: it
-        // removes the volts and nothing else.
-        .capacitor("cf2", "out", 1e-6)
-        .resistor("out", "gnd", 1_000_000.0)
+        .pot("master_top", "out", "gnd", 220_000.0, Taper::Linear, MASTER)
         .resistor("out", "gnd", load);
 
     net.build(at)

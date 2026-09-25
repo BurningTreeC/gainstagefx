@@ -15,7 +15,7 @@ records implementation, reference availability, validation gaps, tests and perfo
 | --- | --- | --- |
 | Guitar amplifiers | Cali IIC+, American 5150, American Twin, Brit 800, Brit Plexi, Brit AC30, Brit DR103, Cali Rectifier | 5150 revision/stack/resonance; DR103 presence loop; IIC+ power values; measured transformer data |
 | Studio preamps | British 73 (DIYRE 73P v1.1, not a literal 1073), American 312, British 4K E, Tube 610 | 73P online provenance; 2520 transistor/dynamic behavior; 610 EQ/gain switching; Studio Preamp has no legible verified circuit yet |
-| Pedals | Green 808, Green 9, Ram Fuzz, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone | MT-2 mid EQ is a swept approximation with incorrect depth; HM-2/MT-2 active gyrators and device fits need further validation; DS-1 researched, not implemented |
+| Pedals | Green 808, Green 9, Ram Fuzz, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist | (updated 2026-09-25) MT-2 middle is now the factory Wien stage; HM-2/MT-2 remaining gyrators and device fits need further validation; DS-1 implemented (TA7136P) |
 | Power stages | IIC+, Twin, 5150, 2203, Plexi, AC30, DR103, Rectifier silicon and valve settings | Hardware revision/transformer uncertainties; harder loads and complete chains still need realtime qualification |
 | Speakers/cabinets/mics | Reactive speaker load in the power circuit; physical cabinet/array path; placement and dual microphones | Estimated Celestion parameters; nonlinear/thermal speakers; construction data; C414 revision and several mic response charts |
 | Modern high gain | Existing Rectifier and 5150 families | Revv G3, Fortin 33, Generator and its power section remain not started |
@@ -44,8 +44,8 @@ Work order after stabilizing the solver baseline:
 2. Resolve the American 5150's exact revision and reconstruct its loaded tone
    stack before the power stage; add its resonance network from that same drawing.
    Preserve an explicit legacy path or document/version the resulting sound change.
-3. Complete the DR103's feedback into the preamp driver with an exact coupled
-   representation, then reconcile IIC+ PI/power values and existing device fits.
+3. (Done 2026-09-25: the DR103's driver and presence loop are built inside its power
+   stage, from the Issue 4 sheet.) Reconcile IIC+ PI/power values and existing device fits.
 4. Complete the DS-1 research checkpoint, choosing TA7136AP or BA728N explicitly.
    Continue the Studio Preamp drawing search without borrowing another product's circuit.
 5. Work through the modern/bass roadmap with original schematics first; expand

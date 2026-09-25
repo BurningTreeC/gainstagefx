@@ -311,8 +311,44 @@ impl SpeakerProfile {
         },
     };
 
+    /// Celestion G12K-85, 8 ohm: the high-power ceramic twelve of Peavey's
+    /// late-80s 4x12s. Built from Celestion's data for the **G12K-100**, its
+    /// Legacy-series successor -- the same 1.75 in coil and 50 oz magnet, Fs
+    /// 85 Hz, Re 7 ohm (PUBLISHED) -- because no G12K-85 sheet was found and
+    /// the two are WIDELY REPORTED to be one design re-rated. Mms, Qms and the
+    /// coil are the Celestion priors; Bl is solved from the plot's level and
+    /// the breakup voicing fitted to it, 1.98 dB rms from 300 Hz to 7 kHz, by
+    /// `tools/speaker_fit/fit_speakers.py` exactly as for the G12T-75. The
+    /// result has a stronger motor than the G12T-75 (Bl 14.2 against 10.9),
+    /// which is what Celestion's own description -- the T-75 with a larger
+    /// magnet -- predicts. See `docs/models/speakers.md`.
+    pub const BRIT_K85: SpeakerProfile = SpeakerProfile {
+        id: "spk_celestion_g12k85",
+        name: "Brit K85",
+        inspiration: "Celestion G12K-85, 8 ohm (data: its G12K-100 successor)",
+        re: 7.0,
+        l1: 0.44804e-3,
+        r1: 44.048,
+        l2: 1.22136e-3,
+        r2: 6.1927,
+        fs: 85.0,
+        qms: 9.73,
+        mms: 28.0e-3,
+        bl: 14.161,
+        sd: 490.9e-4,
+        breakup: Breakup {
+            peaks: [
+                pk(2469.0, 11.85, 1.14),
+                pk(3577.0, 8.80, 1.94),
+                pk(5195.0, 7.03, 5.73),
+            ],
+            lowpass_hz: 6631.0,
+            lowpass_q: 0.50,
+        },
+    };
+
     /// Every implemented driver, in the order stable ids were assigned.
-    pub const ALL: [&'static SpeakerProfile; 8] = [
+    pub const ALL: [&'static SpeakerProfile; 9] = [
         &Self::BRIT_V30,
         &Self::BRIT_GREEN_25,
         &Self::BRIT_T75,
@@ -321,6 +357,7 @@ impl SpeakerProfile {
         &Self::AMERICAN_CERAMIC,
         &Self::AMERICAN_ALNICO,
         &Self::JAZZ_12,
+        &Self::BRIT_K85,
     ];
 
     /// The data sets are 8 ohm parts.

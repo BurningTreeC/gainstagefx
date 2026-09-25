@@ -24,9 +24,14 @@ cone radiation -> speaker breakup voicing (3 peaks + LP, normalised at 600 Hz)
                       back-panel plate fundamental (+1 dB Q3)
   -> shared fractional delay line
   -> per driver i, per microphone:
-       nearest point on the cone disc -> distance L_i, arrival delay L_i/c, incidence psi_i
+       the cone the mic is in front of (near field):
+         point of the cone straight below the capsule -> distance L_i, delay L_i/c, incidence psi_i
+         directivity: one-pole at 2.2 c / (2 pi (0.4 a) sin theta), theta to cone centre (TUNED)
+       any other cone (far field):
+         the cone's centre -> distance L_i, delay L_i/c, incidence psi_i
+         directivity: 4th-order Butterworth at 2.2 c / (2 pi a sin theta) -- the rigid piston's
+         2 J1(x)/x main lobe of the whole cone
        level  g_i = sqrt((a^2 + 0.05^2) / (a^2 + L_i^2))       (bounded near field, no 1/0)
-       piston directivity: one-pole at 2.2 c / (2 pi (0.4 a) sin theta), theta to cone centre
        polar weight: omni part a g_i, gradient part b g_i cos(psi_i)
        capsule off-axis loss: one-pole, profile dB at 90 deg / 10 kHz scaled by sin^2 psi
   -> open back only, per driver: rear wave, inverted, gain min(1, 2 x open) g(L_rear),
@@ -59,17 +64,48 @@ cone radiation -> speaker breakup voicing (3 peaks + LP, normalised at 600 Hz)
 | Marshall 5/8 in birch ply | SECONDARY |
 | Hole layout | DERIVED (283 mm cutout, equal gaps) |
 | Slant volume (8 %), bracing (3 %), driver displacement (2.5 L), leakage Q (7), open fractions, material constants | ESTIMATED |
-| Mode/panel frequencies, baffle-step corner, compliance, delays, piston directivity form | PHYSICS DERIVED |
-| Mode/panel levels, HF radiating radius 0.4 a, rear gain rule, diffraction corner | TUNED / APPROXIMATED |
+| Mode/panel frequencies, baffle-step corner, compliance, delays, far-cone piston directivity (whole-cone `2 J1(x)/x`, 4th-order main lobe) | PHYSICS DERIVED |
+| Mode/panel levels, near-cone HF radiating radius 0.4 a (one pole), rear gain rule, diffraction corner | TUNED / APPROXIMATED |
 
-**Known limitation (found 2026-09-24).** Piston directivity is one pole. For a
-microphone close to one cone of a multi-driver cabinet, a *neighbouring* cone -- a few
-tens of centimetres away and nearly 90 degrees off its axis -- is then only about 8 dB
-down at 2-5 kHz, where a real 12-inch piston is more than 20 dB down, and its delayed
-arrival draws comb-filter notches into the close-miked response. Fitting the Jazz 12 to a
-measured JC-120 found them (notches at 0.6, 2.0 and 3.4 kHz against a measured peak at
-3.6 kHz); see `docs/models/speakers.md`. It affects every multi-driver cabinet at close
-range and is not changed here, because changing it moves every existing preset.
+**Near and far cones (fixed 2026-09-24).** Until then every cone's directivity was one
+pole on the breakup radius, and every cone's level and delay were taken from its nearest
+rim. For a microphone close to one cone of a multi-driver cabinet that left each
+neighbour -- a few tens of centimetres away and nearly 90 degrees off its axis -- only
+about 8 dB down, and in the treble barely attenuated at all, so its delayed arrival
+comb-filtered the close cone: a close-miked 4x12 deviated from its own single cone by
+**9 to 13.5 dB** above 2.5 kHz, the 2x12s by 4 to 5 dB. The two cases are now separated:
+
+- the cone the microphone is in front of keeps the near-field treatment above,
+  unchanged, so centre-to-edge placement behaves as it did;
+- every other cone is a far-field source at its centre with the rigid piston's own
+  directivity, `2 J1(x)/x` of the whole cone, as a 4th-order low-pass at the same
+  -3 dB point -- the form this document already labelled PHYSICS DERIVED, which one
+  pole was not.
+
+No placement moves a cone across that line (the position is clamped to the target
+cone, and cones cannot overlap), so automation cannot make it jump. Close-miked, every
+multi-driver cabinet now follows its own cone within **0.16 dB** above 2.5 kHz
+(`tests/acoustics.rs::a_close_microphone_hears_its_own_cone_above_2_5_khz`).
+
+**Evidence.** The one measurement of a real multi-driver cabinet this repository has --
+a JC-120 at 4 cm from one of its two cones, see `docs/models/speakers.md` -- is the
+check. With the fitted Jazz 12 the two-cone model follows it to **1.58 dB rms**, against
+2.67 dB before, and against 1.16 dB for the near cone alone
+(`tests/jazz_cabinet.rs::the_whole_two_cone_cabinet_follows_the_measurement`). Among
+far-field radii of 0.6, 0.8 and 1.0 times the cone's, the whole cone agreed best.
+
+**What remains approximated.** Above breakup a real cone radiates from less of itself
+than a rigid piston, so a far cone at a moderate angle -- the view a distant microphone
+has of the other cones in a 4x12 -- may beam somewhat more above about 3 kHz here than
+in reality. Not measured. Below 1 kHz a neighbour is still a little louder than a
+baffled piston's near and far fields would make it (the shared distance law gives
+10.5 dB under the close cone at 4 cm where the textbook ratio is about 14); in the
+JC-120 check that is where the remaining two-cone error sits, at +-3 dB around 300 Hz.
+
+**Levels.** The neighbours had been adding low-frequency energy they should not, so the
+fix made 45 close-miked presets 0.5 to 3.1 dB quieter. Each one's output trim was
+raised by exactly what it lost (`examples/presetlevel.rs`, before and after), so the
+catalogue's level matching is as it was; the sound is what changed.
 
 ## Advanced controls (prepared, not exposed)
 

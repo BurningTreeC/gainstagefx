@@ -33,12 +33,19 @@
 //! sits for which channel, and open is the tighter and louder of the two,
 //! which is what the lead channel is.
 //!
-//! The chain stops where the drawing says `To Tone Stack`. The stack itself
-//! is two channels' worth of pots interleaved on one drawing at a resolution
-//! where which pot belongs to which channel cannot be traced, so rather than
-//! guess it, this circuit hands over to the plugin's own tone section -- and
-//! `TONE_STACK_INPUT` below carries the one part of the stack that *is*
-//! legible, the 33 k it presents as a load.
+//! **The revision is the original 5150.** Every stage here is read off
+//! Peavey's "VHALEN 120 PREAMP BD." (CB #98802910, drawing 81501510, sheet 1
+//! of 3, 5-FEB-92): the pots on that sheet are themselves labelled ULTRA PRE
+//! and ULTRA POST, which is what once made these labels look like a 5150 II's.
+//! See `docs/models/american_5150.md`.
+//!
+//! The tone stack is the drawing's own (built 2026-09-25; until then a 33 k
+//! resistor stood in for it and the plugin's generic stack sat after the power
+//! stage): R89 into R24 33 k and C59 with R94 to ground, a Fender-family stack
+//! with a 570 pF treble capacitor, a 47 k slope, and a middle control whose
+//! wiper takes the .022. Its output is the treble wiper, which both post-gain
+//! controls hang on; the lead channel's, VR7 ULTRA POST, is the power stage's
+//! master (`power::PowerSpec::EVH5150`).
 //!
 //! As with the Mark IIC+, the supply is the one number not on the drawing.
 
@@ -64,18 +71,24 @@ pub const PRE: usize = 0;
 /// saturates where it does.
 pub const SUPPLY: f64 = 330.0;
 
-/// What the tone stack presents to R89.
-///
-/// R24, 33 k from the stack's input to ground, is the one part of the stack
-/// legible on the drawing. It matters: against R89's 470 k it throws away
-/// twenty four decibels before the stack has done anything, which is why this
-/// amplifier has a post gain control after it.
-pub const TONE_STACK_INPUT: f64 = 33_000.0;
+/// VR5, HIGH, 250 k linear.
+pub const TREBLE: usize = 1;
+/// VR3, LOW, 1 M audio, wired as a variable resistor.
+pub const BASS: usize = 2;
+/// VR4, MID, 50 k linear, its wiper taking the middle capacitor.
+pub const MIDDLE: usize = 3;
+
+/// What the stack's output drives: the two post-gain controls, VR7 ULTRA POST
+/// and VR6 CLEAN POST, 1 M each and both always across the treble wiper; the
+/// relay picks which wiper goes on. VR6 is built in the netlist; this is VR7,
+/// which is also the power stage's master pot. The chain builds the block with
+/// it.
+pub const POST_LOAD: f64 = 1_000_000.0;
 
 const ECC83: TriodeSpec = TriodeSpec::ECC83;
 
 pub fn build(source: f64, load: f64) -> Result<Circuit, Fault> {
-    tap(source, load, "stack")
+    tap(source, load, "tone")
 }
 
 /// The same preamplifier brought out at a chosen node, for measuring one
@@ -170,10 +183,41 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .supply("v5a_p", 100_000.0, SUPPLY) // R86
         .triode("v5a_p", "v5a_g", "v5a_k", ECC83);
 
-    // --- out ----------------------------------------------------------------
+    // --- out, and the tone stack -------------------------------------------
+    // R89 470 k into R24 33 k: twenty four decibels thrown away before the
+    // stack does anything, which is why this amplifier has a post gain. C59
+    // and R94 47 k from the same node to ground take a little more off the top.
     net.capacitor("v5a_p", "out", 0.022e-6) // C58
         .resistor("out", "stack", 470_000.0) // R89
-        .resistor("stack", "gnd", load);
+        .resistor("stack", "gnd", 33_000.0) // R24
+        .capacitor("stack", "c59", 0.001e-6) // C59
+        .resistor("c59", "gnd", 47_000.0); // R94
+
+    // C14 470 pF and C60 100 pF side by side to the top of HIGH, R28 47 k to the
+    // slope node, C18 .022 from there to the bottom of HIGH and the top of LOW,
+    // C21 .022 to MID's wiper. LOW is a variable resistor (wiper to its top)
+    // and turned up puts resistance in: the reverse law, as on every stack of
+    // this family here. MID is a real divider to ground with R95 47 k across
+    // its track. Pin numbers and the clockwise arrows are the drawing's.
+    net.capacitor("stack", "hi_top", 470e-12) // C14
+        .capacitor("stack", "hi_top", 100e-12) // C60
+        .resistor("stack", "slope", 47_000.0) // R28
+        .pot("hi_top", "tone", "hi_bot", 250_000.0, Taper::Linear, TREBLE) // VR5
+        .capacitor("slope", "hi_bot", 0.022e-6) // C18
+        .pot(
+            "hi_bot",
+            "lo_bot",
+            "lo_bot",
+            1_000_000.0,
+            Taper::ReverseAudio,
+            BASS,
+        ) // VR3
+        .pot("lo_bot", "mid_w", "gnd", 50_000.0, Taper::Linear, MIDDLE) // VR4
+        .resistor("lo_bot", "gnd", 47_000.0) // R95
+        .capacitor("slope", "mid_w", 0.022e-6) // C21
+        // VR6 CLEAN POST, 1 M, across the stack's output whichever channel is on.
+        .resistor("tone", "gnd", 1_000_000.0)
+        .resistor("tone", "gnd", load);
 
     net.build(at)
 }

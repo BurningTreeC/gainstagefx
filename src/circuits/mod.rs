@@ -20,6 +20,7 @@ pub mod jfet;
 pub mod markiic;
 pub mod metal_zone;
 pub mod neve;
+pub mod orange_dist;
 pub mod plexi;
 pub mod power;
 pub mod preamp;

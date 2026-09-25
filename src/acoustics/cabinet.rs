@@ -229,7 +229,40 @@ impl CabinetProfile {
         default_speaker: &SpeakerProfile::JAZZ_12,
     };
 
-    pub const ALL: [&'static CabinetProfile; 11] = [
+    /// A late-80s Peavey 4x12: the 412M, straight-fronted and closed-backed,
+    /// as it shipped with Celestion G12K-85s. The cabinet on the *Machine Rage*
+    /// records is "a 1987 Peavey 4x12 cabinet with Celestion G12K-85 speakers"
+    /// (WIDELY REPORTED); which Peavey model is not stated, and the 412M and
+    /// its slant 412MS are the ones of those years that carried G12K-85s
+    /// (PLAUSIBLE). Closed back DOCUMENTED (Peavey's 412M/412MS sheet).
+    /// 30.125 W x 32.125 H x 14.25 D inches is an owner's measurement of a
+    /// 412M (PLAUSIBLE), and Peavey's published 4x12 shells of later years are
+    /// the same size to within an eighth of an inch. Panel thickness ESTIMATED
+    /// (the sheet's "7 ply plywood", a 3/4 in board). Driver centres DERIVED as
+    /// for the other 4x12s: equal gaps round a 283 mm cutout. See
+    /// `docs/models/cabinets.md`.
+    pub const AMERICAN_CLOSED_412: CabinetProfile = CabinetProfile {
+        id: "cab_peavey_412m",
+        name: "American Closed 4x12",
+        inspiration: "Peavey 412M straight closed-back 4x12 (late 1980s), G12K-85",
+        width: 0.765,
+        height: 0.816,
+        depth: 0.362,
+        wall: 0.019,
+        drivers: 4,
+        positions: [
+            (-0.168, 0.177),
+            (0.168, 0.177),
+            (-0.168, -0.177),
+            (0.168, -0.177),
+        ],
+        open_fraction: 0.0,
+        slant: 0.0,
+        leakage_q: 7.0,
+        default_speaker: &SpeakerProfile::BRIT_K85,
+    };
+
+    pub const ALL: [&'static CabinetProfile; 12] = [
         &Self::BRIT_1960,
         &Self::CALI_OVERSIZED,
         &Self::BRIT_CLOSED,
@@ -241,6 +274,7 @@ impl CabinetProfile {
         &Self::CLOSED_112,
         &Self::CLOSED_212,
         &Self::JAZZ_OPEN_212,
+        &Self::AMERICAN_CLOSED_412,
     ];
 
     pub fn internal(&self) -> (f64, f64, f64) {

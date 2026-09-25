@@ -23,12 +23,14 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 16] = [
+const OWN: [(Circuit, [bool; 3]); 18] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     // The boost channel's own three; the muted Normal channel's two are not
     // on the panel.
     (Circuit::Brit2205, [true, true, true]),
+    // The original 5150's own stack, built 2026-09-25.
+    (Circuit::Peavey, [true, true, true]),
     (Circuit::Plexi, [true, true, true]),
     (Circuit::AC30, [true, false, true]),
     (Circuit::DR103, [true, true, true]),
@@ -48,6 +50,8 @@ const OWN: [(Circuit, [bool; 3]); 16] = [
     // The Rodent's is a filter and it runs backwards; the knob is made to
     // agree with it by `Gain::tone_runs_backwards`.
     (Circuit::Rat, [false, false, true]),
+    // The DS-1's Tone: a blend with a scoop, like the Muff's.
+    (Circuit::Ds1, [false, false, true]),
     // The Heavy Metal's Colour Mix now has two dedicated controls of its own,
     // not the generic Bass/Treble knobs. The Metal Zone still has a three-band
     // equaliser plus its own sweep control.
@@ -150,7 +154,7 @@ fn the_plugin_stack_lights_all_three_whatever_is_selected() {
 /// but only while it is the only thing that knob reaches.
 #[test]
 fn the_pedals_single_control_is_called_tone() {
-    for circuit in [Circuit::Screamer, Circuit::Muff] {
+    for circuit in [Circuit::Screamer, Circuit::Muff, Circuit::Ds1] {
         assert!(
             circuit.single_tone(),
             "{} has one tone control",
@@ -173,7 +177,7 @@ fn the_pedals_single_control_is_called_tone() {
         // The pedals with one tone control, which is the case this names.
         if matches!(
             circuit,
-            Circuit::Screamer | Circuit::Muff | Circuit::Green9 | Circuit::Rat
+            Circuit::Screamer | Circuit::Muff | Circuit::Green9 | Circuit::Rat | Circuit::Ds1
         ) {
             continue;
         }
