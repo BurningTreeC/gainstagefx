@@ -69,7 +69,9 @@
 //! the 5150's runs to the fallback budget below -- the solver's stability
 //! guard, counted on the voice as it is now. Restoring a sample-for-sample
 //! guard needs a fresh capture of the corrected circuits: a new fixture,
-//! deliberately taken by the owner, not a regeneration of this one.
+//! deliberately taken by the owner, not a regeneration of this one. That was
+//! taken the same day, on the owner's instruction: `tests/corrected_baseline.rs`,
+//! the same probe over the same four voices as they now are.
 use gainstagefx::voice::{Chain, Gain, Settings, Tone};
 use std::f64::consts::TAU;
 

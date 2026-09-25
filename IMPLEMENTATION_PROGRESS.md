@@ -1,5 +1,20 @@
 # Implementation progress
 
+## 2026-09-25 — a fresh frozen capture of the corrected circuits
+
+On the owner's instruction, after the corrections below were committed (19e2d6f):
+`tests/corrected_baseline.rs` and `tests/fixtures/corrected-2026-09-25.{f32le,settled}`.
+The legacy fixture had lost its last compared voice to the 5150's stack; its header said
+the way back was a new capture, deliberately taken, not a regeneration of it. This is
+that, with the legacy probe unchanged -- the Mark IIC+, 5150, Twin and 73P, five rates,
+four amplitudes, five signals, 2,048 samples a run, 1x -- so the two read the same way.
+
+At capture 28 of the 400 runs fell back and are not compared: 23 of the 73P's at its two
+hottest amplitudes (the legacy capture had the same 23), 3 of the Twin's and 2 of the
+5150's, all at 0.7 and 96 kHz or above. The budget is the legacy file's 40. Compared on
+the capturing machine: 761,856 samples at zero error. `CLAUDE.md`'s frozen-fixture rule
+now names both files.
+
 ## 2026-09-25 — the 5150: which one it is, its own stack, resonance and presence
 
 Owner's item 6: "5150 tone stack/revision".
@@ -35,7 +50,8 @@ feedback network) move; nothing else.
 **The legacy fixture no longer compares anything.** `tests/legacy_baseline.rs` compared
 only the 5150 sample for sample; this is the fourth recorded exception, and the file now
 guards finite output at every rate and the 5150's fallback budget (2 of 100 runs). A fresh
-capture of the corrected circuits is the owner's decision and was not taken.
+capture of the corrected circuits is the owner's decision; it was taken afterwards, on
+the owner's instruction (see the entry above).
 
 Presets: *Ultra Lead* and *Ultra Rhythm* now turn the amplifier's own stack (generic stack
 off), held at their levels. `tests/evh5150.rs` 10 tests; research log rewritten.

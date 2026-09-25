@@ -71,7 +71,7 @@ feedback (sheets 1 and 2):
 
 - `tests/legacy_baseline.rs` compared only the 5150 sample for sample; the correction
   removes it too (the fourth recorded exception). The file now guards the solver's
-  stability budget and finite output only. A fresh capture of the corrected circuits is
-  the owner's call.
+  stability budget and finite output only. The corrected circuits were captured afresh
+  the same day, on the owner's instruction, as `tests/corrected_baseline.rs`.
 - The two 5150 presets (Ultra Lead, Ultra Rhythm) now turn the amplifier's own stack with
   the plugin's generic stack off, and are held at their levels.

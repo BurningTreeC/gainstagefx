@@ -386,7 +386,8 @@ intentional designed/approximate models. They are not undocumented hardware stub
 3. DONE 2026-09-25: **5150 revision and stack.** The model is the original (its sheets'
    designators match stage for stage, and the ULTRA labels are the original's own); the
    stack, resonance and Peavey presence are built from them. The legacy fixture no longer
-   compares any voice; a fresh capture of the corrected circuits is the owner's call.
+   compares any voice; `tests/corrected_baseline.rs`, captured the same day on the
+   owner's instruction, is the sample-for-sample guard now.
 4. IIC+ PI/power reconciliation (DR103 presence done 2026-09-25).
    Improve existing active-device/gyrator fits with measured operating envelopes.
 5. Studio Preamp schematic acquisition (the DS-1 is done); then the
