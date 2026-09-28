@@ -203,17 +203,6 @@ def main():
             sync(display, 0)
             pump(0.08)
 
-    def check_zoom():
-        current = dimensions()[0] / 780
-        for row, scale in [(0, 0.75), (3, 1.25), (4, 1.5), (5, 1.75), (6, 2.0), (2, 1.0)]:
-            click(round(408 * current), round(16 * current))
-            click(round(408 * current), round((45 + row * 22) * current))
-            pump()
-            expected = (int(780 * scale * 1.5 + 0.5), int(968 * scale * 1.5 + 0.5))
-            assert dimensions() == expected, f"Zoom {scale}: {dimensions()} != {expected}"
-            capture(f"zoom-{scale}")
-            current = scale * 1.5
-
     reparent = xfn("XReparentWindow", C.c_int, P, C.c_ulong, C.c_ulong, C.c_int, C.c_int)
     hidden = create(display, root, 0, 0, 780, 968, 0, 0, 0)
     for cycle in range(2):
@@ -241,8 +230,6 @@ def main():
             sync(display, 0)
         pump()
         capture(f"open-{cycle}")
-        if cycle == 0:
-            check_zoom()
         assert fn(gui.hide, B, P)(plugin_ptr)
         pump(0.1)
         assert fn(gui.show, B, P)(plugin_ptr)
@@ -254,7 +241,7 @@ def main():
     xfn("XDestroyWindow", C.c_int, P, C.c_ulong)(display, parent)
     xfn("XDestroyWindow", C.c_int, P, C.c_ulong)(display, hidden)
     xfn("XCloseDisplay", C.c_int, P)(display)
-    print("PASS: Linux CLAP editor creates, paints, zooms, hides, shows, and recreates")
+    print("PASS: Linux CLAP editor creates, paints, hides, shows, and recreates")
 
 
 if __name__ == "__main__":

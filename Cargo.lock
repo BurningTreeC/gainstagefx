@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "gainstagefx"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "nice-plug",
  "serde",
