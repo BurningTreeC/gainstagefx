@@ -200,6 +200,13 @@ pub unsafe extern "C" fn get(
                     kCFStringEncodingUTF8,
                 )
             };
+            let version_key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"version".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
             let state_key = unsafe {
                 CFStringCreateWithCString(
                     ptr::null(),
@@ -211,10 +218,17 @@ pub unsafe extern "C" fn get(
             if type_key.is_null()
                 || subtype_key.is_null()
                 || manufacturer_key.is_null()
+                || version_key.is_null()
                 || state_key.is_null()
             {
                 bridge::nice_au2_free_state(state_ptr);
-                for object in [type_key, subtype_key, manufacturer_key, state_key] {
+                for object in [
+                    type_key,
+                    subtype_key,
+                    manufacturer_key,
+                    version_key,
+                    state_key,
+                ] {
                     if !object.is_null() {
                         unsafe { CFRelease(object.cast()) };
                     }
@@ -228,6 +242,9 @@ pub unsafe extern "C" fn get(
             let component_type = u32::from_be_bytes(*b"aufx") as i32;
             let component_subtype = u32::from_be_bytes(*b"GSfx") as i32;
             let component_manufacturer = u32::from_be_bytes(*b"BrTC") as i32;
+            // AudioComponent version encoded as 0xMMMMmmdd. The component
+            // currently advertises 0.0.1, so keep ClassInfo consistent.
+            let component_version: i32 = 0x0000_0001;
 
             let type_value = unsafe {
                 CFNumberCreate(
@@ -250,6 +267,13 @@ pub unsafe extern "C" fn get(
                     (&raw const component_manufacturer).cast(),
                 )
             };
+            let version_value = unsafe {
+                CFNumberCreate(
+                    ptr::null(),
+                    CF_NUMBER_SINT32_TYPE,
+                    (&raw const component_version).cast(),
+                )
+            };
             let state_value = unsafe {
                 CFDataCreate(
                     ptr::null(),
@@ -262,15 +286,23 @@ pub unsafe extern "C" fn get(
             if type_value.is_null()
                 || subtype_value.is_null()
                 || manufacturer_value.is_null()
+                || version_value.is_null()
                 || state_value.is_null()
             {
-                for object in [type_key, subtype_key, manufacturer_key, state_key] {
+                for object in [
+                    type_key,
+                    subtype_key,
+                    manufacturer_key,
+                    version_key,
+                    state_key,
+                ] {
                     unsafe { CFRelease(object.cast()) };
                 }
                 for object in [
                     type_value,
                     subtype_value,
                     manufacturer_value,
+                    version_value,
                     state_value,
                 ] {
                     if !object.is_null() {
@@ -284,12 +316,14 @@ pub unsafe extern "C" fn get(
                 type_key.cast::<c_void>() as *const c_void,
                 subtype_key.cast::<c_void>() as *const c_void,
                 manufacturer_key.cast::<c_void>() as *const c_void,
+                version_key.cast::<c_void>() as *const c_void,
                 state_key.cast::<c_void>() as *const c_void,
             ];
             let values = [
                 type_value,
                 subtype_value,
                 manufacturer_value,
+                version_value,
                 state_value,
             ];
 
@@ -306,13 +340,20 @@ pub unsafe extern "C" fn get(
 
             // The dictionary retains its keys and values through the CFType
             // callbacks. ClassInfo itself is returned retained to the host.
-            for object in [type_key, subtype_key, manufacturer_key, state_key] {
+            for object in [
+                type_key,
+                subtype_key,
+                manufacturer_key,
+                version_key,
+                state_key,
+            ] {
                 unsafe { CFRelease(object.cast()) };
             }
             for object in [
                 type_value,
                 subtype_value,
                 manufacturer_value,
+                version_value,
                 state_value,
             ] {
                 unsafe { CFRelease(object) };
