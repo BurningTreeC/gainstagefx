@@ -54,7 +54,7 @@ struct CallbackTiming {
 }
 
 struct Host;
-impl InitContext<GainStageFx> for Host {
+impl ActivateContext<GainStageFx> for Host {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Clap
     }
@@ -67,6 +67,9 @@ impl InitContext<GainStageFx> for Host {
     }
 }
 impl ProcessContext<GainStageFx> for Host {
+    fn request_restart(&self) {
+        unreachable!()
+    }
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Clap
     }
@@ -82,7 +85,16 @@ impl ProcessContext<GainStageFx> for Host {
     fn next_event(&mut self) -> Option<PluginNoteEvent<GainStageFx>> {
         None
     }
-    fn send_event(&mut self, _: PluginNoteEvent<GainStageFx>) {
+    fn try_send_event(
+        &mut self,
+        _: PluginNoteEvent<GainStageFx>,
+    ) -> Result<
+        (),
+        (
+            PluginNoteEvent<GainStageFx>,
+            nice_plug::context::process::SendEventError,
+        ),
+    > {
         unreachable!()
     }
     fn set_latency_samples(&self, _: u32) {
@@ -150,7 +162,7 @@ fn initialized(circuit: Circuit, mono: bool, rate: f32) -> GainStageFx {
     p.intensity.smoothed.reset(0.9);
     p.speed.smoothed.reset(0.7);
     p.mix.smoothed.reset(0.65);
-    assert!(plugin.initialize(
+    assert!(plugin.activate(
         &GainStageFx::AUDIO_IO_LAYOUTS[usize::from(mono)],
         &BufferConfig {
             sample_rate: rate,

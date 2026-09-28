@@ -35,34 +35,13 @@ impl Pattern {
     }
 }
 
-/// What does the transducing, for the subtle nonlinearity.
+/// Transducer construction. Nonlinearity is not inferred from the family.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Family {
     Dynamic,
     Ribbon,
     FetCondenser,
     TubeCondenser,
-}
-
-impl Family {
-    /// Cubic soft-saturation coefficient at 0 dBFS. TUNED to be subtle: under 0.1 %
-    /// third harmonic at nominal level for every family. Not a measurement.
-    pub const fn cubic(self) -> f64 {
-        match self {
-            Family::Dynamic => 0.004,
-            Family::Ribbon => 0.006,
-            Family::FetCondenser => 0.002,
-            Family::TubeCondenser => 0.005,
-        }
-    }
-
-    /// Asymmetric (second-order) coefficient, only the tube family has one.
-    pub const fn quadratic(self) -> f64 {
-        match self {
-            Family::TubeCondenser => 0.004,
-            _ => 0.0,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

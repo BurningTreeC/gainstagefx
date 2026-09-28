@@ -2468,7 +2468,8 @@ pub struct Chain {
     /// The physical path is in use: the load is a speaker and the output is the
     /// cone's radiation through `acoustic`, not the terminal voltage.
     radiating: bool,
-    /// `Re Mms / Bl^2`, and the motional voltage one sample ago.
+    /// Inverse force factor (cone velocity per motional volt), and the
+    /// motional voltage one sample ago.
     pressure_scale: f64,
     motional_previous: f64,
     /// The three output transformers. Nonlinear, so unlike the tone stack and
@@ -2821,7 +2822,7 @@ impl Chain {
             acoustic: Box::new(AcousticStage::new(rate)),
             acoustic_settings: AcousticSettings::default(),
             radiating: false,
-            pressure_scale: initial.pressure_scale(),
+            pressure_scale: 1.0 / initial.bl,
             motional_previous: 0.0,
             power: 0,
             power_selection: PowerAmp::Matched,
@@ -3021,10 +3022,21 @@ impl Chain {
     pub fn set_acoustic(&mut self, a: &AcousticSettings) {
         let speaker = a.resolved_speaker();
         let previous = self.acoustic_settings;
-        let load_changed = speaker.is_some() != self.radiating
-            || previous.cabinet != a.cabinet
-            || previous.speaker != a.speaker;
+        let domain_changed = speaker.is_some() != self.radiating;
+        let load_changed =
+            domain_changed || previous.cabinet != a.cabinet || previous.speaker != a.speaker;
         if load_changed {
+            if domain_changed {
+                // These histories sit between the power stage and acoustics.
+                // They contain m/s² on the physical path and calibrated audio
+                // on the DI/legacy path. Never interpret one as the other.
+                // The existing switch fade covers the cleared latency tail.
+                self.over.reset();
+                self.pad.reset();
+                if let Some(i) = self.tone {
+                    self.tones[i].0.reset_deferred();
+                }
+            }
             self.radiating = speaker.is_some();
             if let Some(profile) = speaker {
                 let mounting = a.mounting();
@@ -3036,7 +3048,7 @@ impl Chain {
                 let values = LoadValues::new(profile, &mounting, 1.0);
                 self.driven.slots.apply(&mut self.driven.sim, &values);
                 self.driven.sim.reset_deferred();
-                self.pressure_scale = values.pressure_scale();
+                self.pressure_scale = 1.0 / values.bl;
             }
             if let Some(sim) = self.powers[self.power].as_mut() {
                 sim.reset_deferred();
@@ -3899,7 +3911,12 @@ impl Chain {
         // speaker-loaded twin (or a voltage-driven speaker when there is no power
         // stage) and hands on the cone's radiation instead of the terminal voltage.
         let radiating = self.radiating;
-        let pressure_scale = self.pressure_scale;
+        let pressure_scale = self.pressure_scale
+            / self
+                .power_selection
+                .resolved(self.voice)
+                .map(|model| model.speaker_scale().sqrt())
+                .unwrap_or(1.0);
         let inner_rate = self.rate * self.over.factor() as f64;
         let motional_previous = &mut self.motional_previous;
         let (mut power, mut driven, motional) = if radiating {
@@ -4025,12 +4042,11 @@ impl Chain {
                     (None, Some(sim)) => sim.process(amplified),
                     (None, None) => 0.0,
                 };
-                // On-axis pressure is proportional to cone acceleration, and
-                // `Re Mms / Bl^2 dV(mot)/dt` is that pressure normalised to one
-                // volt at the terminals in the mass-controlled band.
+                // Physical cone acceleration. Keep the amplifier's output
+                // calibration outside the acoustic pressure calculation.
                 let pressure = pressure_scale * (cone - *motional_previous) * inner_rate;
                 *motional_previous = cone;
-                return pressure * out_of;
+                return pressure;
             }
             if let Some(ref mut sim) = power {
                 #[cfg(test)]
@@ -4098,6 +4114,10 @@ impl Chain {
         } else {
             y
         };
+        if self.radiating {
+            y *= out_of;
+            right *= out_of;
+        }
         if !self.radiating && matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy) {
             if let Some(i) = self.cabinet {
                 let (sim, trim) = &mut self.cabinets[i];

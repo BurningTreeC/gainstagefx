@@ -36,8 +36,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            jq \
+            shellcheck \
             libasound2-dev \
             libgl-dev \
+            libegl1-mesa-dev \
+            libfontconfig1-dev \
+            libxkbcommon-x11-dev \
             libjack-dev \
             libx11-xcb-dev \
             libxcb1-dev \
@@ -68,8 +73,15 @@ jobs:
       #
       # This keeps DSP tests representative while substantially reducing LLVM
       # optimization time.
+      # Finish all test binaries so one failing regression does not hide later
+      # failures (as switching previously hid the Twin preset regression).
       - name: Run tests
-        run: cargo test --profile ci --workspace
+        run: cargo test --profile ci --workspace --no-fail-fast
+
+      - name: Test the Linux installers
+        run: |
+          shellcheck install.sh .github/install-Linux.sh
+          python3 tools/test_linux_install.py
 
       # Use the CI profile here as well.
       #
@@ -116,6 +128,11 @@ jobs:
           sudo apt-get install -y \
             libasound2-dev \
             libgl-dev \
+            libegl1-mesa-dev \
+            libgl1-mesa-dri \
+            xvfb \
+            libfontconfig1-dev \
+            libxkbcommon-x11-dev \
             libjack-dev \
             libx11-xcb-dev \
             libxcb1-dev \
@@ -146,7 +163,7 @@ jobs:
         run: |
           cargo test \
             --manifest-path vendor/baseview/Cargo.toml \
-            --features opengl \
+            --features opengl,tracing \
             --lib \
             -- --test-threads=1
 
@@ -185,7 +202,7 @@ jobs:
             # cargo xtask ad-hoc signs the bundles after lipo. This requires
             # no Apple Developer account. An arm64 binary needs at least an
             # ad-hoc signature to load.
-            if [[ '${{ github.ref }}' == refs/tags/v* ]]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
               echo "Building tagged macOS release with release-lto profile"
               cargo xtask bundle-universal "$PACKAGE" --profile release-lto
             else
@@ -193,7 +210,7 @@ jobs:
               cargo xtask bundle-universal "$PACKAGE" --release
             fi
           else
-            if [[ '${{ github.ref }}' == refs/tags/v* ]]; then
+            if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
               echo "Building tagged release with release-lto profile"
               cargo xtask bundle "$PACKAGE" --profile release-lto
             else
@@ -201,6 +218,12 @@ jobs:
               cargo xtask bundle "$PACKAGE" --release
             fi
           fi
+
+      - name: Test the Linux CLAP editor
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 1920x1440x24' \
+            timeout 45s python3 tools/linux_gui_smoke.py "target/bundled/$PLUGIN.clap"
 
       - name: Stage the archive contents
         run: |

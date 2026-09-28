@@ -4,7 +4,7 @@ use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::params::{Cabinet, Circuit, PedalModel};
 use gainstagefx::presets::{GROUPS, PRESETS};
 use gainstagefx::voice::{Chain, CALIBRATION, NOMINAL_DBFS};
-use nih_plug::prelude::Enum;
+use nice_plug::prelude::Enum;
 
 const RATE: f64 = 96_000.0;
 
@@ -369,7 +369,7 @@ fn the_presets_are_level_matched() {
 
 use gainstagefx::params::GainStageParams;
 use gainstagefx::presets::{self, Stored};
-use nih_plug::params::Params;
+use nice_plug::params::Params;
 use std::collections::BTreeMap;
 
 /// Every id a shipped preset names has to be a parameter that exists.
@@ -426,7 +426,7 @@ fn every_preset_id_is_a_parameter_that_exists() {
 #[test]
 fn no_shipped_preset_asks_for_more_than_its_control_allows() {
     let params = GainStageParams::default();
-    let pointers: BTreeMap<String, nih_plug::prelude::ParamPtr> = params
+    let pointers: BTreeMap<String, nice_plug::prelude::ParamPtr> = params
         .param_map()
         .into_iter()
         .map(|(id, ptr, _)| (id, ptr))

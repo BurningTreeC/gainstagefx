@@ -1,0 +1,53 @@
+name: Rust
+
+on: [ push, pull_request ]
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: "build"
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macOS-latest ]
+        toolchain: [ msrv, stable ]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ case(matrix.toolchain == 'msrv', '1.82', 'stable') }}
+          components: clippy
+      - name: Build Default
+        run: cargo build -p baseview --verbose
+      - name: Build All Features
+        run: cargo build -p baseview --all-features --verbose
+      - name: Run tests
+        run: cargo test -p baseview --all-features --verbose
+      - name: Check Release
+        run: cargo check -p baseview --all-features --verbose --release
+      - name: Build examples
+        if: matrix.toolchain != 'msrv'
+        run: cargo build --workspace --all-targets --verbose
+      - name: Clippy
+        if: matrix.toolchain != 'msrv'
+        run: cargo clippy --all --all-features -- -D warnings
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Check docs
+        run: cargo doc --all --all-features --no-deps
+      - name: Check Formatting (rustfmt)
+        run: cargo fmt --all -- --check

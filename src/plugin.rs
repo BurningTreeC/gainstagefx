@@ -1,7 +1,7 @@
 //! The plugin: parameters in, audio out.
 
-use nih_plug::prelude::*;
-use nih_plug::wrapper::state::ParamValue;
+use nice_plug::plugin::ParamValue;
+use nice_plug::prelude::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;
 
@@ -436,12 +436,13 @@ impl Plugin for GainStageFx {
 
     type SysExMessage = ();
     type BackgroundTask = ();
+    type Editor = vizia_plug::ViziaEditor;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn editor(&mut self, _executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    fn editor(&mut self, _executor: AsyncExecutor<Self>) -> Option<Self::Editor> {
         crate::editor::create(
             self.params.clone(),
             self.meters.clone(),
@@ -476,11 +477,11 @@ impl Plugin for GainStageFx {
             .or_insert_with(|| ParamValue::String("none".into()));
     }
 
-    fn initialize(
+    fn activate(
         &mut self,
         layout: &AudioIOLayout,
         buffer: &BufferConfig,
-        context: &mut impl InitContext<Self>,
+        context: &mut impl ActivateContext<Self>,
     ) -> bool {
         self.sample_rate = buffer.sample_rate as f64;
         self.stereo_seen = false;
@@ -976,8 +977,8 @@ impl Vst3Plugin for GainStageFx {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Distortion];
 }
 
-nih_export_clap!(GainStageFx);
-nih_export_vst3!(GainStageFx);
+nice_export_clap!(GainStageFx);
+nice_export_vst3!(GainStageFx);
 
 #[cfg(test)]
 #[path = "../tests/support/plugin_mono.rs"]

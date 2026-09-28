@@ -14,61 +14,43 @@
 //! never moves, only the line does, which is what happens when you turn a real
 //! one.
 
-use nih_plug_vizia::vizia::prelude::Canvas;
-use nih_plug_vizia::vizia::vg;
-use std::cell::Cell;
-
+use std::cell::OnceCell;
+use vizia_plug::vizia::vg as sk;
 pub const KNOB: &[u8] = include_bytes!("../../assets/knob.png");
-
-/// A lazily uploaded image. The canvas is only reachable from `draw`, so the
-/// upload happens on the first frame and the id is kept from then on.
 #[derive(Default)]
 pub struct Sprite {
-    id: Cell<Option<vg::ImageId>>,
+    image: OnceCell<Option<sk::Image>>,
 }
-
 impl Sprite {
     pub const fn new() -> Self {
         Self {
-            id: Cell::new(None),
+            image: OnceCell::new(),
         }
     }
-
-    fn id(&self, canvas: &mut Canvas, bytes: &[u8]) -> Option<vg::ImageId> {
-        if let Some(id) = self.id.get() {
-            return Some(id);
-        }
-        match canvas.load_image_mem(bytes, vg::ImageFlags::GENERATE_MIPMAPS) {
-            Ok(id) => {
-                self.id.set(Some(id));
-                Some(id)
-            }
-            Err(_) => None,
-        }
-    }
-
-    /// Draws the photograph centred on a point, at a given height, keeping its
-    /// proportions. `tint` fades it towards the panel.
     pub fn draw(
         &self,
-        canvas: &mut Canvas,
+        canvas: &sk::Canvas,
         bytes: &[u8],
         cx: f32,
         cy: f32,
         height: f32,
         tint: f32,
     ) {
-        let Some(id) = self.id(canvas, bytes) else {
+        let Some(image) = self
+            .image
+            .get_or_init(|| sk::Image::from_encoded(sk::Data::new_copy(bytes)))
+        else {
             return;
         };
-        let Ok((iw, ih)) = canvas.image_size(id) else {
-            return;
-        };
-        let scale = height / ih as f32;
-        let (w, h) = (iw as f32 * scale, ih as f32 * scale);
-        let (x, y) = (cx - w / 2.0, cy - h / 2.0);
-        let mut path = vg::Path::new();
-        path.rect(x, y, w, h);
-        canvas.fill_path(&path, &vg::Paint::image(id, x, y, w, h, 0.0, tint));
+        let width = height * image.width() as f32 / image.height() as f32;
+        let mut paint = sk::Paint::default();
+        paint.set_alpha_f(tint);
+        canvas.draw_image_rect_with_sampling_options(
+            image,
+            None,
+            sk::Rect::from_xywh(cx - width / 2.0, cy - height / 2.0, width, height),
+            sk::SamplingOptions::new(sk::FilterMode::Linear, sk::MipmapMode::Linear),
+            &paint,
+        );
     }
 }

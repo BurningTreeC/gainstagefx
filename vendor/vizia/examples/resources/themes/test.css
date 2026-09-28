@@ -1,0 +1,13 @@
+:root {
+    background-color: blue;
+}
+
+.foo {
+    background-color: grey;
+    space: 50px;
+    size: 100px;
+}
+
+.foo:hover {
+    background-color: red;
+}

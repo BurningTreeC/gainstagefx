@@ -13,16 +13,18 @@
 //! is a claim about how a thing works; that one made no claim at all.
 
 mod dropdown;
+mod fonts;
+mod paint;
 mod panel;
 pub mod session;
 mod sprites;
 mod style;
 mod widgets;
 
-use nih_plug::prelude::Editor;
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::{create_vizia_editor, vizia_assets, ViziaState, ViziaTheming};
+use fonts as vizia_assets;
 use std::sync::Arc;
+use vizia_plug::vizia::prelude::*;
+use vizia_plug::{create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::params::{
     CabModel, Cabinet, Circuit, GainStageParams, MicModel, Oversampling, PedalModel, SpeakerModel,
@@ -33,19 +35,25 @@ use panel::Faceplate;
 use style::*;
 use widgets::{Knob, Meter, Selector};
 
-#[derive(Lens)]
 pub struct Panel {
     pub params: Arc<GainStageParams>,
     pub meters: Arc<crate::meters::Meters>,
+    parameter_signal: Signal<Arc<GainStageParams>>,
 }
 
-impl Model for Panel {}
+impl Model for Panel {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|_: &vizia_plug::widgets::RawParamEvent, _| {
+            self.parameter_signal.set(self.params.clone())
+        });
+    }
+}
+
+pub const BASE_DPI: f64 = 1.5;
 
 pub fn default_state() -> Arc<ViziaState> {
-    // The panel's coordinate system is already its intended 100% size.
-    // Starting at 2.0 made a new session open at 200%, while the size menu
-    // and persistent state define 1.0 as the default.
-    ViziaState::new_with_default_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), 1.0)
+    // The menu starts at 100%, which renders at the requested base DPI of 1.5.
+    ViziaState::new_with_base_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), BASE_DPI)
 }
 
 /// Updates the scale used by `Editor::size()` and saved in the host session.
@@ -53,31 +61,10 @@ pub fn default_state() -> Arc<ViziaState> {
 /// accepted the resize. `PersistentField::set` copies the carrier's scale;
 /// the original state's size function and open status stay intact.
 pub fn remember_scale(state: &Arc<ViziaState>, scale: f64) {
-    use nih_plug::params::persist::PersistentField;
+    use nice_plug::params::persist::PersistentField;
     let carrier = ViziaState::new_with_default_scale_factor(|| (0, 0), scale);
     if let Ok(carrier) = Arc::try_unwrap(carrier) {
         PersistentField::set(state, carrier);
-    }
-}
-
-/// Stores the requested scale before the host reads `Editor::size()`.
-/// Returns whether the UI should adopt it. A refusal restores the persisted
-/// size, so drawing and host geometry continue to agree.
-pub fn apply_scale(
-    state: &Arc<ViziaState>,
-    gui: &dyn nih_plug::prelude::GuiContext,
-    scale: f64,
-) -> bool {
-    let previous = state.user_scale_factor();
-    if scale == previous {
-        return true;
-    }
-    remember_scale(state, scale);
-    if gui.request_resize() {
-        true
-    } else {
-        remember_scale(state, previous);
-        false
     }
 }
 
@@ -85,53 +72,71 @@ pub fn apply_scale(
 const LABEL_H: f32 = 16.0;
 
 /// Picking one knob's parameter out of the set.
-type ToKnob = fn(&Arc<GainStageParams>) -> &nih_plug::prelude::FloatParam;
+type ToKnob = fn(&Arc<GainStageParams>) -> &nice_plug::prelude::FloatParam;
 
 pub fn create(
     params: Arc<GainStageParams>,
     meters: Arc<crate::meters::Meters>,
     editor_state: Arc<ViziaState>,
-) -> Option<Box<dyn Editor>> {
+) -> Option<vizia_plug::ViziaEditor> {
     let state = editor_state.clone();
-    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, gui| {
-        // Vizia ships Roboto as TTF byte slices. Registering the faces from
-        // memory makes them part of the plugin binary, so the GUI never
-        // depends on a system-wide ttf-roboto installation.
-        vizia_assets::register_roboto(cx);
-        vizia_assets::register_roboto_bold(cx);
-        // The only styling the panel takes from a sheet rather than from its
-        // own drawing: the scroll bar, which vizia builds but cannot size or
-        // colour without a theme.
-        let _ = cx.add_stylesheet(session::SCROLLBAR);
-
-        Panel {
-            params: params.clone(),
-            meters: meters.clone(),
-        }
-        .build(cx);
-
-        session::Session::build_into(cx, params.clone(), state.user_scale_factor(), gui);
-        Dropdowns::build_into(cx, params.clone());
-
-        Faceplate::new(cx);
-        gutter(cx);
-        strip(cx);
-        input(cx);
-        circuit(cx);
-        drive(cx);
-        tone(cx);
-        cabinet(cx);
-        output(cx);
-
-        // Last, so they draw over the panel and take the clicks first. The
-        // dialogs come after the menu: a question has to sit on top of
-        // whatever asked it.
-        dropdown::menu(cx);
-        session::menu(cx);
-        session::sizes(cx);
-        session::dialogs(cx);
+    create_vizia_editor(editor_state, ViziaTheming::None, move |cx, _gui| {
+        build_panel(
+            cx,
+            params.clone(),
+            meters.clone(),
+            state.user_scale_factor(),
+        );
     })
 }
+
+fn build_panel(
+    cx: &mut Context,
+    params: Arc<GainStageParams>,
+    meters: Arc<crate::meters::Meters>,
+    scale: f64,
+) {
+    // Vizia ships Roboto as TTF byte slices. Registering the faces from
+    // memory makes them part of the plugin binary, so the GUI never
+    // depends on a system-wide ttf-roboto installation.
+    vizia_assets::register_roboto(cx);
+    vizia_assets::register_roboto_bold(cx);
+    // The only styling the panel takes from a sheet rather than from its
+    // own drawing: the scroll bar, which vizia builds but cannot size or
+    // colour without a theme.
+    let _ = cx.add_stylesheet(session::SCROLLBAR);
+
+    Panel {
+        params: params.clone(),
+        parameter_signal: Signal::new(params.clone()),
+        meters: meters.clone(),
+    }
+    .build(cx);
+
+    session::Session::build_into(cx, params.clone(), scale);
+    Dropdowns::build_into(cx, params.clone());
+
+    Faceplate::new(cx);
+    gutter(cx);
+    strip(cx);
+    input(cx);
+    circuit(cx);
+    drive(cx);
+    tone(cx);
+    cabinet(cx);
+    output(cx);
+
+    // Last, so they draw over the panel and take the clicks first. The
+    // dialogs come after the menu: a question has to sit on top of
+    // whatever asked it.
+    dropdown::menu(cx);
+    session::menu(cx);
+    session::sizes(cx);
+    session::dialogs(cx);
+}
+
+#[cfg(test)]
+mod render_tests;
 
 // ---------------------------------------------------------------------------
 // Pieces every section is built from
@@ -139,17 +144,15 @@ pub fn create(
 
 /// Small print, centred on a point.
 fn label(cx: &mut Context, text: &str, x: f32, y: f32, size: f32, width: f32, colour: u32) {
-    Label::new(cx, text)
-        .position_type(PositionType::SelfDirected)
+    Label::new(cx, text.to_owned())
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - width / 2.0))
         .top(Pixels(y - LABEL_H / 2.0))
         .width(Pixels(width))
         .height(Pixels(LABEL_H))
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .alignment(Alignment::Center)
+        .text_align(TextAlign::Center)
+        .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
         .font_size(size)
         .color(Color::rgb(
             ((colour >> 16) & 0xff) as u8,
@@ -166,27 +169,26 @@ fn label(cx: &mut Context, text: &str, x: f32, y: f32, size: f32, width: f32, co
 /// number worth knowing.
 fn knob<P, F>(cx: &mut Context, x: f32, y: f32, radius: f32, name: &str, to_param: F, read: P)
 where
-    F: Fn(&Arc<GainStageParams>) -> &nih_plug::prelude::FloatParam + Copy + 'static,
+    F: Fn(&Arc<GainStageParams>) -> &nice_plug::prelude::FloatParam + Copy + 'static,
     P: Fn(&Arc<GainStageParams>) -> String + Clone + 'static,
 {
-    Knob::new(cx, Panel::params, to_param, radius, true)
-        .position_type(PositionType::SelfDirected)
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
+    Knob::new(cx, parameter_signal, to_param, radius, true)
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - radius))
         .top(Pixels(y - radius));
 
     label(cx, name, x, y + radius + 10.0, 9.5, 100.0, 0x9aa6b0);
 
-    Label::new(cx, Panel::params.map(move |p| read(p)))
-        .position_type(PositionType::SelfDirected)
+    Label::new(cx, parameter_signal.map(move |p| read(p)))
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - 50.0))
         .top(Pixels(y + radius + 21.0 - LABEL_H / 2.0))
         .width(Pixels(100.0))
         .height(Pixels(LABEL_H))
-        .child_left(Stretch(1.0))
-        .child_right(Stretch(1.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .alignment(Alignment::Center)
+        .text_align(TextAlign::Center)
+        .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0xff, 0xb2, 0x6a))
         .hoverable(false);
@@ -203,10 +205,11 @@ fn selector<P, F>(
     enabled: bool,
 ) where
     F: Fn(&Arc<GainStageParams>) -> &P + Copy + 'static,
-    P: nih_plug::prelude::Param + 'static,
+    P: nice_plug::prelude::Param + 'static,
 {
-    Selector::new(cx, Panel::params, to_param, labels, enabled)
-        .position_type(PositionType::SelfDirected)
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
+    Selector::new(cx, parameter_signal, to_param, labels, enabled)
+        .position_type(PositionType::Absolute)
         .left(Pixels(x))
         .top(Pixels(y))
         .width(Pixels(width))
@@ -228,14 +231,13 @@ fn gutter(cx: &mut Context) {
     for (index, (number, name, height)) in SECTIONS.iter().enumerate() {
         let mid = section_top(index) + height / 2.0;
         Label::new(cx, *number)
-            .position_type(PositionType::SelfDirected)
+            .position_type(PositionType::Absolute)
             .left(Pixels(12.0))
             .top(Pixels(mid - 14.0))
             .width(Pixels(20.0))
             .height(Pixels(28.0))
-            .child_top(Stretch(1.0))
-            .child_bottom(Stretch(1.0))
-            .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+            .alignment(Alignment::Left)
+            .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
             .font_size(22.0)
             .color(Color::rgba(0xff, 0xff, 0xff, 0x24))
             .hoverable(false);
@@ -248,6 +250,7 @@ fn gutter(cx: &mut Context) {
 // ---------------------------------------------------------------------------
 
 fn strip(cx: &mut Context) {
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
     // The name, and the version under it. Stacked inside the same 32 pixel
     // strip rather than given room of their own: a version is something you
     // go and look for when reporting a fault, not something to read every
@@ -265,14 +268,14 @@ fn strip(cx: &mut Context) {
 
     let row = HEADER_H / 2.0 - 10.0;
     session::PresetButton::build_into(cx)
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(session::BUTTON_X))
         .top(Pixels(row))
         .width(Pixels(session::BUTTON_W))
         .height(Pixels(20.0));
 
     session::Press::build_into(cx, "Save", true, false, || session::SessionEvent::OpenSave)
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(276.0))
         .top(Pixels(row))
         .width(Pixels(46.0))
@@ -281,21 +284,24 @@ fn strip(cx: &mut Context) {
     // Only your own presets can be deleted, and the button says so by going
     // dim rather than by disappearing -- a strip that changes shape as the
     // selection moves is harder to aim at.
-    Binding::new(cx, session::Session::deletable, |cx, deletable| {
-        session::Press::build_into(cx, "Delete", deletable.get(cx), false, || {
-            session::SessionEvent::OpenDelete
-        })
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(326.0))
-        .top(Pixels(HEADER_H / 2.0 - 10.0))
-        .width(Pixels(52.0))
-        .height(Pixels(20.0));
-    });
+    {
+        let deletable = cx.data::<session::Session>().view.map(|s| s.deletable);
+        Binding::new(cx, deletable, move |cx| {
+            session::Press::build_into(cx, "Delete", deletable.get(), false, || {
+                session::SessionEvent::OpenDelete
+            })
+            .position_type(PositionType::Absolute)
+            .left(Pixels(326.0))
+            .top(Pixels(HEADER_H / 2.0 - 10.0))
+            .width(Pixels(52.0))
+            .height(Pixels(20.0));
+        });
+    };
 
     // How big the panel is drawn. Not part of the signal path, so it lives up
     // here with the rest of what is about the plugin rather than the sound.
     session::SizeButton::build_into(cx)
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(session::SIZE_X))
         .top(Pixels(row))
         .width(Pixels(session::SIZE_W))
@@ -313,30 +319,36 @@ fn strip(cx: &mut Context) {
     // The parameter itself is left alone rather than written down to the cap,
     // so choosing a pedal again brings the setting back instead of silently
     // discarding it, and nothing here fights the host's automation.
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.circuit.value().voice().is_modelled()),
-        move |cx, modelled| {
+    {
+        let modelled = parameter_signal.map(|p| p.circuit.value().voice().is_modelled());
+        Binding::new(cx, modelled, move |cx| {
             let labels: Vec<&'static str> = Oversampling::ALL.iter().map(|o| o.name()).collect();
-            let handle = if modelled.get(cx) {
+            let handle = if modelled.get() {
                 let total = labels.len();
                 let cap = Oversampling::ALL
                     .iter()
                     .position(|o| o.factor() >= crate::voice::MODELLED_MAX_OVERSAMPLING)
                     .unwrap_or(0);
                 let offered = labels[..=cap].to_vec();
-                Selector::capped(cx, Panel::params, |p| &p.oversampling, offered, total, cap)
+                Selector::capped(
+                    cx,
+                    parameter_signal,
+                    |p| &p.oversampling,
+                    offered,
+                    total,
+                    cap,
+                )
             } else {
-                Selector::new(cx, Panel::params, |p| &p.oversampling, labels, true)
+                Selector::new(cx, parameter_signal, |p| &p.oversampling, labels, true)
             };
             handle
-                .position_type(PositionType::SelfDirected)
+                .position_type(PositionType::Absolute)
                 .left(Pixels(left))
                 .top(Pixels(row))
                 .width(Pixels(width))
                 .height(Pixels(20.0));
-        },
-    );
+        });
+    };
     label(
         cx,
         "quality",
@@ -353,6 +365,7 @@ fn strip(cx: &mut Context) {
 // ---------------------------------------------------------------------------
 
 fn input(cx: &mut Context) {
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
     let top = section_top(0);
 
     knob(
@@ -370,8 +383,9 @@ fn input(cx: &mut Context) {
     // its label says.
     let meter_x = body_x() + 88.0;
     let meter_w = body_w() - 300.0;
-    Meter::new(cx, Panel::meters)
-        .position_type(PositionType::SelfDirected)
+    let meters = cx.data::<Panel>().meters.clone();
+    Meter::new(cx, meters)
+        .position_type(PositionType::Absolute)
         .left(Pixels(meter_x))
         .top(Pixels(top + 18.0))
         .width(Pixels(meter_w))
@@ -427,8 +441,8 @@ fn input(cx: &mut Context) {
         76.0,
         0x7e8a96,
     );
-    DropButton::new(cx, Panel::params, |p| &p.pedal, Choice::Pedal, true)
-        .position_type(PositionType::SelfDirected)
+    DropButton::new(cx, parameter_signal, |p| &p.pedal, Choice::Pedal, true)
+        .position_type(PositionType::Absolute)
         .left(Pixels(body_x() + 76.0))
         .top(Pixels(top + 74.0))
         .width(Pixels(200.0))
@@ -438,11 +452,10 @@ fn input(cx: &mut Context) {
     // controls missing is not that pedal. Each tone knob is labelled with what
     // the box calls it -- tone, filter, colour, middle -- rather than all of
     // them being flattened to "tone". See `voice::PEDAL_TONES`.
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.pedal.value()),
-        move |cx, pedal| {
-            let pedal = pedal.get(cx);
+    {
+        let pedal = parameter_signal.map(|p| p.pedal.value());
+        Binding::new(cx, pedal, move |cx| {
+            let pedal = pedal.get();
             let live = pedal != PedalModel::None;
             let labels = pedal.voice().tone_labels();
             let shown: Vec<(usize, &'static str)> = labels
@@ -495,8 +508,8 @@ fn input(cx: &mut Context) {
                 live,
                 percent,
             );
-        },
-    );
+        });
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -504,6 +517,7 @@ fn input(cx: &mut Context) {
 // ---------------------------------------------------------------------------
 
 fn circuit(cx: &mut Context) {
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
     let top = section_top(1);
 
     // Six lists in two columns, read left to right in the order the signal
@@ -523,19 +537,17 @@ fn circuit(cx: &mut Context) {
     grid.dropdown(cx, 0, 0, "topology", |p| &p.circuit, Choice::Topology, true);
     grid.dropdown(cx, 1, 0, "modelled", |p| &p.circuit, Choice::Modelled, true);
 
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.circuit.value().has_diodes()),
-        move |cx, live| {
-            let live = live.get(cx);
+    {
+        let live = parameter_signal.map(|p| p.circuit.value().has_diodes());
+        Binding::new(cx, live, move |cx| {
+            let live = live.get();
             grid.dropdown(cx, 0, 1, "clipping", |p| &p.diode, Choice::Clipping, live);
-        },
-    );
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.circuit.value().has_amplifier()),
-        move |cx, live| {
-            let live = live.get(cx);
+        });
+    };
+    {
+        let live = parameter_signal.map(|p| p.circuit.value().has_amplifier());
+        Binding::new(cx, live, move |cx| {
+            let live = live.get();
             grid.dropdown(
                 cx,
                 1,
@@ -545,8 +557,8 @@ fn circuit(cx: &mut Context) {
                 Choice::Amplifier,
                 live,
             );
-        },
-    );
+        });
+    };
 
     // Iron applies to everything, which is the point of it being a control
     // rather than part of a circuit: a transformer belongs after a distortion
@@ -575,11 +587,10 @@ fn circuit(cx: &mut Context) {
     // circuits are changed -- and they are separate: the American Deluxe has
     // the jacks but its Bright capacitor is soldered in, so the first is live
     // there and the second is not.
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.circuit.value()),
-        move |cx, circuit| {
-            let voice = circuit.get(cx).voice();
+    {
+        let circuit = parameter_signal.map(|p| p.circuit.value());
+        Binding::new(cx, circuit, move |cx| {
+            let voice = circuit.get().voice();
             let jacks = voice.input_jacks();
             let bright = voice.bright_switch();
             grid.caption(cx, 1, 3, "sensitivity", jacks.is_some());
@@ -605,20 +616,19 @@ fn circuit(cx: &mut Context) {
                 vec!["Off", bright.map_or("On (120 pF)", |b| b.on_label)],
                 bright.is_some(),
             );
-        },
-    );
+        });
+    };
 
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
-    Label::new(cx, Panel::params.map(|p| describe(p.circuit.value())))
-        .position_type(PositionType::SelfDirected)
+    Label::new(cx, parameter_signal.map(|p| describe(p.circuit.value())))
+        .position_type(PositionType::Absolute)
         .left(Pixels(body_x()))
         .top(Pixels(top + 154.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .alignment(Alignment::Left)
+        .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0x86, 0x92, 0x9c))
         .hoverable(false);
@@ -635,7 +645,7 @@ fn row<P, F>(
     width: f32,
 ) where
     F: Fn(&Arc<GainStageParams>) -> &P + Copy + 'static,
-    P: nih_plug::prelude::Param + 'static,
+    P: nice_plug::prelude::Param + 'static,
 {
     label(
         cx,
@@ -704,16 +714,17 @@ impl Grid {
         live: bool,
     ) where
         F: Fn(&Arc<GainStageParams>) -> &P + Copy + 'static,
-        P: nih_plug::prelude::Param + 'static,
+        P: nice_plug::prelude::Param + 'static,
     {
+        let parameter_signal = cx.data::<Panel>().parameter_signal;
         self.caption(cx, column, row, name, live);
         let (x, w) = if column == 0 {
             (Self::left(), Self::LEFT_W)
         } else {
             (Self::right(), Self::right_w())
         };
-        DropButton::new(cx, Panel::params, to_param, choice, live)
-            .position_type(PositionType::SelfDirected)
+        DropButton::new(cx, parameter_signal, to_param, choice, live)
+            .position_type(PositionType::Absolute)
             .left(Pixels(x))
             .top(Pixels(self.y(row)))
             .width(Pixels(w))
@@ -870,41 +881,42 @@ pub fn describe(circuit: Circuit) -> String {
 // ---------------------------------------------------------------------------
 
 fn drive(cx: &mut Context) {
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
     let top = section_top(2);
 
     // Named after the pot it turns on the device selected, not after the
     // section. See `Gain::drive_name`.
-    Knob::new(cx, Panel::params, |p| &p.drive, 21.0, true)
-        .position_type(PositionType::SelfDirected)
+    Knob::new(cx, parameter_signal, |p| &p.drive, 21.0, true)
+        .position_type(PositionType::Absolute)
         .left(Pixels(body_x() + 30.0 - 21.0))
         .top(Pixels(top + 24.0 - 21.0));
     Label::new(
         cx,
-        Panel::params.map(|p| String::from(p.circuit.value().voice().drive_name())),
+        parameter_signal.map(|p| String::from(p.circuit.value().voice().drive_name())),
     )
-    .position_type(PositionType::SelfDirected)
+    .position_type(PositionType::Absolute)
     .left(Pixels(body_x() + 30.0 - 50.0))
     .top(Pixels(top + 24.0 + 21.0 + 10.0 - LABEL_H / 2.0))
     .width(Pixels(100.0))
     .height(Pixels(LABEL_H))
-    .child_left(Stretch(1.0))
-    .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .alignment(Alignment::Center)
+    .text_align(TextAlign::Center)
+    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0x9a, 0xa6, 0xb0))
     .hoverable(false);
     Label::new(
         cx,
-        Panel::params.map(|p| format!("{:.0} %", p.drive.value() * 100.0)),
+        parameter_signal.map(|p| format!("{:.0} %", p.drive.value() * 100.0)),
     )
-    .position_type(PositionType::SelfDirected)
+    .position_type(PositionType::Absolute)
     .left(Pixels(body_x() + 30.0 - 50.0))
     .top(Pixels(top + 24.0 + 21.0 + 21.0 - LABEL_H / 2.0))
     .width(Pixels(100.0))
     .height(Pixels(LABEL_H))
-    .child_left(Stretch(1.0))
-    .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .alignment(Alignment::Center)
+    .text_align(TextAlign::Center)
+    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0xff, 0xb2, 0x6a))
     .hoverable(false);
@@ -916,13 +928,12 @@ fn drive(cx: &mut Context) {
     // Greyed where the drawing has no such control -- and the Twin Reverb is
     // one of those. An AB763 has no master volume; its channel Volume is
     // already the Drive knob. See `Gain::level_control`.
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.master_enabled()),
-        move |cx, live| {
-            let live = live.get(cx);
-            Knob::new(cx, Panel::params, |p| &p.master, 21.0, live)
-                .position_type(PositionType::SelfDirected)
+    {
+        let live = parameter_signal.map(|p| p.master_enabled());
+        Binding::new(cx, live, move |cx| {
+            let live = live.get();
+            Knob::new(cx, parameter_signal, |p| &p.master, 21.0, live)
+                .position_type(PositionType::Absolute)
                 .left(Pixels(body_x() + 110.0 - 21.0))
                 .top(Pixels(top + 24.0 - 21.0));
             label(
@@ -934,11 +945,11 @@ fn drive(cx: &mut Context) {
                 100.0,
                 if live { 0x9aa6b0 } else { 0x5a636b },
             );
-        },
-    );
+        });
+    };
     Label::new(
         cx,
-        Panel::params.map(|p| {
+        parameter_signal.map(|p| {
             if p.master_enabled() {
                 format!("{:.0} %", p.master.value() * 100.0)
             } else {
@@ -946,14 +957,14 @@ fn drive(cx: &mut Context) {
             }
         }),
     )
-    .position_type(PositionType::SelfDirected)
+    .position_type(PositionType::Absolute)
     .left(Pixels(body_x() + 110.0 - 50.0))
     .top(Pixels(top + 24.0 + 21.0 + 21.0 - LABEL_H / 2.0))
     .width(Pixels(100.0))
     .height(Pixels(LABEL_H))
-    .child_left(Stretch(1.0))
-    .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .alignment(Alignment::Center)
+    .text_align(TextAlign::Center)
+    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0xff, 0x8a, 0x3c))
     .hoverable(false);
@@ -962,14 +973,13 @@ fn drive(cx: &mut Context) {
     // stage in the path has in that slot, and greyed where it has nothing:
     // the AB763s, the transistor stages and Bypass. The DR103's is its
     // driver's (`power::DriverSpec`). See `Chain::set_presence`.
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.presence_name()),
-        move |cx, name| {
-            let name = name.get(cx);
+    {
+        let name = parameter_signal.map(|p| p.presence_name());
+        Binding::new(cx, name, move |cx| {
+            let name = name.get();
             let live = name.is_some();
-            Knob::new(cx, Panel::params, |p| &p.presence, 21.0, live)
-                .position_type(PositionType::SelfDirected)
+            Knob::new(cx, parameter_signal, |p| &p.presence, 21.0, live)
+                .position_type(PositionType::Absolute)
                 .left(Pixels(body_x() + 190.0 - 21.0))
                 .top(Pixels(top + 24.0 - 21.0));
             label(
@@ -981,11 +991,11 @@ fn drive(cx: &mut Context) {
                 100.0,
                 if live { 0x9aa6b0 } else { 0x5a636b },
             );
-        },
-    );
+        });
+    };
     Label::new(
         cx,
-        Panel::params.map(|p| {
+        parameter_signal.map(|p| {
             if p.presence_name().is_some() {
                 format!("{:.0} %", p.presence.value() * 100.0)
             } else {
@@ -993,14 +1003,14 @@ fn drive(cx: &mut Context) {
             }
         }),
     )
-    .position_type(PositionType::SelfDirected)
+    .position_type(PositionType::Absolute)
     .left(Pixels(body_x() + 190.0 - 50.0))
     .top(Pixels(top + 24.0 + 21.0 + 21.0 - LABEL_H / 2.0))
     .width(Pixels(100.0))
     .height(Pixels(LABEL_H))
-    .child_left(Stretch(1.0))
-    .child_right(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .alignment(Alignment::Center)
+    .text_align(TextAlign::Center)
+    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0xff, 0x8a, 0x3c))
     .hoverable(false);
@@ -1041,11 +1051,10 @@ fn drive(cx: &mut Context) {
         (|p| &p.eq2200, "2.2k"),
         (|p| &p.eq6600, "6.6k"),
     ];
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.circuit.value().voice().has_graphic()),
-        move |cx, live| {
-            let live = live.get(cx);
+    {
+        let live = parameter_signal.map(|p| p.circuit.value().voice().has_graphic());
+        Binding::new(cx, live, move |cx| {
+            let live = live.get();
             let base = top + 74.0;
             label(
                 cx,
@@ -1058,8 +1067,8 @@ fn drive(cx: &mut Context) {
             );
             for (i, (to_param, name)) in BANDS.into_iter().enumerate() {
                 let x = body_x() + 96.0 + i as f32 * 46.0;
-                Knob::fader(cx, Panel::params, to_param, 22.0, 58.0, live)
-                    .position_type(PositionType::SelfDirected)
+                Knob::fader(cx, parameter_signal, to_param, 22.0, 58.0, live)
+                    .position_type(PositionType::Absolute)
                     .left(Pixels(x - 11.0))
                     .top(Pixels(base));
                 label(
@@ -1086,8 +1095,8 @@ fn drive(cx: &mut Context) {
                 260.0,
                 0x86929c,
             );
-        },
-    );
+        });
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1121,11 +1130,6 @@ pub struct ToneKnobs {
 
 // Written out rather than derived: vizia's derive asks every field to be
 // `Data` itself, and an array is not one.
-impl Data for ToneKnobs {
-    fn same(&self, other: &Self) -> bool {
-        self == other
-    }
-}
 
 impl ToneKnobs {
     pub fn of(params: &Arc<GainStageParams>) -> Self {
@@ -1160,6 +1164,7 @@ impl ToneKnobs {
 }
 
 fn tone(cx: &mut Context) {
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
     let top = section_top(3);
 
     row(
@@ -1197,92 +1202,95 @@ fn tone(cx: &mut Context) {
     // `voice::set_tone_knobs`, and those presets switch the stack out too. So
     // the pedals' tone knobs were greyed out while still working, which is the
     // same fault the other way round.
-    Binding::new(cx, Panel::params.map(ToneKnobs::of), move |cx, state| {
-        let state = state.get(cx);
-        let top = section_top(3);
-        // The fourth knob, where the circuit has a control of its own past the
-        // three. It draws in the row's fourth column, which is clear of the
-        // paragraph beside it, and only for the circuit that has one.
-        if let Some(name) = state.sweep {
-            let x = body_x() + 46.0 + 3.0 * 84.0;
-            Knob::new(cx, Panel::params, |p| &p.tone_sweep, 18.0, true)
-                .position_type(PositionType::SelfDirected)
-                .left(Pixels(x - 18.0))
-                .top(Pixels(top + 40.0));
-            label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
-        }
-        if let Some(names) = state.colour_mix {
-            let controls: [ToKnob; 2] = [|p| &p.hm2_colour_lo, |p| &p.hm2_colour_hi];
-            for (i, (to_param, name)) in controls.into_iter().zip(names).enumerate() {
-                let x = body_x() + 46.0 + (3 + i) as f32 * 84.0;
-                Knob::new(cx, Panel::params, to_param, 18.0, true)
-                    .position_type(PositionType::SelfDirected)
+    {
+        let state = parameter_signal.map(ToneKnobs::of);
+        Binding::new(cx, state, move |cx| {
+            let state = state.get();
+            let top = section_top(3);
+            // The fourth knob, where the circuit has a control of its own past the
+            // three. It draws in the row's fourth column, which is clear of the
+            // paragraph beside it, and only for the circuit that has one.
+            if let Some(name) = state.sweep {
+                let x = body_x() + 46.0 + 3.0 * 84.0;
+                Knob::new(cx, parameter_signal, |p| &p.tone_sweep, 18.0, true)
+                    .position_type(PositionType::Absolute)
                     .left(Pixels(x - 18.0))
                     .top(Pixels(top + 40.0));
                 label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
             }
-        }
-        for (i, to_param) in knobs.into_iter().enumerate() {
-            let live = state.live[i];
-            let x = body_x() + 46.0 + i as f32 * 84.0;
-            Knob::new(cx, Panel::params, to_param, 18.0, live)
-                .position_type(PositionType::SelfDirected)
-                .left(Pixels(x - 18.0))
-                .top(Pixels(top + 40.0));
-            label(
-                cx,
-                state.names[i],
-                x,
-                top + 86.0,
-                9.5,
-                80.0,
-                if live { 0x9aa6b0 } else { 0x5a636b },
-            );
-        }
-        // Greyed unless the selected circuit has a tank and a tremolo, which
-        // only the Twin does. A knob that turns and reaches nothing is
-        // indistinguishable from a fault -- the same reason the three beside
-        // them are greyed, and the same reason BUG-023 happened.
-        let live = state.extras;
-        for (i, to_param) in extras.into_iter().enumerate() {
-            let x = body_x() + 46.0 + i as f32 * 84.0;
-            Knob::new(cx, Panel::params, to_param, 18.0, live)
-                .position_type(PositionType::SelfDirected)
-                .left(Pixels(x - 18.0))
-                .top(Pixels(top + 104.0));
-            label(
-                cx,
-                EXTRA_NAMES[i],
-                x,
-                top + 150.0,
-                9.5,
-                80.0,
-                if live { 0x9aa6b0 } else { 0x5a636b },
-            );
-        }
-        // The Jazz 120's chorus, in the fourth column of the same row: it is
-        // the amplifier's own effect and belongs beside the amplifier's own
-        // reverb and tremolo rather than in a section of its own. Drawn for
-        // every circuit and greyed where it reaches nothing, which is what
-        // the three beside it do.
-        {
-            let live = state.chorus;
-            let x = body_x() + 46.0 + 3.0 * 84.0;
-            Knob::new(cx, Panel::params, |p| &p.chorus, 18.0, live)
-                .position_type(PositionType::SelfDirected)
-                .left(Pixels(x - 18.0))
-                .top(Pixels(top + 104.0));
-            label(
-                cx,
-                "CHORUS",
-                x,
-                top + 150.0,
-                9.5,
-                80.0,
-                if live { 0x9aa6b0 } else { 0x5a636b },
-            );
-        }
-    });
+            if let Some(names) = state.colour_mix {
+                let controls: [ToKnob; 2] = [|p| &p.hm2_colour_lo, |p| &p.hm2_colour_hi];
+                for (i, (to_param, name)) in controls.into_iter().zip(names).enumerate() {
+                    let x = body_x() + 46.0 + (3 + i) as f32 * 84.0;
+                    Knob::new(cx, parameter_signal, to_param, 18.0, true)
+                        .position_type(PositionType::Absolute)
+                        .left(Pixels(x - 18.0))
+                        .top(Pixels(top + 40.0));
+                    label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
+                }
+            }
+            for (i, to_param) in knobs.into_iter().enumerate() {
+                let live = state.live[i];
+                let x = body_x() + 46.0 + i as f32 * 84.0;
+                Knob::new(cx, parameter_signal, to_param, 18.0, live)
+                    .position_type(PositionType::Absolute)
+                    .left(Pixels(x - 18.0))
+                    .top(Pixels(top + 40.0));
+                label(
+                    cx,
+                    state.names[i],
+                    x,
+                    top + 86.0,
+                    9.5,
+                    80.0,
+                    if live { 0x9aa6b0 } else { 0x5a636b },
+                );
+            }
+            // Greyed unless the selected circuit has a tank and a tremolo, which
+            // only the Twin does. A knob that turns and reaches nothing is
+            // indistinguishable from a fault -- the same reason the three beside
+            // them are greyed, and the same reason BUG-023 happened.
+            let live = state.extras;
+            for (i, to_param) in extras.into_iter().enumerate() {
+                let x = body_x() + 46.0 + i as f32 * 84.0;
+                Knob::new(cx, parameter_signal, to_param, 18.0, live)
+                    .position_type(PositionType::Absolute)
+                    .left(Pixels(x - 18.0))
+                    .top(Pixels(top + 104.0));
+                label(
+                    cx,
+                    EXTRA_NAMES[i],
+                    x,
+                    top + 150.0,
+                    9.5,
+                    80.0,
+                    if live { 0x9aa6b0 } else { 0x5a636b },
+                );
+            }
+            // The Jazz 120's chorus, in the fourth column of the same row: it is
+            // the amplifier's own effect and belongs beside the amplifier's own
+            // reverb and tremolo rather than in a section of its own. Drawn for
+            // every circuit and greyed where it reaches nothing, which is what
+            // the three beside it do.
+            {
+                let live = state.chorus;
+                let x = body_x() + 46.0 + 3.0 * 84.0;
+                Knob::new(cx, parameter_signal, |p| &p.chorus, 18.0, live)
+                    .position_type(PositionType::Absolute)
+                    .left(Pixels(x - 18.0))
+                    .top(Pixels(top + 104.0));
+                label(
+                    cx,
+                    "CHORUS",
+                    x,
+                    top + 150.0,
+                    9.5,
+                    80.0,
+                    if live { 0x9aa6b0 } else { 0x5a636b },
+                );
+            }
+        });
+    };
 
     // Kept to lines that fit the space rather than sentences that overflow
     // it: text wider than its box is simply clipped, with no warning.
@@ -1339,6 +1347,7 @@ fn tone(cx: &mut Context) {
 // ---------------------------------------------------------------------------
 
 fn cabinet(cx: &mut Context) {
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
     let top = section_top(4);
     let grid = Grid::new(top);
     let left = Grid::left();
@@ -1351,11 +1360,10 @@ fn cabinet(cx: &mut Context) {
     // Combo/Stack response. The two are never stacked, so the legacy row only
     // applies while Legacy is chosen.
     grid.dropdown(cx, 0, 0, "cabinet", |p| &p.cab_model, Choice::Cabinet, true);
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.cab_model.value() == CabModel::Legacy),
-        move |cx, legacy| {
-            let live = legacy.get(cx);
+    {
+        let legacy = parameter_signal.map(|p| p.cab_model.value() == CabModel::Legacy);
+        Binding::new(cx, legacy, move |cx| {
+            let live = legacy.get();
             grid.caption(cx, 1, 0, "legacy", live);
             selector(
                 cx,
@@ -1366,52 +1374,48 @@ fn cabinet(cx: &mut Context) {
                 Cabinet::ALL.iter().map(|c| c.name()).collect(),
                 live,
             );
-        },
-    );
+        });
+    };
 
     // --- the driver ---------------------------------------------------------
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.cab_model.value() != CabModel::Legacy),
-        move |cx, live| {
-            let live = live.get(cx);
+    {
+        let live = parameter_signal.map(|p| p.cab_model.value() != CabModel::Legacy);
+        Binding::new(cx, live, move |cx| {
+            let live = live.get();
             grid.dropdown(cx, 0, 1, "speaker", |p| &p.speaker, Choice::Speaker, live);
-        },
-    );
+        });
+    };
     // What the selection physically is, rather than what it is named after.
-    Label::new(cx, Panel::params.map(|p| cabinet_summary(p)))
-        .position_type(PositionType::SelfDirected)
+    Label::new(cx, parameter_signal.map(|p| cabinet_summary(p)))
+        .position_type(PositionType::Absolute)
         .left(Pixels(right - 58.0))
         .top(Pixels(grid.y(1)))
         .width(Pixels(rest + 58.0))
         .height(Pixels(20.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .alignment(Alignment::Left)
+        .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0x86, 0x92, 0x9c))
         .hoverable(false);
 
     // --- the microphones ----------------------------------------------------
-    Binding::new(
-        cx,
-        Panel::params.map(|p| p.physical_cabinet()),
-        move |cx, live| {
-            let live = live.get(cx);
+    {
+        let live = parameter_signal.map(|p| p.physical_cabinet());
+        Binding::new(cx, live, move |cx| {
+            let live = live.get();
             // Mic A always exists; Bypass is an ideal omni at the placement.
             grid.dropdown(cx, 0, 2, "mic A", |p| &p.mic_a, Choice::MicA, live);
             grid.dropdown(cx, 1, 2, "mic B", |p| &p.mic_b, Choice::MicB, live);
-        },
-    );
+        });
+    };
 
     // Placement: three for A, three for B and the blend, one row.
-    Binding::new(
-        cx,
-        Panel::params.map(|p| {
+    {
+        let flags = parameter_signal.map(|p| {
             u8::from(p.physical_cabinet()) | (u8::from(p.mic_b.value() != MicModel::Off) << 1)
-        }),
-        move |cx, flags| {
-            let flags = flags.get(cx);
+        });
+        Binding::new(cx, flags, move |cx| {
+            let flags = flags.get();
             let a = flags & 1 != 0;
             let b = a && flags & 2 != 0;
             let step = body_w() / 9.0;
@@ -1495,8 +1499,8 @@ fn cabinet(cx: &mut Context) {
                 vec!["Physical", "Aligned"],
                 b,
             );
-        },
-    );
+        });
+    };
 }
 
 fn percent(v: f32) -> String {
@@ -1533,10 +1537,11 @@ fn placement_knob<F>(
     live: bool,
     format: fn(f32) -> String,
 ) where
-    F: Fn(&Arc<GainStageParams>) -> &nih_plug::prelude::FloatParam + Copy + 'static,
+    F: Fn(&Arc<GainStageParams>) -> &nice_plug::prelude::FloatParam + Copy + 'static,
 {
-    Knob::new(cx, Panel::params, to_param, radius, live)
-        .position_type(PositionType::SelfDirected)
+    let parameter_signal = cx.data::<Panel>().parameter_signal;
+    Knob::new(cx, parameter_signal, to_param, radius, live)
+        .position_type(PositionType::Absolute)
         .left(Pixels(x - radius))
         .top(Pixels(y - radius));
     label(
@@ -1550,7 +1555,7 @@ fn placement_knob<F>(
     );
     Label::new(
         cx,
-        Panel::params.map(move |p| {
+        parameter_signal.map(move |p| {
             if live {
                 format(to_param(p).value())
             } else {
@@ -1558,16 +1563,14 @@ fn placement_knob<F>(
             }
         }),
     )
-    .position_type(PositionType::SelfDirected)
+    .position_type(PositionType::Absolute)
     .left(Pixels(x - 38.0))
     .top(Pixels(y + radius + 21.0 - LABEL_H / 2.0))
     .width(Pixels(76.0))
     .height(Pixels(LABEL_H))
-    .child_left(Stretch(1.0))
-    .child_right(Stretch(1.0))
-    .child_top(Stretch(1.0))
-    .child_bottom(Stretch(1.0))
-    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+    .alignment(Alignment::Center)
+    .text_align(TextAlign::Center)
+    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
     .font_size(9.5)
     .color(Color::rgb(0xff, 0xb2, 0x6a))
     .hoverable(false);

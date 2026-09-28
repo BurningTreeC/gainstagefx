@@ -1,0 +1,211 @@
+use crate::prelude::*;
+
+/// A label used to display text.
+///
+/// # Examples
+///
+/// ## Basic label
+///
+/// A label can be used to simply display some text on the screen.
+///
+/// ```
+/// # use vizia_core::prelude::*;
+/// #
+/// # let cx = &mut Context::default();
+/// #
+/// Label::new(cx, "Text");
+/// ```
+///
+/// ## Label from a signal source
+///
+/// A label can read from any signal, which automatically updates the text whenever the underlying data changes.
+///
+/// ```
+/// # use vizia_core::prelude::*;
+/// #
+/// # let cx = &mut Context::default();
+/// #
+/// let text = Signal::new(String::from("Text"));
+/// Label::new(cx, text);
+/// ```
+///
+/// ## Label with text wrapping
+///
+/// A label automatically wraps the text if it doesn't fit inside of the width of the label.
+///
+/// ```
+/// # use vizia_core::prelude::*;
+/// #
+/// # let mut cx = &mut Context::default();
+/// #
+/// Label::new(
+///     cx,
+///     "This is a really long text to showcase the text wrapping support of a label.",
+/// )
+/// .width(Pixels(100.0));
+/// ```
+///
+/// ## Label without text wrapping
+///
+/// A label can also be configured to never wrap the text by using the [`text_wrap`](crate::prelude::Handle::text_wrap) method.
+///
+/// ```
+/// # use vizia_core::prelude::*;
+/// #
+/// # let mut cx = &mut Context::default();
+/// #
+/// Label::new(
+///     cx,
+///     "This is a really long text to showcase disabled text wrapping of a label.",
+/// )
+/// .width(Pixels(100.0))
+/// .text_wrap(false);
+/// ```
+///
+/// ## Label for a button
+///
+/// A label can also be used inside of a button to be able to add text to it.
+///
+/// ```
+/// # use vizia_core::prelude::*;
+/// # let cx = &mut Context::default();
+/// #
+/// Button::new(cx, |cx| Label::new(cx, "Text"));
+/// ```
+pub struct Label {
+    describing: Option<String>,
+}
+
+impl Label {
+    /// Creates a new [Label] view.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use vizia_core::prelude::*;
+    /// #
+    /// # let cx = &mut Context::default();
+    /// #
+    /// Label::new(cx, "Text");
+    /// ```
+    pub fn new<T>(cx: &mut Context, text: impl Res<T> + Clone + 'static) -> Handle<Self>
+    where
+        T: ToStringLocalized + 'static,
+    {
+        Self { describing: None }.build(cx, |_| {}).text(text.clone()).role(Role::Label).name(text)
+    }
+
+    /// Creates a new rich [Label] view.
+    pub fn rich<T>(
+        cx: &mut Context,
+        text: impl Res<T> + Clone + 'static,
+        children: impl Fn(&mut Context),
+    ) -> Handle<Self>
+    where
+        T: ToStringLocalized + 'static,
+    {
+        Self { describing: None }
+            .build(cx, |cx| {
+                children(cx);
+            })
+            .text(text.clone())
+            .role(Role::Label)
+            .name(text)
+    }
+}
+
+impl Handle<'_, Label> {
+    /// Which form element does this label describe.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use vizia_core::prelude::*;
+    /// #
+    /// #
+    /// # struct AppData {
+    /// #     value: bool,
+    /// # }
+    /// #
+    /// # impl Model for AppData {}
+    /// #
+    /// # enum AppEvent {
+    /// #     ToggleValue,
+    /// # }
+    /// #
+    /// # let cx = &mut Context::default();
+    /// #
+    /// # let value = Signal::new(false);
+    /// #
+    /// Checkbox::new(cx, value).on_toggle(|cx| cx.emit(AppEvent::ToggleValue)).id("checkbox_identifier");
+    /// Label::new(cx, "hello").describing("checkbox_identifier");
+    /// ```
+    pub fn describing(self, entity_identifier: impl Into<String>) -> Self {
+        let identifier = entity_identifier.into();
+        if let Some(id) = self.cx.resolve_entity_identifier(&identifier) {
+            let label_identifier = format!("{}", self.entity);
+            self.cx.entity_identifiers.insert(label_identifier.clone(), self.entity);
+            self.cx.style.labelled_by.insert(id, label_identifier);
+        }
+        self.modify(|label| label.describing = Some(identifier)).class("describing").hidden(true)
+    }
+}
+
+impl View for Label {
+    fn element(&self) -> Option<&'static str> {
+        Some("label")
+    }
+
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|window_event, meta| match window_event {
+            WindowEvent::Press { .. } | WindowEvent::PressDown { .. } => {
+                if cx.current() == cx.mouse.left.pressed && meta.target == cx.current() {
+                    if let Some(describing) = self
+                        .describing
+                        .as_ref()
+                        .and_then(|identity| cx.resolve_entity_identifier(identity))
+                    {
+                        let old = cx.current;
+                        cx.current = describing;
+                        cx.focus_with_visibility(false);
+                        let message = if matches!(window_event, WindowEvent::Press { .. }) {
+                            WindowEvent::Press { mouse: false }
+                        } else {
+                            WindowEvent::PressDown { mouse: false }
+                        };
+                        cx.emit_to(describing, message);
+                        cx.current = old;
+                    }
+                }
+            }
+            _ => {}
+        });
+    }
+}
+
+/// A view which represents a span of text within a label.
+pub struct TextSpan {}
+
+impl TextSpan {
+    /// Create a new [TextSpan] view.
+    pub fn new<'a>(
+        cx: &'a mut Context,
+        text: &str,
+        children: impl Fn(&mut Context),
+    ) -> Handle<'a, Self> {
+        Self {}
+            .build(cx, |cx| {
+                cx.style.text_span.insert(cx.current(), true);
+                children(cx);
+            })
+            .text(text.to_string())
+            .display(Display::None)
+            .pointer_events(PointerEvents::None)
+    }
+}
+
+impl View for TextSpan {
+    fn element(&self) -> Option<&'static str> {
+        Some("text-span")
+    }
+}

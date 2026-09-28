@@ -1,193 +1,30 @@
-//! The cabinet and microphones as one linear (almost) processor, per channel.
+//! Cone acceleration -> radiated pressure field -> microphones -> output calibration.
 //!
-//! Input is the cone's radiation proxy from the speaker model: `Re Mms / Bl^2`
-//! times the rate of change of the motional voltage, which is the on-axis pressure
-//! normalised to one volt at the terminals in the mass-controlled band. So this
-//! stage never sees the terminal voltage, and the load's interaction with the
-//! amplifier has already happened inside the power-stage solve.
-//!
-//! ```text
-//! cone -> breakup voicing -> [closed box: standing waves, back panel] -> delay line
-//!   delay line --(per driver, per mic: fractional delay, distance, piston
-//!                 directivity, polar weight, off-axis loss)--> omni / gradient sums
-//!   [open back: inverted rear wave per driver around the nearest edge]
-//!   gradient -> + proximity (leaky integrator) ; sum -> baffle step -> mic response
-//!            -> distance make-up -> subtle saturation
-//!   mic A, mic B -> blend / polarity / alignment -> out
-//! ```
-//!
-//! Everything that depends on geometry is recomputed at control rate and ramped
-//! per sample. Nothing allocates. See `CABINET_MODEL.md` and `MICROPHONE_MODEL.md`.
+//! All cones contribute coherent Rayleigh surface integrals to each microphone.
+//! The cabinet load is in the amplifier solve; the same uniform cavity equations
+//! provide opening and panel radiation here. Pressure is in Pa until the final
+//! fixed output calibration. Placement changes crossfade pressure kernels without
+//! allocating. A common propagation time is removed to preserve plugin latency.
 
 use super::cabinet::CabinetProfile;
+use super::diffraction::{self, ROUTES};
+use super::enclosure::{CavityRadiation, RADIATORS};
 use super::filters::{Biquad, DelayLine, OnePole};
 use super::mic::{MicPlacement, MicProfile, Pattern};
-use super::speaker::{SpeakerProfile, SPEED_OF_SOUND};
-use std::f64::consts::TAU;
+use super::radiation::PressureField;
+use super::speaker::{SpeakerProfile, RHO, SPEED_OF_SOUND};
+use std::f64::consts::{PI, TAU};
 
-/// Four drivers in front, and a rear wave for each of up to four drivers.
-pub const MAX_PATHS: usize = 8;
-/// Distance at which the geometric level is unity, m.
-const REFERENCE_DISTANCE: f64 = 0.05;
-/// Fraction of the geometric level loss (in dB) that is made up, so distant
-/// placements stay usable. The relative level between the two microphones stays
-/// physical when both are equally far; see `MICROPHONE_MODEL.md`.
-const DISTANCE_MAKEUP: f64 = 0.5;
-/// Effective radiating radius above breakup, as a fraction of the cone's. EMPIRICALLY
-/// TUNED so the edge of a 12-inch cone at 2.5 cm is about 6 dB darker at 5 kHz than
-/// its centre, which is the scale of difference manufacturers' placement guides describe.
-const HF_RADIUS: f64 = 0.4;
-/// Piston directivity -3 dB point: `2 J1(x)/x = 0.707` at `x = ka sin(theta) = 2.2`.
-const PISTON_X: f64 = 2.2;
-/// A fourth-order Butterworth low-pass, as two sections: the shape a cone's
-/// directivity is given where the microphone is off the cone's disc. See
-/// `Path::beam`.
-const BEAM_Q: [f64; 2] = [0.541_196_1, 1.306_563];
-/// Samples over which control changes are ramped.
 const RAMP: usize = 64;
-/// Largest proximity boost the leaky integrator is allowed to give, as a ratio.
-const PROXIMITY_CEILING: f64 = 8.0;
+const REFERENCE_DISTANCE: f64 = 0.05;
+pub const MAX_PATHS: usize = RADIATORS * ROUTES;
 
-/// What a microphone slot holds.
 #[derive(Clone, Copy, PartialEq)]
 pub enum MicSlot {
     Off,
-    /// A perfect omnidirectional pressure transducer at the placement: geometry only.
+    /// Ideal omnidirectional pressure transducer, including propagation geometry.
     Ideal,
     Profile(&'static MicProfile),
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Ramped {
-    now: f64,
-    step: f64,
-    target: f64,
-}
-
-impl Ramped {
-    fn aim(&mut self, target: f64, snap: bool) {
-        self.target = target;
-        if snap {
-            self.now = target;
-            self.step = 0.0;
-        } else {
-            self.step = (target - self.now) / RAMP as f64;
-        }
-    }
-
-    #[inline]
-    fn advance(&mut self, last: bool) {
-        if last {
-            self.now = self.target;
-            self.step = 0.0;
-        } else {
-            self.now += self.step;
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-struct Path {
-    delay: Ramped,
-    omni: Ramped,
-    gradient: Ramped,
-    /// The cone's directivity when the microphone is in front of its disc: the
-    /// near field, where the far-field law does not hold and one pole, TUNED to
-    /// what placement guides describe between centre and edge, stands in.
-    directivity: OnePole,
-    /// And when it is not: a cone a few tens of centimetres to the side, which
-    /// is what every other cone in a close-miked cabinet is. There the disc's
-    /// own directivity applies, `2 J1(x) / x` of the whole cone -- 3 dB down at
-    /// `x = 2.2`, a null at 3.83 and side lobes 17.6 dB down and falling -- and
-    /// one pole on the breakup radius, which falls 6 dB an octave, left the
-    /// neighbours loud enough to comb-filter a close-miked 4x12 by nine to
-    /// thirteen decibels above 2.5 kHz. A fourth-order Butterworth at the same
-    /// -3 dB corner follows the main lobe to within a few decibels and puts
-    /// everything past it below the side lobes. `tests/acoustics.rs` holds the
-    /// close-miked cabinet to its own cone; `tests/jazz_cabinet.rs` holds the
-    /// two-cone JC-120 to a measurement of one.
-    beam: [Biquad; 2],
-    /// Whether `beam` is in the path.
-    far: bool,
-    off_axis: OnePole,
-    diffraction: OnePole,
-    /// Absolute delay before the common minimum was removed, samples.
-    absolute: f64,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct MicChannel {
-    slot: MicSlot,
-    paths: [Path; MAX_PATHS],
-    count: usize,
-    proximity: OnePole,
-    proximity_on: bool,
-    baffle: Biquad,
-    eq: [Biquad; 6],
-    eq_norm: f64,
-    trim: Ramped,
-    cubic: f64,
-    quadratic: f64,
-    dc: OnePole,
-}
-
-impl MicChannel {
-    fn new() -> Self {
-        Self {
-            slot: MicSlot::Off,
-            paths: [Path::default(); MAX_PATHS],
-            count: 0,
-            proximity: OnePole::open(),
-            proximity_on: false,
-            baffle: Biquad::IDENTITY,
-            eq: [Biquad::IDENTITY; 6],
-            eq_norm: 1.0,
-            trim: Ramped::default(),
-            cubic: 0.0,
-            quadratic: 0.0,
-            dc: OnePole::open(),
-        }
-    }
-
-    fn reset(&mut self) {
-        for path in &mut self.paths {
-            path.directivity.reset();
-            for bq in &mut path.beam {
-                bq.reset();
-            }
-            path.off_axis.reset();
-            path.diffraction.reset();
-        }
-        self.proximity.reset();
-        self.baffle.reset();
-        for bq in &mut self.eq {
-            bq.reset();
-        }
-        self.dc.reset();
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AcousticStage {
-    rate: f64,
-    cabinet: Option<&'static CabinetProfile>,
-    speaker: &'static SpeakerProfile,
-    line: DelayLine,
-    voicing: [Biquad; 4],
-    voicing_norm: f64,
-    enclosure: [Biquad; 4],
-    enclosure_on: bool,
-    mics: [MicChannel; 2],
-    placements: [MicPlacement; 2],
-    blend: Ramped,
-    /// Where each microphone sits in the stereo field, -1 hard left to +1 hard
-    /// right. A pair of microphones on one cabinet is the usual way a stereo
-    /// guitar image is made, and until now the two were summed to mono before
-    /// anything downstream could place them.
-    pan: [Ramped; 2],
-    invert: bool,
-    align: bool,
-    ramp_left: usize,
 }
 
 impl std::fmt::Debug for MicSlot {
@@ -200,10 +37,127 @@ impl std::fmt::Debug for MicSlot {
     }
 }
 
-/// One-pole corner for a capsule's extra high-frequency loss at incidence `psi`: the
-/// profile's loss at 90 degrees and 10 kHz, scaled in dB by `sin^2 psi` up to 90 degrees
-/// and held beyond. Consistent with the SM57's published polars (about half the 90 degree
-/// extra loss at 45 degrees). Zero loss is a wire.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Ramped {
+    now: f64,
+    step: f64,
+    target: f64,
+}
+impl Ramped {
+    fn aim(&mut self, target: f64, snap: bool) {
+        self.target = target;
+        if snap {
+            self.now = target;
+            self.step = 0.0;
+        } else {
+            self.step = (target - self.now) / RAMP as f64;
+        }
+    }
+    fn advance(&mut self, last: bool) {
+        if last {
+            self.now = self.target;
+            self.step = 0.0;
+        } else {
+            self.now += self.step;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct RearPath {
+    source: usize,
+    delay: Ramped,
+    pressure: Ramped,
+    velocity: Ramped,
+    diffraction: OnePole,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct BreakupPath {
+    delay: Ramped,
+    pressure: Ramped,
+    velocity: Ramped,
+    directivity: OnePole,
+    beam: [Biquad; 2],
+    far: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct MicChannel {
+    slot: MicSlot,
+    field: PressureField,
+    front_panel: PressureField,
+    breakup_paths: [BreakupPath; 4],
+    driver_count: usize,
+    rear: [RearPath; MAX_PATHS],
+    off_axis: OnePole,
+    baffle: Biquad,
+    eq: [Biquad; 6],
+    eq_norm: f64,
+    delays: (f64, f64),
+}
+impl MicChannel {
+    fn new() -> Self {
+        Self {
+            slot: MicSlot::Off,
+            field: PressureField::default(),
+            front_panel: PressureField::default(),
+            breakup_paths: [BreakupPath::default(); 4],
+            driver_count: 0,
+            rear: [RearPath::default(); MAX_PATHS],
+            off_axis: OnePole::open(),
+            baffle: Biquad::IDENTITY,
+            eq: [Biquad::IDENTITY; 6],
+            eq_norm: 1.0,
+            delays: (0.0, 0.0),
+        }
+    }
+    fn reset(&mut self) {
+        for path in &mut self.breakup_paths {
+            path.directivity.reset();
+            for filter in &mut path.beam {
+                filter.reset();
+            }
+        }
+        for path in &mut self.rear {
+            path.diffraction.reset();
+        }
+        self.off_axis.reset();
+        self.baffle.reset();
+        for b in &mut self.eq {
+            b.reset();
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AcousticStage {
+    rate: f64,
+    cabinet: Option<&'static CabinetProfile>,
+    speaker: &'static SpeakerProfile,
+    acceleration: DelayLine,
+    velocity: DelayLine,
+    integrate: OnePole,
+    breakup_acceleration: DelayLine,
+    breakup_velocity: DelayLine,
+    breakup_integrate: OnePole,
+    piston_band: OnePole,
+    cavity: CavityRadiation,
+    rear_acceleration: [DelayLine; RADIATORS],
+    rear_velocity: [DelayLine; RADIATORS],
+    rear_integrate: [OnePole; RADIATORS],
+    voicing: [Biquad; 4],
+    voicing_norm: f64,
+    calibration: f64,
+    mics: [MicChannel; 2],
+    placements: [MicPlacement; 2],
+    blend: Ramped,
+    pan: [Ramped; 2],
+    invert: bool,
+    align: bool,
+    ramp_left: usize,
+}
+
 fn off_axis_corner(off_db: f64, cos_psi: f64) -> f64 {
     let weight = if cos_psi >= 0.0 {
         1.0 - cos_psi * cos_psi
@@ -212,22 +166,32 @@ fn off_axis_corner(off_db: f64, cos_psi: f64) -> f64 {
     };
     let loss = off_db * weight;
     if loss < 1e-3 {
-        return f64::INFINITY;
+        f64::INFINITY
+    } else {
+        10_000.0 / (10f64.powf(loss / 10.0) - 1.0).sqrt()
     }
-    10_000.0 / (10f64.powf(loss / 10.0) - 1.0).sqrt()
 }
 
 impl AcousticStage {
     pub fn new(rate: f64) -> Self {
-        let mut stage = Self {
+        let mut s = Self {
             rate,
             cabinet: None,
             speaker: &SpeakerProfile::BRIT_V30,
-            line: DelayLine::new(),
+            acceleration: DelayLine::new(),
+            velocity: DelayLine::new(),
+            integrate: OnePole::open(),
+            breakup_acceleration: DelayLine::new(),
+            breakup_velocity: DelayLine::new(),
+            breakup_integrate: OnePole::open(),
+            piston_band: OnePole::open(),
+            cavity: CavityRadiation::default(),
+            rear_acceleration: std::array::from_fn(|_| DelayLine::new()),
+            rear_velocity: std::array::from_fn(|_| DelayLine::new()),
+            rear_integrate: [OnePole::open(); RADIATORS],
             voicing: [Biquad::IDENTITY; 4],
             voicing_norm: 1.0,
-            enclosure: [Biquad::IDENTITY; 4],
-            enclosure_on: false,
+            calibration: 1.0,
             mics: [MicChannel::new(), MicChannel::new()],
             placements: [MicPlacement::default(); 2],
             blend: Ramped::default(),
@@ -236,13 +200,11 @@ impl AcousticStage {
             align: false,
             ramp_left: 0,
         };
-        stage.mics[0].slot = MicSlot::Profile(&MicProfile::DYNAMIC_57);
-        stage.rebuild();
-        stage
+        s.mics[0].slot = MicSlot::Profile(&MicProfile::DYNAMIC_57);
+        s.rebuild();
+        s
     }
 
-    /// Select what is in front of the power stage. Changing anything resets state,
-    /// which the chain covers with its switch fade.
     pub fn configure(
         &mut self,
         cabinet: Option<&'static CabinetProfile>,
@@ -264,11 +226,7 @@ impl AcousticStage {
         }
     }
 
-    /// Placement and the dual-microphone controls. Ramped; call once a block.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "one call per block carrying the whole dual-microphone control set"
-    )]
+    #[allow(clippy::too_many_arguments)]
     pub fn set_placement(
         &mut self,
         a: MicPlacement,
@@ -279,20 +237,16 @@ impl AcousticStage {
         invert: bool,
         align: bool,
     ) {
-        let (a, b) = (a.clamped(), b.clamped());
-        let blend = if blend.is_finite() {
-            blend.clamp(0.0, 1.0)
-        } else {
-            0.5
-        };
-        let pan = |value: f64| {
-            if value.is_finite() {
-                value.clamp(-1.0, 1.0)
+        let finite = |x: f64, default: f64, low: f64, high: f64| {
+            if x.is_finite() {
+                x.clamp(low, high)
             } else {
-                0.0
+                default
             }
         };
-        let (pan_a, pan_b) = (pan(pan_a), pan(pan_b));
+        let (a, b) = (a.clamped(), b.clamped());
+        let blend = finite(blend, 0.5, 0.0, 1.0);
+        let (pan_a, pan_b) = (finite(pan_a, 0.0, -1.0, 1.0), finite(pan_b, 0.0, -1.0, 1.0));
         if self.placements != [a, b]
             || self.invert != invert
             || self.align != align
@@ -319,8 +273,25 @@ impl AcousticStage {
     }
 
     pub fn reset(&mut self) {
-        self.line.reset();
-        for bq in self.voicing.iter_mut().chain(self.enclosure.iter_mut()) {
+        self.acceleration.reset();
+        self.velocity.reset();
+        self.integrate.reset();
+        self.breakup_acceleration.reset();
+        self.breakup_velocity.reset();
+        self.breakup_integrate.reset();
+        self.piston_band.reset();
+        self.cavity.reset();
+        for line in self
+            .rear_acceleration
+            .iter_mut()
+            .chain(self.rear_velocity.iter_mut())
+        {
+            line.reset();
+        }
+        for integrator in &mut self.rear_integrate {
+            integrator.reset();
+        }
+        for bq in &mut self.voicing {
             bq.reset();
         }
         for mic in &mut self.mics {
@@ -334,309 +305,335 @@ impl AcousticStage {
     }
 
     pub fn copy_runtime_state_from(&mut self, source: &Self) {
-        self.clone_from(source);
+        // Derived Clone replaces boxes; waking a stereo channel must reuse its
+        // preallocated pressure kernels instead of touching the allocator.
+        macro_rules! copy { ($($field:ident),*) => { $(self.$field.clone_from(&source.$field);)* }; }
+        copy!(
+            rate,
+            cabinet,
+            speaker,
+            acceleration,
+            velocity,
+            integrate,
+            cavity,
+            rear_acceleration,
+            rear_velocity,
+            rear_integrate,
+            voicing,
+            voicing_norm,
+            calibration,
+            placements,
+            blend,
+            pan,
+            invert,
+            align,
+            ramp_left,
+            breakup_acceleration,
+            breakup_velocity,
+            breakup_integrate,
+            piston_band
+        );
+        for (dest, src) in self.mics.iter_mut().zip(&source.mics) {
+            dest.field.copy_runtime_state_from(&src.field);
+            dest.front_panel.copy_runtime_state_from(&src.front_panel);
+            dest.breakup_paths = src.breakup_paths;
+            dest.driver_count = src.driver_count;
+            dest.slot = src.slot;
+            dest.rear = src.rear;
+            dest.off_axis = src.off_axis;
+            dest.baffle = src.baffle;
+            dest.eq = src.eq;
+            dest.eq_norm = src.eq_norm;
+            dest.delays = src.delays;
+        }
     }
-
-    /// The shortest and longest relative propagation delay of a microphone, samples.
     pub fn relative_delays(&self, mic: usize) -> (f64, f64) {
-        let paths = &self.mics[mic].paths[..self.mics[mic].count];
-        let shortest = paths
-            .iter()
-            .map(|p| p.delay.target)
-            .fold(f64::INFINITY, f64::min);
-        let longest = paths.iter().map(|p| p.delay.target).fold(0.0, f64::max);
-        (shortest, longest)
+        self.mics[mic].delays
     }
 
     fn rebuild(&mut self) {
         let rate = self.rate;
         let b = self.speaker.breakup;
-        for (bq, peak) in self.voicing.iter_mut().zip(b.peaks.iter()) {
-            bq.set_peaking(rate, peak.hz, peak.gain_db, peak.q);
+        for (filter, peak) in self.voicing.iter_mut().zip(b.peaks.iter()) {
+            filter.set_peaking(rate, peak.hz, peak.gain_db, peak.q);
         }
         self.voicing[3] = Biquad::lowpass(rate, b.lowpass_hz, b.lowpass_q);
-        let at = 600.0;
         self.voicing_norm = 1.0
             / self
                 .voicing
                 .iter()
-                .map(|bq| bq.magnitude(rate, at))
+                .map(|b| b.magnitude(rate, 600.0))
                 .product::<f64>();
-
-        self.enclosure_on = false;
-        if let Some(cab) = self.cabinet.filter(|c| !c.is_open()) {
-            // Standing waves reflect on to the back of the cone: small dips at the
-            // axial modes, deepest along the shortest dimension. The back panel's
-            // fundamental radiates a little of its own. Levels TUNED small.
-            let [depth, width, height] = cab.modes();
-            self.enclosure[0].set_peaking(rate, depth, -2.0, 4.0);
-            self.enclosure[1].set_peaking(rate, width, -1.0, 5.0);
-            self.enclosure[2].set_peaking(rate, height, -1.0, 5.0);
-            self.enclosure[3].set_peaking(rate, cab.panel_hz(), 1.0, 3.0);
-            self.enclosure_on = true;
+        // Fixed gain calibrated at 5 cm in the low-frequency piston limit. It
+        // never follows microphone distance, and is outside the pressure model.
+        let a = self.speaker.radius();
+        let reference = RHO * ((a * a + REFERENCE_DISTANCE.powi(2)).sqrt() - REFERENCE_DISTANCE);
+        self.calibration = self.speaker.re * self.speaker.mms / self.speaker.bl / reference
+            * self.voicing_norm;
+        // Regularise only DC: 0.5 Hz is below every modelled capsule's passband.
+        self.integrate.set_leaky_integrator(rate, 0.5, 1.0 / PI);
+        self.breakup_integrate
+            .set_leaky_integrator(rate, 0.5, 1.0 / PI);
+        self.piston_band
+            .set_lowpass(rate, self.speaker.breakup_transition_hz());
+        for integrator in &mut self.rear_integrate {
+            integrator.set_leaky_integrator(rate, 0.5, 1.0 / PI);
         }
-
+        self.cavity = CavityRadiation::default();
+        if let Some(cab) = self.cabinet {
+            self.cavity.configure(rate, cab, self.speaker);
+        }
         for mic in &mut self.mics {
             mic.eq = [Biquad::IDENTITY; 6];
             mic.eq_norm = 1.0;
-            mic.cubic = 0.0;
-            mic.quadratic = 0.0;
             if let MicSlot::Profile(p) = mic.slot {
                 mic.eq[0] = Biquad::highpass(rate, p.highpass.0, p.highpass.1);
-                for (bq, peak) in mic.eq[1..5].iter_mut().zip(p.peaks.iter()) {
-                    bq.set_peaking(rate, peak.hz, peak.gain_db, peak.q);
+                for (b, peak) in mic.eq[1..5].iter_mut().zip(p.peaks.iter()) {
+                    b.set_peaking(rate, peak.hz, peak.gain_db, peak.q);
                 }
                 mic.eq[5] = Biquad::lowpass(rate, p.lowpass.0, p.lowpass.1);
                 mic.eq_norm = 1.0
                     / mic
                         .eq
                         .iter()
-                        .map(|bq| bq.magnitude(rate, 1_000.0))
+                        .map(|b| b.magnitude(rate, 1000.0))
                         .product::<f64>();
-                mic.cubic = p.family.cubic();
-                mic.quadratic = p.family.quadratic();
             }
-            mic.dc.set_lowpass(rate, 5.0);
         }
         self.geometry(true);
     }
 
-    /// Recompute every path from the placements. `snap` skips the ramp.
     fn geometry(&mut self, snap: bool) {
-        let rate = self.rate;
-        let c = SPEED_OF_SOUND;
-        let cabinet = self.cabinet;
-        let placements = self.placements;
-        let voicing_norm = self.voicing_norm;
-        let align = self.align;
         let radius = self.speaker.radius();
-        let hf_radius = HF_RADIUS * radius;
         let single = [(0.0, 0.0)];
-        let drivers: &[(f64, f64)] = cabinet.map(|cab| cab.driver_positions()).unwrap_or(&single);
+        let drivers = self
+            .cabinet
+            .map(|c| c.driver_positions())
+            .unwrap_or(&single);
         let target = drivers[0];
         let outward = if target.0 > 0.0 { 1.0 } else { -1.0 };
-        let geometric = |length: f64| {
-            ((radius * radius + REFERENCE_DISTANCE * REFERENCE_DISTANCE)
-                / (radius * radius + length * length))
-                .sqrt()
-        };
-
-        let mut minimum = [f64::INFINITY; 2];
-        for (m, mic) in self.mics.iter_mut().enumerate() {
-            let placement = placements[m];
-            let profile = match mic.slot {
-                MicSlot::Off => {
-                    mic.count = 0;
-                    continue;
-                }
-                MicSlot::Ideal => None,
-                MicSlot::Profile(p) => Some(p),
+        let positions: [[f64; 3]; 2] = std::array::from_fn(|m| {
+            let depth = match self.mics[m].slot {
+                MicSlot::Profile(p) => p.capsule_depth,
+                _ => 0.0,
             };
-            let (pa, pb) = profile
+            [
+                target.0 + outward * self.placements[m].position * radius,
+                target.1,
+                self.placements[m].distance + depth,
+            ]
+        });
+        let minima: [f64; 2] = std::array::from_fn(|m| {
+            if self.mics[m].slot == MicSlot::Off {
+                return f64::INFINITY;
+            }
+            drivers
+                .iter()
+                .map(|&(x, y)| {
+                    PressureField::first_arrival(
+                        radius,
+                        [positions[m][0] - x, positions[m][1] - y, positions[m][2]],
+                    )
+                })
+                .fold(f64::INFINITY, f64::min)
+        });
+        let common = minima[0].min(minima[1]);
+        for (m, mic) in self.mics.iter_mut().enumerate() {
+            mic.field.begin();
+            mic.front_panel.begin();
+
+            if mic.slot == MicSlot::Off {
+                mic.field.commit(snap);
+                mic.front_panel.commit(snap);
+
+                continue;
+            }
+            let profile = match mic.slot {
+                MicSlot::Profile(p) => Some(p),
+                _ => None,
+            };
+            let pattern = profile
                 .map(|p| p.pattern)
                 .unwrap_or(Pattern::Omni)
                 .coefficients();
-            let depth = profile.map(|p| p.capsule_depth).unwrap_or(0.0);
-            let at = (
-                target.0 + outward * placement.position * radius,
-                target.1,
-                placement.distance + depth,
-            );
-            let tilt = placement.angle.to_radians();
-            let axis = (-outward * tilt.sin(), 0.0, -tilt.cos());
-            let off_db = profile.map(|p| p.off_axis_db).unwrap_or(0.0);
-
-            let mut count = 0;
-            let mut nearest = f64::INFINITY;
-            let push = |path: &mut Path,
-                        delay: f64,
-                        omni: f64,
-                        gradient: f64,
-                        directivity: f64,
-                        far: bool,
-                        off: f64,
-                        diffraction: f64| {
-                path.absolute = delay;
-                path.omni.aim(omni, snap);
-                path.gradient.aim(gradient, snap);
-                path.far = far;
-                if far {
-                    path.directivity.set_lowpass(rate, f64::INFINITY);
-                    for (bq, q) in path.beam.iter_mut().zip(BEAM_Q) {
-                        bq.set_lowpass(rate, directivity, q);
-                    }
-                } else {
-                    path.directivity.set_lowpass(rate, directivity);
-                }
-                path.off_axis.set_lowpass(rate, off);
-                path.diffraction.set_lowpass(rate, diffraction);
-            };
-            for &(x, y) in drivers {
-                // The cone the microphone is in front of is in its near field: the
-                // whole cone moves together at low frequencies, so the level, arrival
-                // and incidence come from the point of it straight below the capsule,
-                // and above breakup only the middle radiates, so its directivity is
-                // the TUNED one-pole taken from the centre. Any other cone is off to
-                // the side, in its far field, where a piston is a source at its
-                // centre and its directivity is the disc's own (`Path::beam`).
-                //
-                // Measuring a neighbour from its nearest rim instead, as this did,
-                // left it 7.9 dB under the close cone at 4 cm where its centre puts
-                // it at 10.5 (and a baffled piston's near and far fields at 14),
-                // which comb-filtered the close cone's low mids.
-                //
-                // No placement moves a cone from one side of that line to the
-                // other: the microphone's position is clamped to its own cone, and
-                // every other cone's centre is more than a radius away because
-                // cones cannot overlap.
-                let (dx, dy) = (at.0 - x, at.1 - y);
-                let lateral = dx.hypot(dy);
+            let proximity = profile.map(|p| p.proximity).unwrap_or(0.0);
+            let at = positions[m];
+            let tilt = self.placements[m].angle.to_radians();
+            let axis = [-outward * tilt.sin(), 0.0, -tilt.cos()];
+            let base = if self.align { minima[m] } else { common };
+            let mut longest = minima[m];
+            mic.driver_count = drivers.len();
+            for (i, &(x, y)) in drivers.iter().enumerate() {
+                let receiver = [at[0] - x, at[1] - y, at[2]];
+                mic.field
+                    .add_piston(self.rate, radius, receiver, axis, pattern, proximity, base);
+                let lateral = receiver[0].hypot(receiver[1]);
+                let centre = lateral.hypot(receiver[2]);
                 let far = lateral > radius;
-                let v = if far {
-                    (x - at.0, y - at.1, -at.2)
+                let length = if far { centre } else { receiver[2] };
+                let cosine = if far {
+                    (-receiver[0] * axis[0] - receiver[1] * axis[1] - receiver[2] * axis[2])
+                        / length
                 } else {
-                    (0.0, 0.0, -at.2)
+                    -axis[2]
                 };
-                let length = (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt().max(0.005);
-                nearest = nearest.min(length);
-                let to_centre = (lateral * lateral + at.2 * at.2).sqrt().max(0.005);
-                let sin_theta = (lateral / to_centre).clamp(0.0, 1.0);
-                let cos_psi =
-                    ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / length).clamp(-1.0, 1.0);
-                let piston = |a: f64| {
-                    if sin_theta > 1e-6 {
-                        PISTON_X * c / (TAU * a * sin_theta)
+                let sin_theta = lateral / centre;
+                let aperture = if far {
+                    radius
+                } else {
+                    radius * self.speaker.breakup_radius_ratio()
+                };
+                let corner = if sin_theta > 1e-6 {
+                    2.2 * SPEED_OF_SOUND / (TAU * aperture * sin_theta)
+                } else {
+                    f64::INFINITY
+                };
+                let path = &mut mic.breakup_paths[i];
+                path.far = far;
+                path.delay
+                    .aim((length - base).max(0.0) / SPEED_OF_SOUND * self.rate, snap);
+                // Quasistatic piston pressure, in Pa/(m/s²), with the measured
+                // breakup-band placement/directivity approximation retained.
+                let gain = RHO * ((radius * radius + length * length).sqrt() - length);
+                path.pressure
+                    .aim(gain * (pattern.0 + pattern.1 * cosine), snap);
+                path.velocity.aim(
+                    gain * pattern.1 * cosine * proximity * SPEED_OF_SOUND
+                        / (length * length + 0.49 * radius * radius).sqrt(),
+                    snap,
+                );
+                path.directivity
+                    .set_lowpass(self.rate, if far { f64::INFINITY } else { corner });
+                if far {
+                    for (filter, q) in path.beam.iter_mut().zip([0.541_196_1, 1.306_563]) {
+                        filter.set_lowpass(self.rate, corner, q);
+                    }
+                }
+                longest = longest.max(at[2].hypot(receiver[0].hypot(receiver[1]) + radius));
+            }
+            mic.field.commit(snap);
+
+            mic.off_axis.set_lowpass(
+                self.rate,
+                off_axis_corner(profile.map(|p| p.off_axis_db).unwrap_or(0.0), tilt.cos()),
+            );
+            // Integrate the flexing baffle over its remaining wood, not a
+            // monopole in the centre of a cone cutout. The fundamental simply
+            // supported mode weights each element by cos(pi*x/w)cos(pi*y/h).
+            if let Some(cab) = self.cabinet {
+                let (w, h, _) = cab.internal();
+                let mut patches = [([0.0; 3], 0.0); 24 * 24];
+                let mut total = 0.0;
+                for (i, (point, weight)) in patches.iter_mut().enumerate() {
+                    let x = w * ((i % 24) as f64 + 0.5) / 24.0 - w / 2.0;
+                    let y = h * ((i / 24) as f64 + 0.5) / 24.0 - h / 2.0;
+                    *point = [at[0] - x, at[1] - y, at[2]];
+                    if drivers
+                        .iter()
+                        .all(|&(dx, dy)| (x - dx).hypot(y - dy) >= radius)
+                    {
+                        *weight = (PI * x / w).cos() * (PI * y / h).cos();
+                        total += *weight;
+                    }
+                }
+                for (point, weight) in patches {
+                    if weight > 0.0 {
+                        mic.front_panel.add_volume_element(
+                            self.rate,
+                            point,
+                            axis,
+                            pattern,
+                            proximity,
+                            base,
+                            weight / total,
+                        );
+                    }
+                }
+            }
+            mic.front_panel.commit(snap);
+            for source in 0..RADIATORS {
+                let routes = self.cabinet.map(|cab| diffraction::paths(cab, source, at));
+                for (route, path) in mic.rear[source * ROUTES..(source + 1) * ROUTES]
+                    .iter_mut()
+                    .enumerate()
+                {
+                    path.source = source;
+                    let ray = routes.map(|r| r[route]).unwrap_or_default();
+                    let distance = ray.distance.max(0.005);
+                    let incidence = ray
+                        .arrival
+                        .iter()
+                        .zip(axis)
+                        .map(|(x, a)| x * a)
+                        .sum::<f64>();
+                    // Front-panel radiation is already surface-integrated.
+                    let gain = if source == 1 { 0.0 } else { ray.weight };
+                    let pressure = gain * RHO / (TAU * distance);
+                    path.delay.aim(
+                        (distance - base).max(0.0) / SPEED_OF_SOUND * self.rate,
+                        snap,
+                    );
+                    path.pressure
+                        .aim(pressure * (pattern.0 + pattern.1 * incidence), snap);
+                    path.velocity.aim(
+                        pressure * pattern.1 * incidence * proximity * SPEED_OF_SOUND / distance,
+                        snap,
+                    );
+                    let corner = if ray.around > 1e-6 {
+                        SPEED_OF_SOUND / (PI * ray.around)
                     } else {
                         f64::INFINITY
+                    };
+                    path.diffraction.set_lowpass(self.rate, corner);
+                    if gain > 0.0 {
+                        longest = longest.max(distance);
                     }
-                };
-                // A far cone is the textbook rigid piston of its whole radius.
-                // Above breakup a real cone radiates from less of itself and beams
-                // less than that at moderate angles; not measured, and recorded
-                // in `CABINET_MODEL.md`. At the near-90-degree angles of a close
-                // microphone's neighbours it is the whole story.
-                let directivity = piston(if far { radius } else { hf_radius });
-                let off = off_axis_corner(off_db, cos_psi);
-                let g = geometric(length);
-                push(
-                    &mut mic.paths[count],
-                    length / c * rate,
-                    pa * g,
-                    pb * g * cos_psi,
-                    directivity,
-                    far,
-                    off,
-                    f64::INFINITY,
-                );
-                count += 1;
-            }
-            if let Some(cab) = cabinet.filter(|cab| cab.is_open()) {
-                // The back of each cone radiates in antiphase out of the open back
-                // and reaches the front round the nearest edge of the cabinet.
-                let (w, h) = (cab.width / 2.0, cab.height / 2.0);
-                let (_, _, inside) = cab.internal();
-                for &(x, y) in drivers {
-                    let edges = [
-                        (x + w, (-w, y)),
-                        (w - x, (w, y)),
-                        (h - y, (x, h)),
-                        (y + h, (x, -h)),
-                    ];
-                    let (edge, point) =
-                        edges
-                            .iter()
-                            .copied()
-                            .fold((f64::INFINITY, (0.0, 0.0)), |best, e| {
-                                if e.0 < best.0 {
-                                    e
-                                } else {
-                                    best
-                                }
-                            });
-                    let v = (point.0 - at.0, point.1 - at.1, -at.2);
-                    let front = (v.0 * v.0 + v.1 * v.1 + v.2 * v.2).sqrt().max(0.005);
-                    let around = inside + edge;
-                    let length = around + front;
-                    let cos_psi =
-                        ((v.0 * axis.0 + v.1 * axis.1 + v.2 * axis.2) / front).clamp(-1.0, 1.0);
-                    let off = off_axis_corner(off_db, cos_psi);
-                    // At low frequencies the box air and the opening pass nearly the
-                    // whole rear volume velocity: a dipole. A partly closed back still
-                    // passes most of it. APPROXIMATED: gain min(1, 2 x open fraction).
-                    let g = -(2.0 * cab.open_fraction).min(1.0) * geometric(length);
-                    // Diffraction round the edge loses the top once the wavelength is
-                    // shorter than the way round. ESTIMATED corner c / (pi L): a lower one
-                    // puts a low-pass phase lag on the bass the dipole is meant to cancel.
-                    let diffraction = c / (std::f64::consts::PI * around);
-                    push(
-                        &mut mic.paths[count],
-                        length / c * rate,
-                        pa * g,
-                        pb * g * cos_psi,
-                        f64::INFINITY,
-                        false,
-                        off,
-                        diffraction,
-                    );
-                    count += 1;
                 }
             }
-            mic.count = count;
-            minimum[m] = mic.paths[..count]
-                .iter()
-                .map(|p| p.absolute)
-                .fold(f64::INFINITY, f64::min);
-
-            // Proximity: the gradient term's near-field rise, from a source no smaller
-            // than the cone that radiates it.
-            let proximity = profile.map(|p| p.proximity).unwrap_or(0.0) * pb;
-            mic.proximity_on = proximity > 0.0;
-            if mic.proximity_on {
-                let r = (nearest * nearest + (0.7 * radius).powi(2)).sqrt();
-                let wp = profile.map(|p| p.proximity).unwrap_or(0.0) * c / r;
-                let fp = wp / TAU;
-                mic.proximity
-                    .set_leaky_integrator(rate, fp / PROXIMITY_CEILING, PROXIMITY_CEILING);
-            }
-
-            // Baffle step: close to the baffle the cone radiates into a half space;
-            // at a distance comparable to the baffle it does not.
-            match cabinet {
-                Some(cab) => {
-                    let far = placement.distance / (placement.distance + cab.width / 2.0);
-                    mic.baffle
-                        .set_low_shelf(rate, cab.baffle_step_hz(), -6.0 * far);
-                }
-                None => mic.baffle = Biquad::IDENTITY,
-            }
-
-            let makeup = (1.0 / geometric(nearest)).powf(DISTANCE_MAKEUP);
-            mic.trim.aim(makeup * mic.eq_norm * voicing_norm, snap);
-        }
-
-        let common = minimum[0].min(minimum[1]);
-        for (m, mic) in self.mics.iter_mut().enumerate() {
-            let base = if align { minimum[m] } else { common };
-            for path in &mut mic.paths[..mic.count] {
-                path.delay.aim(path.absolute - base, snap);
+            mic.delays = (
+                (minima[m] - base) / SPEED_OF_SOUND * self.rate,
+                (longest - base) / SPEED_OF_SOUND * self.rate,
+            );
+            // Finite-baffle low-band transition, retained as a documented
+            // reduced approximation until measured baffle diffraction is available.
+            if let Some(cab) = self.cabinet {
+                let far =
+                    self.placements[m].distance / (self.placements[m].distance + cab.width / 2.0);
+                mic.baffle
+                    .set_low_shelf(self.rate, cab.baffle_step_hz(), -6.0 * far);
+            } else {
+                mic.baffle = Biquad::IDENTITY;
             }
         }
         self.ramp_left = if snap { 0 } else { RAMP };
     }
 
-    #[inline]
-    fn advance(&mut self, x: f64) -> (bool, bool, f64, f64) {
-        let mut s = x;
-        for bq in &mut self.voicing {
-            s = bq.process(s);
+    /// Physical pressure at the two capsules, including their linear response.
+    /// Input is the solved cone acceleration in m/s², shared by equal drivers.
+    /// Unmeasured family-based saturation has deliberately been removed.
+    pub fn pressure(&mut self, acceleration: f64) -> [f64; 2] {
+        let rear = self.cavity.process(acceleration);
+        for (i, q) in rear.into_iter().enumerate() {
+            self.rear_acceleration[i].write(q);
+            self.rear_velocity[i].write(self.rear_integrate[i].process(q));
         }
-        if self.enclosure_on {
-            for bq in &mut self.enclosure {
-                s = bq.process(s);
-            }
+        let mut a = acceleration;
+        for b in &mut self.voicing {
+            a = b.process(a);
         }
-        self.line.write(s);
-
+        // Peaking sections and the breakup low-pass have unity DC gain. Keep
+        // that here: front and rear volume acceleration must balance at low
+        // frequencies. The listening-level trim belongs after both fields.
+        // Above breakup the cone no longer moves as one rigid disc. Preserve
+        // the fitted volume response with a continuous transition to the
+        // empirical breakup directivity; do not invent full-disc HF nulls.
+        let piston = self.piston_band.process(a);
+        let breakup = a - piston;
+        self.acceleration.write(piston);
+        self.velocity.write(self.integrate.process(piston));
+        self.breakup_acceleration.write(breakup);
+        self.breakup_velocity
+            .write(self.breakup_integrate.process(breakup));
         let ramping = self.ramp_left > 0;
         let last = self.ramp_left == 1;
         if ramping {
@@ -646,99 +643,87 @@ impl AcousticStage {
                 pan.advance(last);
             }
         }
-
-        let mut out = [0.0; 2];
-        for (m, mic) in self.mics.iter_mut().enumerate() {
-            if mic.count == 0 {
-                continue;
+        std::array::from_fn(|m| {
+            let mic = &mut self.mics[m];
+            if mic.slot == MicSlot::Off {
+                return 0.0;
             }
-            let (mut omni, mut gradient) = (0.0, 0.0);
-            for path in &mut mic.paths[..mic.count] {
+            let mut p = mic.field.process(&self.acceleration, &self.velocity);
+            p += mic
+                .front_panel
+                .process(&self.rear_acceleration[1], &self.rear_velocity[1]);
+            for path in &mut mic.breakup_paths[..mic.driver_count] {
                 if ramping {
                     path.delay.advance(last);
-                    path.omni.advance(last);
-                    path.gradient.advance(last);
+                    path.pressure.advance(last);
+                    path.velocity.advance(last);
                 }
-                let mut y = self.line.read(path.delay.now);
-                y = path.directivity.process(y);
+                let mut high = path.pressure.now * self.breakup_acceleration.read(path.delay.now)
+                    + path.velocity.now * self.breakup_velocity.read(path.delay.now);
+                high = path.directivity.process(high);
                 if path.far {
-                    for bq in &mut path.beam {
-                        y = bq.process(y);
+                    for filter in &mut path.beam {
+                        high = filter.process(high);
                     }
                 }
-                y = path.off_axis.process(y);
-                y = path.diffraction.process(y);
-                omni += path.omni.now * y;
-                gradient += path.gradient.now * y;
+                p += high;
             }
-            if mic.proximity_on {
-                gradient += mic.proximity.process(gradient);
+            for path in &mut mic.rear {
+                let i = path.source;
+                if ramping {
+                    path.delay.advance(last);
+                    path.pressure.advance(last);
+                    path.velocity.advance(last);
+                }
+                let q = path.pressure.now * self.rear_acceleration[i].read(path.delay.now)
+                    + path.velocity.now * self.rear_velocity[i].read(path.delay.now);
+                p += path.diffraction.process(q);
             }
-            let mut v = mic.baffle.process(omni + gradient);
-            for bq in &mut mic.eq {
-                v = bq.process(v);
+            p = mic.off_axis.process(mic.baffle.process(p));
+            for eq in &mut mic.eq {
+                p = eq.process(p);
             }
-            if ramping {
-                mic.trim.advance(last);
-            }
-            v *= mic.trim.now;
-            if mic.cubic > 0.0 {
-                v /= (1.0 + 2.0 * mic.cubic * v * v).sqrt();
-            }
-            if mic.quadratic > 0.0 {
-                let square = v * v;
-                v += mic.quadratic * (square - mic.dc.process(square));
-            }
-            out[m] = v;
-        }
-
-        let a_on = self.mics[0].count > 0;
-        let b_on = self.mics[1].count > 0;
-        let b = if self.invert { -out[1] } else { out[1] };
-        (a_on, b_on, out[0], b)
+            p * mic.eq_norm
+        })
     }
 
-    /// The summed microphone signal, which is what a mono output wants and what
-    /// every calibration and regression fixture in the repository measures.
-    #[inline]
-    pub fn process(&mut self, x: f64) -> f64 {
-        let (a_on, b_on, a, b) = self.advance(x);
-        match (a_on, b_on) {
-            (true, true) => (1.0 - self.blend.now) * a + self.blend.now * b,
-            (true, false) => a,
-            (false, true) => b,
-            (false, false) => 0.0,
-        }
+    pub fn process(&mut self, acceleration: f64) -> f64 {
+        let [a, b] = self.pressure(acceleration);
+        let b = if self.invert { -b } else { b };
+        self.calibration
+            * match (
+                self.mics[0].slot != MicSlot::Off,
+                self.mics[1].slot != MicSlot::Off,
+            ) {
+                (true, true) => (1.0 - self.blend.now) * a + self.blend.now * b,
+                (true, false) => a,
+                (false, true) => b,
+                (false, false) => 0.0,
+            }
     }
 
-    /// The same two microphones placed in the stereo field.
-    ///
-    /// The pan law is the one this plugin's output already implies. A mono
-    /// source on a stereo bus is duplicated sample for sample, so "centred"
-    /// has to mean *the whole signal on both sides*, not half of it: the gains
-    /// are `clamp(1 - pan, 0, 1)` and `clamp(1 + pan, 0, 1)`, which are both
-    /// exactly 1.0 at the centre and reach zero at the far side. Two centred
-    /// microphones therefore reproduce `process()` bit for bit on both sides,
-    /// so adding the controls cannot move any existing session or fixture.
-    #[inline]
-    pub fn process_stereo(&mut self, x: f64) -> (f64, f64) {
-        let (a_on, b_on, a, b) = self.advance(x);
+    pub fn process_stereo(&mut self, acceleration: f64) -> (f64, f64) {
+        let [a, b] = self.pressure(acceleration);
+        let b = if self.invert { -b } else { b };
         let (la, ra) = pan_gains(self.pan[0].now);
         let (lb, rb) = pan_gains(self.pan[1].now);
-        match (a_on, b_on) {
+        let (left, right) = match (
+            self.mics[0].slot != MicSlot::Off,
+            self.mics[1].slot != MicSlot::Off,
+        ) {
             (true, true) => {
-                let wa = (1.0 - self.blend.now) * a;
-                let wb = self.blend.now * b;
-                (wa * la + wb * lb, wa * ra + wb * rb)
+                let a = (1.0 - self.blend.now) * a;
+                let b = self.blend.now * b;
+                (a * la + b * lb, a * ra + b * rb)
             }
             (true, false) => (a * la, a * ra),
             (false, true) => (b * lb, b * rb),
             (false, false) => (0.0, 0.0),
-        }
+        };
+        (left * self.calibration, right * self.calibration)
     }
 }
 
-/// Left and right weights for one microphone. See `process_stereo`.
 #[inline]
 fn pan_gains(pan: f64) -> (f64, f64) {
     ((1.0 - pan).clamp(0.0, 1.0), (1.0 + pan).clamp(0.0, 1.0))

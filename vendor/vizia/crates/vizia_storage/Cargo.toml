@@ -1,0 +1,15 @@
+[package]
+name = "vizia_storage"
+description = "The storage data structures of vizia"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vizia_id.workspace = true
+
+[lints]
+workspace = true

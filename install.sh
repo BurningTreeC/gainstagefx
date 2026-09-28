@@ -4,7 +4,7 @@
 # folders.
 #
 #   ./install.sh              build, then install
-#   ./install.sh --no-build   install whatever is already in target/bundled
+#   ./install.sh --no-build   install the existing bundles without rebuilding
 #
 # Both go into a BurningTreeC subfolder. Set CLAP_PATH or VST3_PATH to install
 # somewhere other than ~/.clap and ~/.vst3.
@@ -12,12 +12,9 @@
 set -euo pipefail
 
 readonly VENDOR="BurningTreeC"
-readonly CLAP="GainStageFx.clap"
-readonly VST3="GainStageFx.vst3"
 readonly PACKAGE="gainstagefx"
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-bundled="$project_dir/target/bundled"
 clap_dir="${CLAP_PATH:-$HOME/.clap}/$VENDOR"
 vst3_dir="${VST3_PATH:-$HOME/.vst3}/$VENDOR"
 
@@ -36,35 +33,23 @@ for arg in "$@"; do
     esac
 done
 
+# shellcheck source=.github/install-Linux.sh
+source "$project_dir/.github/install-Linux.sh"
+gainstagefx_validate_destination "$clap_dir"
+gainstagefx_validate_destination "$vst3_dir"
+
+# Ask Cargo for its actual target directory, including CARGO_TARGET_DIR and
+# .cargo/config.toml overrides. xtask uses the same metadata when bundling.
+if ! command -v jq >/dev/null 2>&1; then
+    echo "install.sh: jq is required to read Cargo's target directory." >&2
+    exit 1
+fi
+target_dir=$(cd "$project_dir" && cargo metadata --offline --no-deps --format-version 1 | jq -er '.target_directory')
+bundled="$target_dir/bundled"
+
 if [ "$build" = true ]; then
-    echo "Building $PACKAGE..."
+    echo "Building $PACKAGE with release-lto..."
     (cd "$project_dir" && cargo xtask bundle "$PACKAGE" --profile release-lto)
 fi
 
-# Copies one bundle into place. Deletes the destination first and copies with
-# -R so this works whether the bundle is a single shared library, as the CLAP
-# is on Linux, or a directory, as the VST3 always is.
-install_bundle() {
-    local name="$1" dest="$2"
-
-    if [ ! -e "$bundled/$name" ]; then
-        echo "install.sh: '$bundled/$name' does not exist; run without --no-build first." >&2
-        exit 1
-    fi
-
-    mkdir -p "$dest"
-    rm -rf "${dest:?}/$name"
-    cp -R "$bundled/$name" "$dest/"
-    echo "Installed $name to $dest"
-}
-
-install_bundle "$CLAP" "$clap_dir"
-install_bundle "$VST3" "$vst3_dir"
-
-# The plugin is under the GPL, so the licence and the dependency notices travel
-# with it rather than only living in the source tree.
-for dir in "$clap_dir" "$vst3_dir"; do
-    for doc in LICENSE THIRD-PARTY-NOTICES.md; do
-        [ -e "$project_dir/$doc" ] && cp "$project_dir/$doc" "$dir/"
-    done
-done
+gainstagefx_install "$bundled" "$project_dir" "$clap_dir" "$vst3_dir"

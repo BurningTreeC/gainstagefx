@@ -219,12 +219,8 @@ pub fn modelled_in(
                 sl * C::real(r) / (C::real(r) + sl)
             };
             let coil = C::real(load.re) + lossy(load.l1, load.r1) + lossy(load.l2, load.r2);
-            let admittance = C::real(1.0 / load.res)
-                + (s * C::real(load.lces)).recip()
-                + s * C::real(load.cmes)
-                + (s * C::real(load.lbox) + C::real(load.rbox)).recip();
-            let motional = admittance.recip();
-            let cone = motional * (coil + motional).recip() * s;
+            let motional = load.impedance(hz) - coil;
+            let cone = motional * (coil + motional).recip() * s / C::real(load.bl);
             20.0 * (cone * stage_h).magnitude().max(1e-30).log10()
         })
         .collect()

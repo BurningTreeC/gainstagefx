@@ -1,0 +1,26 @@
+[package]
+name = "vizia_style"
+description = "The style components of vizia"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cssparser.workspace = true
+cssparser-color.workspace = true
+skia-safe.workspace = true
+selectors.workspace = true
+morphorm.workspace = true
+bitflags.workspace = true
+precomputed-hash = "0.1"
+fxhash.workspace = true
+
+[target."cfg(target_os = \"macos\")".dependencies]
+skia-safe = { workspace = true, features = ["metal"] }
+
+
+[lints]
+workspace = true

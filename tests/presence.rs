@@ -5,8 +5,8 @@ use gainstagefx::dsp::measure::{self, Tone as Probe};
 use gainstagefx::params::{Circuit, GainStageParams};
 use gainstagefx::presets::{self, Stored, PRESETS};
 use gainstagefx::voice::{Chain, Gain, PowerAmp, PowerModel, Settings, Tone, NOMINAL_DBFS};
-use nih_plug::params::Params;
-use nih_plug::prelude::Enum;
+use nice_plug::params::Params;
+use nice_plug::prelude::Enum;
 use std::collections::BTreeMap;
 
 const RATE: f64 = 48_000.0;

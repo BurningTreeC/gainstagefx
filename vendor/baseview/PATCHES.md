@@ -1,119 +1,50 @@
-This is RustAudio/baseview at commit
-`2c1b1a7b0fef1a29a5150a6a8f6fef6a0cbab8c4`, the revision pinned by
-gainstagefx's NIH-plug/Vizia GUI. Original MIT and Apache licenses are retained.
+# Local baseview changes
 
-Local changes fix Windows mouse capture and reentrant UI/resize dispatch in
-embedded plugin windows:
+Upstream: RustAudio/baseview `0fdebac0821370c2604005b8a81d6d96d714018d`
+(manifest 0.3.4), inspected 2026-09-26. This replaces the old 0.1-era fork.
 
-- `src/win/mouse.rs` tracks individual buttons instead of a counter that can
-  become stale after a missed release or duplicate press.
-- `src/win/window.rs` handles `WM_CAPTURECHANGED`, `WM_CANCELMODE` and focus
-  loss. It emits releases for held buttons so Vizia closes the active drag and
-  host parameter gesture. Normal mouse-up clears bookkeeping before native
-  `ReleaseCapture`, whose synchronous capture-change message must not emit a
-  duplicate release. Capture is released only if this window still owns it.
-- The existing UI frame timer checks native capture and physical button state
-  while a button is held. It handles missing mouse-up without requiring another
-  click, including swapped primary/secondary buttons. This does not add a
-  thread or touch audio processing.
-- Event delivery uses a FIFO queue and `try_borrow_mut` so native messages sent
-  during `on_event` or `on_frame` cannot reenter the borrowed window handler.
-  This includes capture cancellation, cursor boundary events, and host-driven
-  `WM_SIZE`. Pending releases precede later input. A posted wake-up also covers
-  cancellation during callbacks outside the normal window message dispatch.
-- Nested `WM_TIMER` ticks skip rendering until the current callback returns.
-  Deferred resize tasks run only outside callbacks, and their drain cannot
-  reenter itself through `SetWindowPos`. Otherwise native messages can execute
-  a later resize before an earlier one completes, leaving the old size last.
-- Each native dispatch retains an `Rc` until it returns. Nested destruction
-  releases the HWND's reference without deallocating an active callback's state.
-- Cursor boundary tracking emits `CursorEntered`/`CursorLeft` before movement,
-  including leaving and reentering while native capture is held. `WM_MOUSELEAVE`
-  handles uncaptured departures. Vizia clears the root's `OVER` flag outside the
-  window and requires an enter event to resume hit-testing; repairing mouse-up
-  alone did not restore this state.
-- Deferred resizing leaves the committed `WindowInfo` unchanged until `WM_SIZE`
-  reports the actual client rectangle. Updating it before `SetWindowPos` caused
-  the resize notification to be suppressed, leaving Vizia's canvas/layout at
-  the old size until reopening.
-- `src/win/window_tests.rs` exercises hidden native windows and actual Windows
-  message dispatch. `src/lib.rs` also enables the platform-independent button
-  tests on Linux. `src/win/mod.rs` declares the new helper.
+Only the following source changes are carried:
 
-Text entry (`src/win/text_input.rs`, `src/text_input.rs`) lets a text field be
-typed into under a host that filters the keyboard:
+- Clone non-Copy `GlConfig` when constructing Windows, EGL and GLX contexts.
+  The upstream revision otherwise fails to compile with OpenGL enabled.
+- Track pressed Windows mouse buttons individually. Balance releases on capture
+  loss, cancellation, lost focus and missed mouse-up; commit state before calling
+  native APIs that can reenter the window procedure. Preserve entry/exit events
+  while dragging with capture, including swapped mouse buttons.
+- Scope the Windows keyboard hook to active text entry. `WindowContext::set_text_input`
+  enables it for the preset name field and restores native focus afterwards.
+  Host shortcuts outside the field, and system/Alt key messages, remain with the host.
+- Report the restored size to the Windows handler if a host rejects a resize.
+- Allow fixed-layout X11 editors to opt out of implicit parent-size following.
+  REAPER caps its containing pane at the screen height even when it accepts a
+  larger editor. Treating that viewport as the editor's size changed 150–200%
+  zoom into roughly 145%. Explicit host resize requests still take effect.
+- On X11, rebuild ancestry starting at the reparented window itself, refreshing
+  its cached map state and subscribing to both its own and its children's
+  structure events. REAPER maps/reparents intermediate FX-chain containers;
+  retaining their old hidden state permanently suppresses editor drawing.
+- Start the X11 frame source from the resulting visibility state, including
+  after reparenting. Restart the notification chain after hiding, ignore old
+  Present replies, and start at most one fallback timer. Mapping prematurely in
+  `Show` or relying only on the `MapNotify` transition misses these host cases.
 
-- A host's message loop takes every keystroke out of the queue before the
-  plugin sees it. Some translate and dispatch the key-down, then keep the
-  `WM_CHAR` for their own shortcuts. `keyboard.rs` holds each key-down back
-  until its `WM_CHAR` arrives, so every letter was lost while Delete and the
-  arrows, which make no `WM_CHAR`, still worked. That was the reported fault.
-- `baseview::set_text_input(bool)` is new public API, called from inside a
-  window handler callback; the window being dispatched is found through a
-  destructor-free thread-local set in `wnd_proc`. It is a no-op on Linux and
-  macOS, and outside a callback.
-- While it is on, a `WH_GETMESSAGE` hook on the window's thread takes
-  `WM_KEYDOWN`/`WM_KEYUP`/`WM_CHAR` addressed to that window inside the host's
-  own `GetMessage`/`PeekMessage`, calls `TranslateMessage` on key-downs itself
-  (so dead keys, Shift and Caps Lock come from the layout as usual) and calls
-  `wnd_proc` directly. The host receives `WM_NULL`. `Alt` combinations stay
-  with the host. Windows are recognised by this copy's own `wnd_proc` address,
-  so another plugin's baseview windows are never touched.
-- This is upstream's approach (RustAudio/baseview#212, after JUCE), narrowed:
-  upstream hooks for as long as any window is open, which takes the space bar
-  from a host's transport whenever the plugin has focus. Here the hook exists
-  only while a field is open. It is shared per thread and reference-counted,
-  and removed when the last field closes or its window is destroyed, so it
-  cannot outlive the DLL whose code it points into.
-- The window takes Win32 focus when a field opens, and again on a click while
-  one is open. The previous focus is read with `GetFocus()` beforehand,
-  because `SetFocus`'s return value is already the new window once
-  activation has run. It is restored when the field closes.
+X11 teardown also skips `Show` after the host has requested shutdown, ensuring
+that dropping the window joins its GUI thread rather than returning early on a
+disconnected request channel.
 
-All other upstream implementation files, including Linux/macOS window handling,
-are unchanged. The root Cargo patch also unifies NIH-plug's optional standalone
-backend onto this revision; the standalone feature is compile-checked. The
-plugin GUI itself already used this revision before the patch.
+The old dispatch-lifetime patch is superseded by upstream's owned window data.
+Reentrant Vizia dispatch is handled by the GUI backend's ordered pending queue,
+not by duplicating the previous window procedure patch.
 
-Validation commands:
+Validation:
 
-```sh
-cargo test --manifest-path vendor/baseview/Cargo.toml --lib
-cargo test --manifest-path vendor/baseview/Cargo.toml --target x86_64-pc-windows-gnu --lib --no-run
-# Run the resulting Windows test executable on Windows/Wine:
-# baseview-<hash>.exe --test-threads=1
-cargo check --target x86_64-pc-windows-gnu --lib
-cargo check --features standalone
-```
+- `cargo test --manifest-path vendor/baseview/Cargo.toml --features opengl,tracing --lib`
+  exercises button bookkeeping and native Windows capture/boundary events.
+- `tools/linux_gui_smoke.py` loads the real CLAP binary through its C ABI, parents
+  and shows the X11 child, checks rendered pixels, operates the zoom menu, hides
+  and shows it, and destroys/recreates the editor. The original X11 code fails
+  this check with a one-color window; the patched code passes.
+- The Linux package job runs the native test under Xvfb/software OpenGL.
 
-Windows behavior follows Microsoft's documented
-[capture-loss notification](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-capturechanged)
-and [physical button state](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getasynckeystate).
-Native tests were run through Wine; testing a drag in Windows REAPER remains a
-host integration check, distinct from these message-dispatch regressions.
-
-The boundary and resize regressions cover all four client edges during a
-held drag, reentry without capture, and repeated zoom changes at 100% and 150%
-display scaling. Additional regressions reproduce a host resize during a frame,
-nested mouse/timer messages, deferred resize ordering, and nested destruction.
-The host-resize test aborted with `RefCell already borrowed` before the dispatch
-fix. The ordering test observed 300x150 followed by 250x125 for requests made in
-the opposite order before protecting the task drain. Both pass under Wine with
-the fixes. The Windows packaging job runs the native backend tests with
-OpenGL enabled before bundling. Wine validation does not replace testing the
-released VST3/CLAP in the affected Windows host.
-
-The text-entry regressions drive a host loop that translates and dispatches
-key-downs but keeps every `WM_CHAR`. Without a field open it loses the letter,
-which reproduces the report. With one open, "CAB" arrives as `cab` and the
-host sees none of it. Further tests cover a closed field handing keys back, a
-second window keeping its keys, a call outside a callback doing nothing, focus
-moving into a child window and back to its parent, and the hook's reference
-count down to zero when a window is destroyed mid-entry. With the hook
-disabled, the typing and hook-count tests fail. All pass under Wine, with
-and without `opengl`. None of this replaces typing a name in the reporting
-user's Windows host.
-
-Native resize reentrancy follows Microsoft's documented
-[window notifications from SetWindowPos](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowpos)
-and [recursive window-manager calls](https://support.microsoft.com/en-au/topic/recursive-calls-to-window-manager-functions-may-fail-unexpectedly-43ad67f3-44a6-7f86-622a-a55f169ce5ac).
+This is not a claim that all upstream Windows/macOS host combinations have been
+validated. Keep these changes until equivalent behavior is demonstrated upstream.

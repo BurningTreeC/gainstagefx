@@ -4,7 +4,7 @@
 //! code, because the one thing this panel has to get right is that it reads in
 //! the order the signal travels, and that is a property of where things are.
 
-use nih_plug_vizia::vizia::vg;
+use super::paint as vg;
 
 /// Wide enough that the longest model names (Cali Oversized 4x12, Tube
 /// Condenser 67) and the placement knobs sit without crowding.
@@ -69,16 +69,17 @@ pub const PANEL_BOTTOM: u32 = 0x16191b;
 pub const GLOW: u32 = 0xff8a3c;
 
 pub fn rgb(hex: u32) -> vg::Color {
-    vg::Color::rgb(
-        ((hex >> 16) & 0xff) as u8,
-        ((hex >> 8) & 0xff) as u8,
-        (hex & 0xff) as u8,
+    vg::Color::new(
+        ((hex >> 16) & 0xff) as f32 / 255.0,
+        ((hex >> 8) & 0xff) as f32 / 255.0,
+        (hex & 0xff) as f32 / 255.0,
+        1.0,
     )
 }
 
 pub fn rgba(hex: u32, alpha: f32) -> vg::Color {
     let mut c = rgb(hex);
-    c.set_alphaf(alpha);
+    c.a = alpha;
     c
 }
 

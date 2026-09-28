@@ -1,6 +1,6 @@
 [package]
 name = "baseview"
-version = "0.1.0"
+version = "0.3.4"
 authors = [
     "William Light <git@wrl.lhiaudio.com>",
     "Charles Saracco <crsaracco@gmail.com>",
@@ -10,33 +10,125 @@ authors = [
     "Anton Lazarev <https://antonok.com>",
     "Joakim Frostegård <joakim.frostegard@gmail.com>",
     "Robbert van der Helm <mail@robbertvanderhelm.nl>",
+    "Adrien Prokopowicz <prokopylmc@gmail.com>"
 ]
-edition = "2018"
+edition = "2021"
 license = "MIT OR Apache-2.0"
+description = "Low-level windowing system geared towards making audio plugin UIs."
+keywords = ["windowing", "audio", "plugin"]
+categories = ["gui"]
+repository = "https://github.com/RustAudio/baseview"
+
+exclude = [".github"]
+rust-version = "1.82"
 
 [features]
 default = []
-opengl = ["uuid", "x11/glx"]
+opengl = [
+    "windows/Win32_Graphics_OpenGL",
+    "windows-sys/Win32_Graphics_OpenGL",
+    "objc2-core-foundation/CFBundle",
+    "objc2-app-kit/NSOpenGL",
+    "objc2-app-kit/NSOpenGLView",
+    "objc2-app-kit/objc2-open-gl"
+]
 
 [dependencies]
-keyboard-types = { version = "0.6.1", default-features = false }
-raw-window-handle = "0.5"
+keyboard-types = { version = "0.8.3" }
+raw-window-handle = "0.6.2"
+dpi = "0.1.2"
+tracing = { version = "0.1", optional = true }
 
 [target.'cfg(target_os="linux")'.dependencies]
-xcb = { version = "0.9", features = ["thread", "xlib_xcb", "dri2"] }
-x11 = { version = "2.18", features = ["xlib", "xcursor"] }
-xcb-util = { version = "0.3", features = ["icccm"] }
-nix = "0.22.0"
+x11rb = { version = "0.13.2", features = ["cursor", "dri3", "present", "resource_manager", "allow-unsafe-code", "dl-libxcb"], default-features = false }
+xkbcommon-dl = { version = "0.4.2", features = ["x11"] }
+x11-dl = { version = "2.21.0" }
+calloop = "0.14.4"
+percent-encoding = "2.3.2"
+bytemuck = { version = "1.25.2", features = ["extern_crate_alloc"] }
+libloading = "0.8.9" # Libloading 0.9 is out but its MSRV is 1.88
 
 [target.'cfg(target_os="windows")'.dependencies]
-winapi = { version = "0.3.8", features = ["libloaderapi", "winuser", "windef", "minwindef", "guiddef", "combaseapi", "wingdi", "errhandlingapi", "ole2", "oleidl", "processthreadsapi", "shellapi", "winerror"] }
-uuid = { version = "0.8", features = ["v4"], optional = true }
+windows = { version = "0.62.2", features = [
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Graphics_Gdi",
+    "Win32_System_Rpc",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = { version = "0.62.2" }
 
 [target.'cfg(target_os="macos")'.dependencies]
-cocoa = "0.24.0"
-core-foundation = "0.9.1"
-objc = "0.2.7"
-uuid = { version = "0.8", features = ["v4"] }
+objc2 = "0.6.4"
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFUUID", "block2", "objc2"] }
+block2 = "0.6.2"
+dispatch2 = "0.3.1"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSEnumerator", "block2", "NSOperation"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = [
+    "NSApplication",
+    "NSCursor",
+    "NSImage",
+    "NSDragging",
+    "NSEvent",
+    "NSGraphics",
+    "NSPasteboard",
+    "NSResponder",
+    "NSRunningApplication",
+    "NSTrackingArea",
+    "NSView",
+    "NSWindow",
+    "objc2-core-foundation"
+] }
 
-[dev-dependencies]
-rtrb = "0.2"
+[workspace]
+members = ["examples/cursors","examples/open_parented", "examples/open_window", "examples/plugin_clack", "examples/render_femtovg", "examples/render_wgpu", "examples/plugin_clack_femtovg", "examples/test-frame-pacing"]
+
+[lints.clippy]
+missing-safety-doc = "allow"
+
+allow-attributes-without-reason = "warn"
+arithmetic-side-effects = "warn"
+clone-on-ref-ptr = "warn"
+dbg-macro = "warn"
+default-union-representation = "deny"
+deref-by-slicing = "warn"
+doc-paragraphs-missing-punctuation = "warn"
+empty-drop = "warn"
+empty-enum-variants-with-brackets = "warn"
+empty-structs-with-brackets = "warn"
+error-impl-error = "warn"
+exhaustive-enums = "warn"
+exit = "deny"
+expect-used = "warn"
+float-cmp-const = "warn"
+get-unwrap = "warn"
+indexing-slicing = "warn"
+integer-division = "warn"
+lossy-float-literal = "warn"
+non-zero-suggestions = "warn"
+print-stderr = "warn"
+print-stdout = "warn"
+todo = "warn"
+try-err = "warn"
+unnecessary-safety-comment = "warn"
+unwrap-used = "warn"
+
+
+[package.metadata.docs.rs]
+all-features = true
+
+[workspace.dependencies]
+tracing-subscriber = "0.3.23"

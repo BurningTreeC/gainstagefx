@@ -1,5 +1,7 @@
-#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord, Hash)]
+#[expect(clippy::exhaustive_enums, reason = "TODO: next major version")]
+#[derive(Debug, Eq, PartialEq, Clone, Copy, PartialOrd, Ord, Hash, Default)]
 pub enum MouseCursor {
+    #[default]
     Default,
     Hand,
     HandGrabbing,
@@ -40,10 +42,4 @@ pub enum MouseCursor {
     NeswResize,
     ColResize,
     RowResize,
-}
-
-impl Default for MouseCursor {
-    fn default() -> Self {
-        Self::Default
-    }
 }

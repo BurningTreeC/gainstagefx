@@ -1,0 +1,41 @@
+[package]
+name = "vizia_winit"
+description = "Winit backend for vizia"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["accesskit"]
+x11 = ["winit/x11", "glutin/x11", "glutin-winit/x11"]
+wayland = ["winit/wayland", "winit/wayland-dlopen", "winit/wayland-csd-adwaita", "glutin-winit/wayland", "copypasta?/wayland"]
+clipboard = ["copypasta"]
+accesskit = ["dep:accesskit_winit", "dep:accesskit"]
+
+[dependencies]
+vizia_input.workspace = true
+vizia_core.workspace = true
+vizia_id.workspace = true
+vizia_reactive.workspace = true
+vizia_window.workspace = true
+
+accesskit = { workspace = true, optional = true }
+winit.workspace = true
+skia-safe.workspace = true
+glutin.workspace = true
+copypasta = { workspace = true, optional = true }
+accesskit_winit = { workspace = true, optional = true }
+glutin-winit.workspace = true
+gl-rs.workspace = true
+hashbrown.workspace = true
+log.workspace = true
+
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys.workspace = true
+
+[lints]
+workspace = true

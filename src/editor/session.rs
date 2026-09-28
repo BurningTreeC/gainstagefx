@@ -11,12 +11,14 @@
 //! mixed into the shipped groups. Which of them you can delete and which you
 //! cannot is worth being able to see without clicking.
 
-use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::{vizia_assets, widgets::RawParamEvent};
+use super::fonts as vizia_assets;
+use super::paint as vg;
+use super::paint::PanelCanvas;
+use nice_plug::prelude::*;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use vizia_plug::vizia::prelude::*;
+use vizia_plug::widgets::RawParamEvent;
 
 use super::style::*;
 use crate::params::GainStageParams;
@@ -46,18 +48,9 @@ pub const BUTTON_W: f32 = 152.0;
 /// A plugin that opens at one fixed size is a plugin that is too big on a
 /// laptop and too small on a large display, and the panel is drawn rather than
 /// pictured so it is sharp at any of them.
-pub const SCALES: [f64; 5] = [0.75, 0.9, 1.0, 1.25, 1.5];
+pub const SCALES: [f64; 7] = [0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0];
 pub const SIZE_X: f32 = 386.0;
 pub const SIZE_W: f32 = 46.0;
-
-// `Data` is how vizia decides whether a bound value has actually changed.
-// These are local types, so the impls belong here rather than putting a user
-// interface dependency into the preset store.
-impl Data for Stored {
-    fn same(&self, other: &Self) -> bool {
-        self == other
-    }
-}
 
 /// Which question, if any, is on screen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -72,14 +65,22 @@ pub enum Dialog {
     Delete,
 }
 
-impl Data for Dialog {
-    fn same(&self, other: &Self) -> bool {
-        self == other
-    }
+#[derive(Clone, PartialEq)]
+pub(super) struct SessionView {
+    open: bool,
+    sizing: bool,
+    scale: f64,
+    dialog: Dialog,
+    current: String,
+    dirty: bool,
+    pub(super) deletable: bool,
+    draft: String,
+    error: String,
+    entries: Vec<Stored>,
 }
 
-#[derive(Lens)]
 pub struct Session {
+    pub(super) view: Signal<SessionView>,
     pub open: bool,
     /// Whether the size list is showing.
     pub sizing: bool,
@@ -100,9 +101,6 @@ pub struct Session {
     /// The values the current preset was loaded with, which is what `dirty` is
     /// measured against.
     reference: BTreeMap<String, f32>,
-    /// The door back to the host. Choosing a size has to ask it to resize the
-    /// window, and this is the only thing that can. See `editor::apply_scale`.
-    gui: Arc<dyn nih_plug::prelude::GuiContext>,
 }
 
 pub enum SessionEvent {
@@ -122,12 +120,7 @@ pub enum SessionEvent {
 }
 
 impl Session {
-    pub fn build_into(
-        cx: &mut Context,
-        params: Arc<GainStageParams>,
-        scale: f64,
-        gui: Arc<dyn nih_plug::prelude::GuiContext>,
-    ) {
+    pub fn build_into(cx: &mut Context, params: Arc<GainStageParams>, scale: f64) {
         let current = params
             .preset_name
             .lock()
@@ -141,6 +134,18 @@ impl Session {
             .unwrap_or_default();
         let deletable = entries.iter().any(|p| !p.built_in && p.name == current);
         Self {
+            view: Signal::new(SessionView {
+                open: false,
+                sizing: false,
+                scale,
+                dialog: Dialog::None,
+                current: current.clone(),
+                dirty: false,
+                deletable,
+                draft: String::new(),
+                error: String::new(),
+                entries: entries.clone(),
+            }),
             open: false,
             sizing: false,
             scale,
@@ -153,7 +158,6 @@ impl Session {
             entries,
             params,
             reference,
-            gui,
         }
         .build(cx);
     }
@@ -219,6 +223,10 @@ impl Session {
 
 impl Model for Session {
     fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|scale: &vizia_plug::vizia::UserScaleChanged, _| {
+            self.scale = scale.0 / self.params.editor_state.base_scale_factor();
+            crate::editor::remember_scale(&self.params.editor_state, self.scale);
+        });
         // Any parameter movement can make the panel differ from the preset it
         // was loaded from, and moving a control back should make it match
         // again -- so this is compared rather than tracked with a flag.
@@ -243,10 +251,9 @@ impl Model for Session {
                 }
                 SessionEvent::SetScale(scale) => {
                     self.sizing = false;
-                    if crate::editor::apply_scale(&self.params.editor_state, &*self.gui, *scale) {
-                        self.scale = *scale;
-                        cx.set_user_scale_factor(*scale);
-                    }
+                    cx.emit(WindowEvent::SetUserScale(
+                        *scale * self.params.editor_state.base_scale_factor(),
+                    ));
                 }
                 SessionEvent::Close => {
                     self.open = false;
@@ -266,6 +273,7 @@ impl Model for Session {
                     self.apply(cx, (at + delta).clamp(0, last) as usize);
                 }
                 SessionEvent::OpenSave => {
+                    self.sizing = false;
                     self.open = false;
                     self.refresh();
                     self.draft = offered_name(&self.current);
@@ -314,8 +322,22 @@ impl Model for Session {
             // could not be typed into. See `vendor/baseview/src/win/text_input.rs`.
             // Every other platform ignores it. Repeating an unchanged state
             // does nothing, so it is simply kept in step here.
-            baseview::set_text_input(self.dialog == Dialog::Save);
+            cx.emit(vizia_plug::vizia::TextInputActive(
+                self.dialog == Dialog::Save,
+            ));
             meta.consume();
+        });
+        self.view.set_if_changed(SessionView {
+            open: self.open,
+            sizing: self.sizing,
+            scale: self.scale,
+            dialog: self.dialog,
+            current: self.current.clone(),
+            dirty: self.dirty,
+            deletable: self.deletable,
+            draft: self.draft.clone(),
+            error: self.error.clone(),
+            entries: self.entries.clone(),
         });
     }
 }
@@ -342,12 +364,13 @@ pub struct PresetButton;
 
 impl PresetButton {
     pub fn build_into(cx: &mut Context) -> Handle<'_, Self> {
+        let session = cx.data::<Session>().view;
         Self.build(cx, |cx| {
             // A dot rather than an asterisk: it reads as a state, not as a
             // footnote pointing at something.
             Label::new(
                 cx,
-                Session::root.map(|s: &Session| {
+                session.map(|s: &SessionView| {
                     if s.dirty {
                         format!("{}  \u{2022}", s.current)
                     } else {
@@ -357,10 +380,9 @@ impl PresetButton {
             )
             .width(Stretch(1.0))
             .height(Stretch(1.0))
-            .child_left(Pixels(10.0))
-            .child_top(Stretch(1.0))
-            .child_bottom(Stretch(1.0))
-            .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+            .padding_left(Pixels(10.0))
+            .alignment(Alignment::Left)
+            .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
             .font_size(11.0)
             .color(Color::rgb(0xff, 0xb2, 0x6a))
             .hoverable(false);
@@ -387,12 +409,12 @@ impl View for PresetButton {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
         frame(canvas, b, scale, false);
 
-        let (x, y) = (b.x + b.w - 14.0 * scale, b.y + b.h / 2.0);
+        let (x, y) = (b.x + b.width() - 14.0 * scale, b.y + b.height() / 2.0);
         let mut caret = vg::Path::new();
         caret.move_to(x - 4.0 * scale, y - 2.0 * scale);
         caret.line_to(x, y + 2.5 * scale);
@@ -430,11 +452,9 @@ impl Press {
             Label::new(cx, text)
                 .width(Stretch(1.0))
                 .height(Stretch(1.0))
-                .child_left(Stretch(1.0))
-                .child_right(Stretch(1.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                .alignment(Alignment::Center)
+                .text_align(TextAlign::Center)
+                .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
                 .font_size(10.5)
                 .color(if !enabled {
                     Color::rgba(0xff, 0xff, 0xff, 0x33)
@@ -465,7 +485,7 @@ impl View for Press {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         frame(
             canvas,
             cx.bounds(),
@@ -476,9 +496,9 @@ impl View for Press {
 }
 
 /// The box a button or field is drawn in.
-fn frame(canvas: &mut Canvas, b: BoundingBox, scale: f32, lit: bool) {
+fn frame(canvas: &Canvas, b: BoundingBox, scale: f32, lit: bool) {
     let mut path = vg::Path::new();
-    path.rounded_rect(b.x, b.y, b.w, b.h, 3.0 * scale);
+    path.rounded_rect(b.x, b.y, b.width(), b.height(), 3.0 * scale);
     canvas.fill_path(
         &path,
         &vg::Paint::color(if lit {
@@ -498,18 +518,22 @@ pub struct SizeButton;
 
 impl SizeButton {
     pub fn build_into(cx: &mut Context) -> Handle<'_, Self> {
+        let session = cx.data::<Session>().view;
         Self.build(cx, |cx| {
-            Label::new(cx, Session::scale.map(|s| format!("{:.0}%", s * 100.0)))
-                .width(Stretch(1.0))
-                .height(Stretch(1.0))
-                .child_left(Stretch(1.0))
-                .child_right(Stretch(1.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
-                .font_size(10.0)
-                .color(Color::rgb(0xc9, 0xd2, 0xd8))
-                .hoverable(false);
+            Label::new(
+                cx,
+                session
+                    .map(|s| s.scale)
+                    .map(|s| format!("{:.0}%", s * 100.0)),
+            )
+            .width(Stretch(1.0))
+            .height(Stretch(1.0))
+            .alignment(Alignment::Center)
+            .text_align(TextAlign::Center)
+            .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
+            .font_size(10.0)
+            .color(Color::rgb(0xc9, 0xd2, 0xd8))
+            .hoverable(false);
         })
     }
 }
@@ -530,7 +554,7 @@ impl View for SizeButton {
             WindowEvent::MouseScroll(_, y) => {
                 let at = SCALES
                     .iter()
-                    .position(|s| (*s - cx.user_scale_factor()).abs() < 1e-6)
+                    .position(|s| (*s - cx.data::<Session>().scale).abs() < 1e-6)
                     .unwrap_or(2) as i64;
                 let next = (at + y.signum() as i64).clamp(0, SCALES.len() as i64 - 1);
                 cx.emit(SessionEvent::SetScale(SCALES[next as usize]));
@@ -540,34 +564,38 @@ impl View for SizeButton {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         frame(canvas, cx.bounds(), cx.scale_factor(), false);
     }
 }
 
 /// The sizes, as a short list under the button.
 pub fn sizes(cx: &mut Context) {
-    Binding::new(cx, Session::sizing, |cx, sizing| {
-        if !sizing.get(cx) {
-            return;
-        }
-        Backdrop::new(cx, SessionEvent::Close);
-
-        VStack::new(cx, |cx| {
-            for scale in SCALES {
-                SizeRow::build_into(cx, scale);
+    let session = cx.data::<Session>().view;
+    {
+        let sizing = session.map(|s| s.sizing);
+        Binding::new(cx, sizing, move |cx| {
+            if !sizing.get() {
+                return;
             }
-        })
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(SIZE_X - 8.0))
-        .top(Pixels(HEADER_H - 2.0))
-        .width(Pixels(72.0))
-        .height(Pixels(ROW_H * SCALES.len() as f32 + 8.0))
-        .child_top(Pixels(4.0))
-        .background_color(Color::rgb(0x1c, 0x20, 0x23))
-        .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
-        .border_width(Pixels(1.0));
-    });
+            Backdrop::new(cx, SessionEvent::Close);
+
+            VStack::new(cx, |cx| {
+                for scale in SCALES {
+                    SizeRow::build_into(cx, scale);
+                }
+            })
+            .position_type(PositionType::Absolute)
+            .left(Pixels(SIZE_X - 8.0))
+            .top(Pixels(HEADER_H - 2.0))
+            .width(Pixels(72.0))
+            .height(Pixels(ROW_H * SCALES.len() as f32 + 8.0))
+            .padding_top(Pixels(4.0))
+            .background_color(Color::rgb(0x1c, 0x20, 0x23))
+            .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
+            .border_width(Pixels(1.0));
+        });
+    };
 }
 
 pub struct SizeRow {
@@ -576,17 +604,17 @@ pub struct SizeRow {
 
 impl SizeRow {
     pub fn build_into(cx: &mut Context, scale: f64) -> Handle<'_, Self> {
+        let session = cx.data::<Session>().view;
         Self { scale }
             .build(cx, move |cx| {
-                Label::new(cx, &format!("{:.0}%", scale * 100.0))
+                Label::new(cx, format!("{:.0}%", scale * 100.0))
                     .width(Stretch(1.0))
                     .height(Stretch(1.0))
-                    .child_left(Pixels(14.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                    .padding_left(Pixels(14.0))
+                    .alignment(Alignment::Left)
+                    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
                     .font_size(10.5)
-                    .color(Session::scale.map(move |current| {
+                    .color(session.map(|s| s.scale).map(move |current| {
                         if (*current - scale).abs() < 1e-6 {
                             Color::rgb(0xff, 0xb2, 0x6a)
                         } else {
@@ -615,10 +643,10 @@ impl View for SizeRow {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let mut row = vg::Path::new();
-        row.rect(b.x, b.y, b.w, b.h);
+        row.rect(b.x, b.y, b.width(), b.height());
         canvas.fill_path(&row, &vg::Paint::color(rgba(0xffffff, 0.02)));
     }
 }
@@ -668,63 +696,69 @@ textbox:checked.caret {
 "#;
 
 pub fn menu(cx: &mut Context) {
-    Binding::new(cx, Session::open, |cx, open| {
-        if !open.get(cx) {
-            return;
-        }
-        Backdrop::new(cx, SessionEvent::Close);
+    let session = cx.data::<Session>().view;
+    {
+        let open = session.map(|s| s.open);
+        Binding::new(cx, open, move |cx| {
+            if !open.get() {
+                return;
+            }
+            Backdrop::new(cx, SessionEvent::Close);
 
-        VStack::new(cx, |cx| {
-            ScrollView::new(cx, 0.0, 0.0, false, true, |cx| {
-                Binding::new(cx, Session::entries, |cx, entries| {
-                    let entries = entries.get(cx);
-                    VStack::new(cx, move |cx| {
-                        for group in GROUPS.iter().copied().chain([SAVED]) {
-                            let rows: Vec<(usize, String)> = entries
-                                .iter()
-                                .enumerate()
-                                .filter(|(_, p)| p.group == group)
-                                .map(|(i, p)| (i, p.name.clone()))
-                                .collect();
-                            // A heading with nothing under it is a promise the
-                            // list does not keep, so "Saved" only appears once
-                            // something has been saved.
-                            if rows.is_empty() {
-                                continue;
-                            }
-                            heading(cx, group);
-                            for (index, name) in rows {
-                                Row::build_into(cx, index, name);
-                            }
-                        }
-                    })
-                    .width(Stretch(1.0))
-                    .height(Auto);
-                });
+            VStack::new(cx, |cx| {
+                ScrollView::new(cx, move |cx| {
+                    {
+                        let entries = session.map(|s| s.entries.clone());
+                        Binding::new(cx, entries, move |cx| {
+                            let entries = entries.get();
+                            VStack::new(cx, move |cx| {
+                                for group in GROUPS.iter().copied().chain([SAVED]) {
+                                    let rows: Vec<(usize, String)> = entries
+                                        .iter()
+                                        .enumerate()
+                                        .filter(|(_, p)| p.group == group)
+                                        .map(|(i, p)| (i, p.name.clone()))
+                                        .collect();
+                                    // A heading with nothing under it is a promise the
+                                    // list does not keep, so "Saved" only appears once
+                                    // something has been saved.
+                                    if rows.is_empty() {
+                                        continue;
+                                    }
+                                    heading(cx, group);
+                                    for (index, name) in rows {
+                                        Row::build_into(cx, index, name);
+                                    }
+                                }
+                            })
+                            .width(Stretch(1.0))
+                            .height(Auto);
+                        });
+                    };
+                })
+                .width(Stretch(1.0))
+                .height(Stretch(1.0));
             })
-            .width(Stretch(1.0))
-            .height(Stretch(1.0));
-        })
-        // Hung under the button it belongs to, not merely near it.
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(BUTTON_X))
-        .top(Pixels(HEADER_H - 2.0))
-        .width(Pixels(MENU_W))
-        .height(Pixels(MENU_H))
-        .background_color(Color::rgb(0x1c, 0x20, 0x23))
-        .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
-        .border_width(Pixels(1.0));
-    });
+            // Hung under the button it belongs to, not merely near it.
+            .position_type(PositionType::Absolute)
+            .left(Pixels(BUTTON_X))
+            .top(Pixels(HEADER_H - 2.0))
+            .width(Pixels(MENU_W))
+            .height(Pixels(MENU_H))
+            .background_color(Color::rgb(0x1c, 0x20, 0x23))
+            .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
+            .border_width(Pixels(1.0));
+        });
+    };
 }
 
 fn heading(cx: &mut Context, text: &'static str) {
     Label::new(cx, text)
         .width(Stretch(1.0))
         .height(Pixels(HEADING_H))
-        .child_left(Pixels(10.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .padding_left(Pixels(10.0))
+        .alignment(Alignment::Left)
+        .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
         .font_size(9.5)
         .color(Color::rgb(0x7e, 0x8a, 0x96))
         .hoverable(false);
@@ -737,18 +771,18 @@ pub struct Row {
 
 impl Row {
     pub fn build_into(cx: &mut Context, index: usize, name: String) -> Handle<'_, Self> {
+        let session = cx.data::<Session>().view;
         let shown = name.clone();
         Self { index }
             .build(cx, move |cx| {
-                Label::new(cx, &shown)
+                Label::new(cx, shown.clone())
                     .width(Stretch(1.0))
                     .height(Stretch(1.0))
-                    .child_left(Pixels(20.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                    .padding_left(Pixels(20.0))
+                    .alignment(Alignment::Left)
+                    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
                     .font_size(11.0)
-                    .color(Session::current.map(move |current| {
+                    .color(session.map(|s| s.current.clone()).map(move |current| {
                         if *current == name {
                             Color::rgb(0xff, 0xb2, 0x6a)
                         } else {
@@ -777,10 +811,10 @@ impl View for Row {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let mut row = vg::Path::new();
-        row.rect(b.x, b.y, b.w, b.h);
+        row.rect(b.x, b.y, b.width(), b.height());
         canvas.fill_path(&row, &vg::Paint::color(rgba(0xffffff, 0.02)));
     }
 }
@@ -793,153 +827,163 @@ const DIALOG_W: f32 = 320.0;
 const DIALOG_H: f32 = 150.0;
 
 pub fn dialogs(cx: &mut Context) {
-    Binding::new(cx, Session::dialog, |cx, which| {
-        let which = which.get(cx);
-        if which == Dialog::None {
-            return;
-        }
-        // A question has to sit on top of whatever asked it, and clicking away
-        // from it means no.
-        Backdrop::new(cx, SessionEvent::Cancel);
-
-        let left = (PANEL_W - DIALOG_W) / 2.0;
-        let top = (WINDOW_H - DIALOG_H) / 2.0;
-
-        VStack::new(cx, move |cx| {
-            let title = match which {
-                Dialog::Save => "Save preset",
-                Dialog::Overwrite => "Replace it?",
-                Dialog::Delete => "Delete preset",
-                Dialog::None => "",
-            };
-            Label::new(cx, title)
-                .width(Stretch(1.0))
-                .height(Pixels(28.0))
-                .child_left(Pixels(16.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
-                .font_size(11.5)
-                .color(Color::rgb(0xe8, 0xee, 0xf4))
-                .hoverable(false);
-
-            match which {
-                Dialog::Save => {
-                    Textbox::new(cx, Session::draft)
-                        .width(Stretch(1.0))
-                        .height(Pixels(26.0))
-                        .left(Pixels(16.0))
-                        .right(Pixels(16.0))
-                        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
-                        .font_size(11.0)
-                        .color(Color::rgb(0xe8, 0xee, 0xf4))
-                        .background_color(Color::rgba(0x00, 0x00, 0x00, 0x55))
-                        .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
-                        .border_width(Pixels(1.0))
-                        // Both, because a name typed and then clicked away
-                        // from has still been typed. Committing only on Enter
-                        // is how a save quietly writes the previous name.
-                        .on_edit(|cx, text| cx.emit(SessionEvent::Draft(text)))
-                        .on_submit(|cx, text, _| {
-                            cx.emit(SessionEvent::Draft(text));
-                            cx.emit(SessionEvent::Confirm);
-                        })
-                        // Focus it the moment the dialog opens.
-                        //
-                        // Without this the box is built unfocused, and a vizia
-                        // `Textbox` only draws its caret and only accepts keys
-                        // once it is in edit mode -- which it enters on
-                        // `FocusIn`. So the dialog came up with no cursor in
-                        // it. `save` rejects an empty name *before* it creates
-                        // the directory, so the report that reached us was two
-                        // things at once: no cursor, and no
-                        // `GainStageFx\Presets` folder ever appearing.
-                        //
-                        // This is vizia's focus, inside the panel. Whether the
-                        // keys reach the panel at all is the operating system's
-                        // focus, and on Windows that is the job of the
-                        // `set_text_input` call in `Session::event`.
-                        .on_build(|cx| cx.focus());
-                }
-                Dialog::Overwrite => {
-                    note(
-                        cx,
-                        Session::draft.map(|n| format!("You already have a preset called {n}.")),
-                    );
-                }
-                Dialog::Delete => {
-                    note(
-                        cx,
-                        Session::current.map(|n| format!("Delete {n}? This cannot be undone.")),
-                    );
-                }
-                Dialog::None => {}
+    let session = cx.data::<Session>().view;
+    {
+        let which = session.map(|s| s.dialog);
+        Binding::new(cx, which, move |cx| {
+            let which = which.get();
+            if which == Dialog::None {
+                return;
             }
+            // A question has to sit on top of whatever asked it, and clicking away
+            // from it means no.
+            Backdrop::new(cx, SessionEvent::Cancel);
 
-            Binding::new(cx, Session::error, |cx, error| {
-                let error = error.get(cx);
-                if error.is_empty() {
-                    return;
-                }
-                Label::new(cx, &error)
-                    .width(Stretch(1.0))
-                    .height(Pixels(18.0))
-                    .left(Pixels(16.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
-                    .font_size(10.0)
-                    .color(Color::rgb(0xe8, 0x7a, 0x5a))
-                    .hoverable(false);
-            });
+            let left = (PANEL_W - DIALOG_W) / 2.0;
+            let top = (WINDOW_H - DIALOG_H) / 2.0;
 
-            HStack::new(cx, move |cx| {
-                Press::build_into(cx, "Cancel", true, false, || SessionEvent::Cancel)
-                    .width(Pixels(84.0))
-                    .height(Pixels(24.0));
-                let go = match which {
-                    Dialog::Delete => "Delete",
-                    Dialog::Overwrite => "Replace",
-                    _ => "Save",
+            VStack::new(cx, move |cx| {
+                let title = match which {
+                    Dialog::Save => "Save preset",
+                    Dialog::Overwrite => "Replace it?",
+                    Dialog::Delete => "Delete preset",
+                    Dialog::None => "",
                 };
-                Press::build_into(cx, go, true, true, || SessionEvent::Confirm)
-                    .width(Pixels(84.0))
-                    .height(Pixels(24.0))
-                    .left(Pixels(10.0));
+                Label::new(cx, title)
+                    .width(Stretch(1.0))
+                    .height(Pixels(28.0))
+                    .padding_left(Pixels(16.0))
+                    .alignment(Alignment::Left)
+                    .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
+                    .font_size(11.5)
+                    .color(Color::rgb(0xe8, 0xee, 0xf4))
+                    .hoverable(false);
+
+                match which {
+                    Dialog::Save => {
+                        Textbox::new(cx, session.map(|s| s.draft.clone()))
+                            .position_type(PositionType::Absolute)
+                            .left(Pixels(16.0))
+                            .top(Pixels(36.0))
+                            .width(Pixels(DIALOG_W - 32.0))
+                            .height(Pixels(26.0))
+                            .padding_left(Pixels(5.0))
+                            .alignment(Alignment::Left)
+                            .font_family(vec![FamilyOwned::Named(String::from(
+                                vizia_assets::ROBOTO,
+                            ))])
+                            .font_size(11.0)
+                            .color(Color::rgb(0xe8, 0xee, 0xf4))
+                            .background_color(Color::rgba(0x00, 0x00, 0x00, 0x55))
+                            .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
+                            .border_width(Pixels(1.0))
+                            // Both, because a name typed and then clicked away
+                            // from has still been typed. Committing only on Enter
+                            // is how a save quietly writes the previous name.
+                            .on_edit(|cx, text| cx.emit(SessionEvent::Draft(text)))
+                            .on_submit(|cx, text, _| {
+                                cx.emit(SessionEvent::Draft(text));
+                                cx.emit(SessionEvent::Confirm);
+                            })
+                            // Focus it the moment the dialog opens.
+                            //
+                            // Without this the box is built unfocused, and a vizia
+                            // `Textbox` only draws its caret and only accepts keys
+                            // once it is in edit mode -- which it enters on
+                            // `FocusIn`. So the dialog came up with no cursor in
+                            // it. `save` rejects an empty name *before* it creates
+                            // the directory, so the report that reached us was two
+                            // things at once: no cursor, and no
+                            // `GainStageFx\Presets` folder ever appearing.
+                            //
+                            // This is vizia's focus, inside the panel. Whether the
+                            // keys reach the panel at all is the operating system's
+                            // focus, and on Windows that is the job of the
+                            // `set_text_input` call in `Session::event`.
+                            .on_build(|cx| cx.focus());
+                    }
+                    Dialog::Overwrite => {
+                        note(
+                            cx,
+                            session
+                                .map(|s| s.draft.clone())
+                                .map(|n| format!("You already have a preset called {n}.")),
+                        );
+                    }
+                    Dialog::Delete => {
+                        note(
+                            cx,
+                            session
+                                .map(|s| s.current.clone())
+                                .map(|n| format!("Delete {n}? This cannot be undone.")),
+                        );
+                    }
+                    Dialog::None => {}
+                }
+
+                {
+                    let error = session.map(|s| s.error.clone());
+                    Binding::new(cx, error, move |cx| {
+                        let error = error.get();
+                        if error.is_empty() {
+                            return;
+                        }
+                        Label::new(cx, error.clone())
+                            .width(Stretch(1.0))
+                            .height(Pixels(18.0))
+                            .position_type(PositionType::Absolute)
+                            .top(Pixels(70.0))
+                            .left(Pixels(16.0))
+                            .alignment(Alignment::Left)
+                            .font_family(vec![FamilyOwned::Named(String::from(
+                                vizia_assets::ROBOTO,
+                            ))])
+                            .font_size(10.0)
+                            .color(Color::rgb(0xe8, 0x7a, 0x5a))
+                            .hoverable(false);
+                    });
+                };
+
+                HStack::new(cx, move |cx| {
+                    Press::build_into(cx, "Cancel", true, false, || SessionEvent::Cancel)
+                        .width(Pixels(84.0))
+                        .height(Pixels(24.0));
+                    let go = match which {
+                        Dialog::Delete => "Delete",
+                        Dialog::Overwrite => "Replace",
+                        _ => "Save",
+                    };
+                    Press::build_into(cx, go, true, true, || SessionEvent::Confirm)
+                        .width(Pixels(84.0))
+                        .height(Pixels(24.0));
+                })
+                .position_type(PositionType::Absolute)
+                .left(Pixels(DIALOG_W - 16.0 - 178.0))
+                .top(Pixels(DIALOG_H - 14.0 - 24.0))
+                .width(Pixels(178.0))
+                .height(Pixels(24.0))
+                .horizontal_gap(Pixels(10.0));
             })
-            // Auto, not `Stretch`. A row that is both as wide as its parent
-            // *and* pushed right by a stretch starts at the right edge and
-            // puts its children past it -- which is what happened: the Save
-            // and Delete buttons drew outside the dialog they belong to. Sized
-            // to its two buttons, the stretch on the left does what it reads
-            // like it does and moves the pair over to the right margin.
-            .width(Auto)
-            .height(Pixels(24.0))
-            .top(Stretch(1.0))
-            .left(Stretch(1.0))
-            .right(Pixels(16.0))
-            .bottom(Pixels(14.0));
-        })
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(left))
-        .top(Pixels(top))
-        .width(Pixels(DIALOG_W))
-        .height(Pixels(DIALOG_H))
-        .background_color(Color::rgb(0x22, 0x27, 0x2a))
-        .border_color(Color::rgba(0xff, 0xff, 0xff, 0x2a))
-        .border_width(Pixels(1.0));
-    });
+            .position_type(PositionType::Absolute)
+            .left(Pixels(left))
+            .top(Pixels(top))
+            .width(Pixels(DIALOG_W))
+            .height(Pixels(DIALOG_H))
+            .background_color(Color::rgb(0x22, 0x27, 0x2a))
+            .border_color(Color::rgba(0xff, 0xff, 0xff, 0x2a))
+            .border_width(Pixels(1.0));
+        });
+    };
 }
 
-fn note(cx: &mut Context, text: impl Lens<Target = String>) {
+fn note(cx: &mut Context, text: impl Res<String> + Clone + 'static) {
     Label::new(cx, text)
         .width(Stretch(1.0))
         .height(Pixels(30.0))
         .left(Pixels(16.0))
         .right(Pixels(16.0))
-        .child_top(Stretch(1.0))
-        .child_bottom(Stretch(1.0))
-        .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+        .alignment(Alignment::Left)
+        .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
         .font_size(10.5)
         .color(Color::rgb(0xa8, 0xb2, 0xba))
         .hoverable(false);
@@ -968,7 +1012,7 @@ impl Backdrop {
             }),
         }
         .build(cx, |_| {})
-        .position_type(PositionType::SelfDirected)
+        .position_type(PositionType::Absolute)
         .left(Pixels(0.0))
         .top(Pixels(0.0))
         .width(Pixels(PANEL_W))

@@ -1,0 +1,7 @@
+Roboto Regular and Roboto Bold
+Font data copyright Google 2012
+Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE).
+
+These are the unchanged Roboto faces previously embedded by nih_plug_assets
+at NIH-plug f36931f7af4646065488a9845d8f8c2f95252c23. They are retained to
+preserve GainStageFx's typography when moving the editor to Skia.

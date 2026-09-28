@@ -9,7 +9,7 @@
 //! They are grouped by what they are for rather than by which circuit they
 //! use, because that is how somebody looking for a sound is thinking.
 
-use nih_plug::prelude::Enum;
+use nice_plug::prelude::Enum;
 
 use crate::params::{
     Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, Mains, MicModel, Oversampling, PedalModel,
@@ -1806,8 +1806,8 @@ pub fn in_group(group: &'static str) -> impl Iterator<Item = (usize, &'static Pr
 // Saved presets
 // ---------------------------------------------------------------------------
 
-use nih_plug::params::Params;
-use nih_plug::prelude::ParamPtr;
+use nice_plug::params::Params;
+use nice_plug::prelude::ParamPtr;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::ffi::OsString;

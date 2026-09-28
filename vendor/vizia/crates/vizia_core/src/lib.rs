@@ -1,0 +1,117 @@
+//! Vizia
+
+#![allow(clippy::type_complexity)]
+// To allow a match syntax in event handlers with one event variant
+#![allow(clippy::single_match)]
+// To allow enum names with the same prefix
+#![allow(clippy::enum_variant_names)]
+#![allow(clippy::only_used_in_recursion)]
+#![allow(clippy::uninlined_format_args)]
+#![allow(clippy::collapsible_match)]
+#![allow(clippy::new_ret_no_self)]
+#![allow(mismatched_lifetime_syntaxes)]
+// #![warn(missing_docs)]
+
+extern crate self as vizia;
+
+pub(crate) mod accessibility;
+pub mod animation;
+pub mod binding;
+#[doc(hidden)]
+pub(crate) mod cache;
+pub mod context;
+#[doc(hidden)]
+pub(crate) mod entity;
+pub mod environment;
+pub mod events;
+pub mod input;
+pub mod layout;
+pub mod localization;
+pub mod model;
+pub mod modifiers;
+pub mod resource;
+pub mod style;
+pub(crate) mod systems;
+pub(crate) mod text;
+#[doc(hidden)]
+pub mod tree;
+/// Helper utilities
+pub mod util;
+pub mod view;
+pub mod views;
+pub mod window;
+
+mod storage;
+
+/// Contains types and functions used for custom drawing within views. This is a re-export of [skia-safe](https://github.com/rust-skia/rust-skia).
+pub mod vg {
+    pub use skia_safe::*;
+}
+
+/// A collection of built-in SVG icons.
+pub mod icons;
+
+#[doc(hidden)]
+pub mod backend {
+    pub use super::accessibility::IntoNode;
+    pub use super::context::backend::BackendContext;
+    pub use vizia_window::WindowDescription;
+}
+
+/// Members which we recommend you wildcard-import.
+#[doc(hidden)]
+pub mod prelude {
+    pub use super::binding::{Binding, Res};
+
+    pub use vizia_reactive::{
+        Effect, Memo, ReadSignal, Runtime, Signal, SignalGet, SignalMap, SignalRead, SignalTrack,
+        SignalUpdate, SignalWith, SignalWrite, SyncDerivedSignal, SyncReadSignal, SyncSignal,
+        SyncWriteSignal, UpdaterEffect, WriteSignal,
+    };
+
+    pub use super::{impl_res_clone, impl_res_simple};
+
+    pub use crate::model::Model;
+
+    pub use super::animation::{Animation, AnimationBuilder, KeyframeBuilder};
+    pub use super::context::{
+        AccessContext, AccessNode, Context, ContextProxy, DataContext, DrawContext, EmitContext,
+        EventContext, ProxyEmitError, WindowState,
+    };
+    #[cfg(feature = "tokio")]
+    pub use super::context::{Task, TaskBuilder, TaskCancellation, TaskHandle, TaskResult};
+    pub use super::entity::Entity;
+    pub use super::environment::{Environment, EnvironmentEvent, ThemeMode};
+    pub use super::events::{Event, Propagation, Timer, TimerAction};
+    pub use super::include_style;
+    pub use super::input::{Keymap, KeymapEntry, KeymapEvent};
+    pub use super::layout::{BoundingBox, GeoChanged};
+    pub use super::localization::{Localized, ToStringLocalized, number_with_fraction, percentage};
+    pub use super::modifiers::{
+        AbilityModifiers, AccessibilityModifiers, ActionModifiers, ControlModifiers, ControlSize,
+        DragModifiers, LayoutModifiers, LinearGradientBuilder, ShadowBuilder, StyleModifiers,
+        TextModifiers,
+    };
+    pub use super::resource::{
+        FontRequest, ImageId, ImageRequest, ImageRetentionPolicy, LoadingStatus,
+        ResourceLoadExecution, ResourceLoadOptions, ResourceLoader, ResourceRequest,
+        TranslationRequest,
+    };
+    pub use super::util::{CSS, IntoCssStr};
+    pub use super::view::{Handle, View};
+    pub use super::views::*;
+    pub use super::window::{DropData, WindowEvent};
+    pub use accesskit::{Action, Live, Role};
+    pub use skia_safe::Canvas;
+    pub use vizia_id::GenerationalId;
+    pub use vizia_input::{Code, Key, KeyChord, Modifiers, MouseButton, MouseButtonState};
+    pub use vizia_storage::{Tree, TreeExt};
+    pub use vizia_window::{Anchor, AnchorTarget, WindowButtons, WindowPosition, WindowSize};
+
+    pub use super::style::*;
+
+    pub use morphorm::Units::*;
+    pub use morphorm::{LayoutType, PositionType, Units};
+    pub use std::time::{Duration, Instant};
+    pub use unic_langid::{LanguageIdentifier, langid};
+}

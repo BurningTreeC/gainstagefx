@@ -1,0 +1,119 @@
+/* * {
+    border: 1px red;
+} */
+
+markdown {
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", "Noto Sans",
+        Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    font-size: 16px;
+    padding: 20px;
+}
+
+markdown .h1,
+markdown .h2,
+markdown .h3,
+markdown .h4,
+markdown .h5,
+markdown .h6 {
+    width: 1s;
+    padding-top: 24px;
+    padding-bottom: 16px;
+    font-weight: 600;
+}
+
+markdown .h1 {
+    font-size: 32px;
+}
+
+markdown .h2 {
+    padding-bottom: 4px;
+    font-size: 24px;
+}
+
+markdown .h3 {
+    font-size: 20px;
+}
+
+markdown .h4 {
+    font-size: 16px;
+}
+
+markdown .h5 {
+    font-size: 14px;
+}
+
+markdown .h6 {
+    font-size: 13.5px;
+    color: #636c76;
+}
+
+markdown .p {
+    padding-top: 16px;
+    padding-bottom: 16px;
+    text-wrap: true;
+    width: 1s;
+}
+
+markdown .emph {
+    font-slant: italic;
+}
+
+markdown .strong {
+    font-weight: 600;
+}
+
+markdown .strikethrough {
+    text-decoration-line: strikethrough;
+}
+
+markdown .code {
+    font-family: monospace;
+    background-color: #afb8c133;
+    padding: 12px;
+    width: 1s;
+    min-width: auto;
+}
+
+markdown .link {
+    color: blue;
+    text-decoration-line: underline;
+}
+
+markdown .li .h1,
+markdown .li .h2,
+markdown .li .h3,
+markdown .li .h4,
+markdown .li .h5,
+markdown .li .h6 {
+    space: 0px;
+    padding: 0px;
+}
+
+.testy {
+    space: 20px;
+}
+
+.testy .span {
+    font-weight: normal;
+}
+
+.testy .span:hover {
+    font-weight: bold;
+}
+
+markdown .table {
+    padding-bottom: 16px;
+}
+
+markdown .table-cell {
+    height: 1s;
+    min-height: auto;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    alignment: top-left;
+}
+
+markdown .table-row.table-headers .table-cell {
+    font-weight: bold;
+}

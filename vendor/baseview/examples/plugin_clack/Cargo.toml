@@ -1,0 +1,13 @@
+[package]
+name = "plugin_clack"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clack-plugin = "0.2.0"
+clack-extensions = { version = "0.2.0", features = ["gui", "state", "clack-plugin", "raw-window-handle_06"] }
+baseview = { path = "../..", features = ["tracing"] }
+softbuffer = "0.4.8"

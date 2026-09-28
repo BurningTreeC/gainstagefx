@@ -216,7 +216,7 @@ fn it_plays_at_every_rate() {
 /// panel expects them.
 #[test]
 fn it_is_a_pedal_and_a_circuit() {
-    use nih_plug::prelude::Enum;
+    use nice_plug::prelude::Enum;
     let pedal_ids = PedalModel::ids().unwrap();
     assert_eq!(
         pedal_ids[PedalModel::OrangeDist.to_index()],

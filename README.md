@@ -479,6 +479,12 @@ cargo run --release --features standalone   # the panel without a DAW
 ./install.sh                                # into the usual places
 ```
 
+The source-tree installer uses `jq` to read Cargo's configured target directory.
+It builds the `release-lto` profile and installs both formats. Use
+`./install.sh --no-build` to install the bundles already built in that target
+directory. `CLAP_PATH` and `VST3_PATH` can each override one destination directory;
+search-path lists are rejected. Restart the DAW after updating a loaded plugin.
+
 Every claim in this README that has a number in it is checked by a test that
 measures it. `cargo test --release` runs 355 of them, at 44.1, 48,
 88.2, 96 and 192 kHz where the rate matters, and the audio path is tested not

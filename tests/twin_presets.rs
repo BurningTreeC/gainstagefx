@@ -4,6 +4,14 @@
 //! control-value assertions.  The completed Twin changed enough electrically
 //! that keeping the old knob positions was not a meaningful compatibility
 //! target; these measurements are the new target.
+//!
+//! The 2026-09-25 multi-cone cabinet correction removed the neighbouring
+//! speaker's excessive comb filtering. This test measures AFTER that cabinet
+//! and the microphones: even a linear filter changes the ratio of harmonics
+//! to the fundamental. With the same amp controls, dry output THD moved from
+//! 2.02% for both presets to 4.30% (Clean) / 3.30% (Throb). Substituting only
+//! the pre-correction `acoustics/stage.rs` reproduces the old 2.02% readings.
+//! The spring, optical-depth and relative-level limits below remain unchanged.
 
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::presets::{Preset, PRESETS};
@@ -32,7 +40,7 @@ fn measured_tone(settings: &Settings, amplitude: f64) -> measure::Measured {
     measure::run(tone, (RATE * 0.35) as usize, |x| chain.process(x))
 }
 
-fn core_thd(preset: &Preset) -> f64 {
+fn dry_output_thd(preset: &Preset) -> f64 {
     let mut settings = preset.settings();
     settings.reverb = 0.0;
     settings.intensity = 0.0;
@@ -153,10 +161,14 @@ fn completed_ab763_presets_hold_their_calibrated_voicing() {
     assert!((throb.reverb - 0.38).abs() < 1e-6);
     assert!((throb.speed - 0.40).abs() < 1e-6);
     assert!((throb.intensity - 0.94).abs() < 1e-6);
-    assert!((throb.output_trim - 2.1).abs() < 1e-6);
+    // The 2026-09-25 cabinet correction also compensated its measured level
+    // loss (Clean 0.0 -> 1.2 dB, Throb 2.1 -> 3.1 dB). Keep the shipped trims
+    // and the measured relative-level guard below in agreement.
+    assert!((clean.output_trim - 1.2).abs() < 1e-6);
+    assert!((throb.output_trim - 3.1).abs() < 1e-6);
 
-    let clean_thd = core_thd(clean);
-    let throb_thd = core_thd(throb);
+    let clean_thd = dry_output_thd(clean);
+    let throb_thd = dry_output_thd(throb);
     let clean_reverb = reverb_ratio_db(clean);
     let throb_reverb = reverb_ratio_db(throb);
     let throb_depth = tremolo_depth_db(throb);
@@ -170,12 +182,12 @@ fn completed_ab763_presets_hold_their_calibrated_voicing() {
     );
 
     assert!(
-        (1.6..=2.5).contains(&clean_thd),
-        "Blackface Clean left its calibrated ~2% core THD region: {clean_thd:.3}%"
+        (4.0..=4.6).contains(&clean_thd),
+        "Blackface Clean left its calibrated ~4.3% miked THD region: {clean_thd:.3}%"
     );
     assert!(
-        (1.6..=2.5).contains(&throb_thd),
-        "Blackface Throb left its calibrated ~2% core THD region: {throb_thd:.3}%"
+        (3.0..=3.6).contains(&throb_thd),
+        "Blackface Throb left its calibrated ~3.3% miked THD region: {throb_thd:.3}%"
     );
     assert!(
         (-13.0..=-11.0).contains(&clean_reverb),

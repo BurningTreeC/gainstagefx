@@ -1,0 +1,1530 @@
+//! Context types for retained state, used during view building, event handling, and drawing.
+
+mod access;
+#[doc(hidden)]
+pub mod backend;
+mod draw;
+mod event;
+mod proxy;
+mod resource;
+#[cfg(feature = "tokio")]
+mod task;
+
+use log::debug;
+use skia_safe::{
+    FontMgr, svg,
+    textlayout::{FontCollection, TypefaceFontProvider},
+};
+use std::cell::RefCell;
+use std::collections::{BinaryHeap, VecDeque};
+use std::rc::Rc;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::{
+    any::{Any, TypeId},
+    sync::Arc,
+};
+use vizia_id::IdManager;
+use vizia_window::WindowDescription;
+
+#[cfg(all(
+    feature = "clipboard",
+    not(all(
+        any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ),
+        feature = "wayland",
+    ))
+))]
+use copypasta::ClipboardContext;
+#[cfg(feature = "clipboard")]
+use copypasta::{ClipboardProvider, nop_clipboard::NopClipboardContext};
+use hashbrown::{HashMap, HashSet, hash_map::Entry};
+
+pub use access::*;
+pub use draw::*;
+pub use event::*;
+pub use proxy::*;
+pub use resource::*;
+#[cfg(feature = "tokio")]
+pub use task::*;
+
+use crate::{
+    events::{TimedEvent, TimedEventHandle, TimerState, ViewHandler},
+    model::ModelData,
+};
+
+use crate::{
+    binding::BindingHandler,
+    resource::{LoadingStatus, StoredImage},
+};
+use crate::{cache::CachedData, resource::ImageOrSvg};
+
+use crate::prelude::*;
+use crate::resource::ResourceManager;
+use crate::text::TextContext;
+use vizia_input::{ImeState, MouseState};
+use vizia_storage::{ChildIterator, LayoutTreeIterator};
+
+#[cfg(feature = "tokio")]
+pub(crate) type TaskRuntime = Arc<tokio::runtime::Runtime>;
+
+static DEFAULT_LAYOUT: &str = include_str!("../../resources/themes/default_layout.css");
+static DEFAULT_THEME: &str = include_str!("../../resources/themes/default_theme.css");
+static MARKDOWN: &str = include_str!("../../resources/themes/markdown.css");
+static DEFAULT_TRANSLATION_EN_US: &str =
+    include_str!("../../resources/translations/en-US/core.ftl");
+
+type Views = HashMap<Entity, Box<dyn ViewHandler>>;
+type Models = HashMap<Entity, HashMap<TypeId, Box<dyn ModelData>>>;
+type Bindings = HashMap<Entity, Box<dyn BindingHandler>>;
+
+static NEXT_CONTEXT_ID: AtomicU64 = AtomicU64::new(1);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct SignalRebuild {
+    pub(crate) context_id: u64,
+    pub(crate) entity: Entity,
+}
+
+#[cfg(feature = "clipboard")]
+fn default_clipboard_provider() -> Box<dyn ClipboardProvider> {
+    #[cfg(all(
+        any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ),
+        feature = "wayland"
+    ))]
+    {
+        Box::new(NopClipboardContext::new().unwrap())
+    }
+
+    #[cfg(not(all(
+        any(
+            target_os = "linux",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd"
+        ),
+        feature = "wayland",
+    )))]
+    {
+        if let Ok(context) = ClipboardContext::new() {
+            Box::new(context)
+        } else {
+            Box::new(NopClipboardContext::new().unwrap())
+        }
+    }
+}
+
+thread_local! {
+    /// Entities for `Binding` views that need to be rebuilt because a reactive signal changed.
+    /// Signal effects push to this set; the binding system drains matching context entries each frame.
+    pub(crate) static SIGNAL_REBUILDS: RefCell<HashSet<SignalRebuild>> = RefCell::new(HashSet::new());
+}
+
+#[derive(Default, Clone)]
+pub struct WindowState {
+    pub window_description: WindowDescription,
+    pub scale_factor: f32,
+    pub needs_relayout: bool,
+    pub needs_redraw: bool,
+    pub redraw_list: HashSet<Entity>,
+    pub dirty_rect: Option<BoundingBox>,
+    pub owner: Option<Entity>,
+    pub is_modal: bool,
+    pub should_close: bool,
+    pub content: Option<Arc<dyn Fn(&mut Context)>>,
+}
+
+/// The main storage and control object for a Vizia application.
+pub struct Context {
+    pub(crate) context_id: u64,
+    pub(crate) entity_manager: IdManager<Entity>,
+    pub(crate) entity_identifiers: HashMap<String, Entity>,
+    pub tree: Tree<Entity>,
+    pub(crate) current: Entity,
+    pub(crate) views: Views,
+    pub(crate) models: Models,
+    pub(crate) bindings: Bindings,
+    pub(crate) event_queue: VecDeque<Event>,
+    pub(crate) event_schedule: BinaryHeap<TimedEvent>,
+    pub(crate) next_event_id: usize,
+    pub(crate) timers: Vec<TimerState>,
+    pub(crate) running_timers: BinaryHeap<TimerState>,
+    pub tree_updates: Vec<Option<accesskit::TreeUpdate>>,
+    pub(crate) listeners:
+        HashMap<Entity, Box<dyn Fn(&mut dyn ViewHandler, &mut EventContext, &mut Event)>>,
+    pub(crate) global_listeners: Vec<Box<dyn Fn(&mut EventContext, &mut Event)>>,
+    pub(crate) style: Style,
+    pub(crate) cache: CachedData,
+    pub windows: HashMap<Entity, WindowState>,
+
+    pub mouse: MouseState<Entity>,
+    pub(crate) modifiers: Modifiers,
+
+    pub(crate) captured: Entity,
+    pub(crate) triggered: Entity,
+    pub(crate) hovered: Entity,
+    pub(crate) drag_hovered: Entity,
+    pub(crate) focused: Entity,
+    pub(crate) focus_stack: Vec<Entity>,
+    pub(crate) cursor_icon_locked: bool,
+
+    pub(crate) resource_manager: ResourceManager,
+
+    pub text_context: TextContext,
+
+    #[cfg(feature = "tokio")]
+    pub(crate) task_runtime: TaskRuntime,
+    #[cfg(feature = "tokio")]
+    pub(crate) named_tasks: NamedTaskMap,
+
+    pub(crate) event_proxy: Option<Box<dyn EventProxy>>,
+
+    #[cfg(feature = "clipboard")]
+    pub(crate) clipboards: HashMap<Entity, Box<dyn ClipboardProvider>>,
+
+    pub(crate) click_time: Instant,
+    pub(crate) clicks: usize,
+    pub(crate) click_pos: (f32, f32),
+    pub(crate) click_button: MouseButton,
+
+    pub ignore_default_theme: bool,
+    built_in_translations_added: bool,
+    built_in_styles_added: bool,
+    pub window_has_focus: bool,
+    pub ime_state: ImeState,
+
+    pub(crate) drop_data: Option<DropData>,
+    pub(crate) active_drag_view: Option<Entity>,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Context::new()
+    }
+}
+
+impl Context {
+    /// Creates a new context.
+    pub fn new() -> Self {
+        let mut cache = CachedData::default();
+        cache.add(Entity::root());
+
+        let mut result = Self {
+            context_id: NEXT_CONTEXT_ID.fetch_add(1, Ordering::Relaxed),
+            entity_manager: IdManager::new(),
+            entity_identifiers: HashMap::new(),
+            tree: Tree::new(),
+            current: Entity::root(),
+            views: HashMap::default(),
+            models: HashMap::default(),
+            bindings: HashMap::default(),
+            style: Style::default(),
+            cache,
+            windows: HashMap::new(),
+            event_queue: VecDeque::new(),
+            event_schedule: BinaryHeap::new(),
+            next_event_id: 0,
+            timers: Vec::new(),
+            running_timers: BinaryHeap::new(),
+            tree_updates: Vec::new(),
+            listeners: HashMap::default(),
+            global_listeners: Vec::new(),
+            mouse: MouseState::default(),
+            modifiers: Modifiers::empty(),
+            captured: Entity::null(),
+            triggered: Entity::null(),
+            hovered: Entity::root(),
+            drag_hovered: Entity::null(),
+            focused: Entity::root(),
+            focus_stack: Vec::new(),
+            cursor_icon_locked: false,
+            resource_manager: ResourceManager::new(),
+            text_context: {
+                let mut font_collection = FontCollection::new();
+
+                let default_font_manager = FontMgr::default();
+
+                let asset_provider = TypefaceFontProvider::new();
+
+                font_collection.set_default_font_manager(default_font_manager.clone(), None);
+                let asset_font_manager: FontMgr = asset_provider.clone().into();
+                font_collection.set_asset_font_manager(asset_font_manager);
+
+                TextContext {
+                    font_collection,
+                    default_font_manager,
+                    asset_provider,
+                    text_bounds: Default::default(),
+                    text_paragraphs: Default::default(),
+                }
+            },
+            #[cfg(feature = "tokio")]
+            task_runtime: Self::new_task_runtime(),
+            #[cfg(feature = "tokio")]
+            named_tasks: new_named_task_map(),
+
+            event_proxy: None,
+
+            #[cfg(feature = "clipboard")]
+            clipboards: HashMap::new(),
+            click_time: Instant::now(),
+            clicks: 0,
+            click_pos: (0.0, 0.0),
+            click_button: MouseButton::Left,
+
+            ignore_default_theme: false,
+            built_in_translations_added: false,
+            built_in_styles_added: false,
+            window_has_focus: true,
+
+            ime_state: Default::default(),
+
+            drop_data: None,
+            active_drag_view: None,
+        };
+
+        result.tree.set_window(Entity::root(), true);
+
+        result.style.needs_restyle(Entity::root());
+        result.style.needs_relayout(Entity::root());
+        result.style.needs_retransform(Entity::root());
+        result.style.needs_reclip(Entity::root());
+        result.needs_redraw(Entity::root());
+
+        // Set the default DPI factor to 1.0.
+        result.style.dpi_factor = 1.0;
+
+        // Build the environment model at the root.
+        Environment::new(&mut result).build(&mut result);
+
+        result.entity_manager.create();
+
+        result.style.role.insert(Entity::root(), Role::Window);
+
+        result
+    }
+
+    #[cfg(feature = "tokio")]
+    fn new_task_runtime() -> TaskRuntime {
+        Arc::new(
+            tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("failed to build context task runtime"),
+        )
+    }
+
+    /// The "current" entity, generally the entity which is currently being built or the entity
+    /// which is currently having an event dispatched to it.
+    pub fn current(&self) -> Entity {
+        self.current
+    }
+
+    /// Makes the above black magic more explicit
+    pub fn with_current<T>(&mut self, current: Entity, f: impl FnOnce(&mut Context) -> T) -> T {
+        let previous = self.current;
+        self.current = current;
+        let ret = f(self);
+        self.current = previous;
+        ret
+    }
+
+    /// Returns a reference to the [Environment] model.
+    pub fn environment(&self) -> &Environment {
+        self.data::<Environment>()
+    }
+
+    /// Returns the entity id of the  parent window to the current view.
+    pub fn parent_window(&self) -> Entity {
+        self.tree.get_parent_window(self.current).unwrap_or(Entity::root())
+    }
+
+    /// Returns the scale factor of the display.
+    pub fn scale_factor(&self) -> f32 {
+        self.style.dpi_factor as f32
+    }
+
+    /// Mark the application as needing to rerun the draw method
+    pub fn needs_redraw(&mut self, entity: Entity) {
+        if self.entity_manager.is_alive(entity) {
+            // If a child window needs redrawing, add itself to the redraw list.
+            // This ensures that the entire window is redrawn: https://github.com/vizia/vizia/issues/580
+            let window = if self.tree.is_window(entity) {
+                entity
+            } else {
+                self.tree.get_parent_window(entity).unwrap_or(Entity::root())
+            };
+            if let Some(window_state) = self.windows.get_mut(&window) {
+                window_state.redraw_list.insert(entity);
+            }
+        }
+    }
+
+    /// Mark the application as needing to recompute view styles
+    pub fn needs_restyle(&mut self, entity: Entity) {
+        if entity == Entity::null() || self.style.restyle.contains(&entity) {
+            return;
+        }
+        self.style.restyle.insert(entity);
+        let iter = if let Some(parent) = self.tree.get_layout_parent(entity) {
+            LayoutTreeIterator::subtree(&self.tree, parent)
+        } else {
+            LayoutTreeIterator::subtree(&self.tree, entity)
+        };
+
+        for descendant in iter {
+            self.style.restyle.insert(descendant);
+        }
+        // self.style.needs_restyle();
+    }
+
+    pub fn needs_retransform(&mut self, entity: Entity) {
+        self.style.needs_retransform(entity);
+        let iter = LayoutTreeIterator::subtree(&self.tree, entity);
+        for descendant in iter {
+            self.style.needs_retransform(descendant);
+        }
+    }
+
+    pub fn needs_reclip(&mut self, entity: Entity) {
+        self.style.needs_reclip(entity);
+        let iter = LayoutTreeIterator::subtree(&self.tree, entity);
+        for descendant in iter {
+            self.style.needs_reclip(descendant);
+        }
+    }
+
+    /// Mark the application as needing to rerun layout computations
+    pub fn needs_relayout(&mut self) {
+        self.style.needs_relayout(Entity::root());
+    }
+
+    pub(crate) fn set_system_flags(&mut self, entity: Entity, system_flags: SystemFlags) {
+        if system_flags.contains(SystemFlags::RELAYOUT) {
+            self.style.needs_relayout(entity);
+        }
+
+        if system_flags.contains(SystemFlags::RESTYLE) {
+            self.needs_restyle(entity);
+        }
+
+        if system_flags.contains(SystemFlags::REDRAW) {
+            self.needs_redraw(entity);
+        }
+
+        if system_flags.contains(SystemFlags::REFLOW) {
+            self.style.needs_text_update(entity);
+        }
+
+        if system_flags.contains(SystemFlags::RETRANSFORM) {
+            self.needs_retransform(entity);
+        }
+
+        if system_flags.contains(SystemFlags::RECLIP) {
+            self.needs_reclip(entity);
+        }
+
+        if system_flags.contains(SystemFlags::REACCESS) {
+            self.style.needs_access_update(entity);
+        }
+    }
+
+    /// Enables or disables PseudoClasses for the focus of an entity
+    pub(crate) fn set_focus_pseudo_classes(
+        &mut self,
+        focused: Entity,
+        enabled: bool,
+        focus_visible: bool,
+    ) {
+        if enabled {
+            debug!(
+                "Focus changed to {:?} parent: {:?}, view: {}, posx: {}, posy: {} width: {} height: {}",
+                focused,
+                self.tree.get_parent(focused),
+                self.views
+                    .get(&focused)
+                    .map_or("<None>", |view| view.element().unwrap_or("<Unnamed>")),
+                self.cache.get_posx(focused),
+                self.cache.get_posy(focused),
+                self.cache.get_width(focused),
+                self.cache.get_height(focused),
+            );
+        }
+
+        if let Some(pseudo_classes) = self.style.pseudo_classes.get_mut(focused) {
+            pseudo_classes.set(PseudoClassFlags::FOCUS, enabled);
+            if !enabled || focus_visible {
+                pseudo_classes.set(PseudoClassFlags::FOCUS_VISIBLE, enabled);
+                self.style.needs_access_update(focused);
+                self.needs_restyle(focused);
+            }
+        }
+
+        let ancestors = focused.parent_iter(&self.tree).collect::<Vec<_>>();
+        for entity in ancestors {
+            if let Some(pseudo_classes) = self.style.pseudo_classes.get_mut(entity) {
+                pseudo_classes.set(PseudoClassFlags::FOCUS_WITHIN, enabled);
+            }
+            self.needs_restyle(entity);
+        }
+    }
+
+    /// Sets application focus to the current entity with the specified focus visiblity
+    pub fn focus_with_visibility(&mut self, focus_visible: bool) {
+        let focusable = self.current == Entity::root()
+            || self
+                .style
+                .abilities
+                .get(self.current)
+                .is_some_and(|abilities| abilities.contains(Abilities::FOCUSABLE));
+        if !focusable {
+            return;
+        }
+
+        let old_focus = self.focused;
+        let new_focus = self.current;
+        self.set_focus_pseudo_classes(old_focus, false, focus_visible);
+        if self.current != self.focused {
+            self.emit_to(old_focus, WindowEvent::FocusOut);
+            self.emit_to(new_focus, WindowEvent::FocusIn);
+            self.focused = self.current;
+        }
+        self.set_focus_pseudo_classes(new_focus, true, focus_visible);
+
+        self.emit_custom(Event::new(WindowEvent::FocusVisibility(focus_visible)).target(old_focus));
+        self.emit_custom(Event::new(WindowEvent::FocusVisibility(focus_visible)).target(new_focus));
+
+        self.needs_restyle(self.focused);
+        self.needs_restyle(self.current);
+        self.style.needs_access_update(self.focused);
+        self.style.needs_access_update(self.current);
+    }
+
+    /// Sets application focus to the current entity using the previous focus visibility
+    pub fn focus(&mut self) {
+        let focused = self.focused;
+        let old_focus_visible = self
+            .style
+            .pseudo_classes
+            .get_mut(focused)
+            .filter(|class| class.contains(PseudoClassFlags::FOCUS_VISIBLE))
+            .is_some();
+        self.focus_with_visibility(old_focus_visible)
+    }
+
+    /// Removes the children of the provided entity from the application.
+    pub(crate) fn remove_children(&mut self, entity: Entity) {
+        let child_iter = ChildIterator::new(&self.tree, entity);
+        let children = child_iter.collect::<Vec<_>>();
+        for child in children.into_iter() {
+            self.remove(child);
+        }
+    }
+
+    /// Removes the provided entity from the application.
+    pub fn remove(&mut self, entity: Entity) {
+        let delete_list = entity.branch_iter(&self.tree).collect::<Vec<_>>();
+
+        if !delete_list.is_empty() {
+            self.style.needs_restyle(self.current);
+            // An absolutely-positioned node is out of its parent's flow, so removing it cannot
+            // change the parent's layout — no relayout is needed (the vacated region is unioned
+            // into the window's dirty_rect below). Otherwise relayout incrementally from the parent
+            // of the removed entity so its remaining children reflow, rather than the whole tree.
+            let is_absolute = self.style.position_type.get(entity).copied().unwrap_or_default()
+                == PositionType::Absolute;
+            if !is_absolute {
+                if let Some(parent) = self.tree.get_layout_parent(entity) {
+                    self.style.needs_relayout(parent);
+                } else {
+                    self.style.needs_relayout(entity);
+                }
+            }
+            self.needs_redraw(self.current);
+        }
+
+        for entity in delete_list.iter().rev() {
+            if let Some(mut view) = self.views.remove(entity) {
+                view.event(
+                    &mut EventContext::new_with_current(self, *entity),
+                    &mut Event::new(WindowEvent::Destroyed).direct(*entity),
+                );
+
+                self.views.insert(*entity, view);
+            }
+
+            if let Some(binding) = self.bindings.remove(entity) {
+                binding.remove(self);
+
+                self.bindings.insert(*entity, binding);
+            }
+
+            for image in self.resource_manager.images.values_mut() {
+                // no need to drop them here. garbage collection happens after draw (policy based)
+                image.observers.remove(entity);
+            }
+
+            if let Some(identifier) = self.style.ids.get(*entity) {
+                self.entity_identifiers.remove(identifier);
+            }
+
+            if let Some(index) = self.focus_stack.iter().position(|r| r == entity) {
+                self.focus_stack.remove(index);
+            }
+
+            if self.focused == *entity {
+                if let Some(new_focus) = self.focus_stack.pop() {
+                    self.with_current(new_focus, |cx| cx.focus());
+                } else {
+                    self.with_current(Entity::root(), |cx| cx.focus());
+                }
+            }
+
+            if self.captured == *entity {
+                self.captured = Entity::null();
+            }
+
+            if let Some(parent) = self.tree.get_layout_parent(*entity) {
+                self.style.needs_access_update(parent);
+            }
+
+            let mut stopped_timers = Vec::new();
+
+            for timer in self.running_timers.iter() {
+                if timer.entity == *entity {
+                    stopped_timers.push(timer.id);
+                }
+            }
+
+            for timer in stopped_timers {
+                self.stop_timer(timer);
+            }
+
+            let window_entity = self.tree.get_parent_window(*entity).unwrap_or(Entity::root());
+
+            if !self.tree.is_window(*entity) {
+                if let Some(draw_bounds) = self.cache.draw_bounds.get(*entity) {
+                    if let Some(dirty_rect) =
+                        &mut self.windows.get_mut(&window_entity).unwrap().dirty_rect
+                    {
+                        *dirty_rect = dirty_rect.union(draw_bounds);
+                    } else {
+                        self.windows.get_mut(&window_entity).unwrap().dirty_rect =
+                            Some(*draw_bounds);
+                    }
+                }
+            }
+
+            self.windows.get_mut(&window_entity).unwrap().redraw_list.remove(entity);
+
+            if self.windows.contains_key(entity) {
+                self.windows.remove(entity);
+                #[cfg(feature = "clipboard")]
+                self.clipboards.remove(entity);
+            }
+
+            self.tree.remove(*entity).expect("");
+            self.cache.remove(*entity);
+            self.style.remove(*entity);
+            self.models.remove(entity);
+            self.views.remove(entity);
+            self.text_context.text_bounds.remove(*entity);
+            self.text_context.text_paragraphs.remove(*entity);
+            self.entity_manager.destroy(*entity);
+        }
+    }
+
+    /// Sets whether a view should have the given class name.
+    pub fn toggle_class(&mut self, name: &str, applied: impl Res<bool>) {
+        let name = name.to_owned();
+        let entity = self.current();
+        let current = self.current();
+        self.with_current(current, |cx| {
+            applied.set_or_bind(cx, move |cx, applied| {
+                let applied = applied.get_value(cx);
+                if let Some(class_list) = cx.style.classes.get_mut(entity) {
+                    if applied {
+                        class_list.insert(name.clone());
+                    } else {
+                        class_list.remove(&name);
+                    }
+                }
+
+                cx.needs_restyle(entity);
+            });
+        });
+    }
+
+    /// Add a listener to an entity.
+    ///
+    /// A listener can be used to handle events which would not normally propagate to the entity.
+    /// For example, mouse events when a different entity has captured them. Useful for things like
+    /// closing a popup when clicking outside of its bounding box.
+    pub fn add_listener<F, W>(&mut self, listener: F)
+    where
+        W: View,
+        F: 'static + Fn(&mut W, &mut EventContext, &mut Event),
+    {
+        self.listeners.insert(
+            self.current,
+            Box::new(move |event_handler, context, event| {
+                if let Some(widget) = event_handler.downcast_mut::<W>() {
+                    (listener)(widget, context, event);
+                }
+            }),
+        );
+    }
+
+    /// Adds a global listener to the application.
+    ///
+    /// Global listeners have the first opportunity to handle every event that is sent in an
+    /// application. They will *never* be removed. If you need a listener tied to the lifetime of a
+    /// view, use `add_listener`.
+    pub fn add_global_listener<F>(&mut self, listener: F)
+    where
+        F: 'static + Fn(&mut EventContext, &mut Event),
+    {
+        self.global_listeners.push(Box::new(listener));
+    }
+
+    /// Loads a font into the application from in-memory bytes.
+    pub fn load_font_mem(&mut self, data: impl AsRef<[u8]>) {
+        self.text_context.asset_provider.register_typeface(
+            self.text_context.default_font_manager.new_from_data(data.as_ref(), None).unwrap(),
+            None,
+        );
+    }
+
+    fn request_resource_if_not_loaded(
+        &mut self,
+        path: String,
+        request: crate::resource::ResourceRequest,
+        options: crate::resource::ResourceLoadOptions,
+    ) {
+        // Avoid re-issuing requests for resources that are already loading or resolved.
+        if self.resource_manager.resource_status(&path) != LoadingStatus::NotLoaded {
+            return;
+        }
+
+        self.resource_manager.queue_resource_request(request, options);
+    }
+
+    /// Returns a reactive loading-status signal for the provided resource path.
+    ///
+    /// The signal value is updated by resource loaders as the request progresses.
+    pub fn resource_status_signal(&mut self, path: impl Into<String>) -> Signal<LoadingStatus> {
+        let path = path.into();
+
+        if let Some(signal) = self.resource_manager.loading_status.get(&path).copied() {
+            return signal;
+        }
+
+        let status = self.resource_manager.resource_status(&path);
+        let signal = Signal::new(status);
+        self.resource_manager.loading_status.insert(path, signal);
+        signal
+    }
+
+    /// Returns the current loading status for the provided resource path.
+    ///
+    /// This reads from the same reactive signal used by [`Context::resource_status_signal`].
+    pub fn resource_status(&mut self, path: impl Into<String>) -> LoadingStatus {
+        self.resource_status_signal(path).get()
+    }
+
+    /// Adds a font to the application by loading it through the configured resource loaders.
+    ///
+    /// This supports local files (including `file://` URLs) and any custom loader you register.
+    pub fn add_font(
+        &mut self,
+        path: impl Into<String>,
+        options: Option<crate::resource::ResourceLoadOptions>,
+    ) {
+        let path = path.into();
+        let options = options.unwrap_or_default();
+
+        self.request_resource_if_not_loaded(
+            path.clone(),
+            crate::resource::ResourceRequest::Font(crate::resource::FontRequest { path }),
+            options,
+        );
+    }
+
+    /// Queues an image resource request and returns a reactive loading-status signal.
+    ///
+    /// `name` is the key used to reference the image from CSS and [`Image::new`].
+    /// `path` can be a filesystem path, `file://` URL, or HTTP(S) URL (with `url-loader`).
+    pub fn add_image(
+        &mut self,
+        name: impl Into<String>,
+        path: impl Into<String>,
+        policy: ImageRetentionPolicy,
+        options: Option<crate::resource::ResourceLoadOptions>,
+    ) -> Signal<LoadingStatus> {
+        let name = name.into();
+        let path = path.into();
+        let options = options.unwrap_or_default();
+
+        self.resource_manager.register_image_source(name.clone(), path.clone());
+
+        // If the path is already loaded and load_image ran before this add_image call,
+        // immediately alias the existing ImageId to the new name so it resolves without
+        // waiting for another load cycle.
+        if self.resource_manager.resource_status(&path) != crate::resource::LoadingStatus::NotLoaded
+        {
+            let existing_id = self
+                .resource_manager
+                .image_sources
+                .iter()
+                .find(|(alias, alias_path)| {
+                    *alias_path == &path && self.resource_manager.image_ids.contains_key(*alias)
+                })
+                .and_then(|(alias, _)| self.resource_manager.image_ids.get(alias).copied());
+            if let Some(id) = existing_id {
+                self.resource_manager.image_ids.entry(name.clone()).or_insert(id);
+            }
+            // If no id exists yet the path is still loading; load_image will back-fill via
+            // the alias scan above when it runs.
+        }
+
+        self.request_resource_if_not_loaded(
+            path.clone(),
+            crate::resource::ResourceRequest::Image(crate::resource::ImageRequest {
+                name,
+                path: path.clone(),
+                policy,
+            }),
+            options,
+        );
+
+        self.resource_status_signal(path)
+    }
+
+    /// Adds a translation file to the application by loading it through the configured resource
+    /// loaders.
+    ///
+    /// This supports local files (including `file://` URLs), HTTP(S) URLs when the
+    /// `url-loader` feature is enabled, and any custom loader you register.
+    pub fn add_translation_file(
+        &mut self,
+        lang: LanguageIdentifier,
+        path: impl Into<String>,
+        options: Option<crate::resource::ResourceLoadOptions>,
+    ) {
+        let path = path.into();
+        let options = options.unwrap_or_default();
+
+        self.request_resource_if_not_loaded(
+            path.clone(),
+            crate::resource::ResourceRequest::Translation(crate::resource::TranslationRequest {
+                lang,
+                path,
+            }),
+            options,
+        );
+    }
+
+    /// Returns the element name (e.g. `"textbox"`) of the currently focused
+    /// view, or `None` if the focused entity has no view or the view doesn't
+    /// declare an element name.
+    ///
+    /// Mirrors [`BackendContext::focused_element`] for use from contexts
+    /// (such as the `on_idle` application callback) that receive a
+    /// `&mut Context` directly.
+    pub fn focused_element(&self) -> Option<&'static str> {
+        self.views.get(&self.focused).and_then(|view| view.element())
+    }
+
+    pub fn add_stylesheet(&mut self, style: impl IntoCssStr) -> Result<(), std::io::Error> {
+        self.resource_manager.styles.push(Box::new(style));
+
+        EventContext::new(self).reload_styles().expect("Failed to reload styles");
+
+        Ok(())
+    }
+
+    /// Remove all user themes from the application.
+    pub fn add_built_in_styles(&mut self) {
+        self.add_built_in_translations();
+
+        let user_styles = if self.built_in_styles_added {
+            if self.resource_manager.styles.len() >= 3 {
+                self.resource_manager.styles.drain(3..).collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            }
+        } else {
+            std::mem::take(&mut self.resource_manager.styles)
+        };
+
+        self.resource_manager.styles.clear();
+
+        self.resource_manager.styles.push(Box::new(DEFAULT_LAYOUT));
+        self.resource_manager.styles.push(Box::new(MARKDOWN));
+
+        if !self.ignore_default_theme {
+            self.resource_manager.styles.push(Box::new(DEFAULT_THEME));
+            let environment = self.data::<Environment>();
+            let theme_mode = environment.effective_theme();
+            let direction = environment.direction.get();
+            self.with_current(Entity::root(), |cx| {
+                let cx = &mut EventContext::new(cx);
+                cx.toggle_class("dark", theme_mode == ThemeMode::DarkMode);
+                cx.toggle_class("rtl", direction == Direction::RightToLeft);
+            })
+        } else {
+            // Add an empty stylesheet to ensure that the list of styles contains at least three entries.
+            self.resource_manager.styles.push(Box::new(""));
+        }
+
+        self.resource_manager.styles.extend(user_styles);
+        self.built_in_styles_added = true;
+
+        EventContext::new(self).reload_styles().unwrap();
+    }
+
+    /// Adds built-in translations for default view strings.
+    pub fn add_built_in_translations(&mut self) {
+        if self.built_in_translations_added {
+            return;
+        }
+
+        self.load_translation("en-US".parse().unwrap(), DEFAULT_TRANSLATION_EN_US)
+            .expect("Failed to load built-in en-US translation resources");
+        self.built_in_translations_added = true;
+    }
+
+    pub fn add_animation(&mut self, animation: AnimationBuilder) -> Animation {
+        self.style.add_animation(animation)
+    }
+
+    /// Adds a resource loader to the loading chain.
+    ///
+    /// Loaders are tried in list order, and this method inserts at the front so custom
+    /// loaders take priority over built-in loaders. The first loader that returns `true`
+    /// handles the request, and subsequent loaders are skipped.
+    pub fn add_resource_loader<L: crate::resource::ResourceLoader>(&mut self, loader: L) {
+        self.resource_manager.resource_loaders.insert(0, Box::new(loader));
+    }
+
+    /// Loads a translation into the application for the provided language.
+    ///
+    /// Returns an error if the FTL syntax is invalid or the resource cannot be added to the bundle.
+    pub fn load_translation(
+        &mut self,
+        lang: LanguageIdentifier,
+        ftl: impl ToString,
+    ) -> Result<(), crate::resource::TranslationError> {
+        self.resource_manager.add_translation(lang, ftl.to_string())
+    }
+
+    /// Adds a timer to the application.
+    ///
+    /// `interval` - The time between ticks of the timer.
+    /// `duration` - An optional duration for the timer. Pass `None` for a continuos timer.
+    /// `callback` - A callback which is called on when the timer is started, ticks, and stops. Disambiguated by the `TimerAction` parameter of the callback.
+    ///
+    /// Returns a `Timer` id which can be used to start and stop the timer.  
+    ///
+    /// # Example
+    /// Creates a timer which calls the provided callback every second for 5 seconds:
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// let timer = cx.add_timer(Duration::from_secs(1), Some(Duration::from_secs(5)), |cx, reason|{
+    ///     match reason {
+    ///         TimerAction::Start => {
+    ///             debug!("Start timer");
+    ///         }
+    ///     
+    ///         TimerAction::Tick(delta) => {
+    ///             debug!("Tick timer: {:?}", delta);
+    ///         }
+    ///
+    ///         TimerAction::Stop => {
+    ///             debug!("Stop timer");
+    ///         }
+    ///     }
+    /// });
+    /// ```
+    pub fn add_timer(
+        &mut self,
+        interval: Duration,
+        duration: Option<Duration>,
+        callback: impl Fn(&mut EventContext, TimerAction) + 'static,
+    ) -> Timer {
+        let id = Timer(self.timers.len());
+        self.timers.push(TimerState {
+            entity: Entity::root(),
+            id,
+            time: Instant::now(),
+            interval,
+            duration,
+            start_time: Instant::now(),
+            callback: Rc::new(callback),
+            ticking: false,
+            stopping: false,
+        });
+
+        id
+    }
+
+    /// Starts a timer with the provided timer id.
+    ///
+    /// Events sent within the timer callback provided in `add_timer()` will target the current view.
+    pub fn start_timer(&mut self, timer: Timer) {
+        let current = self.current;
+        if !self.timer_is_running(timer) {
+            let timer_state = self.timers[timer.0].clone();
+            // Copy timer state from pending to playing
+            self.running_timers.push(timer_state);
+        }
+
+        self.modify_timer(timer, |timer_state| {
+            let now = Instant::now();
+            timer_state.start_time = now;
+            timer_state.time = now;
+            timer_state.entity = current;
+            timer_state.ticking = false;
+            timer_state.stopping = false;
+        });
+    }
+
+    /// Modifies the state of an existing timer with the provided `Timer` id.
+    pub fn modify_timer(&mut self, timer: Timer, timer_function: impl Fn(&mut TimerState)) {
+        let mut running_timers = self.running_timers.clone().into_vec();
+
+        if let Some(timer_state) =
+            running_timers.iter_mut().find(|timer_state| timer_state.id == timer)
+        {
+            (timer_function)(timer_state);
+            self.running_timers = running_timers.into();
+            return;
+        }
+
+        for pending_timer in self.timers.iter_mut() {
+            if pending_timer.id == timer {
+                (timer_function)(pending_timer);
+            }
+        }
+    }
+
+    /// Returns true if the timer with the provided timer id is currently running.
+    pub fn timer_is_running(&mut self, timer: Timer) -> bool {
+        for timer_state in self.running_timers.iter() {
+            if timer_state.id == timer {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Stops the timer with the given timer id.
+    ///
+    /// Any events emitted in response to the timer stopping, as determined by the callback provided in `add_timer()`, will target the view which called `start_timer()`.
+    pub fn stop_timer(&mut self, timer: Timer) {
+        let mut running_timers = self.running_timers.clone();
+
+        for timer_state in running_timers.iter() {
+            if timer_state.id == timer {
+                (timer_state.callback)(
+                    &mut EventContext::new_with_current(self, timer_state.entity),
+                    TimerAction::Stop,
+                );
+            }
+        }
+
+        self.running_timers =
+            running_timers.drain().filter(|timer_state| timer_state.id != timer).collect();
+    }
+
+    // Tick all timers.
+    pub(crate) fn tick_timers(&mut self) {
+        let now = Instant::now();
+        while let Some(next_timer_state) = self.running_timers.peek() {
+            if next_timer_state.time <= now {
+                let mut timer_state = self.running_timers.pop().unwrap();
+
+                if timer_state.end_time().unwrap_or_else(|| now + Duration::from_secs(1)) >= now {
+                    if !timer_state.ticking {
+                        (timer_state.callback)(
+                            &mut EventContext::new_with_current(self, timer_state.entity),
+                            TimerAction::Start,
+                        );
+                        timer_state.ticking = true;
+                    } else {
+                        (timer_state.callback)(
+                            &mut EventContext::new_with_current(self, timer_state.entity),
+                            TimerAction::Tick(now - timer_state.time),
+                        );
+                    }
+                    timer_state.time = now + timer_state.interval - (now - timer_state.time);
+                    self.running_timers.push(timer_state);
+                } else {
+                    (timer_state.callback)(
+                        &mut EventContext::new_with_current(self, timer_state.entity),
+                        TimerAction::Stop,
+                    );
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Loads an image from memory and associates it with the provided path.
+    pub fn load_image(&mut self, path: &str, data: &'static [u8], policy: ImageRetentionPolicy) {
+        let id = if let Some(image_id) = self.resource_manager.image_ids.get(path) {
+            *image_id
+        } else {
+            let id = self.resource_manager.image_id_manager.create();
+            self.resource_manager.image_ids.insert(path.to_owned(), id);
+            id
+        };
+
+        if let Some(image) =
+            skia_safe::Image::from_encoded(unsafe { skia_safe::Data::new_bytes(data) })
+        {
+            match self.resource_manager.images.entry(id) {
+                Entry::Occupied(mut occ) => {
+                    occ.get_mut().image = ImageOrSvg::Image(image);
+                    occ.get_mut().dirty = true;
+                    occ.get_mut().retention_policy = policy;
+                }
+                Entry::Vacant(vac) => {
+                    vac.insert(StoredImage {
+                        image: ImageOrSvg::Image(image),
+                        retention_policy: policy,
+                        used: true,
+                        dirty: false,
+                        observers: HashSet::new(),
+                    });
+                }
+            }
+            let observers: Vec<Entity> = self
+                .resource_manager
+                .images
+                .get(&id)
+                .map(|img| img.observers.iter().copied().collect())
+                .unwrap_or_default();
+            for observer in observers {
+                self.style.needs_relayout(observer);
+                self.needs_redraw(observer);
+            }
+            self.style.needs_relayout(self.current);
+            self.needs_redraw(self.current);
+        }
+    }
+
+    pub fn load_svg(&mut self, path: &str, data: &[u8], policy: ImageRetentionPolicy) -> ImageId {
+        let id = if let Some(image_id) = self.resource_manager.image_ids.get(path) {
+            return *image_id;
+        } else {
+            let id = self.resource_manager.image_id_manager.create();
+            self.resource_manager.image_ids.insert(path.to_owned(), id);
+            id
+        };
+
+        if let Ok(svg) = svg::Dom::from_bytes(data, self.text_context.default_font_manager.clone())
+        {
+            match self.resource_manager.images.entry(id) {
+                Entry::Occupied(mut occ) => {
+                    occ.get_mut().image = ImageOrSvg::Svg(svg);
+                    occ.get_mut().dirty = true;
+                    occ.get_mut().retention_policy = policy;
+                }
+                Entry::Vacant(vac) => {
+                    vac.insert(StoredImage {
+                        image: ImageOrSvg::Svg(svg),
+                        retention_policy: policy,
+                        used: true,
+                        dirty: false,
+                        observers: HashSet::new(),
+                    });
+                }
+            }
+            // Relayout only the entities that display this resource (its observers) plus the
+            // current entity (e.g. the freshly-built Svg view triggering the load), rather than
+            // forcing a full tree relayout.
+            let observers: Vec<Entity> = self
+                .resource_manager
+                .images
+                .get(&id)
+                .map(|img| img.observers.iter().copied().collect())
+                .unwrap_or_default();
+            for observer in observers {
+                self.style.needs_relayout(observer);
+                self.needs_redraw(observer);
+            }
+            self.style.needs_relayout(self.current);
+            self.needs_redraw(self.current);
+        }
+
+        id
+    }
+
+    pub fn spawn<F>(&self, target: F)
+    where
+        F: 'static + Send + FnOnce(&mut ContextProxy),
+    {
+        let mut cxp = ContextProxy {
+            current: self.current,
+            event_proxy: self.event_proxy.as_ref().map(|p| p.make_clone()),
+        };
+
+        std::thread::spawn(move || target(&mut cxp));
+    }
+
+    pub fn get_proxy(&self) -> ContextProxy {
+        ContextProxy {
+            current: self.current,
+            event_proxy: self.event_proxy.as_ref().map(|p| p.make_clone()),
+        }
+    }
+
+    #[cfg(feature = "tokio")]
+    /// Submits a configured [`TaskBuilder`] for asynchronous execution.
+    ///
+    /// Tasks run on Vizia's shared Tokio runtime and complete through the
+    /// `on_result(...)` callback attached to the builder, when one is provided.
+    ///
+    /// Returns a [`TaskHandle`] that can be used to request cancellation.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use vizia_core::prelude::*;
+    /// # #[cfg(feature = "tokio")]
+    /// # {
+    /// # let cx = Context::default();
+    /// // Fire-and-forget:
+    /// cx.add_task(Task::new(|_| async move { Ok::<(), &'static str>(()) }));
+    ///
+    /// // With completion handling:
+    /// cx.add_task(
+    ///     Task::new(|_| async move { Ok::<_, &'static str>("loaded") })
+    ///         .on_result(|result, proxy| {
+    ///             if let TaskResult::Completed(message) = result {
+    ///                 let _ = proxy.emit(message);
+    ///             }
+    ///         }),
+    /// );
+    /// # }
+    /// ```
+    pub fn add_task<T, E>(&self, task: TaskBuilder<T, E>) -> TaskHandle
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+    {
+        task.add_to_context(self)
+    }
+
+    /// Finds the entity that identifier identifies
+    pub(crate) fn resolve_entity_identifier(&self, identity: &str) -> Option<Entity> {
+        self.entity_identifiers.get(identity).cloned()
+    }
+
+    pub fn set_ime_state(&mut self, new_state: ImeState) {
+        self.ime_state = new_state;
+    }
+}
+
+pub(crate) enum InternalEvent {
+    Redraw,
+    LoadImage { path: String, image: Mutex<Option<skia_safe::Image>>, policy: ImageRetentionPolicy },
+    LoadSvg { path: String, data: Vec<u8>, policy: ImageRetentionPolicy },
+    LoadFont { path: String, data: Vec<u8> },
+    LoadTranslation { lang: LanguageIdentifier, path: String, ftl: String },
+    UpdateResourceStatus { path: String, status: LoadingStatus },
+}
+
+pub struct LocalizationContext<'a> {
+    pub(crate) current: Entity,
+    pub(crate) resource_manager: &'a ResourceManager,
+    pub(crate) models: &'a Models,
+    pub(crate) views: &'a Views,
+    pub(crate) tree: &'a Tree<Entity>,
+}
+
+impl<'a> LocalizationContext<'a> {
+    pub(crate) fn from_context(cx: &'a Context) -> Self {
+        Self {
+            current: cx.current,
+            resource_manager: &cx.resource_manager,
+            models: &cx.models,
+            views: &cx.views,
+            tree: &cx.tree,
+        }
+    }
+
+    pub(crate) fn from_event_context(cx: &'a EventContext) -> Self {
+        Self {
+            current: cx.current,
+            resource_manager: cx.resource_manager,
+            models: cx.models,
+            views: cx.views,
+            tree: cx.tree,
+        }
+    }
+
+    pub(crate) fn environment(&self) -> &Environment {
+        self.data::<Environment>()
+    }
+}
+
+/// A trait for any Context-like object that lets you access stored model data.
+///
+/// This lets resource reads be generic over any of these types.
+pub trait DataContext {
+    /// Get model/view data from the context. Returns `None` if the data does not exist.
+    fn try_data<T: 'static>(&self) -> Option<&T>;
+
+    /// Get model/view data from the context. Panics if the data does not exist.
+    fn data<T: 'static>(&self) -> &T {
+        self.try_data::<T>().expect("data not found in context")
+    }
+
+    /// Convert the current context into a [LocalizationContext].
+    fn localization_context(&self) -> Option<LocalizationContext<'_>> {
+        None
+    }
+}
+
+/// A trait for any Context-like object that lets you emit events.
+pub trait EmitContext {
+    /// Send an event containing the provided message up the tree from the current entity.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// cx.emit(AppEvent::Increment);
+    /// ```
+    fn emit<M: Any>(&mut self, message: M);
+
+    /// Send an event containing the provided message directly to a specified entity from the current entity.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// cx.emit_to(Entity::root(), AppEvent::Increment);
+    /// ```
+    fn emit_to<M: Any>(&mut self, target: Entity, message: M);
+
+    /// Send a custom event with custom origin and propagation information.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// cx.emit_custom(
+    ///     Event::new(AppEvent::Increment)
+    ///         .origin(cx.current())
+    ///         .target(Entity::root())
+    ///         .propagate(Propagation::Subtree)
+    /// );
+    /// ```
+    fn emit_custom(&mut self, event: Event);
+
+    /// Send an event containing the provided message up the tree at a particular time instant.
+    ///
+    /// Returns a `TimedEventHandle` which can be used to cancel the scheduled event.
+    ///
+    /// # Example
+    /// Emit an event after a delay of 2 seconds:
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// cx.schedule_emit(AppEvent::Increment, Instant::now() + Duration::from_secs(2));
+    /// ```
+    fn schedule_emit<M: Any>(&mut self, message: M, at: Instant) -> TimedEventHandle;
+
+    /// Send an event containing the provided message directly to a specified view at a particular time instant.
+    ///
+    /// Returns a `TimedEventHandle` which can be used to cancel the scheduled event.
+    ///
+    /// # Example
+    /// Emit an event to the root view (window) after a delay of 2 seconds:
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// cx.schedule_emit_to(Entity::root(), AppEvent::Increment, Instant::now() + Duration::from_secs(2));
+    /// ```
+    fn schedule_emit_to<M: Any>(
+        &mut self,
+        target: Entity,
+        message: M,
+        at: Instant,
+    ) -> TimedEventHandle;
+
+    /// Send a custom event with custom origin and propagation information at a particular time instant.
+    ///
+    /// Returns a `TimedEventHandle` which can be used to cancel the scheduled event.
+    ///
+    /// # Example
+    /// Emit a custom event after a delay of 2 seconds:
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// cx.schedule_emit_custom(    
+    ///     Event::new(AppEvent::Increment)
+    ///         .target(Entity::root())
+    ///         .origin(cx.current())
+    ///         .propagate(Propagation::Subtree),
+    ///     Instant::now() + Duration::from_secs(2)
+    /// );
+    /// ```
+    fn schedule_emit_custom(&mut self, event: Event, at: Instant) -> TimedEventHandle;
+
+    /// Cancel a scheduled event before it is sent.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # use instant::{Instant, Duration};
+    /// # let cx = &mut Context::default();
+    /// # enum AppEvent {Increment}
+    /// let timed_event = cx.schedule_emit_to(Entity::root(), AppEvent::Increment, Instant::now() + Duration::from_secs(2));
+    /// cx.cancel_scheduled(timed_event);
+    /// ```
+    fn cancel_scheduled(&mut self, handle: TimedEventHandle);
+}
+
+impl DataContext for Context {
+    fn try_data<T: 'static>(&self) -> Option<&T> {
+        // return data for the static model.
+        if let Some(t) = <dyn Any>::downcast_ref::<T>(&()) {
+            return Some(t);
+        }
+
+        for entity in self.current.parent_iter(&self.tree) {
+            // Return any model data.
+            if let Some(models) = self.models.get(&entity) {
+                if let Some(model) = models.get(&TypeId::of::<T>()) {
+                    return model.downcast_ref::<T>();
+                }
+            }
+
+            // Return any view data.
+            if let Some(view_handler) = self.views.get(&entity) {
+                if let Some(data) = view_handler.downcast_ref::<T>() {
+                    return Some(data);
+                }
+            }
+        }
+
+        None
+    }
+
+    fn localization_context(&self) -> Option<LocalizationContext<'_>> {
+        Some(LocalizationContext::from_context(self))
+    }
+}
+
+impl DataContext for LocalizationContext<'_> {
+    fn try_data<T: 'static>(&self) -> Option<&T> {
+        // return data for the static model.
+        if let Some(t) = <dyn Any>::downcast_ref::<T>(&()) {
+            return Some(t);
+        }
+
+        for entity in self.current.parent_iter(self.tree) {
+            // Return any model data.
+            if let Some(models) = self.models.get(&entity) {
+                if let Some(model) = models.get(&TypeId::of::<T>()) {
+                    return model.downcast_ref::<T>();
+                }
+            }
+
+            // Return any view data.
+            if let Some(view_handler) = self.views.get(&entity) {
+                if let Some(data) = view_handler.downcast_ref::<T>() {
+                    return Some(data);
+                }
+            }
+        }
+
+        None
+    }
+}
+
+impl EmitContext for Context {
+    fn emit<M: Any>(&mut self, message: M) {
+        self.event_queue.push_back(
+            Event::new(message)
+                .target(self.current)
+                .origin(self.current)
+                .propagate(Propagation::Up),
+        );
+    }
+
+    fn emit_to<M: Any>(&mut self, target: Entity, message: M) {
+        self.event_queue.push_back(
+            Event::new(message).target(target).origin(self.current).propagate(Propagation::Direct),
+        );
+    }
+
+    fn emit_custom(&mut self, event: Event) {
+        self.event_queue.push_back(event);
+    }
+
+    fn schedule_emit<M: Any>(&mut self, message: M, at: Instant) -> TimedEventHandle {
+        self.schedule_emit_custom(
+            Event::new(message)
+                .target(self.current)
+                .origin(self.current)
+                .propagate(Propagation::Up),
+            at,
+        )
+    }
+
+    fn schedule_emit_to<M: Any>(
+        &mut self,
+        target: Entity,
+        message: M,
+        at: Instant,
+    ) -> TimedEventHandle {
+        self.schedule_emit_custom(
+            Event::new(message).target(target).origin(self.current).propagate(Propagation::Direct),
+            at,
+        )
+    }
+
+    fn schedule_emit_custom(&mut self, event: Event, at: Instant) -> TimedEventHandle {
+        let handle = TimedEventHandle(self.next_event_id);
+        self.event_schedule.push(TimedEvent { event, time: at, ident: handle });
+        self.next_event_id += 1;
+        handle
+    }
+
+    fn cancel_scheduled(&mut self, handle: TimedEventHandle) {
+        self.event_schedule =
+            self.event_schedule.drain().filter(|item| item.ident != handle).collect();
+    }
+}

@@ -5,10 +5,30 @@
 
 use super::speaker::{Mounting, SpeakerProfile, SPEED_OF_SOUND};
 
-/// Birch plywood, for the panel resonance. ESTIMATED material constants.
-const PLY_YOUNG: f64 = 12.4e9;
-const PLY_DENSITY: f64 = 680.0;
-const PLY_POISSON: f64 = 0.3;
+/// Effective isotropic panel properties. These are engineering estimates, not
+/// measurements of the particular production cabinets or their joints.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PanelMaterial {
+    pub young: f64,
+    pub density: f64,
+    pub poisson: f64,
+    pub loss_factor: f64,
+}
+
+impl PanelMaterial {
+    pub const PLYWOOD: Self = Self {
+        young: 12.4e9,
+        density: 680.0,
+        poisson: 0.3,
+        loss_factor: 0.04,
+    };
+    pub const MDF: Self = Self {
+        young: 3.0e9,
+        density: 750.0,
+        poisson: 0.3,
+        loss_factor: 0.06,
+    };
+}
 
 /// Displacement of one driver's basket and magnet inside the box, m^3. ESTIMATED.
 const DRIVER_DISPLACEMENT: f64 = 2.5e-3;
@@ -27,6 +47,10 @@ pub struct CabinetProfile {
     pub depth: f64,
     /// Panel thickness, m.
     pub wall: f64,
+    pub material: PanelMaterial,
+    /// Effective broadband energy absorption of the interior lining (0..1).
+    /// Estimated where construction/absorption measurements are unavailable.
+    pub lining_absorption: f64,
     pub drivers: usize,
     /// Driver centres on the baffle, m, from its centre: +x right, +y up.
     pub positions: [(f64, f64); 4],
@@ -56,6 +80,8 @@ impl CabinetProfile {
         height: 0.755,
         depth: 0.365,
         wall: 0.0159,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 4,
         positions: FOUR,
         open_fraction: 0.0,
@@ -72,6 +98,8 @@ impl CabinetProfile {
         height: 0.836,
         depth: 0.362,
         wall: 0.019,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 4,
         positions: [
             (-0.168, 0.180),
@@ -117,6 +145,8 @@ impl CabinetProfile {
         height: 0.850,
         depth: 0.380,
         wall: 0.018,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 4,
         positions: [
             (-0.172, 0.185),
@@ -138,6 +168,8 @@ impl CabinetProfile {
         height: 0.508,
         depth: 0.267,
         wall: 0.019,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 2,
         positions: [(-0.151, -0.030), (0.151, -0.030), (0.0, 0.0), (0.0, 0.0)],
         open_fraction: 0.40,
@@ -160,6 +192,8 @@ impl CabinetProfile {
         height: 0.445,
         depth: 0.241,
         wall: 0.019,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 1,
         positions: [(0.0, -0.020), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)],
         open_fraction: 0.45,
@@ -176,6 +210,8 @@ impl CabinetProfile {
         height: 0.470,
         depth: 0.290,
         wall: 0.0159,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 1,
         positions: [(0.0, 0.0); 4],
         open_fraction: 0.0,
@@ -192,6 +228,8 @@ impl CabinetProfile {
         height: 0.600,
         depth: 0.310,
         wall: 0.0159,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 2,
         positions: [(-0.167, 0.0), (0.167, 0.0), (0.0, 0.0), (0.0, 0.0)],
         open_fraction: 0.0,
@@ -221,6 +259,8 @@ impl CabinetProfile {
         height: 0.540,
         depth: 0.270,
         wall: 0.018,
+        material: PanelMaterial::MDF,
+        lining_absorption: 0.08,
         drivers: 2,
         positions: [(-0.166, -0.040), (0.166, -0.040), (0.0, 0.0), (0.0, 0.0)],
         open_fraction: 0.40,
@@ -249,6 +289,8 @@ impl CabinetProfile {
         height: 0.816,
         depth: 0.362,
         wall: 0.019,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
         drivers: 4,
         positions: [
             (-0.168, 0.177),
@@ -297,11 +339,11 @@ impl CabinetProfile {
             .max(0.005)
     }
 
-    /// How the box loads each driver's cone. An open back has no air spring.
+    /// The cavity and opening load every driver continuously, including open backs.
     pub fn mounting(&self) -> Mounting {
         Mounting {
-            volume_per_driver: (!self.is_open())
-                .then(|| self.volume() / self.drivers.max(1) as f64),
+            cabinet: Some(*self),
+            volume_per_driver: Some(self.volume() / self.drivers.max(1) as f64),
             leakage_q: self.leakage_q,
             drivers: self.drivers,
         }
@@ -321,8 +363,9 @@ impl CabinetProfile {
     pub fn panel_hz(&self) -> f64 {
         let (w, h, _) = self.internal();
         let t = self.wall;
-        let rigidity = PLY_YOUNG * t.powi(3) / (12.0 * (1.0 - PLY_POISSON * PLY_POISSON));
-        let surface = PLY_DENSITY * t;
+        let rigidity = self.material.young * t.powi(3)
+            / (12.0 * (1.0 - self.material.poisson * self.material.poisson));
+        let surface = self.material.density * t;
         std::f64::consts::FRAC_PI_2 * (rigidity / surface).sqrt() * (1.0 / (w * w) + 1.0 / (h * h))
     }
 

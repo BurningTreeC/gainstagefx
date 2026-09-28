@@ -1,7 +1,8 @@
 //! The box everything is bolted to, and the bands the sections sit in.
 
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
+use super::paint as vg;
+use super::paint::PanelCanvas;
+use vizia_plug::vizia::prelude::*;
 
 use super::style::*;
 
@@ -21,7 +22,7 @@ pub struct Faceplate;
 impl Faceplate {
     pub fn new(cx: &mut Context) -> Handle<'_, Self> {
         Self.build(cx, |_| {})
-            .position_type(PositionType::SelfDirected)
+            .position_type(PositionType::Absolute)
             .left(Pixels(0.0))
             .top(Pixels(0.0))
             .width(Pixels(PANEL_W))
@@ -35,19 +36,19 @@ impl View for Faceplate {
         Some("gainstage-faceplate")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
 
         let mut face = vg::Path::new();
-        face.rect(b.x, b.y, b.w, b.h);
+        face.rect(b.x, b.y, b.width(), b.height());
         canvas.fill_path(
             &face,
             &vg::Paint::linear_gradient(
                 b.x,
                 b.y,
                 b.x,
-                b.y + b.h,
+                b.y + b.height(),
                 rgb(PANEL_TOP),
                 rgb(PANEL_BOTTOM),
             ),
@@ -66,14 +67,14 @@ impl View for Faceplate {
         // Wide and shallow. A steel panel under a room light has no visible
         // hotspot -- what it has is a corner that is a little brighter than
         // the far one, and an edge that catches.
-        let (lx, ly) = (b.x + b.w * 0.06, b.y + b.h * 0.02);
+        let (lx, ly) = (b.x + b.width() * 0.06, b.y + b.height() * 0.02);
         canvas.fill_path(
             &face,
             &vg::Paint::radial_gradient(
                 lx,
                 ly,
                 0.0,
-                (b.w + b.h) * 0.58,
+                (b.width() + b.height()) * 0.58,
                 rgba(0xffffff, 0.090),
                 rgba(0xffffff, 0.0),
             ),
@@ -84,10 +85,10 @@ impl View for Faceplate {
         canvas.fill_path(
             &face,
             &vg::Paint::radial_gradient(
-                b.x + b.w,
-                b.y + b.h,
-                (b.w + b.h) * 0.14,
-                (b.w + b.h) * 0.70,
+                b.x + b.width(),
+                b.y + b.height(),
+                (b.width() + b.height()) * 0.14,
+                (b.width() + b.height()) * 0.70,
                 rgba(0x000000, 0.0),
                 rgba(0x000000, 0.20),
             ),
@@ -95,11 +96,11 @@ impl View for Faceplate {
 
         // Brushed grain: fine horizontal lines, which is the direction a panel
         // is actually linished in.
-        for i in 0..(b.h as usize / 3) {
+        for i in 0..(b.height() as usize / 3) {
             let y = b.y + i as f32 * 3.0 * scale;
             let mut line = vg::Path::new();
             line.move_to(b.x, y);
-            line.line_to(b.x + b.w, y);
+            line.line_to(b.x + b.width(), y);
             canvas.stroke_path(
                 &line,
                 &vg::Paint::color(rgba(0xffffff, 0.012)).with_line_width(scale),
@@ -109,7 +110,7 @@ impl View for Faceplate {
         // The session strip, set apart because it is about the plugin rather
         // than about the sound.
         let mut strip = vg::Path::new();
-        strip.rect(b.x, b.y, b.w, HEADER_H * scale);
+        strip.rect(b.x, b.y, b.width(), HEADER_H * scale);
         canvas.fill_path(&strip, &vg::Paint::color(rgba(0x000000, 0.28)));
 
         for (index, (_, _, height)) in SECTIONS.iter().enumerate() {
@@ -120,7 +121,7 @@ impl View for Faceplate {
             // without turning the panel into stripes.
             if index % 2 == 1 {
                 let mut band = vg::Path::new();
-                band.rect(b.x, top, b.w, h);
+                band.rect(b.x, top, b.width(), h);
                 canvas.fill_path(&band, &vg::Paint::color(rgba(0xffffff, 0.018)));
             }
 
@@ -128,14 +129,14 @@ impl View for Faceplate {
             // in marked off from the controls.
             let mut rule = vg::Path::new();
             rule.move_to(b.x, top);
-            rule.line_to(b.x + b.w, top);
+            rule.line_to(b.x + b.width(), top);
             canvas.stroke_path(
                 &rule,
                 &vg::Paint::color(rgba(0x000000, 0.35)).with_line_width(scale),
             );
             let mut lit = vg::Path::new();
             lit.move_to(b.x, top + scale);
-            lit.line_to(b.x + b.w, top + scale);
+            lit.line_to(b.x + b.width(), top + scale);
             canvas.stroke_path(
                 &lit,
                 &vg::Paint::color(rgba(0xffffff, 0.05)).with_line_width(scale),
@@ -160,7 +161,7 @@ impl View for Faceplate {
 
         let mut divider = vg::Path::new();
         divider.move_to(b.x + GUTTER_W * scale, b.y + HEADER_H * scale);
-        divider.line_to(b.x + GUTTER_W * scale, b.y + b.h);
+        divider.line_to(b.x + GUTTER_W * scale, b.y + b.height());
         canvas.stroke_path(
             &divider,
             &vg::Paint::color(rgba(0x000000, 0.30)).with_line_width(scale),

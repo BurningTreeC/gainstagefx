@@ -1,0 +1,102 @@
+mod helpers;
+use helpers::*;
+use vizia::prelude::*;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Options {
+    First,
+    Second,
+    Third,
+}
+
+impl std::fmt::Display for Options {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match *self {
+            Options::First => "First",
+            Options::Second => "Second",
+            Options::Third => "Third",
+        };
+        write!(f, "{}", str)
+    }
+}
+
+pub struct AppData {
+    pub option: Signal<Options>,
+}
+
+pub enum AppEvent {
+    SetOption(Options),
+}
+
+impl Model for AppData {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|app_event, _| match app_event {
+            AppEvent::SetOption(option) => self.option.set(*option),
+        })
+    }
+}
+
+fn main() -> Result<(), ApplicationError> {
+    Application::new(|cx| {
+        let option = Signal::new(Options::First);
+
+        AppData { option }.build(cx);
+
+        // Exclusive checkboxes (radio buttons) with labels
+        // Only one checkbox can be checked at a time and cannot be unchecked
+        ExamplePage::vertical(cx, |cx| {
+            Label::new(cx, Localized::new("radiobutton-basic"));
+            HStack::new(cx, |cx| {
+                for i in 0..3 {
+                    let current_option = index_to_option(i);
+                    let selected = Memo::new(move |_| option.get() == current_option);
+                    RadioButton::new(cx, selected)
+                        .on_select(move |cx| cx.emit(AppEvent::SetOption(current_option)));
+                }
+            })
+            .size(Auto)
+            .horizontal_gap(Pixels(20.0));
+
+            Label::new(cx, Localized::new("radiobutton-with-labels")).top(Pixels(20.0));
+
+            VStack::new(cx, |cx| {
+                for i in 0..3 {
+                    let current_option = index_to_option(i);
+                    let selected = Memo::new(move |_| option.get() == current_option);
+                    HStack::new(cx, move |cx| {
+                        RadioButton::new(cx, selected)
+                            .on_select(move |cx| cx.emit(AppEvent::SetOption(current_option)))
+                            .id(format!("button_{i}"));
+
+                        Label::new(cx, Localized::new(option_label_key(current_option)))
+                            .describing(format!("button_{i}"));
+                    })
+                    .size(Auto)
+                    .alignment(Alignment::Center)
+                    .horizontal_gap(Pixels(5.0));
+                }
+            })
+            .vertical_gap(Pixels(10.0))
+            .size(Auto);
+        });
+    })
+    .title(Localized::new("view-title-radiobutton"))
+    .run()
+}
+
+fn index_to_option(index: usize) -> Options {
+    match index {
+        0 => Options::First,
+        1 => Options::Second,
+        2 => Options::Third,
+        _ => unreachable!(),
+    }
+}
+
+fn option_label_key(option: Options) -> &'static str {
+    match option {
+        Options::First => "option-first",
+        Options::Second => "option-second",
+        Options::Third => "option-third",
+    }
+}

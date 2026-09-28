@@ -28,6 +28,7 @@ fn netlist_impedance(values: &LoadValues, hz: f64) -> f64 {
 
 fn sealed(volume: f64, drivers: usize) -> Mounting {
     Mounting {
+        cabinet: None,
         volume_per_driver: Some(volume),
         leakage_q: 7.0,
         drivers,
@@ -52,6 +53,48 @@ fn stamped_netlist_equals_the_analytic_impedance() {
             }
         }
     }
+}
+
+#[test]
+fn enclosure_reflections_are_passive_and_present_in_the_amplifier_load() {
+    use gainstagefx::acoustics::cabinet::CabinetProfile;
+    for cab in CabinetProfile::ALL {
+        let values = LoadValues::new(cab.default_speaker, &cab.mounting(), 1.0);
+        for hz in [
+            25.0, 80.0, 150.0, 250.0, 400.0, 700.0, 1200.0, 2500.0, 8000.0,
+        ] {
+            let analytic = values.impedance(hz);
+            let stamped = netlist_impedance(&values, hz);
+            assert!(analytic.re >= values.re, "{} {hz}: active load", cab.id);
+            assert!(
+                (analytic.magnitude() - stamped).abs() < 1e-6 * stamped,
+                "{} {hz}: analytic {} stamp {stamped}",
+                cab.id,
+                analytic.magnitude()
+            );
+        }
+        assert!(values.cavity_modes.iter().any(|mode| mode.r < 1e10));
+    }
+}
+
+#[test]
+fn opening_a_back_is_continuous_and_material_changes_the_load() {
+    use gainstagefx::acoustics::cabinet::{CabinetProfile, PanelMaterial};
+    let cab = CabinetProfile::CLOSED_112;
+    let load = |cab: CabinetProfile| LoadValues::new(cab.default_speaker, &cab.mounting(), 1.0);
+    let closed = load(cab);
+    let cracked = load(CabinetProfile {
+        open_fraction: 1e-8,
+        ..cab
+    });
+    let mdf = load(CabinetProfile {
+        material: PanelMaterial::MDF,
+        ..cab
+    });
+    for hz in [30.0, 90.0, 200.0, 500.0, 1500.0] {
+        assert!((closed.impedance(hz) - cracked.impedance(hz)).magnitude() < 1e-4);
+    }
+    assert!((closed.impedance(cab.panel_hz()) - mdf.impedance(cab.panel_hz())).magnitude() > 0.01);
 }
 
 /// Points read from Jensen's published 8 ohm impedance charts (jensentone.com).

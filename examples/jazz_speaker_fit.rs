@@ -41,7 +41,7 @@ use measurement::{modelled, rms_error, target, FIT_HIGH, FIT_LOW, MEASURED};
 fn profile_of(p: &[f64]) -> SpeakerProfile {
     let peak = |i: usize, lo: f64, hi: f64| Peak {
         hz: p[i].clamp(lo, hi),
-        gain_db: p[i + 1].clamp(-12.0, 12.0),
+        gain_db: p[i + 1].clamp(-18.0, 18.0),
         q: p[i + 2].clamp(0.5, 6.0),
     };
     SpeakerProfile {
@@ -134,6 +134,7 @@ fn main() {
     // making the 3.6 kHz peak and the fall after it, with the peaks left for
     // the midrange and 9.2 kHz.
     let starts = [
+        [542.0,6.28,1.90,3705.0,7.08,4.17,10276.0,12.0,2.44,7468.0,0.50],
         [
             480.0, 2.0, 2.0, 3_600.0, 6.0, 3.0, 9_200.0, 6.0, 3.0, 5_000.0, 0.7,
         ],

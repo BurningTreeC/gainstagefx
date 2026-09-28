@@ -1,10 +1,11 @@
 //! The panel's controls.
 
-use nih_plug::prelude::Param;
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
-use nih_plug_vizia::widgets::{util::ModifiersExt, RawParamEvent};
+use super::paint as vg;
+use super::paint::PanelCanvas;
+use nice_plug::prelude::Param;
+use vizia_plug::vizia::prelude::*;
+use vizia_plug::widgets::param_base::ParamWidgetBase;
+use vizia_plug::widgets::{util::ModifiersExt, RawParamEvent};
 
 use super::sprites::{self, Sprite};
 use super::style::*;
@@ -72,13 +73,13 @@ impl Knob {
         live: bool,
     ) -> Handle<'_, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param: ParamWidgetBase::new(cx, params_to_param(&params.get())),
             radius,
             shape: Face::Round,
             face: Sprite::new(),
@@ -86,13 +87,14 @@ impl Knob {
             drag_position: DragPosition::default(),
             live,
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+        .build(cx, move |cx| {
+            let base = ParamWidgetBase::new(cx, params_to_param(&params.get()));
+            let value = base.modulated_signal(cx);
+            {
+                let bound_value = value;
+                Binding::new(cx, bound_value, move |cx| cx.needs_redraw(cx.current()));
+            };
+        })
         .width(Pixels(radius * 2.0))
         .height(Pixels(radius * 2.0))
     }
@@ -109,13 +111,13 @@ impl Knob {
         live: bool,
     ) -> Handle<'_, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param: ParamWidgetBase::new(cx, params_to_param(&params.get())),
             radius: width / 2.0,
             shape: Face::Slider { height },
             face: Sprite::new(),
@@ -123,13 +125,14 @@ impl Knob {
             drag_position: DragPosition::default(),
             live,
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+        .build(cx, move |cx| {
+            let base = ParamWidgetBase::new(cx, params_to_param(&params.get()));
+            let value = base.modulated_signal(cx);
+            {
+                let bound_value = value;
+                Binding::new(cx, bound_value, move |cx| cx.needs_redraw(cx.current()));
+            };
+        })
         .width(Pixels(width))
         .height(Pixels(height))
     }
@@ -171,11 +174,11 @@ impl Knob {
     /// is readable at a glance -- which is the whole reason an amplifier uses
     /// faders for a graphic equaliser rather than five more knobs: the shape of
     /// the curve is the shape of the row.
-    fn draw_fader(&self, canvas: &mut Canvas, b: BoundingBox, scale: f32) {
+    fn draw_fader(&self, canvas: &Canvas, b: BoundingBox, scale: f32) {
         let dim = if self.live { 1.0 } else { 0.30 };
-        let mx = b.x + b.w / 2.0;
+        let mx = b.x + b.width() / 2.0;
         let cap_h = 13.0 * scale;
-        let travel = b.h - cap_h;
+        let travel = b.height() - cap_h;
         let slot_w = 5.0 * scale;
 
         // The slot.
@@ -204,7 +207,7 @@ impl Knob {
         // The cap, at the value. Up is more, as a fader reads.
         let v = self.param.modulated_normalized_value().clamp(0.0, 1.0);
         let cy = b.y + cap_h / 2.0 + travel * (1.0 - v);
-        let cap_w = b.w.min(20.0 * scale);
+        let cap_w = b.width().min(20.0 * scale);
         let mut shadow = vg::Path::new();
         shadow.rounded_rect(
             mx - cap_w / 2.0 + 1.0 * scale,
@@ -254,11 +257,11 @@ impl View for Knob {
         Some("frontend-knob")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
         let r = self.radius * scale;
-        let (mx, my) = (b.x + b.w / 2.0, b.y + b.h / 2.0);
+        let (mx, my) = (b.x + b.width() / 2.0, b.y + b.height() / 2.0);
 
         if let Face::Slider { .. } = self.shape {
             self.draw_fader(canvas, b, scale);
@@ -389,7 +392,7 @@ impl View for Knob {
                     self.dragging = true;
                     self.drag_position.start(
                         self.param.unmodulated_normalized_value(),
-                        cx.mouse().cursory,
+                        cx.mouse().cursor_y,
                     );
                     cx.capture();
                     cx.focus();
@@ -468,11 +471,10 @@ impl Meter {
     /// How far off nominal a circuit still does what the preset intends.
     const WORKING: f32 = 6.0;
 
-    pub fn new<L>(cx: &mut Context, meters: L) -> Handle<'_, Self>
-    where
-        L: Lens<Target = std::sync::Arc<crate::meters::Meters>>,
-    {
-        let meters = meters.get(cx);
+    pub fn new(
+        cx: &mut Context,
+        meters: std::sync::Arc<crate::meters::Meters>,
+    ) -> Handle<'_, Self> {
         let mut handle = Self { meters }.build(cx, |_| {}).hoverable(false);
         // A meter follows the audio, not the parameters, so it has to drive
         // its own repaint rather than waiting to be asked.
@@ -499,12 +501,12 @@ impl View for Meter {
         Some("frontend-meter")
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
 
         let mut track = vg::Path::new();
-        track.rounded_rect(b.x, b.y, b.w, b.h, 3.0 * scale);
+        track.rounded_rect(b.x, b.y, b.width(), b.height(), 3.0 * scale);
         canvas.fill_path(&track, &vg::Paint::color(rgb(0x0e1113)));
         canvas.stroke_path(
             &track,
@@ -516,21 +518,21 @@ impl View for Meter {
         let high = self.position(Self::WORKING);
         let mut band = vg::Path::new();
         band.rect(
-            b.x + b.w * low,
+            b.x + b.width() * low,
             b.y + 2.0 * scale,
-            b.w * (high - low),
-            b.h - 4.0 * scale,
+            b.width() * (high - low),
+            b.height() - 4.0 * scale,
         );
         canvas.fill_path(&band, &vg::Paint::color(rgba(GLOW, 0.16)));
 
         // Nominal itself.
-        let mid = b.x + b.w * self.position(0.0);
+        let mid = b.x + b.width() * self.position(0.0);
         let mut centre = vg::Path::new();
         centre.rect(
             mid - 0.5 * scale,
             b.y + 2.0 * scale,
             scale,
-            b.h - 4.0 * scale,
+            b.height() - 4.0 * scale,
         );
         canvas.fill_path(&centre, &vg::Paint::color(rgba(0xffffff, 0.35)));
 
@@ -548,20 +550,20 @@ impl View for Meter {
                 b.x + 2.0 * scale,
                 b.y + 4.0 * scale,
                 3.0 * scale,
-                b.h - 8.0 * scale,
+                b.height() - 8.0 * scale,
             );
             canvas.fill_path(&stub, &vg::Paint::color(rgba(0x6f7d88, 0.35)));
             return;
         }
         // A bar from the bottom of the scale to where the signal is, lit warm
         // once it is inside the band and cool while it is under it.
-        let at = b.x + b.w * self.position(db);
+        let at = b.x + b.width() * self.position(db);
         let mut bar = vg::Path::new();
         bar.rounded_rect(
             b.x + 2.0 * scale,
             b.y + 4.0 * scale,
             (at - b.x - 2.0 * scale).max(0.0),
-            b.h - 8.0 * scale,
+            b.height() - 8.0 * scale,
             2.0 * scale,
         );
         let colour = if db < -Self::WORKING {
@@ -625,8 +627,8 @@ impl Selector {
         enabled: bool,
     ) -> Handle<'a, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
@@ -645,8 +647,8 @@ impl Selector {
         ceiling: usize,
     ) -> Handle<'a, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
@@ -676,8 +678,8 @@ impl Selector {
         forced: Option<usize>,
     ) -> Handle<'a, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
@@ -707,15 +709,15 @@ impl Selector {
         ceiling: Option<usize>,
     ) -> Handle<'a, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         let captions = labels.clone();
         let (start, span) = (offset, total.max(1));
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param: ParamWidgetBase::new(cx, params_to_param(&params.get())),
             labels,
             offset,
             total,
@@ -723,55 +725,54 @@ impl Selector {
             forced,
             ceiling,
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                // The captions are real labels rather than text drawn onto the
-                // canvas. A canvas paint with no font on it draws nothing at
-                // all and reports no error, so a row of empty boxes is what
-                // that mistake looks like.
-                HStack::new(cx, |cx| {
-                    for (index, caption) in captions.iter().enumerate() {
-                        Label::new(cx, *caption)
-                            .width(Stretch(1.0))
-                            .height(Stretch(1.0))
-                            .child_left(Stretch(1.0))
-                            .child_right(Stretch(1.0))
-                            .child_top(Stretch(1.0))
-                            .child_bottom(Stretch(1.0))
-                            .font_size(11.0)
-                            .color(value.map(move |v| {
-                                let selected = match forced {
-                                    Some(at) => at,
-                                    None => {
-                                        let at = (v * (span - 1) as f32).round() as usize;
-                                        match ceiling {
-                                            Some(cap) => at.min(cap),
-                                            None => at,
-                                        }
+        .build(cx, move |cx| {
+            let base = ParamWidgetBase::new(cx, params_to_param(&params.get()));
+            let value = base.modulated_signal(cx);
+            // The captions are real labels rather than text drawn onto the
+            // canvas. A canvas paint with no font on it draws nothing at
+            // all and reports no error, so a row of empty boxes is what
+            // that mistake looks like.
+            HStack::new(cx, |cx| {
+                for (index, caption) in captions.iter().enumerate() {
+                    Label::new(cx, *caption)
+                        .width(Stretch(1.0))
+                        .height(Stretch(1.0))
+                        .alignment(Alignment::Center)
+                        .text_align(TextAlign::Center)
+                        .font_size(11.0)
+                        .color(value.map(move |v| {
+                            let selected = match forced {
+                                Some(at) => at,
+                                None => {
+                                    let at = (v * (span - 1) as f32).round() as usize;
+                                    match ceiling {
+                                        Some(cap) => at.min(cap),
+                                        None => at,
                                     }
-                                };
-                                match (enabled, forced, selected == start + index) {
-                                    // Pinned: the lit segment is what the
-                                    // plugin is really doing, dimmed because it
-                                    // is not something to click.
-                                    (_, Some(_), true) => Color::rgba(0xff, 0xb2, 0x6a, 0x99),
-                                    (_, Some(_), false) => Color::rgba(0xff, 0xff, 0xff, 0x26),
-                                    (false, _, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
-                                    (true, _, true) => Color::rgb(0xff, 0xb2, 0x6a),
-                                    (true, _, false) => Color::rgb(0xa8, 0xb2, 0xba),
                                 }
-                            }))
-                            .hoverable(false);
-                    }
-                })
-                .width(Percentage(100.0))
-                .height(Percentage(100.0))
-                .hoverable(false);
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+                            };
+                            match (enabled, forced, selected == start + index) {
+                                // Pinned: the lit segment is what the
+                                // plugin is really doing, dimmed because it
+                                // is not something to click.
+                                (_, Some(_), true) => Color::rgba(0xff, 0xb2, 0x6a, 0x99),
+                                (_, Some(_), false) => Color::rgba(0xff, 0xff, 0xff, 0x26),
+                                (false, _, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
+                                (true, _, true) => Color::rgb(0xff, 0xb2, 0x6a),
+                                (true, _, false) => Color::rgb(0xa8, 0xb2, 0xba),
+                            }
+                        }))
+                        .hoverable(false);
+                }
+            })
+            .width(Percentage(100.0))
+            .height(Percentage(100.0))
+            .hoverable(false);
+            {
+                let bound_value = value;
+                Binding::new(cx, bound_value, move |cx| cx.needs_redraw(cx.current()));
+            };
+        })
     }
 
     /// Which segment is lit.
@@ -834,8 +835,8 @@ impl View for Selector {
         let count = self.labels.len().max(1) as f32;
         event.map(|window: &WindowEvent, meta| match window {
             WindowEvent::MouseDown(MouseButton::Left) => {
-                let x = cx.mouse().cursorx - b.x;
-                let index = ((x / (b.w / count)).floor().max(0.0) as usize)
+                let x = cx.mouse().cursor_x - b.x;
+                let index = ((x / (b.width() / count)).floor().max(0.0) as usize)
                     .min(self.labels.len().saturating_sub(1));
                 self.pick(cx, index);
                 meta.consume();
@@ -860,11 +861,11 @@ impl View for Selector {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
         let count = self.labels.len().max(1);
-        let seg = b.w / count as f32;
+        let seg = b.width() / count as f32;
         let selected = self.selected();
 
         for index in 0..count {
@@ -872,7 +873,13 @@ impl View for Selector {
             let lit = index == selected;
 
             let mut cell = vg::Path::new();
-            cell.rounded_rect(x + 1.5 * scale, b.y, seg - 3.0 * scale, b.h, 3.0 * scale);
+            cell.rounded_rect(
+                x + 1.5 * scale,
+                b.y,
+                seg - 3.0 * scale,
+                b.height(),
+                3.0 * scale,
+            );
             let ground = if lit {
                 rgba(GLOW, if self.enabled { 0.22 } else { 0.07 })
             } else {

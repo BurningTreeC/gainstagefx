@@ -1,0 +1,475 @@
+use morphorm::Node;
+use skia_safe::wrapper::PointerWrapper;
+use vizia_storage::MorphormChildIter;
+
+use crate::prelude::*;
+use crate::resource::{ImageOrSvg, ResourceManager};
+use crate::text::TextContext;
+
+pub struct SubLayout<'a> {
+    pub text_context: &'a mut TextContext,
+    pub resource_manager: &'a ResourceManager,
+}
+
+impl Node for Entity {
+    type Store = Style;
+    type Tree = Tree<Entity>;
+    type CacheKey = Entity;
+    type ChildIter<'t> = MorphormChildIter<'t, Entity>;
+    type SubLayout<'a> = SubLayout<'a>;
+
+    fn children<'t>(&'t self, tree: &'t Self::Tree) -> Self::ChildIter<'t> {
+        MorphormChildIter::new(tree, *self)
+    }
+
+    fn parent<'t>(&'t self, tree: &'t Self::Tree) -> Option<&'t Self> {
+        // Return the *layout* parent, skipping ignored (e.g. binding) nodes. This matches the
+        // layout tree seen by `MorphormChildIter`, which flattens ignored nodes, so that walking up
+        // the tree (for incremental relayout) never lands on a node that is not a real layout node.
+        let mut parent = tree.parent.get(self.index()).and_then(|parent| parent.as_ref())?;
+        while tree.is_ignored(*parent) {
+            parent = tree.parent.get(parent.index()).and_then(|parent| parent.as_ref())?;
+        }
+        Some(parent)
+    }
+
+    fn key(&self) -> Self::CacheKey {
+        *self
+    }
+
+    fn visible(&self, store: &Self::Store) -> bool {
+        store.display.get(*self).copied().map(|display| display == Display::Flex).unwrap_or(true)
+    }
+
+    fn layout_type(&self, store: &Self::Store) -> Option<morphorm::LayoutType> {
+        store.layout_type.get(*self).copied()
+    }
+
+    fn position_type(&self, store: &Self::Store) -> Option<morphorm::PositionType> {
+        store.position_type.get(*self).copied()
+    }
+
+    fn left(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.left.get_resolved(*self, &store.custom_units_props).map(|l| match l {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn right(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.right.get_resolved(*self, &store.custom_units_props).map(|r| match r {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn top(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.top.get_resolved(*self, &store.custom_units_props).map(|t| match t {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn bottom(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.bottom.get_resolved(*self, &store.custom_units_props).map(|b| match b {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn width(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.width.get_resolved(*self, &store.custom_units_props).map(|w| match w {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn min_width(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.min_width.get_resolved(*self, &store.custom_units_props).map(|w| match w {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn max_width(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.max_width.get_resolved(*self, &store.custom_units_props).map(|w| match w {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn content_size(
+        &self,
+        store: &Self::Store,
+        sublayout: &mut Self::SubLayout<'_>,
+        width: Option<f32>,
+        height: Option<f32>,
+    ) -> Option<(f32, f32)> {
+        if let Some(paragraph) = sublayout.text_context.text_paragraphs.get_mut(*self) {
+            // // If the width is known use that, else use 0 for wrapping text or 999999 for non-wrapping text.
+            // let max_width = if let Some(width) = width {
+            //     let padding_left =
+            //         store.padding_left.get(*self).cloned().unwrap_or_default().to_px(width, 0.0)
+            //             * store.scale_factor();
+            //     let padding_right =
+            //         store.padding_right.get(*self).cloned().unwrap_or_default().to_px(width, 0.0)
+            //             * store.scale_factor();
+            //     let border_width = store
+            //         .border_width
+            //         .get(*self)
+            //         .cloned()
+            //         .unwrap_or_default()
+            //         .to_pixels(0.0, store.scale_factor());
+
+            //     width.ceil() - padding_left - padding_right - border_width - border_width
+            // } else {
+            //     f32::MAX
+            // };
+
+            paragraph.layout(f32::MAX);
+
+            let padding_left = store
+                .padding_left
+                .get_resolved(*self, &store.custom_units_props)
+                .unwrap_or_default();
+            let padding_right = store
+                .padding_right
+                .get_resolved(*self, &store.custom_units_props)
+                .unwrap_or_default();
+            let padding_top = store
+                .padding_top
+                .get_resolved(*self, &store.custom_units_props)
+                .unwrap_or_default();
+            let padding_bottom = store
+                .padding_bottom
+                .get_resolved(*self, &store.custom_units_props)
+                .unwrap_or_default();
+
+            let mut child_space_x = 0.0;
+            let mut child_space_y = 0.0;
+
+            let mut p_left = 0.0;
+            let mut p_top = 0.0;
+
+            // shrink the bounding box based on pixel values
+            if let Pixels(val) = padding_left {
+                let val = val * store.scale_factor();
+                child_space_x += val;
+                p_left += val;
+            }
+            if let Pixels(val) = padding_right {
+                let val = val * store.scale_factor();
+                child_space_x += val;
+            }
+            if let Pixels(val) = padding_top {
+                let val = val * store.scale_factor();
+                child_space_y += val;
+                p_top += val;
+            }
+            if let Pixels(val) = padding_bottom {
+                let val = val * store.scale_factor();
+                child_space_y += val;
+            }
+
+            // When width is auto, morphorm may still clamp the final node width via min/max
+            // constraints. For text nodes, we need to include resolvable constraints in shaping
+            // width so line breaks and caret metrics match the final box size.
+            let min_content_width = if width.is_none() {
+                match store.min_width.get_resolved(*self, &store.custom_units_props) {
+                    Some(Pixels(val)) => {
+                        Some((val * store.scale_factor() - child_space_x).max(0.0))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
+
+            let text_width = match (
+                store.text_wrap.get(*self).copied().unwrap_or(true),
+                store.text_overflow.get(*self).copied(),
+            ) {
+                (true, _) => {
+                    if let Some(width) = width {
+                        width - child_space_x
+                    } else {
+                        paragraph.min_intrinsic_width().ceil()
+                    }
+                }
+                (false, Some(TextOverflow::Ellipsis)) => {
+                    if let Some(width) = width {
+                        width - child_space_x
+                    } else {
+                        paragraph.max_intrinsic_width().ceil()
+                    }
+                }
+
+                _ => {
+                    if let Some(width) = width {
+                        (width - child_space_x).max(paragraph.min_intrinsic_width().ceil())
+                    } else {
+                        paragraph.max_intrinsic_width().ceil()
+                    }
+                }
+            };
+
+            let text_width = if let Some(min_width) = min_content_width {
+                text_width.max(min_width)
+            } else {
+                text_width
+            };
+
+            paragraph.layout(text_width);
+
+            let text_height = if let Some(height) = height { height } else { paragraph.height() };
+
+            let width =
+                if let Some(width) = width { width } else { text_width.round() + child_space_x };
+
+            let height = if let Some(height) = height {
+                height
+            } else {
+                text_height.round() + child_space_y
+            };
+
+            // Cache the text_width/ text_height in the text context so we can use it to compute transforms later
+            sublayout.text_context.set_text_bounds(
+                *self,
+                BoundingBox { x: p_left, y: p_top, w: text_width, h: text_height },
+            );
+
+            Some((width, height))
+        } else if let Some(images) = store.background_image.get(*self) {
+            let mut max_width = 0.0f32;
+            let mut max_height = 0.0f32;
+            for image in images.iter() {
+                match image {
+                    ImageOrGradient::Image(image_name) => {
+                        if let Some(image_id) = sublayout.resource_manager.image_ids.get(image_name)
+                        {
+                            match sublayout
+                                .resource_manager
+                                .images
+                                .get(image_id)
+                                .map(|stored_img| &stored_img.image)
+                            {
+                                Some(ImageOrSvg::Image(image)) => {
+                                    // Intrinsic image dimensions are already in physical pixels.
+                                    // Do not apply scale-factor again or auto sizing doubles on HiDPI.
+                                    max_width = max_width.max(image.width() as f32);
+                                    max_height = max_height.max(image.height() as f32);
+                                }
+
+                                Some(ImageOrSvg::Svg(svg)) => {
+                                    // Skia SVG container sizes are CSS/logical pixels. Layout runs
+                                    // in physical pixels, so convert here to keep SVG auto sizing
+                                    // consistent with raster images on HiDPI displays.
+                                    max_width = max_width.max(
+                                        svg.inner().fContainerSize.fWidth * store.scale_factor(),
+                                    );
+                                    max_height = max_height.max(
+                                        svg.inner().fContainerSize.fHeight * store.scale_factor(),
+                                    );
+                                }
+
+                                _ => {}
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let intrinsic_ratio = if max_width > 0.0 && max_height > 0.0 {
+                Some(max_width / max_height)
+            } else {
+                None
+            };
+
+            let aspect_ratio = store.aspect_ratio.get(*self).copied();
+            let auto_ratio = match aspect_ratio {
+                Some(AspectRatio::Auto) => intrinsic_ratio,
+                Some(AspectRatio::AutoRatio(fallback_ratio)) => {
+                    intrinsic_ratio.or(Some(fallback_ratio))
+                }
+                _ => None,
+            };
+
+            let (width, height) = match (width, height, auto_ratio) {
+                (Some(width), None, Some(ratio)) if ratio > 0.0 => (width, width / ratio),
+                (None, Some(height), Some(ratio)) if ratio > 0.0 => (height * ratio, height),
+                (width, height, _) => {
+                    let width = width.unwrap_or(max_width);
+                    let height = height.unwrap_or(max_height);
+                    (width, height)
+                }
+            };
+
+            Some((width, height))
+        } else {
+            None
+        }
+    }
+
+    fn height(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.height.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn aspect_ratio(&self, store: &Self::Store) -> Option<f32> {
+        match store.aspect_ratio.get(*self).copied() {
+            Some(AspectRatio::Ratio(ratio)) => Some(ratio),
+
+            // For image-backed nodes, `auto` and `auto <ratio>` are resolved from intrinsic
+            // dimensions inside `content_size`, where resource data is available.
+            Some(AspectRatio::Auto) | Some(AspectRatio::AutoRatio(_))
+                if store.background_image.get(*self).is_some() =>
+            {
+                None
+            }
+
+            Some(AspectRatio::AutoRatio(ratio)) => Some(ratio),
+            _ => None,
+        }
+    }
+
+    fn min_height(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.min_height.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn max_height(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.max_height.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn padding_left(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.padding_left.get_resolved(*self, &store.custom_units_props).map(|l| match l {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn padding_right(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.padding_right.get_resolved(*self, &store.custom_units_props).map(|r| match r {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn padding_top(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.padding_top.get_resolved(*self, &store.custom_units_props).map(|t| match t {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn padding_bottom(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.padding_bottom.get_resolved(*self, &store.custom_units_props).map(|b| match b {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn vertical_gap(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.vertical_gap.get_resolved(*self, &store.custom_units_props).map(|v| match v {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn horizontal_gap(&self, store: &Self::Store) -> Option<morphorm::Units> {
+        store.horizontal_gap.get_resolved(*self, &store.custom_units_props).map(|v| match v {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn alignment(&self, store: &Self::Store) -> Option<morphorm::Alignment> {
+        store.alignment.get(*self).copied()
+    }
+
+    fn direction(&self, store: &Self::Store) -> Option<morphorm::Direction> {
+        match store.direction.get(*self).copied() {
+            Some(Direction::LeftToRight) => Some(morphorm::Direction::LeftToRight),
+            Some(Direction::RightToLeft) => Some(morphorm::Direction::RightToLeft),
+            Some(Direction::Auto) | None => Some(morphorm::Direction::LeftToRight), // Default to LTR if auto or not set, since morphorm doesn't support auto
+        }
+    }
+
+    fn wrap(&self, store: &Self::Store) -> Option<morphorm::LayoutWrap> {
+        store.wrap.get(*self).copied()
+    }
+
+    fn min_vertical_gap(&self, store: &Self::Store) -> Option<Units> {
+        store.min_vertical_gap.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn min_horizontal_gap(&self, store: &Self::Store) -> Option<Units> {
+        store.min_horizontal_gap.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn max_vertical_gap(&self, store: &Self::Store) -> Option<Units> {
+        store.max_vertical_gap.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn max_horizontal_gap(&self, store: &Self::Store) -> Option<Units> {
+        store.max_horizontal_gap.get_resolved(*self, &store.custom_units_props).map(|h| match h {
+            Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+            t => t,
+        })
+    }
+
+    fn grid_columns(&self, store: &Self::Store) -> Option<Vec<Units>> {
+        store.grid_columns.get(*self).cloned().map(|cols| {
+            cols.into_iter()
+                .map(|col| match col {
+                    Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+                    t => t,
+                })
+                .collect()
+        })
+    }
+
+    fn grid_rows(&self, store: &Self::Store) -> Option<Vec<Units>> {
+        store.grid_rows.get(*self).cloned().map(|rows| {
+            rows.into_iter()
+                .map(|row| match row {
+                    Units::Pixels(val) => Units::Pixels(store.logical_to_physical(val)),
+                    t => t,
+                })
+                .collect()
+        })
+    }
+
+    fn column_start(&self, store: &Self::Store) -> Option<usize> {
+        store.column_start.get(*self).copied()
+    }
+
+    fn column_span(&self, store: &Self::Store) -> Option<usize> {
+        store.column_span.get(*self).copied()
+    }
+
+    fn row_start(&self, store: &Self::Store) -> Option<usize> {
+        store.row_start.get(*self).copied()
+    }
+
+    fn row_span(&self, store: &Self::Store) -> Option<usize> {
+        store.row_span.get(*self).copied()
+    }
+}

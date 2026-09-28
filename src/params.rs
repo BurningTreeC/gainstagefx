@@ -18,16 +18,15 @@
 //! Plus a Session strip above them for the preset and the settings that are
 //! about the plugin rather than the sound.
 
-use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::prelude::Data;
-use nih_plug_vizia::ViziaState;
+use nice_plug::prelude::*;
 use std::sync::{Arc, Mutex};
+use vizia_plug::ViziaState;
 
 use crate::voice;
 
 /// What does the work. One entry per circuit topology, and the name is the
 /// sound rather than a manufacturer.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Circuit {
     #[id = "clean"]
     #[name = "Clean"]
@@ -367,7 +366,7 @@ impl Circuit {
 }
 
 /// Full output circuit, independent of the selected preamp. Append future IDs.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum PowerAmp {
     #[id = "matched"]
     #[name = "Matched"]
@@ -455,7 +454,7 @@ impl PowerAmp {
 /// A variac is not an effect: it is how the rig was wired, and it belongs with
 /// the other selections rather than on a knob. The first entry is the wall,
 /// which is what every session that has never heard of this parameter gets.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Mains {
     #[id = "mains_nominal"]
     #[name = "Nominal"]
@@ -490,7 +489,7 @@ impl Mains {
 }
 
 /// The pedal slot in front of the circuit. Append new ids only.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum PedalModel {
     #[id = "none"]
     #[name = "None"]
@@ -566,7 +565,7 @@ impl PedalModel {
 /// The cabinet after the power stage. `Legacy` (first, and the default for every
 /// old session) is the resistor load with the old Combo/Stack filter. The rest are
 /// geometry models; see docs/models/cabinets.md. Append new ids only.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum CabModel {
     #[id = "legacy"]
     #[name = "Legacy"]
@@ -657,7 +656,7 @@ impl CabModel {
 
 /// The loudspeaker. `Matched` is the cabinet's own; `Bypass` is a resistive load and
 /// the power stage's terminal voltage. Only implemented drivers are listed.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum SpeakerModel {
     #[id = "matched"]
     #[name = "Matched"]
@@ -733,7 +732,7 @@ impl SpeakerModel {
 
 /// A microphone. `Off` exists only for the second slot; `Bypass` is an ideal omni
 /// at the placement. See docs/models/microphones.md.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum MicModel {
     #[id = "off"]
     #[name = "Off"]
@@ -824,7 +823,7 @@ impl MicModel {
 /// This is the axis the hardware actually varies along -- swapping the diodes
 /// in a pedal is the commonest modification there is, and it makes a different
 /// sound from the same schematic. Two decisions, so two controls.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Diode {
     #[id = "silicon"]
     #[name = "Silicon"]
@@ -862,7 +861,7 @@ impl Diode {
 /// The axis the hardware varies along: a console channel with a bottle in it
 /// instead of a transistor is a different and much-argued-about box built from
 /// the same schematic. Two decisions, so two controls.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Amplifier {
     #[id = "valve"]
     #[name = "Valve"]
@@ -902,7 +901,7 @@ impl Amplifier {
 /// no reason to offer it on one and not the other. What it does is level and
 /// frequency dependent together -- flux is the integral of voltage, so it
 /// gives up on a bass note long before anything else notices.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Iron {
     #[id = "off"]
     #[name = "Off"]
@@ -941,7 +940,7 @@ impl Iron {
 }
 
 /// The tone section, which can be out of circuit entirely.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum ToneStack {
     #[id = "off"]
     #[name = "Off"]
@@ -975,7 +974,7 @@ impl ToneStack {
 }
 
 /// The speaker.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Cabinet {
     #[id = "off"]
     #[name = "Off"]
@@ -1013,7 +1012,7 @@ impl Cabinet {
 /// Kept as a setting rather than fixed because the cost is real and the
 /// benefit depends entirely on the voice: a Clean stage folds almost nothing
 /// back into the band and a squared-off Distortion folds a great deal.
-#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug, Data)]
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Oversampling {
     #[id = "off"]
     #[name = "Off"]

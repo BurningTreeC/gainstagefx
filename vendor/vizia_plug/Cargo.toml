@@ -1,0 +1,36 @@
+[package]
+name = "vizia_plug"
+version = "0.1.0"
+edition = "2024"
+authors = ["George Atkinson <geom3trik@vizia.dev>"]
+license = "MIT"
+description = "An adapter to use VIZIA GUIs with nice-plug"
+
+[workspace]
+members = ["xtask", "examples/gain_gui"]
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+baseview = { version = "0.3.4", features = ["opengl"] }
+nice-plug-core = { git = "https://codeberg.org/RustAudio/nice-plug", rev = "e60b5db09d8606c3dc3e93f982847a00bce17325" }
+vizia = { path = "../vizia", default-features = false, features = ["baseview", "clipboard", "x11"] }
+vizia_reactive = { path = "../vizia/crates/vizia_reactive" }
+# vizia = { path = "../vizia", default_features = false, features = ["baseview", "clipboard", "x11"] }
+
+crossbeam = "0.8"
+# Parameter signal registry; accessed only from the GUI thread.
+parking_lot = "0.12"
+# To make the state persistable
+serde = { version = "1.0", features = ["derive"] }
+
+
+# [profile.release]
+# lto = "thin"
+# strip = "symbols"
+
+# [profile.profiling]
+# inherits = "release"
+# debug = true
+# strip = "none"

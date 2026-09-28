@@ -10,13 +10,14 @@
 //! and undoable like a knob. The button still steps with the wheel, which is
 //! the quickest way to hear what is in a list.
 
-use nih_plug::prelude::{Param, ParamPtr};
-use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::vizia::vg;
-use nih_plug_vizia::vizia_assets;
-use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
-use nih_plug_vizia::widgets::RawParamEvent;
+use super::fonts as vizia_assets;
+use super::paint as vg;
+use super::paint::PanelCanvas;
+use nice_plug::prelude::{Param, ParamPtr};
 use std::sync::Arc;
+use vizia_plug::vizia::prelude::*;
+use vizia_plug::widgets::param_base::ParamWidgetBase;
+use vizia_plug::widgets::RawParamEvent;
 
 use super::style::*;
 use super::Panel;
@@ -51,12 +52,6 @@ pub enum Choice {
     Speaker,
     MicA,
     MicB,
-}
-
-impl Data for Choice {
-    fn same(&self, other: &Self) -> bool {
-        self == other
-    }
 }
 
 /// The part of a parameter's list one dropdown offers.
@@ -222,15 +217,9 @@ pub struct Opened {
     width: f32,
 }
 
-impl Data for Opened {
-    fn same(&self, other: &Self) -> bool {
-        self == other
-    }
-}
-
-#[derive(Lens)]
 pub struct Dropdowns {
     open: Option<Opened>,
+    open_signal: Signal<Option<Opened>>,
     params: Arc<GainStageParams>,
 }
 
@@ -243,7 +232,12 @@ pub enum DropEvent {
 
 impl Dropdowns {
     pub fn build_into(cx: &mut Context, params: Arc<GainStageParams>) {
-        Self { open: None, params }.build(cx);
+        Self {
+            open: None,
+            open_signal: Signal::new(None),
+            params,
+        }
+        .build(cx);
     }
 }
 
@@ -266,6 +260,7 @@ impl Model for Dropdowns {
             }
             meta.consume();
         });
+        self.open_signal.set_if_changed(self.open);
     }
 }
 
@@ -288,42 +283,42 @@ impl DropButton {
         enabled: bool,
     ) -> Handle<'a, Self>
     where
-        L: Lens<Target = Params> + Clone,
-        Params: 'static,
+        L: SignalGet<Params> + Copy,
+        Params: Clone + 'static,
         P: Param + 'static,
         FMap: Fn(&Params) -> &P + Copy + 'static,
     {
         Self {
-            param: ParamWidgetBase::new(cx, params, params_to_param),
+            param: ParamWidgetBase::new(cx, params_to_param(&params.get())),
             choice,
             enabled,
         }
-        .build(
-            cx,
-            ParamWidgetBase::build_view(params, params_to_param, move |cx, data| {
-                let value = data.make_lens(|param| param.modulated_normalized_value());
-                let window = choice.window();
-                let shown = value.map(move |v| window.name(window.index_of(*v)));
-                // A circuit is a topology or a model, never both, so one of
-                // the two circuit buttons always has nothing to show.
-                Label::new(cx, shown.map(|name| name.unwrap_or("--").to_string()))
-                    .width(Stretch(1.0))
-                    .height(Stretch(1.0))
-                    .child_left(Pixels(9.0))
-                    .child_right(Pixels(22.0))
-                    .child_top(Stretch(1.0))
-                    .child_bottom(Stretch(1.0))
-                    .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
-                    .font_size(11.0)
-                    .color(shown.map(move |name| match (enabled, name.is_some()) {
-                        (true, true) => Color::rgb(0xff, 0xb2, 0x6a),
-                        (true, false) => Color::rgb(0x7e, 0x8a, 0x96),
-                        (false, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
-                    }))
-                    .hoverable(false);
-                Binding::new(cx, value, |cx, _| cx.needs_redraw());
-            }),
-        )
+        .build(cx, move |cx| {
+            let base = ParamWidgetBase::new(cx, params_to_param(&params.get()));
+            let value = base.modulated_signal(cx);
+            let window = choice.window();
+            let shown = value.map(move |v| window.name(window.index_of(*v)));
+            // A circuit is a topology or a model, never both, so one of
+            // the two circuit buttons always has nothing to show.
+            Label::new(cx, shown.map(|name| name.unwrap_or("--").to_string()))
+                .width(Stretch(1.0))
+                .height(Stretch(1.0))
+                .padding_left(Pixels(9.0))
+                .padding_right(Pixels(22.0))
+                .alignment(Alignment::Left)
+                .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
+                .font_size(11.0)
+                .color(shown.map(move |name| match (enabled, name.is_some()) {
+                    (true, true) => Color::rgb(0xff, 0xb2, 0x6a),
+                    (true, false) => Color::rgb(0x7e, 0x8a, 0x96),
+                    (false, _) => Color::rgba(0xff, 0xff, 0xff, 0x33),
+                }))
+                .hoverable(false);
+            {
+                let bound_value = value;
+                Binding::new(cx, bound_value, move |cx| cx.needs_redraw(cx.current()));
+            };
+        })
     }
 
     fn step(&self, cx: &mut EventContext, delta: i64) {
@@ -363,8 +358,8 @@ impl View for DropButton {
                     choice: self.choice,
                     x: b.x / s,
                     top: b.y / s,
-                    bottom: (b.y + b.h) / s,
-                    width: b.w / s,
+                    bottom: (b.y + b.height()) / s,
+                    width: b.width() / s,
                 }));
                 meta.consume();
             }
@@ -376,11 +371,17 @@ impl View for DropButton {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         let b = cx.bounds();
         let scale = cx.scale_factor();
         let mut cell = vg::Path::new();
-        cell.rounded_rect(b.x + 0.5 * scale, b.y, b.w - scale, b.h, 3.0 * scale);
+        cell.rounded_rect(
+            b.x + 0.5 * scale,
+            b.y,
+            b.width() - scale,
+            b.height(),
+            3.0 * scale,
+        );
         canvas.fill_path(
             &cell,
             &vg::Paint::color(rgba(0x000000, if self.enabled { 0.30 } else { 0.12 })),
@@ -391,7 +392,7 @@ impl View for DropButton {
                 .with_line_width(scale),
         );
 
-        let (x, y) = (b.x + b.w - 12.0 * scale, b.y + b.h / 2.0);
+        let (x, y) = (b.x + b.width() - 12.0 * scale, b.y + b.height() / 2.0);
         let mut caret = vg::Path::new();
         caret.move_to(x - 4.0 * scale, y - 2.0 * scale);
         caret.line_to(x, y + 2.5 * scale);
@@ -411,73 +412,77 @@ impl View for DropButton {
 /// Draws the open list, if there is one. Built after the panel sections so it
 /// sits on top of them and takes the clicks first.
 pub fn menu(cx: &mut Context) {
-    Binding::new(cx, Dropdowns::open, |cx, open| {
-        let Some(opened) = open.get(cx) else {
-            return;
-        };
-        Catch::build_into(cx);
+    let open_signal = cx.data::<Dropdowns>().open_signal;
+    {
+        let open = open_signal;
+        Binding::new(cx, open, move |cx| {
+            let Some(opened) = open.get() else {
+                return;
+            };
+            Catch::build_into(cx);
 
-        let rows = opened.choice.lines();
-        // Padding above and below, and the border. Headings are shorter than
-        // rows, so the list is measured line by line rather than by counting.
-        let natural: f32 = rows
-            .iter()
-            .map(|line| match line {
-                Line::Heading(_) => HEADING_H,
-                Line::Item(..) => ROW_H,
-            })
-            .sum::<f32>()
-            + 2.0 * MENU_PAD
-            + 2.0;
-        let scrolls = natural > MENU_MAX_H;
-        let height = natural.min(MENU_MAX_H);
-        let width = opened.width.max(MENU_MIN_W);
-        let left = opened.x.min(PANEL_W - width - 4.0).max(4.0);
-        // Below the button when it fits, above it when it does not, and
-        // pinned to the foot of the window if neither does.
-        let top = if opened.bottom + 1.0 + height <= WINDOW_H - 4.0 {
-            opened.bottom + 1.0
-        } else if opened.top - 1.0 - height >= HEADER_H {
-            opened.top - 1.0 - height
-        } else {
-            (WINDOW_H - 4.0 - height).max(HEADER_H)
-        };
-        let choice = opened.choice;
+            let rows = opened.choice.lines();
+            // Padding above and below, and the border. Headings are shorter than
+            // rows, so the list is measured line by line rather than by counting.
+            let natural: f32 = rows
+                .iter()
+                .map(|line| match line {
+                    Line::Heading(_) => HEADING_H,
+                    Line::Item(..) => ROW_H,
+                })
+                .sum::<f32>()
+                + 2.0 * MENU_PAD
+                + 2.0;
+            let scrolls = natural > MENU_MAX_H;
+            let height = natural.min(MENU_MAX_H);
+            let width = opened.width.max(MENU_MIN_W);
+            let left = opened.x.min(PANEL_W - width - 4.0).max(4.0);
+            // Below the button when it fits, above it when it does not, and
+            // pinned to the foot of the window if neither does.
+            let top = if opened.bottom + 1.0 + height <= WINDOW_H - 4.0 {
+                opened.bottom + 1.0
+            } else if opened.top - 1.0 - height >= HEADER_H {
+                opened.top - 1.0 - height
+            } else {
+                (WINDOW_H - 4.0 - height).max(HEADER_H)
+            };
+            let choice = opened.choice;
 
-        let list = move |cx: &mut Context| {
-            VStack::new(cx, move |cx| {
-                for line in rows {
-                    match line {
-                        Line::Heading(text) => Heading::build_into(cx, text),
-                        Line::Item(index, name) => Row::build_into(cx, choice, index, name),
+            let list = move |cx: &mut Context| {
+                VStack::new(cx, move |cx| {
+                    for line in rows {
+                        match line {
+                            Line::Heading(text) => Heading::build_into(cx, text),
+                            Line::Item(index, name) => Row::build_into(cx, choice, index, name),
+                        }
                     }
+                })
+                .width(Stretch(1.0))
+                .height(Auto)
+                .padding_top(Pixels(MENU_PAD))
+                .padding_bottom(Pixels(MENU_PAD));
+            };
+            VStack::new(cx, move |cx| {
+                // The scroll bar's track draws whether or not there is anything
+                // to scroll, so a list that fits does without one.
+                if scrolls {
+                    ScrollView::new(cx, list)
+                        .width(Stretch(1.0))
+                        .height(Stretch(1.0));
+                } else {
+                    list(cx);
                 }
             })
-            .width(Stretch(1.0))
-            .height(Auto)
-            .child_top(Pixels(MENU_PAD))
-            .child_bottom(Pixels(MENU_PAD));
-        };
-        VStack::new(cx, move |cx| {
-            // The scroll bar's track draws whether or not there is anything
-            // to scroll, so a list that fits does without one.
-            if scrolls {
-                ScrollView::new(cx, 0.0, 0.0, false, true, list)
-                    .width(Stretch(1.0))
-                    .height(Stretch(1.0));
-            } else {
-                list(cx);
-            }
-        })
-        .position_type(PositionType::SelfDirected)
-        .left(Pixels(left))
-        .top(Pixels(top))
-        .width(Pixels(width))
-        .height(Pixels(height))
-        .background_color(Color::rgb(0x1c, 0x20, 0x23))
-        .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
-        .border_width(Pixels(1.0));
-    });
+            .position_type(PositionType::Absolute)
+            .left(Pixels(left))
+            .top(Pixels(top))
+            .width(Pixels(width))
+            .height(Pixels(height))
+            .background_color(Color::rgb(0x1c, 0x20, 0x23))
+            .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
+            .border_width(Pixels(1.0));
+        });
+    };
 }
 
 /// One entry in the open list.
@@ -491,10 +496,10 @@ impl Heading {
             Label::new(cx, text)
                 .width(Stretch(1.0))
                 .height(Stretch(1.0))
-                .child_left(Pixels(10.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Pixels(2.0))
-                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                .padding_left(Pixels(10.0))
+                .padding_top(Stretch(1.0))
+                .padding_bottom(Pixels(2.0))
+                .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
                 .font_size(8.5)
                 .color(Color::rgb(0x7a, 0x86, 0x90))
                 .hoverable(false);
@@ -518,6 +523,7 @@ struct Row {
 
 impl Row {
     fn build_into(cx: &mut Context, choice: Choice, index: usize, name: &'static str) {
+        let parameter_signal = cx.data::<Panel>().parameter_signal;
         Self {
             index,
             hovered: false,
@@ -526,12 +532,11 @@ impl Row {
             Label::new(cx, name)
                 .width(Stretch(1.0))
                 .height(Stretch(1.0))
-                .child_left(Pixels(10.0))
-                .child_top(Stretch(1.0))
-                .child_bottom(Stretch(1.0))
-                .font_family(vec![FamilyOwned::Name(String::from(vizia_assets::ROBOTO))])
+                .padding_left(Pixels(10.0))
+                .alignment(Alignment::Left)
+                .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
                 .font_size(11.0)
-                .color(Panel::params.map(move |p| {
+                .color(parameter_signal.map(move |p| {
                     if choice.current(p) == index {
                         Color::rgb(0xff, 0xb2, 0x6a)
                     } else {
@@ -568,13 +573,13 @@ impl View for Row {
         });
     }
 
-    fn draw(&self, cx: &mut DrawContext, canvas: &mut Canvas) {
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
         if !self.hovered {
             return;
         }
         let b = cx.bounds();
         let mut row = vg::Path::new();
-        row.rect(b.x, b.y, b.w, b.h);
+        row.rect(b.x, b.y, b.width(), b.height());
         canvas.fill_path(&row, &vg::Paint::color(rgba(GLOW, 0.14)));
     }
 }
@@ -585,7 +590,7 @@ struct Catch;
 impl Catch {
     fn build_into(cx: &mut Context) {
         Self.build(cx, |_| {})
-            .position_type(PositionType::SelfDirected)
+            .position_type(PositionType::Absolute)
             .left(Pixels(0.0))
             .top(Pixels(0.0))
             .width(Pixels(PANEL_W))

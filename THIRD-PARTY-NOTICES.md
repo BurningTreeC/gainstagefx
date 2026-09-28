@@ -2,7 +2,7 @@
 
 The GainStageFx plugin is distributed under the GNU General Public
 License version 3 or later, whose text is in `LICENSE`. It links the
-286 crates listed below, whose own licences and copyright notices
+265 crates listed below, whose own licences and copyright notices
 are reproduced here as those licences require.
 
 Where a crate offers a choice of licence, the one this distribution
@@ -47,6 +47,51 @@ CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
+## Bundled fonts and native renderer
+
+Roboto Regular and Roboto Bold
+Font data copyright Google 2012
+Licensed under the Apache License, Version 2.0 (see LICENSE-APACHE).
+
+These are the unchanged Roboto faces previously embedded by nih_plug_assets
+at NIH-plug f36931f7af4646065488a9845d8f8c2f95252c23. They are retained to
+preserve GainStageFx's typography when moving the editor to Skia.
+
+Skia is used by the Vizia renderer through rust-skia. Its native library
+has the following license (separate from the Rust bindings):
+
+```
+Copyright (c) 2011 Google Inc. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in
+    the documentation and/or other materials provided with the
+    distribution.
+
+  * Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived
+    from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 ## Crates
 
 ### (MIT OR Apache-2.0) AND Unicode-3.0 — taken as MIT AND Unicode-3.0
@@ -60,20 +105,32 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ### Apache-2.0
 
-- **accesskit_winit** 0.14.4 <https://github.com/AccessKit/accesskit>
-- **gethostname** 0.2.3 <https://codeberg.org/flausch/gethostname.rs.git>
+- **clang-sys** 1.9.1 <https://github.com/KyleMayes/clang-sys>
+- **fragile** 2.1.0 <https://github.com/mitsuhiko/fragile>
+- **gethostname** 1.1.0 <https://codeberg.org/swsnr/gethostname.rs.git>
+- **gl** 0.14.0 <https://github.com/brendanzab/gl-rs/>
 - **gl_generator** 0.14.0 <https://github.com/brendanzab/gl-rs/>
-- **glutin** 0.30.10 <https://github.com/rust-windowing/glutin>
+- **glutin** 0.32.3 <https://github.com/rust-windowing/glutin>
   - Copyright 2022 Kirill Chibisov
-- **glutin_egl_sys** 0.5.1 <https://github.com/rust-windowing/glutin>
+- **glutin_egl_sys** 0.7.1 <https://github.com/rust-windowing/glutin>
   - Copyright 2022 Kirill Chibisov
-- **glutin_glx_sys** 0.4.0 <https://github.com/rust-windowing/glutin>
+- **glutin_glx_sys** 0.6.1 <https://github.com/rust-windowing/glutin>
   - Copyright 2022 Kirill Chibisov
 - **khronos_api** 3.1.0 <https://github.com/brendanzab/gl-rs/>
-- **self_cell** 0.10.3 <https://github.com/Voultapher/self_cell>
-- **unicode-general-category** 0.6.0 <https://github.com/yeslogic/unicode-general-category>
-- **unicode-linebreak** 0.1.5 <https://github.com/axelf4/unicode-linebreak>
-- **winit** 0.28.7 <https://github.com/rust-windowing/winit>
+- **mundy** 0.2.3 <https://github.com/tautropfli/mundy>
+- **winit** 0.30.13 <https://github.com/rust-windowing/winit>
+
+### Apache-2.0 AND MIT — taken as Apache-2.0 AND MIT
+
+- **dpi** 0.1.2 <https://github.com/rust-windowing/winit>
+  - Copyright (c) 2018 Jorge Aparicio
+  - Copyright © 2005-2020 Rich Felker, et al
+  - Copyright © 1993,2004 Sun Microsystems or
+  - Copyright © 2003-2011 David Schultz or
+  - Copyright © 2003-2009 Steven G. Kargl or
+  - Copyright © 2003-2009 Bruce D. Evans or
+  - Copyright © 2008 Stephen L. Moshier or
+  - Copyright © 2017-2018 Arm Limited
 
 ### Apache-2.0 OR GPL-2.0-only — taken as Apache-2.0
 
@@ -84,41 +141,33 @@ POSSIBILITY OF SUCH DAMAGE.
 
 - **addr2line** 0.25.1 <https://github.com/gimli-rs/addr2line>
   - Copyright (c) 2016-2018 The gimli Developers
-- **async-channel** 1.9.0 <https://github.com/smol-rs/async-channel>
 - **async-channel** 2.5.0 <https://github.com/smol-rs/async-channel>
 - **async-executor** 1.14.0 <https://github.com/smol-rs/async-executor>
-- **async-fs** 1.6.0 <https://github.com/smol-rs/async-fs>
-- **async-io** 1.13.0 <https://github.com/smol-rs/async-io>
-- **async-lock** 2.8.0 <https://github.com/smol-rs/async-lock>
+- **async-io** 2.6.0 <https://github.com/smol-rs/async-io>
+- **async-lock** 3.4.2 <https://github.com/smol-rs/async-lock>
+- **async-process** 2.5.0 <https://github.com/smol-rs/async-process>
+- **async-signal** 0.2.14 <https://github.com/smol-rs/async-signal>
 - **async-task** 4.7.1 <https://github.com/smol-rs/async-task>
 - **atomic-waker** 1.1.2 <https://github.com/smol-rs/atomic-waker>
   - Copyright (c) 2016 Alex Crichton
   - Copyright (c) 2017 The Tokio Authors
 - **atomic_refcell** 0.1.14 <https://github.com/mozilla/atomic_refcell>
   - Copyright (c) 2022 Bobby Holley
-- **atspi** 0.10.1 <https://github.com/odilia-app/atspi>
-  - Copyright (c) 2022 Tait Hoyem <tait@tait.tech>
 - **autocfg** 1.5.1 <https://github.com/cuviper/autocfg>
   - Copyright (c) 2018 Josh Stone
 - **blocking** 1.7.0 <https://github.com/smol-rs/blocking>
+- **cexpr** 0.6.0 <https://github.com/jethrogb/rust-cexpr>
 - **concurrent-queue** 2.5.0 <https://github.com/smol-rs/concurrent-queue>
 - **equivalent** 1.0.2 <https://github.com/indexmap-rs/equivalent>
   - Copyright (c) 2016--2023
-- **event-listener** 2.5.3 <https://github.com/smol-rs/event-listener>
 - **event-listener** 5.4.2 <https://github.com/smol-rs/event-listener>
 - **event-listener-strategy** 0.5.4 <https://github.com/smol-rs/event-listener-strategy>
-- **fastrand** 1.9.0 <https://github.com/smol-rs/fastrand>
 - **fastrand** 2.5.0 <https://github.com/smol-rs/fastrand>
-- **fluent-bundle** 0.15.3 <https://github.com/projectfluent/fluent-rs>
+- **fluent-bundle** 0.16.0 <https://github.com/projectfluent/fluent-rs>
   - Copyright 2017 Mozilla
 - **fluent-langneg** 0.13.1 <https://github.com/projectfluent/fluent-langneg-rs>
-- **fluent-syntax** 0.11.1 <https://github.com/projectfluent/fluent-rs>
+- **fluent-syntax** 0.12.0 <https://github.com/projectfluent/fluent-rs>
   - Copyright 2017 Mozilla
-- **fnv** 1.0.7 <https://github.com/servo/rust-fnv>
-  - Copyright (c) 2017 Contributors
-- **futures-lite** 1.13.0 <https://github.com/smol-rs/futures-lite>
-  - Copyright (c) 2016 Alex Crichton
-  - Copyright (c) 2017 The Tokio Authors
 - **futures-lite** 2.6.1 <https://github.com/smol-rs/futures-lite>
   - Copyright (c) 2016 Alex Crichton
   - Copyright (c) 2017 The Tokio Authors
@@ -133,213 +182,186 @@ POSSIBILITY OF SUCH DAMAGE.
 - **parking** 2.2.1 <https://github.com/smol-rs/parking>
   - Copyright 2014-2020 The Rust Project Developers
 - **pin-project-lite** 0.2.17 <https://github.com/taiki-e/pin-project-lite>
-- **polling** 2.8.0 <https://github.com/smol-rs/polling>
-- **rustc-hash** 1.1.0 <https://github.com/rust-lang-nursery/rustc-hash>
+- **polling** 3.11.0 <https://github.com/smol-rs/polling>
 - **rustc-hash** 2.1.3 <https://github.com/rust-lang/rustc-hash>
-- **swash** 0.1.19 <https://github.com/dfrg/swash>
-  - Copyright (c) 2020 Chad Brokaw
-- **waker-fn** 1.2.0 <https://github.com/smol-rs/waker-fn>
+- **uuid** 1.26.1 <https://github.com/uuid-rs/uuid>
+  - Copyright (c) 2014 The Rust Project Developers
+  - Copyright (c) 2018 Ashley Mannix, Christopher Armstrong, Dylan DPC, Hunar Roop Kahlon
 
-### Apache-2.0 OR MIT OR Zlib — taken as MIT
+### Apache-2.0 OR MIT OR Unlicense — taken as MIT
 
-- **atomic_float** 0.1.0 <https://github.com/thomcc/atomic_float>
-  - Copyright 2016 The Miri Developers
-  - Copyright (c) 2020 Thom Chiovoloni
+- **atomic_float** 1.1.0 <https://github.com/thomcc/atomic_float>
+  - Copyright 2024 Thom Chiovoloni
+  - Copyright (c) 2024 Thom Chiovoloni
 
 ### Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT — taken as MIT
 
-- **io-lifetimes** 1.0.11 <https://github.com/sunfishcode/io-lifetimes>
-- **linux-raw-sys** 0.3.8 <https://github.com/sunfishcode/linux-raw-sys>
-- **rustix** 0.37.28 <https://github.com/bytecodealliance/rustix>
-
-### BSD-2-Clause OR Apache-2.0 OR MIT — taken as MIT
-
-- **zerocopy** 0.8.56 <https://github.com/google/zerocopy>
-  - Copyright 2023 The Fuchsia Authors
-  - Copyright 2019 The Fuchsia Authors
+- **linux-raw-sys** 0.12.1 <https://github.com/sunfishcode/linux-raw-sys>
+- **linux-raw-sys** 0.4.15 <https://github.com/sunfishcode/linux-raw-sys>
+- **rustix** 0.38.44 <https://github.com/bytecodealliance/rustix>
+- **rustix** 1.1.4 <https://github.com/bytecodealliance/rustix>
 
 ### BSD-3-Clause
 
-- **instant** 0.1.13 <https://github.com/sebcrozet/instant>
-  - Copyright (c) 2019, Sébastien Crozet
+- **bindgen** 0.72.1 <https://github.com/rust-lang/rust-bindgen>
+  - Copyright (c) 2013, Jyun-Yan You
 
 ### BlueOak-1.0.0 OR MIT OR Apache-2.0 — taken as MIT
 
 - **anymap3** 1.1.0 <https://github.com/reivilibre/anymap3>
   - Copyright © 2014–2022 Chris Morgan
 
-### CC0-1.0 OR Apache-2.0 — taken as Apache-2.0
-
-- **imgref** 1.12.3 <https://github.com/kornelski/imgref>
-
-### GPLv3
-
-- **vst3-sys** 0.1.0
-
 ### ISC
 
-- **libloading** 0.7.4 <https://github.com/nagisa/rust_libloading/>
+- **libloading** 0.8.9 <https://github.com/nagisa/rust_libloading/>
   - Copyright © 2015, Simonas Kazlauskas
-- **nih_log** 0.3.1 <https://github.com/robbert-vdh/nih-log>
+- **nice-log** 0.3.1 <https://codeberg.org/RustAudio/nice-plug>
   - Copyright (c) 2023 Robbert van der Helm
-- **nih_plug** 0.0.0 <https://github.com/robbert-vdh/nih-plug>
+- **nice-plug** 0.4.2 <https://codeberg.org/RustAudio/nice-plug>
   - Copyright (c) 2022-2024 Robbert van der Helm
-- **nih_plug_assets** 0.1.0 <https://github.com/robbert-vdh/nih_plug_assets> — bundles assets under OFL-1.1
-  - Copyright 2018 The Noto Project Authors (github.com/googlei18n/noto-fonts)
-- **nih_plug_derive** 0.1.0
+- **nice-plug-core** 0.4.2 <https://codeberg.org/RustAudio/nice-plug>
   - Copyright (c) 2022-2024 Robbert van der Helm
-- **nih_plug_vizia** 0.0.0
+- **nice-plug-derive** 0.1.2 <https://codeberg.org/RustAudio/nice-plug>
   - Copyright (c) 2022-2024 Robbert van der Helm
 
 ### MIT
 
-- **aliasable** 0.1.3 <https://github.com/avitex/rust-aliasable>
-  - Copyright (c) 2020 James Dyson <avitex@wfxlabs.com>
-- **atspi-macros** 0.2.0 <https://github.com/odilia-app/atspi>
-- **atty** 0.2.14 <https://github.com/softprops/atty>
-  - Copyright (c) 2015-2019 Doug Tangren
-- **cfg_aliases** 0.1.1 <https://github.com/katharostech/cfg_aliases>
+- **android-build** 0.1.4 <https://github.com/project-robius/android-build>
+  - Copyright (c) 2023 Project Robius Developers
+- **calloop** 0.13.0 <https://github.com/Smithay/calloop>
+  - Copyright (c) 2018 Victor Berger
+- **calloop** 0.14.4 <https://github.com/Smithay/calloop>
+  - Copyright (c) 2018 Victor Berger
+- **cfg_aliases** 0.2.2 <https://github.com/katharostech/cfg_aliases>
   - Copyright (c) 2020 Katharos Technology
-- **color_quant** 1.1.0 <https://github.com/image-rs/color_quant.git>
-  - Copyright (c) 2016 PistonDevelopers
-- **convert_case** 0.4.0 <https://github.com/rutrum/convert-case>
-- **derive_more** 0.99.20 <https://github.com/JelteF/derive_more>
+- **derive_more** 2.1.1 <https://github.com/JelteF/derive_more>
   - Copyright (c) 2016 Jelte Fennema
-- **fontdb** 0.14.1 <https://github.com/RazrFalcon/fontdb>
-  - Copyright (c) 2020 Yevhenii Reizner
-- **generic-array** 0.14.7 <https://github.com/fizyk20/generic-array.git>
-  - Copyright (c) 2015 Bartłomiej Kamiński
-- **glutin-winit** 0.3.0 <https://github.com/rust-windowing/glutin>
+- **derive_more-impl** 2.1.1 <https://github.com/JelteF/derive_more>
+  - Copyright (c) 2016 Jelte Fennema
+- **dlib** 0.5.3 <https://github.com/elinorbgr/dlib>
+  - Copyright (c) 2015 Victor Berger
+- **endi** 1.1.1 <https://github.com/zeenix/endi>
+- **glutin-winit** 0.5.0 <https://github.com/rust-windowing/glutin>
   - Copyright © 2022 Kirill Chibisov
-- **libm** 0.2.16 <https://github.com/rust-lang/compiler-builtins>
-  - Copyright (c) 2018 Jorge Aparicio
-  - Copyright © 2005-2020 Rich Felker, et al
-  - Copyright © 1993,2004 Sun Microsystems or
-  - Copyright © 2003-2011 David Schultz or
-  - Copyright © 2003-2009 Steven G. Kargl or
-  - Copyright © 2003-2009 Bruce D. Evans or
-  - Copyright © 2008 Stephen L. Moshier or
-  - Copyright © 2017-2018 Arm Limited
-- **lru** 0.10.1 <https://github.com/jeromefroe/lru-rs.git>
-  - Copyright (c) 2016 Jerome Froelich
-- **matches** 0.1.10 <https://github.com/SimonSapin/rust-std-candidates>
-  - Copyright (c) 2014-2016 Simon Sapin
-- **memoffset** 0.6.5 <https://github.com/Gilnaa/memoffset>
-  - Copyright (c) 2017 Gilad Naaman
-- **memoffset** 0.7.1 <https://github.com/Gilnaa/memoffset>
-  - Copyright (c) 2017 Gilad Naaman
-- **mio** 0.8.11 <https://github.com/tokio-rs/mio>
-  - Copyright (c) 2014 Carl Lerche and other MIO contributors
-- **morphorm** 0.6.5 <https://github.com/vizia/morphorm>
+- **morphorm** 0.9.0 <https://github.com/vizia/morphorm>
   - Copyright (c) 2021 George Atkinson
-- **nix** 0.22.3 <https://github.com/nix-rust/nix>
-  - Copyright (c) 2015 Carl Lerche + nix-rust Authors
-- **nix** 0.24.3 <https://github.com/nix-rust/nix>
-  - Copyright (c) 2015 Carl Lerche + nix-rust Authors
-- **nix** 0.26.4 <https://github.com/nix-rust/nix>
-  - Copyright (c) 2015 Carl Lerche + nix-rust Authors
-- **phf** 0.10.1 <https://github.com/sfackler/rust-phf>
-- **phf** 0.8.0 <https://github.com/sfackler/rust-phf>
-- **phf_codegen** 0.8.0 <https://github.com/sfackler/rust-phf>
-- **phf_generator** 0.10.0 <https://github.com/sfackler/rust-phf>
-- **phf_generator** 0.8.0 <https://github.com/sfackler/rust-phf>
-- **phf_macros** 0.10.0 <https://github.com/sfackler/rust-phf>
-- **phf_shared** 0.10.0 <https://github.com/sfackler/rust-phf>
-- **phf_shared** 0.8.0 <https://github.com/sfackler/rust-phf>
+- **new_debug_unreachable** 1.0.6 <https://github.com/mbrubeck/rust-debug-unreachable>
+  - Copyright (c) 2015 Jonathan Reem
+- **nom** 7.1.3 <https://github.com/Geal/nom>
+  - Copyright (c) 2014-2019 Geoffroy Couprie
+- **phf** 0.13.1 <https://github.com/rust-phf/rust-phf>
+  - Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+- **phf_codegen** 0.13.1 <https://github.com/rust-phf/rust-phf>
+  - Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+- **phf_generator** 0.13.1 <https://github.com/rust-phf/rust-phf>
+  - Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+- **phf_macros** 0.13.1 <https://github.com/rust-phf/rust-phf>
+  - Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
+- **phf_shared** 0.13.1 <https://github.com/rust-phf/rust-phf>
+  - Copyright (c) 2014-2022 Steven Fackler, Yuki Okushi
 - **precomputed-hash** 0.1.1 <https://github.com/emilio/precomputed-hash>
   - Copyright (c) 2017 Emilio Cobos Álvarez
-- **rgb** 0.8.53 <https://github.com/kornelski/rust-rgb>
-  - Copyright (c) 2019 Kornel
-- **rustybuzz** 0.7.0 <https://github.com/RazrFalcon/rustybuzz>
-  - Copyright (c) 2020 Evgeniy Reizner
+- **sharded-slab** 0.1.7 <https://github.com/hawkw/sharded-slab>
+  - Copyright (c) 2019 Eliza Weisman
 - **simd-adler32** 0.3.10 <https://github.com/mcountryman/simd-adler32>
   - Copyright (c) [2021] [Marvin Countryman]
+- **skia-bindings** 0.99.0 <https://github.com/rust-skia/rust-skia>
+- **skia-safe** 0.99.0 <https://github.com/rust-skia/rust-skia>
+- **skia-svg-macros** 0.1.0 <https://github.com/rust-skia/rust-skia>
 - **slab** 0.4.12 <https://github.com/tokio-rs/slab>
   - Copyright (c) 2019 Carl Lerche
 - **tracing** 0.1.44 <https://github.com/tokio-rs/tracing>
+  - Copyright (c) 2019 Tokio Contributors
+- **tracing-appender** 0.2.5 <https://github.com/tokio-rs/tracing>
   - Copyright (c) 2019 Tokio Contributors
 - **tracing-attributes** 0.1.31 <https://github.com/tokio-rs/tracing>
   - Copyright (c) 2019 Tokio Contributors
 - **tracing-core** 0.1.36 <https://github.com/tokio-rs/tracing>
   - Copyright (c) 2019 Tokio Contributors
   - Copyright (c) 2014 Mathijs van de Nes
-- **vizia** 0.1.0
+- **tracing-log** 0.2.0 <https://github.com/tokio-rs/tracing>
+  - Copyright (c) 2019 Tokio Contributors
+- **tracing-subscriber** 0.3.23 <https://github.com/tokio-rs/tracing>
+  - Copyright (c) 2019 Tokio Contributors
+- **try-lock** 0.2.5 <https://github.com/seanmonstar/try-lock>
+  - Copyright (c) 2018-2023 Sean McArthur
+  - Copyright (c) 2016 Alex Crichton
+- **vizia** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_baseview** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_baseview** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_core** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_core** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_derive** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_id** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_id** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_input** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_input** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_plug** 0.1.0
+  - Copyright (c) 2022 vizia
+- **vizia_reactive** 0.4.0
   - Copyright (c) 2021 George Atkinson
-- **vizia_storage** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_storage** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_style** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_style** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_window** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_window** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vizia_winit** 0.1.0 <https://github.com/vizia/vizia>
+- **vizia_winit** 0.4.0 <https://github.com/vizia/vizia>
   - Copyright (c) 2021 George Atkinson
-- **vst3-com** 0.1.0
-- **vst3-com-macros** 0.2.0
-- **vst3-com-macros-support** 0.2.0
-- **wayland-scanner** 0.29.5 <https://github.com/smithay/wayland-rs>
-  - Copyright (c) 2015 Victor Berger
-- **winnow** 0.5.40 <https://github.com/winnow-rs/winnow>
-- **x11** 2.21.0 <https://github.com/AltF02/x11-rs.git>
-- **x11-clipboard** 0.7.1 <https://github.com/quininer/x11-clipboard>
+- **winnow** 1.0.4 <https://github.com/winnow-rs/winnow>
+- **x11-clipboard** 0.9.3 <https://github.com/quininer/x11-clipboard>
   - Copyright (c) 2017 quininer@live.com
 - **x11-dl** 2.21.0 <https://github.com/AltF02/x11-rs.git>
-- **xcb** 0.9.0 <https://github.com/rtbo/rust-xcb>
-  - Copyright (c) 2013 James Miller <james@aatch.net>
-  - Copyright (c) 2016
-- **xcb-util** 0.3.0 <https://github.com/meh/rust-xcb-util>
-  - Copyright (c) 2016 meh. <meh@schizofreni.co>
-- **xdg-home** 1.3.0 <https://github.com/zeenix/xdg-home>
+- **xcursor** 0.3.11 <https://github.com/esposm03/xcursor-rs>
+  - Copyright (c) 2020 Samuele Esposito
+- **xkbcommon-dl** 0.4.2 <https://github.com/rust-windowing/xkbcommon-dl>
+  - Copyright (c) 2023 Kirill Chibisov
 - **xml-rs** 0.8.29 <https://github.com/kornelski/xml-rs>
   - Copyright (c) 2014 Vladimir Matveev
-- **zbus** 3.15.2 <https://github.com/dbus2/zbus/>
-- **zbus_macros** 3.15.2 <https://github.com/dbus2/zbus/>
-- **zbus_names** 2.6.1 <https://github.com/dbus2/zbus/>
+- **zbus** 5.19.0 <https://github.com/z-galaxy/zbus/>
+  - Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
+- **zbus_macros** 5.19.0 <https://github.com/z-galaxy/zbus/>
+  - Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
+- **zbus_names** 4.3.4 <https://github.com/z-galaxy/zbus/>
+  - Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
+- **zcheapstr** 1.1.0 <https://github.com/z-galaxy/zcheapstr/>
+  - Copyright (c) 2026 Zeeshan Ali Khan & zcheapstr contributors
 - **zmij** 1.0.23 <https://github.com/dtolnay/zmij>
-- **zvariant** 3.15.2 <https://github.com/dbus2/zbus/>
-- **zvariant_derive** 3.15.2 <https://github.com/dbus2/zbus/>
-- **zvariant_utils** 1.0.1 <https://github.com/dbus2/zbus/>
+- **zvariant** 5.15.0 <https://github.com/z-galaxy/zbus/>
+  - Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
+- **zvariant_derive** 5.15.0 <https://github.com/z-galaxy/zbus/>
+  - Copyright (c) 2024 Zeeshan Ali Khan & zbus contributors
+- **zvariant_utils** 4.2.0 <https://github.com/z-galaxy/zbus/>
 
 ### MIT OR Apache-2.0 — taken as MIT
 
-- **accesskit** 0.11.2 <https://github.com/AccessKit/accesskit>
-- **accesskit_consumer** 0.15.2 <https://github.com/AccessKit/accesskit>
-- **accesskit_unix** 0.5.2 <https://github.com/AccessKit/accesskit>
+- **accesskit** 0.24.1 <https://github.com/AccessKit/accesskit>
+- **allocator-api2** 0.2.21 <https://github.com/zakarumych/allocator-api2>
 - **anyhow** 1.0.104 <https://github.com/dtolnay/anyhow>
-- **async-broadcast** 0.5.1 <https://github.com/smol-rs/async-broadcast>
+- **as-raw-xcb-connection** 1.0.1 <https://github.com/psychon/as-raw-xcb-connection>
+  - Copyright 2019 as-raw-xcb-connection Contributers
+- **async-broadcast** 0.7.2 <https://github.com/smol-rs/async-broadcast>
   - Copyright 2020 Yoshua Wuyts
   - Copyright (c) 2020 Yoshua Wuyts
 - **async-recursion** 1.1.1 <https://github.com/dcchut/async-recursion>
 - **async-trait** 0.1.92 <https://github.com/dtolnay/async-trait>
 - **backtrace** 0.3.76 <https://github.com/rust-lang/backtrace-rs>
   - Copyright (c) 2014 Alex Crichton
-- **baseview** 0.1.0
-- **bitflags** 1.3.2 <https://github.com/bitflags/bitflags>
-  - Copyright (c) 2014 The Rust Project Developers
+- **base64** 0.22.1 <https://github.com/marshallpierce/rust-base64>
+  - Copyright (c) 2015 Alice Maz
+- **baseview** 0.3.4 <https://github.com/RustAudio/baseview>
 - **bitflags** 2.13.1 <https://github.com/bitflags/bitflags>
   - Copyright (c) 2014 The Rust Project Developers
-- **block-buffer** 0.10.4 <https://github.com/RustCrypto/utils>
-  - Copyright (c) 2018-2019 The RustCrypto Project Developers
+- **cc** 1.4.4 <https://github.com/rust-lang/cc-rs>
+  - Copyright (c) 2014 Alex Crichton
 - **cfg-if** 1.0.4 <https://github.com/rust-lang/cfg-if>
   - Copyright (c) 2014 Alex Crichton
 - **chrono** 0.4.45 <https://github.com/chronotope/chrono>
   - Copyright (c) 2014, Kang Seonghoon
 - **clap-sys** 0.5.0 <https://github.com/micahrj/clap-sys>
-- **copypasta** 0.8.2 <https://github.com/alacritty/copypasta>
+- **com-scrape-types** 0.1.1 <https://github.com/coupler-rs/vst3-rs>
+- **copypasta** 0.10.2 <https://github.com/alacritty/copypasta>
   - Copyright (c) 2017 Avraham Weinstock
-- **cosmic-text** 0.8.0 <https://github.com/pop-os/cosmic-text>
-  - Copyright (c) 2022 System76
-- **cpufeatures** 0.2.17 <https://github.com/RustCrypto/utils>
-  - Copyright (c) 2020-2025 The RustCrypto Project Developers
 - **crc32fast** 1.5.1 <https://github.com/srijs/rust-crc32fast>
   - Copyright (c) 2018 Sam Rijs, Alex Crichton and contributors
 - **crossbeam** 0.8.4 <https://github.com/crossbeam-rs/crossbeam>
@@ -356,66 +378,56 @@ POSSIBILITY OF SUCH DAMAGE.
   - Copyright (c) 2019 The Crossbeam Project Developers
 - **crossbeam-utils** 0.8.22 <https://github.com/crossbeam-rs/crossbeam>
   - Copyright (c) 2019 The Crossbeam Project Developers
-- **crypto-common** 0.1.7 <https://github.com/RustCrypto/traits>
-  - Copyright (c) 2021 RustCrypto Developers
 - **deranged** 0.5.8 <https://github.com/jhpratt/deranged>
   - Copyright 2024 Jacob Pratt et al
   - Copyright (c) 2024 Jacob Pratt et al
-- **derivative** 2.2.0 <https://github.com/mcarton/rust-derivative>
-  - Copyright (c) 2016 Martin Carton
-- **digest** 0.10.7 <https://github.com/RustCrypto/traits>
-  - Copyright (c) 2017 Artyom Pavlov
 - **displaydoc** 0.2.7 <https://github.com/yaahc/displaydoc>
 - **dtoa** 1.0.11 <https://github.com/dtolnay/dtoa>
+- **either** 1.18.0 <https://github.com/rayon-rs/either>
+  - Copyright (c) 2015
 - **enumflags2** 0.7.12 <https://github.com/meithecatte/enumflags2>
   - Copyright 2017-2023 Maik Klein, Maja Kądziołka
   - Copyright (c) 2017-2023 Maik Klein, Maja Kądziołka
 - **enumflags2_derive** 0.7.12 <https://github.com/meithecatte/enumflags2>
   - Copyright [2017] [Maik Klein]
   - Copyright (c) 2017 Maik Klein
-- **fdeflate** 0.3.7 <https://github.com/image-rs/fdeflate>
-- **femtovg** 0.7.1 <https://github.com/femtovg/femtovg>
-  - Copyright 2021 femtovg contributors
-  - Copyright 2021 Developers of the femtovg project
+- **errno** 0.3.14 <https://github.com/lambda-fairy/rust-errno>
+  - Copyright (c) 2014 Chris Wong
+- **filetime** 0.2.29 <https://github.com/alexcrichton/filetime>
+  - Copyright (c) 2014 Alex Crichton
+- **find-msvc-tools** 0.1.11 <https://github.com/rust-lang/cc-rs>
+  - Copyright (c) 2014 Alex Crichton
 - **flate2** 1.1.10 <https://github.com/rust-lang/flate2-rs>
   - Copyright (c) 2014-2026 Alex Crichton
-- **font-types** 0.7.3 <https://github.com/googlefonts/fontations>
-  - Copyright 2019 Colin Rothfels
-  - Copyright (c) 2019 Colin Rothfels
+- **futures-channel** 0.3.34 <https://github.com/rust-lang/futures-rs>
+  - Copyright (c) 2016 Alex Crichton
+  - Copyright (c) 2017 The Tokio Authors
 - **futures-core** 0.3.34 <https://github.com/rust-lang/futures-rs>
   - Copyright (c) 2016 Alex Crichton
   - Copyright (c) 2017 The Tokio Authors
 - **futures-io** 0.3.34 <https://github.com/rust-lang/futures-rs>
   - Copyright (c) 2016 Alex Crichton
   - Copyright (c) 2017 The Tokio Authors
-- **futures-sink** 0.3.34 <https://github.com/rust-lang/futures-rs>
-  - Copyright (c) 2016 Alex Crichton
-  - Copyright (c) 2017 The Tokio Authors
-- **futures-task** 0.3.34 <https://github.com/rust-lang/futures-rs>
-  - Copyright (c) 2016 Alex Crichton
-  - Copyright (c) 2017 The Tokio Authors
-- **futures-util** 0.3.34 <https://github.com/rust-lang/futures-rs>
-  - Copyright (c) 2016 Alex Crichton
-  - Copyright (c) 2017 The Tokio Authors
-- **getrandom** 0.1.16 <https://github.com/rust-random/getrandom>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **getrandom** 0.2.17 <https://github.com/rust-random/getrandom>
-  - Copyright (c) 2018-2024 The rust-random Project Developers
-  - Copyright (c) 2014 The Rust Project Developers
 - **gimli** 0.32.3 <https://github.com/gimli-rs/gimli>
   - Copyright (c) 2015 The Rust Project Developers
+- **glob** 0.3.4 <https://github.com/rust-lang/glob>
+  - Copyright (c) 2014 The Rust Project Developers
 - **hashbrown** 0.17.1 <https://github.com/rust-lang/hashbrown>
   - Copyright (c) 2016 Amanieu d'Antras
+- **heck** 0.5.0 <https://github.com/withoutboats/heck>
+  - Copyright (c) 2015 The Rust Project Developers
 - **hex** 0.4.3 <https://github.com/KokaKiwi/rust-hex>
   - Copyright (c) 2013-2014 The Rust Project Developers
   - Copyright (c) 2015-2020 The rust-hex Developers
 - **iana-time-zone** 0.1.65 <https://github.com/strawlab/iana-time-zone>
   - Copyright 2020 Andrew Straw
   - Copyright (c) 2020 Andrew D. Straw
-- **image** 0.24.9 <https://github.com/image-rs/image>
+- **itertools** 0.13.0 <https://github.com/rust-itertools/itertools>
+  - Copyright (c) 2015
 - **itoa** 1.0.18 <https://github.com/dtolnay/itoa>
-- **keyboard-types** 0.6.2 <https://github.com/pyfisch/keyboard-types>
+- **jobserver** 0.1.35 <https://github.com/rust-lang/jobserver-rs>
+  - Copyright (c) 2014 Alex Crichton
+- **keyboard-types** 0.8.3 <https://github.com/rust-windowing/keyboard-types>
   - Copyright (c) 2017 Pyfisch
 - **lazy_static** 1.5.0 <https://github.com/rust-lang-nursery/lazy-static.rs>
   - Copyright (c) 2010 The Rust Project Developers
@@ -424,17 +436,12 @@ POSSIBILITY OF SUCH DAMAGE.
   - Copyright (c) 2016 The Rust Project Developers
 - **log** 0.4.34 <https://github.com/rust-lang/log>
   - Copyright (c) 2014 The Rust Project Developers
-- **memmap2** 0.6.2 <https://github.com/RazrFalcon/memmap2-rs>
-  - Copyright [2015] [Dan Burkert]
-  - Copyright (c) 2020 Yevhenii Reizner
-  - Copyright (c) 2015 Dan Burkert
 - **midi-consts** 0.1.0 <https://codeberg.org/PieterPenninckx/midi-consts>
+- **minimal-lexical** 0.2.1 <https://github.com/Alexhuszagh/minimal-lexical>
+  - Copyright (c) 2009 The Go Authors. All rights reserved
 - **num-conv** 0.2.2 <https://github.com/jhpratt/num-conv>
 - **num-traits** 0.2.19 <https://github.com/rust-num/num-traits>
   - Copyright (c) 2014 The Rust Project Developers
-- **num_threads** 0.1.7 <https://github.com/jhpratt/num_threads>
-  - Copyright 2021 Jacob Pratt
-  - Copyright (c) 2021 Jacob Pratt
 - **once_cell** 1.21.4 <https://github.com/matklad/once_cell>
 - **ordered-stream** 0.2.0 <https://github.com/danieldg/ordered-stream>
 - **parking_lot** 0.12.5 <https://github.com/Amanieu/parking_lot>
@@ -446,44 +453,15 @@ POSSIBILITY OF SUCH DAMAGE.
 - **piper** 0.2.5 <https://github.com/smol-rs/piper>
 - **pkg-config** 0.3.34 <https://github.com/rust-lang/pkg-config-rs>
   - Copyright (c) 2014 Alex Crichton
-- **png** 0.17.16 <https://github.com/image-rs/image-png>
-  - Copyright (c) 2015 nwin
 - **powerfmt** 0.2.0 <https://github.com/jhpratt/powerfmt>
   - Copyright 2023 Jacob Pratt et al
   - Copyright (c) 2023 Jacob Pratt et al
-- **ppv-lite86** 0.2.21 <https://github.com/cryptocorrosion/cryptocorrosion>
-  - Copyright 2019 The CryptoCorrosion Contributors
-  - Copyright (c) 2019 The CryptoCorrosion Contributors
-- **proc-macro-crate** 1.3.1 <https://github.com/bkchr/proc-macro-crate>
+- **prettyplease** 0.2.37 <https://github.com/dtolnay/prettyplease>
+- **proc-macro-crate** 3.5.0 <https://github.com/bkchr/proc-macro-crate>
 - **proc-macro-hack** 0.5.20+deprecated <https://github.com/dtolnay/proc-macro-hack>
   - Copyright (c) 2018 David Tolnay
 - **proc-macro2** 1.0.107 <https://github.com/dtolnay/proc-macro2>
 - **quote** 1.0.47 <https://github.com/dtolnay/quote>
-- **rand** 0.7.3 <https://github.com/rust-random/rand>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **rand** 0.8.8 <https://github.com/rust-random/rand>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **rand_chacha** 0.2.2 <https://github.com/rust-random/rand>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **rand_chacha** 0.3.1 <https://github.com/rust-random/rand>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **rand_core** 0.5.1 <https://github.com/rust-random/rand>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **rand_core** 0.6.4 <https://github.com/rust-random/rand>
-  - Copyright 2018 Developers of the Rand project
-  - Copyright (c) 2014 The Rust Project Developers
-- **rand_pcg** 0.2.1 <https://github.com/rust-random/rand>
-  - Copyright (c) 2014-2017 Melissa O'Neill and PCG Project contributors
-  - Copyright 2018 Developers of the Rand project
-- **rangemap** 1.8.0 <https://github.com/jeffparsons/rangemap>
-  - Copyright 2019-2022 Jeff Parsons, and [contributors](https://github.com/jeffparsons/rangemap/contributors)
-  - Copyright 2019 Jeffrey Parsons
-- **read-fonts** 0.22.7 <https://github.com/googlefonts/fontations>
 - **regex** 1.13.1 <https://github.com/rust-lang/regex>
   - Copyright (c) 2014 The Rust Project Developers
 - **regex-automata** 0.4.18 <https://github.com/rust-lang/regex>
@@ -503,80 +481,89 @@ POSSIBILITY OF SUCH DAMAGE.
 - **serde_derive** 1.0.229 <https://github.com/serde-rs/serde>
 - **serde_json** 1.0.151 <https://github.com/serde-rs/json>
 - **serde_repr** 0.1.21 <https://github.com/dtolnay/serde-repr>
-- **serde_spanned** 0.6.9 <https://github.com/toml-rs/toml>
-- **sha1** 0.10.7 <https://github.com/RustCrypto/hashes>
-  - Copyright (c) 2006-2009 Graydon Hoare
-  - Copyright (c) 2009-2013 Mozilla Foundation
-  - Copyright (c) 2016 Artyom Pavlov
-- **siphasher** 0.3.11 <https://github.com/jedisct1/rust-siphash>
+- **serde_spanned** 1.1.1 <https://github.com/toml-rs/toml>
+- **servo_arc** 0.4.3 <https://github.com/servo/stylo>
+- **shlex** 1.3.0 <https://github.com/comex/rust-shlex>
+  - Copyright 2015 Nicholas Allegra (comex)
+  - Copyright (c) 2015 Nicholas Allegra (comex)
+- **shlex** 2.0.1 <https://github.com/comex/rust-shlex>
+  - Copyright 2015 Nicholas Allegra (comex)
+  - Copyright (c) 2015 Nicholas Allegra (comex)
+- **signal-hook-registry** 1.4.8 <https://github.com/vorner/signal-hook>
+  - Copyright (c) 2017 tokio-jsonrpc developers
+- **siphasher** 1.0.4 <https://github.com/jedisct1/rust-siphash>
   - Copyright 2012-2016 The Rust Project Developers
-  - Copyright 2016-2023 Frank Denis
-- **skrifa** 0.22.3 <https://github.com/googlefonts/fontations>
-  - Copyright 2019 Colin Rothfels
-  - Copyright (c) 2019 Colin Rothfels
+  - Copyright 2016-2026 Frank Denis
 - **smallvec** 1.16.0 <https://github.com/servo/rust-smallvec>
   - Copyright (c) 2018 The Servo Project Developers
-- **socket2** 0.4.10 <https://github.com/rust-lang/socket2>
-  - Copyright (c) 2014 Alex Crichton
-- **static_assertions** 1.1.0 <https://github.com/nvzqz/static-assertions-rs>
-  - Copyright (c) 2017 Nikolai Vazquez
+- **smol_str** 0.2.2 <https://github.com/rust-analyzer/smol_str>
+- **stable_deref_trait** 1.2.1 <https://github.com/storyyeller/stable_deref_trait>
+  - Copyright (c) 2017 Robert Grosse
+- **symlink** 0.1.0 <https://gitlab.com/chris-morgan/symlink>
+  - Copyright (c) 2014 Chris Morgan and the Teepee project developers
 - **syn** 1.0.109 <https://github.com/dtolnay/syn>
 - **syn** 2.0.119 <https://github.com/dtolnay/syn>
 - **syn** 3.0.4 <https://github.com/dtolnay/syn>
 - **sys-locale** 0.3.2 <https://github.com/1Password/sys-locale>
   - Copyright (c) 2021 1Password
+- **tar** 0.4.46 <https://github.com/composefs/tar-rs>
 - **thiserror** 1.0.69 <https://github.com/dtolnay/thiserror>
+- **thiserror** 2.0.21 <https://github.com/dtolnay/thiserror>
 - **thiserror-impl** 1.0.69 <https://github.com/dtolnay/thiserror>
+- **thiserror-impl** 2.0.21 <https://github.com/dtolnay/thiserror>
+- **thread_local** 1.1.10 <https://github.com/Amanieu/thread_local-rs>
+  - Copyright (c) 2016 The Rust Project Developers
 - **time** 0.3.55 <https://github.com/time-rs/time>
 - **time-core** 0.1.9 <https://github.com/time-rs/time>
 - **time-macros** 0.2.32 <https://github.com/time-rs/time>
-- **toml_datetime** 0.6.11 <https://github.com/toml-rs/toml>
-- **toml_edit** 0.19.15 <https://github.com/toml-rs/toml>
-- **ttf-parser** 0.18.1 <https://github.com/RazrFalcon/ttf-parser>
-  - Copyright (c) 2018 Yevhenii Reizner
-- **ttf-parser** 0.19.2 <https://github.com/RazrFalcon/ttf-parser>
-  - Copyright (c) 2018 Yevhenii Reizner
+- **toml** 1.1.6+spec-1.1.0 <https://github.com/toml-rs/toml>
+- **toml_datetime** 1.1.1+spec-1.1.0 <https://github.com/toml-rs/toml>
+- **toml_edit** 0.25.13+spec-1.1.0 <https://github.com/toml-rs/toml>
+- **toml_parser** 1.1.3+spec-1.1.0 <https://github.com/toml-rs/toml>
+- **toml_writer** 1.1.2+spec-1.1.0 <https://github.com/toml-rs/toml>
 - **type-map** 0.5.1 <https://github.com/kardeiz/type-map>
   - Copyright 2017-NOW Actix Team
   - Copyright (c) 2022 Jacob Brown
   - Copyright (c) 2017-NOW Actix Team
-- **typenum** 1.20.1 <https://github.com/paholg/typenum>
-  - Copyright 2014 Paho Lurie-Gregg
-  - Copyright (c) 2014 Paho Lurie-Gregg
 - **unic-langid** 0.9.6 <https://github.com/zbraniecki/unic-locale>
 - **unic-langid-impl** 0.9.6 <https://github.com/zbraniecki/unic-locale>
 - **unic-langid-macros** 0.9.6 <https://github.com/zbraniecki/unic-locale>
 - **unic-langid-macros-impl** 0.9.6 <https://github.com/zbraniecki/unic-locale>
 - **unicode-bidi** 0.3.18 <https://github.com/servo/unicode-bidi>
   - Copyright (c) 2015 The Rust Project Developers
-- **unicode-bidi-mirroring** 0.1.0 <https://github.com/RazrFalcon/unicode-bidi-mirroring>
-  - Copyright (c) 2020 Reizner Evgeniy
-- **unicode-ccc** 0.1.2 <https://github.com/RazrFalcon/unicode-ccc>
-  - Copyright (c) 2020 Reizner Evgeniy
-- **unicode-script** 0.5.8 <https://github.com/unicode-rs/unicode-script>
-  - Copyright 2021 The Unicode-rs Developers
-  - Copyright (c) 2019 Manish Goregaokar
 - **unicode-segmentation** 1.13.3 <https://github.com/unicode-rs/unicode-segmentation>
   - Copyright (c) 2015 The Rust Project Developers
-- **version_check** 0.9.5 <https://github.com/SergioBenitez/version_check>
-  - Copyright (c) 2017-2018 Sergio Benitez
+- **vst3** 0.3.0 <https://github.com/coupler-rs/vst3-rs>
 - **widestring** 1.2.1 <https://github.com/VoidStarKat/widestring-rs>
-- **x11rb** 0.10.1 <https://github.com/psychon/x11rb>
-- **x11rb-protocol** 0.10.0 <https://github.com/psychon/x11rb>
-- **yazi** 0.1.6 <https://github.com/dfrg/yazi>
-  - Copyright (c) 2020 Chad Brokaw
-- **zeno** 0.2.3 <https://github.com/dfrg/zeno>
-  - Copyright (c) 2020 Chad Brokaw
+- **windows** 0.62.2 <https://github.com/microsoft/windows-rs>
+- **windows-collections** 0.3.2 <https://github.com/microsoft/windows-rs>
+- **windows-core** 0.62.2 <https://github.com/microsoft/windows-rs>
+- **windows-future** 0.3.2 <https://github.com/microsoft/windows-rs>
+- **windows-implement** 0.60.2 <https://github.com/microsoft/windows-rs>
+- **windows-interface** 0.59.3 <https://github.com/microsoft/windows-rs>
+- **windows-link** 0.2.1 <https://github.com/microsoft/windows-rs>
+- **windows-numerics** 0.3.1 <https://github.com/microsoft/windows-rs>
+- **windows-result** 0.4.1 <https://github.com/microsoft/windows-rs>
+- **windows-strings** 0.5.1 <https://github.com/microsoft/windows-rs>
+- **windows-threading** 0.2.1 <https://github.com/microsoft/windows-rs>
+- **x11rb** 0.13.2 <https://github.com/psychon/x11rb>
+  - Copyright 2019 x11rb Contributers
+- **x11rb-protocol** 0.13.2 <https://github.com/psychon/x11rb>
+  - Copyright 2019 x11rb Contributers
+- **xattr** 1.6.1 <https://github.com/Stebalien/xattr>
+  - Copyright (c) 2015 Steven Allen
 
 ### MIT OR Apache-2.0 OR Zlib — taken as MIT
 
-- **glow** 0.12.3 <https://github.com/grovesNL/glow>
-- **raw-window-handle** 0.5.2 <https://github.com/rust-windowing/raw-window-handle>
+- **cursor-icon** 1.2.0 <https://github.com/rust-windowing/cursor-icon>
+  - Copyright 2023 Kirill Chibisov
+  - Copyright (c) 2023 Kirill Chibisov
+- **raw-window-handle** 0.6.2 <https://github.com/rust-windowing/raw-window-handle>
   - Copyright (c) 2019 Osspial
   - Copyright (c) 2020 Osspial
-- **tinyvec_macros** 0.1.1 <https://github.com/Soveu/tinyvec_macros>
-  - Copyright 2020 Tomasz "Soveu" Marx
-  - Copyright (c) 2020 Soveu
+- **xkeysym** 0.2.1 <https://github.com/notgull/xkeysym>
+  - Copyright 2022-2023 John Nunley
+  - Copyright (c) 2022-2023 John Nunley
 
 ### MIT OR Zlib OR Apache-2.0 — taken as MIT
 
@@ -595,12 +582,11 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ### MPL-2.0
 
-- **cssparser** 0.29.6 <https://github.com/servo/rust-cssparser>
-- **cssparser-macros** 0.6.1 <https://github.com/servo/rust-cssparser>
+- **cssparser** 0.37.0 <https://github.com/servo/rust-cssparser>
+- **cssparser-color** 0.5.0 <https://github.com/servo/rust-cssparser>
+- **cssparser-macros** 0.7.1 <https://github.com/servo/rust-cssparser>
 - **dtoa-short** 0.3.5 <https://github.com/upsuper/dtoa-short>
-- **generational-arena** 0.2.9 <https://github.com/fitzgen/generational-arena>
-- **selectors** 0.23.0 <https://github.com/servo/servo>
-  - Copyright (c) 2021 George Atkinson
+- **selectors** 0.39.0 <https://github.com/servo/stylo>
 
 ### Unicode-3.0
 
@@ -619,22 +605,16 @@ POSSIBILITY OF SUCH DAMAGE.
   - Copyright (c) 2015 Andrew Gallant
 - **memchr** 2.8.3 <https://github.com/BurntSushi/memchr>
   - Copyright (c) 2015 Andrew Gallant
-- **termcolor** 1.4.1 <https://github.com/BurntSushi/termcolor>
-  - Copyright (c) 2015 Andrew Gallant
 
 ### Zlib
 
-- **slotmap** 1.1.1 <https://github.com/orlp/slotmap>
-  - Copyright (c) 2021 Orson Peters <orsonpeters@gmail.com>
+- **foldhash** 0.2.0 <https://github.com/orlp/foldhash>
+  - Copyright (c) 2024 Orson Peters
 - **zlib-rs** 0.6.7 <https://github.com/trifectatechfoundation/zlib-rs>
 
 ### Zlib OR Apache-2.0 OR MIT — taken as MIT
 
 - **bytemuck** 1.25.2 <https://github.com/Lokathor/bytemuck>
-  - Copyright (c) 2019 Daniel "Lokathor" Gee
-- **bytemuck_derive** 1.12.0 <https://github.com/Lokathor/bytemuck>
-  - Copyright (c) 2019 Daniel "Lokathor" Gee
-- **tinyvec** 1.12.0 <https://github.com/Lokathor/tinyvec>
   - Copyright (c) 2019 Daniel "Lokathor" Gee
 
 ## License texts
@@ -851,26 +831,28 @@ limitations under the License.
 ### BSD-3-Clause
 
 ```
-Copyright (c) 2019, Sébastien Crozet
+BSD 3-Clause License
+
+Copyright (c) 2013, Jyun-Yan You
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
 
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
 
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
 
-3. Neither the name of the author nor the names of its contributors may be used
-   to endorse or promote products derived from this software without specific
-   prior written permission.
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
 
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
 FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
 DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
@@ -1305,105 +1287,6 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-### OFL-1.1
-
-```
-Copyright 2018 The Noto Project Authors (github.com/googlei18n/noto-fonts)
-
-This Font Software is licensed under the SIL Open Font License,
-Version 1.1.
-
-This license is copied below, and is also available with a FAQ at:
-http://scripts.sil.org/OFL
-
------------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
-
-PREAMBLE
-The goals of the Open Font License (OFL) are to stimulate worldwide
-development of collaborative font projects, to support the font
-creation efforts of academic and linguistic communities, and to
-provide a free and open framework in which fonts may be shared and
-improved in partnership with others.
-
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded,
-redistributed and/or sold with any software provided that any reserved
-names are not used by derivative works. The fonts and derivatives,
-however, cannot be released under any other type of license. The
-requirement for fonts to remain under this license does not apply to
-any document created using the fonts or their derivatives.
-
-DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
-Holder(s) under this license and clearly marked as such. This may
-include source files, build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the
-copyright statement(s).
-
-"Original Version" refers to the collection of Font Software
-components as distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to,
-deleting, or substituting -- in part or in whole -- any of the
-components of the Original Version, by changing formats or by porting
-the Font Software to a new environment.
-
-"Author" refers to any designer, engineer, programmer, technical
-writer or other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Font Software, to use, study, copy, merge, embed,
-modify, redistribute, and sell modified and unmodified copies of the
-Font Software, subject to the following conditions:
-
-1) Neither the Font Software nor any of its individual components, in
-Original or Modified Versions, may be sold by itself.
-
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy
-contains the above copyright notice and this license. These can be
-included either as stand-alone text files, human-readable headers or
-in the appropriate machine-readable metadata fields within text or
-binary files as long as those fields can be easily viewed by the user.
-
-3) No Modified Version of the Font Software may use the Reserved Font
-Name(s) unless explicit written permission is granted by the
-corresponding Copyright Holder. This restriction only applies to the
-primary font name as presented to the users.
-
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
-Software shall not be used to promote, endorse or advertise any
-Modified Version, except to acknowledge the contribution(s) of the
-Copyright Holder(s) and the Author(s) or with their explicit written
-permission.
-
-5) The Font Software, modified or unmodified, in part or in whole,
-must be distributed entirely under this license, and must not be
-distributed under any other license. The requirement for fonts to
-remain under this license does not apply to any document created using
-the Font Software.
-
-TERMINATION
-This license becomes null and void if any of the above conditions are
-not met.
-
-DISCLAIMER
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
-DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
-OTHER DEALINGS IN THE FONT SOFTWARE.
-```
-
 ### Unicode-3.0
 
 ```
@@ -1469,23 +1352,15 @@ written authorization of the copyright holder.
 ### Zlib
 
 ```
-Copyright (c) 2020 Thom Chiovoloni
+Copyright (c) 2019 Daniel "Lokathor" Gee.
 
-This software is provided 'as-is', without any express or implied warranty. In
-no event will the authors be held liable for any damages arising from the use of
-this software.
+This software is provided 'as-is', without any express or implied warranty. In no event will the authors be held liable for any damages arising from the use of this software.
 
-Permission is granted to anyone to use this software for any purpose, including
-commercial applications, and to alter it and redistribute it freely, subject to
-the following restrictions:
+Permission is granted to anyone to use this software for any purpose, including commercial applications, and to alter it and redistribute it freely, subject to the following restrictions:
 
-1. The origin of this software must not be misrepresented; you must not claim
-   that you wrote the original software. If you use this software in a product, an
-   acknowledgment in the product documentation would be appreciated but is not
-   required.
+1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software. If you use this software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
 
-2. Altered source versions must be plainly marked as such, and must not be
-   misrepresented as being the original software.
+2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
 
 3. This notice may not be removed or altered from any source distribution.
 ```

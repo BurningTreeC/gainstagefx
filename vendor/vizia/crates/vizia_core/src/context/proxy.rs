@@ -1,0 +1,146 @@
+use std::any::Any;
+use std::fmt::Formatter;
+use std::sync::Mutex;
+
+use super::InternalEvent;
+
+use crate::events::ProxyEvent;
+use crate::prelude::*;
+
+/// A bundle of data representing a snapshot of the context when a thread was spawned.
+///
+/// It supports a small subset of context operations. You will get one of these passed to you when
+/// you create a new thread with the [`spawn`](crate::context::Context::spawn) method on [`Context`].
+pub struct ContextProxy {
+    /// The current entity when the proxy context was created.
+    pub current: Entity,
+    /// An event proxy used to send events back to the main thread.
+    pub event_proxy: Option<Box<dyn EventProxy>>,
+}
+
+/// Errors that might occur when emitting an event via a ContextProxy.
+#[derive(Debug)]
+pub enum ProxyEmitError {
+    /// The current runtime does not support proxying events.
+    Unsupported,
+    /// The event loop has been closed; the application is exiting.
+    EventLoopClosed,
+}
+
+impl std::fmt::Display for ProxyEmitError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProxyEmitError::Unsupported => {
+                f.write_str("The current runtime does not support proxying events")
+            }
+            ProxyEmitError::EventLoopClosed => {
+                f.write_str("Sending an event to an event loop which has been closed")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ProxyEmitError {}
+
+impl ContextProxy {
+    pub fn emit<M: Any + Send>(&mut self, message: M) -> Result<(), ProxyEmitError> {
+        if let Some(proxy) = &self.event_proxy {
+            let event = ProxyEvent::new(message)
+                .target(self.current)
+                .origin(self.current)
+                .propagate(Propagation::Up);
+
+            proxy.send(event).map_err(|_| ProxyEmitError::EventLoopClosed)
+        } else {
+            Err(ProxyEmitError::Unsupported)
+        }
+    }
+
+    pub fn emit_to<M: Any + Send>(
+        &mut self,
+        target: Entity,
+        message: M,
+    ) -> Result<(), ProxyEmitError> {
+        if let Some(proxy) = &self.event_proxy {
+            let event = ProxyEvent::new(message)
+                .target(target)
+                .origin(self.current)
+                .propagate(Propagation::Direct);
+
+            proxy.send(event).map_err(|_| ProxyEmitError::EventLoopClosed)
+        } else {
+            Err(ProxyEmitError::Unsupported)
+        }
+    }
+
+    pub fn redraw(&mut self) -> Result<(), ProxyEmitError> {
+        self.emit(InternalEvent::Redraw)
+    }
+
+    pub fn load_image_encoded(
+        &mut self,
+        path: String,
+        data: &[u8],
+        policy: ImageRetentionPolicy,
+    ) -> Result<bool, ProxyEmitError> {
+        if let Some(image) = skia_safe::Image::from_encoded(skia_safe::Data::new_copy(data)) {
+            self.emit(InternalEvent::LoadImage { path, image: Mutex::new(Some(image)), policy })?;
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    pub fn load_svg(
+        &mut self,
+        path: String,
+        data: &[u8],
+        policy: ImageRetentionPolicy,
+    ) -> Result<(), ProxyEmitError> {
+        self.emit(InternalEvent::LoadSvg { path, data: data.to_vec(), policy })
+    }
+
+    pub fn load_font(&mut self, path: String, data: &[u8]) -> Result<(), ProxyEmitError> {
+        self.emit(InternalEvent::LoadFont { path, data: data.to_vec() })
+    }
+
+    pub fn load_translation(
+        &mut self,
+        lang: LanguageIdentifier,
+        path: String,
+        ftl: String,
+    ) -> Result<(), ProxyEmitError> {
+        self.emit(InternalEvent::LoadTranslation { lang, path, ftl })
+    }
+
+    pub fn update_resource_status(
+        &mut self,
+        path: String,
+        status: crate::resource::LoadingStatus,
+    ) -> Result<(), ProxyEmitError> {
+        self.emit(InternalEvent::UpdateResourceStatus { path, status })
+    }
+
+    pub fn spawn<F>(&self, target: F)
+    where
+        F: 'static + Send + FnOnce(&mut ContextProxy),
+    {
+        let mut cxp = self.clone();
+        std::thread::spawn(move || target(&mut cxp));
+    }
+}
+
+impl Clone for ContextProxy {
+    fn clone(&self) -> Self {
+        Self {
+            current: self.current,
+            event_proxy: self.event_proxy.as_ref().map(|p| p.make_clone()),
+        }
+    }
+}
+
+pub trait EventProxy: Send {
+    #[allow(clippy::result_unit_err)]
+    fn send(&self, event: ProxyEvent) -> Result<(), ()>;
+    fn make_clone(&self) -> Box<dyn EventProxy>;
+}

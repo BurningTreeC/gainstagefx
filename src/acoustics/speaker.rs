@@ -30,9 +30,12 @@
 //! speaker and cabinet. See `docs/models/speakers.md` for sources and evidence
 //! labels, and `CABINET_MODEL.md` for the enclosure terms.
 
+use super::cabinet::CabinetProfile;
+use super::enclosure::{Enclosure, MODE_COUNT, PANEL_GROUPS};
 use crate::dsp::complex::C;
 use crate::dsp::netlist::{Adjust, Circuit, Fault, Netlist};
 use crate::dsp::time::Simulation;
+use std::f64::consts::TAU;
 
 /// Density of air at 20 C, kg/m^3.
 pub const RHO: f64 = 1.204;
@@ -381,6 +384,24 @@ impl SpeakerProfile {
         (self.sd / std::f64::consts::PI).sqrt()
     }
 
+    /// Effective central radiator above breakup. Retained from the earlier
+    /// placement model: estimated from placement guides, not cone-velocity data.
+    /// Keeping this explicit avoids applying a rigid full-disc model outside
+    /// its valid band and mistaking its deep zeros for measured guitar tone.
+    pub fn breakup_radius_ratio(&self) -> f64 {
+        0.4
+    }
+
+    /// First fitted breakup feature supplies the transition band. The spatial
+    /// response needs measured complex cone motion for a more specific model.
+    pub fn breakup_transition_hz(&self) -> f64 {
+        self.breakup
+            .peaks
+            .iter()
+            .map(|p| p.hz)
+            .fold(f64::INFINITY, f64::min)
+    }
+
     /// Low-frequency radiation mass of one side of a baffled piston, `8 rho a^3 / 3`.
     pub fn side_air_mass(&self) -> f64 {
         8.0 * RHO * self.radius().powi(3) / 3.0
@@ -391,6 +412,8 @@ impl SpeakerProfile {
 /// `CABINET_MODEL.md`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Mounting {
+    /// Geometry for the passive cavity, opening and flexible-wall model.
+    pub cabinet: Option<CabinetProfile>,
     /// Sealed air volume behind each driver, m^3. `None` is an open back or a baffle.
     pub volume_per_driver: Option<f64>,
     /// Q of the box's leakage and absorption, at the loaded resonance.
@@ -402,6 +425,7 @@ pub struct Mounting {
 impl Mounting {
     /// One driver on an open baffle: the free-air parameters as published.
     pub const BAFFLE: Mounting = Mounting {
+        cabinet: None,
         volume_per_driver: None,
         leakage_q: 7.0,
         drivers: 1,
@@ -427,6 +451,26 @@ pub struct LoadValues {
     pub rbox: f64,
     /// Bl referred to the tap, so `u = V(mot) / bl`.
     pub bl: f64,
+    pub cavity_modes: [SeriesRlc; MODE_COUNT],
+    /// Equivalent impedances of opening and panel acoustic mobilities, in
+    /// series with Lbox. Their common branch current represents cavity pressure.
+    pub opening_r: f64,
+    pub opening_c: f64,
+    pub panels: [ParallelRlc; PANEL_GROUPS],
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SeriesRlc {
+    pub r: f64,
+    pub l: f64,
+    pub c: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ParallelRlc {
+    pub r: f64,
+    pub l: f64,
+    pub c: f64,
 }
 
 impl LoadValues {
@@ -452,7 +496,7 @@ impl LoadValues {
             }
             _ => (OPEN_BOX_HENRY, 1.0),
         };
-        Self {
+        let mut result = Self {
             re: k * profile.re,
             l1: k * profile.l1,
             r1: k * profile.r1,
@@ -463,8 +507,61 @@ impl LoadValues {
             cmes: mms / (k * bl2),
             lbox,
             rbox,
-            bl: profile.bl * k.sqrt(),
+            // N identical drivers share terminal power. The equivalent
+            // impedance is unchanged; each cone's velocity is 1/sqrt(N).
+            bl: profile.bl * (k * drivers).sqrt(),
+            cavity_modes: [SeriesRlc {
+                r: 1e12,
+                l: 1.0,
+                c: 1e-9,
+            }; MODE_COUNT],
+            opening_r: 1e-6,
+            opening_c: 1e-9,
+            panels: [ParallelRlc {
+                r: 1e-6,
+                l: 1.0,
+                c: 1e-9,
+            }; PANEL_GROUPS],
+        };
+        if let Some(cab) = mounting.cabinet {
+            let e = Enclosure::new(&cab, profile);
+            // Duality: Z_e = Bl²/(N Sd²) * Y_acoustic. All positive elements
+            // give a passive load, including partially open cabinets.
+            let reference = k * bl2 / (drivers * profile.sd.powi(2));
+            result.lbox = reference * e.volume / (RHO * SPEED_OF_SOUND.powi(2));
+            if e.opening_area > 0.0 {
+                let mass = RHO * e.opening_length / e.opening_area;
+                // Low-frequency opening radiation resistance evaluated at its
+                // Helmholtz resonance; the lumped opening is a low-band model.
+                let omega2 =
+                    SPEED_OF_SOUND.powi(2) * e.opening_area / (e.volume * e.opening_length);
+                let resistance = RHO * omega2 / (TAU * SPEED_OF_SOUND);
+                result.opening_r = reference / resistance.max(1e-6);
+                result.opening_c = mass / reference;
+            }
+            for (values, panel) in result.panels.iter_mut().zip(e.panels) {
+                if panel.area > 0.0 {
+                    let omega = TAU * panel.hz;
+                    let transform = reference * panel.area.powi(2) * panel.count as f64;
+                    *values = ParallelRlc {
+                        r: transform / (panel.loss * omega * panel.mass),
+                        l: transform / (omega.powi(2) * panel.mass),
+                        c: panel.mass / transform,
+                    };
+                }
+            }
+            for (values, mode) in result.cavity_modes.iter_mut().zip(e.modes) {
+                if mode.stiffness > 0.0 {
+                    let l = k * bl2 / mode.stiffness;
+                    *values = SeriesRlc {
+                        r: l * mode.damping,
+                        l,
+                        c: 1.0 / ((TAU * mode.hz).powi(2) * l),
+                    };
+                }
+            }
         }
+        result
     }
 
     /// The electrical impedance at the terminals, analytically.
@@ -475,10 +572,19 @@ impl LoadValues {
             sl * C::real(r) / (C::real(r) + sl)
         };
         let coil = C::real(self.re) + lossy(self.l1, self.r1) + lossy(self.l2, self.r2);
-        let admittance = C::real(1.0 / self.res)
+        let panel = self.panels.iter().fold(C::ZERO, |sum, panel| {
+            sum + (C::real(1.0 / panel.r) + (s * C::real(panel.l)).recip() + s * C::real(panel.c))
+                .recip()
+        });
+        let opening = (C::real(1.0 / self.opening_r) + s * C::real(self.opening_c)).recip();
+        let mut admittance = C::real(1.0 / self.res)
             + (s * C::real(self.lces)).recip()
             + s * C::real(self.cmes)
-            + (s * C::real(self.lbox) + C::real(self.rbox)).recip();
+            + (s * C::real(self.lbox) + C::real(self.rbox) + opening + panel).recip();
+        for mode in self.cavity_modes {
+            admittance = admittance
+                + (C::real(mode.r) + s * C::real(mode.l) + (s * C::real(mode.c)).recip()).recip();
+        }
         coil + admittance.recip()
     }
 
@@ -502,6 +608,9 @@ pub struct LoadSlots {
     cmes: usize,
     lbox: usize,
     rbox: usize,
+    opening: [usize; 2],
+    panels: [[usize; 3]; PANEL_GROUPS],
+    cavity_modes: [[usize; 3]; MODE_COUNT],
 }
 
 impl LoadSlots {
@@ -522,6 +631,19 @@ impl LoadSlots {
         ] {
             sim.set_value(slot, value);
         }
+        for (slots, values) in self.cavity_modes.iter().zip(v.cavity_modes) {
+            for (&slot, value) in slots.iter().zip([values.r, values.l, values.c]) {
+                sim.set_value(slot, value);
+            }
+        }
+        for (&slot, value) in self.opening.iter().zip([v.opening_r, v.opening_c]) {
+            sim.set_value(slot, value);
+        }
+        for (slots, values) in self.panels.iter().zip(v.panels) {
+            for (&slot, value) in slots.iter().zip([values.r, values.l, values.c]) {
+                sim.set_value(slot, value);
+            }
+        }
     }
 }
 
@@ -537,7 +659,39 @@ pub fn stamp(net: &mut Netlist, terminal: &str, v: &LoadValues) -> LoadSlots {
         lces: net.adjustable(MOTIONAL, "gnd", Adjust::Inductor, v.lces),
         cmes: net.adjustable(MOTIONAL, "gnd", Adjust::Capacitor, v.cmes),
         lbox: net.adjustable(MOTIONAL, "spk_box", Adjust::Inductor, v.lbox),
-        rbox: net.adjustable("spk_box", "gnd", Adjust::Resistor, v.rbox),
+        rbox: net.adjustable("spk_box", "spk_open", Adjust::Resistor, v.rbox),
+        opening: [
+            net.adjustable("spk_open", "spk_panel", Adjust::Resistor, v.opening_r),
+            net.adjustable("spk_open", "spk_panel", Adjust::Capacitor, v.opening_c),
+        ],
+        panels: std::array::from_fn(|i| {
+            let a = if i == 0 {
+                "spk_panel".to_owned()
+            } else {
+                format!("spk_panel_{i}")
+            };
+            let b = if i + 1 == PANEL_GROUPS {
+                "gnd".to_owned()
+            } else {
+                format!("spk_panel_{}", i + 1)
+            };
+            let panel = v.panels[i];
+            [
+                net.adjustable(&a, &b, Adjust::Resistor, panel.r),
+                net.adjustable(&a, &b, Adjust::Inductor, panel.l),
+                net.adjustable(&a, &b, Adjust::Capacitor, panel.c),
+            ]
+        }),
+        cavity_modes: std::array::from_fn(|i| {
+            let a = format!("spk_mode_{i}_a");
+            let b = format!("spk_mode_{i}_b");
+            let mode = v.cavity_modes[i];
+            [
+                net.adjustable(MOTIONAL, &a, Adjust::Resistor, mode.r),
+                net.adjustable(&a, &b, Adjust::Inductor, mode.l),
+                net.adjustable(&b, "gnd", Adjust::Capacitor, mode.c),
+            ]
+        }),
     }
 }
 

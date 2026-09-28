@@ -1,0 +1,60 @@
+[package]
+name = "vizia_core"
+description = "Core components of vizia"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+clipboard = ["copypasta"]
+x11 = ["copypasta?/x11"]
+wayland = ["copypasta?/wayland"]
+markdown = ["comrak", "dep:open"]
+rayon = ["dep:rayon", "dep:dashmap", "hashbrown/rayon"]
+serde = ["vizia_reactive/serde"]
+tokio = ["dep:tokio"]
+url-loader = ["dep:reqwest", "reqwest/blocking"]
+
+[dependencies]
+vizia_storage.workspace = true
+vizia_id.workspace = true
+vizia_input.workspace = true
+vizia_window.workspace = true
+vizia_style.workspace = true
+vizia_reactive.workspace = true
+cssparser.workspace = true
+accesskit.workspace = true
+skia-safe.workspace = true
+morphorm.workspace = true
+bitflags.workspace = true
+fluent-bundle.workspace = true
+fluent-langneg.workspace = true
+unic-langid.workspace = true
+sys-locale.workspace = true
+unicode-segmentation.workspace = true
+unicode-bidi.workspace = true
+copypasta = { workspace = true, optional = true }
+chrono.workspace = true
+hashbrown.workspace = true
+log.workspace = true
+indexmap.workspace = true
+comrak = { workspace = true, optional = true }
+open = { workspace = true, optional = true }
+fxhash.workspace = true
+rayon = { workspace = true, optional = true }
+dashmap = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true, features = ["blocking", "json"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mundy = "0.2.3"
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

@@ -1,8 +1,8 @@
 //! Switching a voice while audio is playing.
 //!
 //! Reported as a loud spike when switching to the Mark IIC+ or the 5150 from
-//! another model, and those two are the only voices with a power stage --
-//! which is a good clue and, as it turned out, the wrong one.
+//! another model. At the time those were the only voices with a power stage,
+//! but the fault was in their level conversion, not the power stages.
 //!
 //! The cause was the make-up. `out_of` converts a circuit's own output into
 //! the digital domain, and it glides, because the make-up moves with the
@@ -36,7 +36,9 @@ fn settings(gain: Gain) -> Settings {
 /// the switch happened.
 fn render(from: Gain, to: Gain, seconds: f64) -> (Vec<f64>, usize) {
     let total = (RATE * seconds) as usize;
-    let switch = total / 2;
+    // Settings change at block boundaries. Report the boundary actually used,
+    // including for durations whose midpoint falls inside a block.
+    let switch = (total / 2).div_ceil(BLOCK) * BLOCK;
     let mut chain = Chain::new(RATE);
     chain.apply(&settings(from));
     chain.settle();
@@ -55,7 +57,7 @@ fn render(from: Gain, to: Gain, seconds: f64) -> (Vec<f64>, usize) {
     (out, switch)
 }
 
-/// The voices worth switching between: the two with a power stage, reached
+/// The voices worth switching between: the two from the original report, reached
 /// from a pedal and from a plain gain stage, because the fault was in the
 /// difference between the two voices rather than in either one.
 const SWITCHES: [(Gain, Gain); 6] = [
@@ -67,35 +69,52 @@ const SWITCHES: [(Gain, Gain); 6] = [
     (Gain::Neve, Gain::Boogie),
 ];
 
-/// Nothing a switch produces may exceed what the voice settles to by more
-/// than a little. A switch is allowed to change the level -- a 5150 is not a
-/// Big Muff -- so the test is against the *new* voice's own settled peak, not
-/// against the old one's.
+fn peak(samples: &[f64]) -> f64 {
+    samples.iter().fold(0.0, |m, v| m.max(v.abs()))
+}
+
+/// The fade retains audio from the old voice, which can be louder than the
+/// new one. Bound the transition against BOTH settled levels, then require
+/// the destination's own level after 10 ms (the 256-sample fade plus 66-sample
+/// latency is under 7 ms at this rate, leaving time for the cabinet tail).
+///
+/// The corrected 5150 made the old assertion fail on Crunch -> 5150: the
+/// first post-switch sample is exactly the last Crunch sample, 0.129 in
+/// magnitude, against a new settled peak of 0.044. That is continuity, not
+/// a spike. Neither a larger multiplier nor a quieter circuit fixes the test.
 #[test]
 fn switching_a_voice_does_not_spike() {
     for (from, to) in SWITCHES {
         let (y, switch) = render(from, to, 1.0);
-        let peak = y[switch..].iter().fold(0.0f64, |m, v| m.max(v.abs()));
-        let settled = y[y.len() - RATE as usize / 10..]
-            .iter()
-            .fold(0.0f64, |m, v| m.max(v.abs()));
+        let window = RATE as usize / 10;
+        let before = peak(&y[switch - window..switch]);
+        let transition = peak(&y[switch..]);
+        let after_fade = peak(&y[switch + RATE as usize / 100..]);
+        let settled = peak(&y[y.len() - window..]);
         assert!(
             settled > 0.0,
             "{} -> {} went silent",
             from.name(),
             to.name()
         );
-        let ratio = peak / settled;
+        let reference = before.max(settled);
         println!(
-            "{} -> {}: peak {peak:.3}, settled {settled:.3}, {ratio:.1}x",
+            "{} -> {}: before {before:.3}, transition {transition:.3}, \
+             after fade {after_fade:.3}, settled {settled:.3}",
             from.name(),
             to.name()
         );
         assert!(
-            ratio < 2.0,
-            "{} -> {} peaks at {peak:.3} against a settled {settled:.3}, \
-             {ratio:.1} times over: the make-up of the voice being left is \
-             being applied to the voice being arrived at",
+            transition < 2.0 * reference,
+            "{} -> {} peaks at {transition:.3} against settled levels \
+             {before:.3} -> {settled:.3}: the transition exceeds both voices",
+            from.name(),
+            to.name()
+        );
+        assert!(
+            after_fade < 2.0 * settled,
+            "{} -> {} peaks at {after_fade:.3} after the fade against a settled \
+             {settled:.3}: the old voice's level must not persist",
             from.name(),
             to.name()
         );

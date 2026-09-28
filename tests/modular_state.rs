@@ -3,8 +3,8 @@ use gainstagefx::{
     plugin::GainStageFx,
     presets,
 };
-use nih_plug::prelude::*;
-use nih_plug::wrapper::state::ParamValue;
+use nice_plug::plugin::ParamValue;
+use nice_plug::prelude::*;
 use std::collections::BTreeMap;
 
 #[test]

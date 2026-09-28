@@ -289,16 +289,16 @@ fn first_order_matched(rate: f64, fc: f64, dc2: f64, nyquist2: f64) -> (f64, f64
 pub const DELAY_LEN: usize = 2048;
 
 /// One circular buffer, read at any number of fractional delays.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct DelayLine {
-    buf: [f64; DELAY_LEN],
+    buf: Box<[f64]>,
     pos: usize,
 }
 
 impl DelayLine {
     pub fn new() -> Self {
         Self {
-            buf: [0.0; DELAY_LEN],
+            buf: vec![0.0; DELAY_LEN].into_boxed_slice(),
             pos: 0,
         }
     }
@@ -312,6 +312,12 @@ impl DelayLine {
     #[inline]
     fn at(&self, back: usize) -> f64 {
         self.buf[(self.pos + DELAY_LEN - (back & (DELAY_LEN - 1))) & (DELAY_LEN - 1)]
+    }
+
+    /// An integer propagation delay, used by precomputed radiation kernels.
+    #[inline]
+    pub fn read_integer(&self, delay: usize) -> f64 {
+        self.at(delay)
     }
 
     /// The sample written `delay` samples ago, by third-order Lagrange interpolation.
@@ -346,6 +352,19 @@ impl DelayLine {
 impl Default for DelayLine {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Clone for DelayLine {
+    fn clone(&self) -> Self {
+        Self {
+            buf: self.buf.clone(),
+            pos: self.pos,
+        }
+    }
+    fn clone_from(&mut self, source: &Self) {
+        self.buf.copy_from_slice(&source.buf);
+        self.pos = source.pos;
     }
 }
 

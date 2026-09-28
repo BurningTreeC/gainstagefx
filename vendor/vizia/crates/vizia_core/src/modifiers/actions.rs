@@ -1,0 +1,771 @@
+use crate::prelude::*;
+use std::any::TypeId;
+
+pub(crate) struct ModalModel {
+    pub tooltip_visible: Signal<(bool, bool)>,
+    pub menu_visible: Signal<bool>,
+}
+
+/// An event used to modify the modal properties of a view, such as an attached tooltip.
+pub enum ModalEvent {
+    /// Show the attached tooltip.
+    ShowTooltip,
+    /// Hide the attached tooltip.
+    HideTooltip,
+    /// Show the attached menu.
+    ShowMenu,
+    /// Hide the attached menu.
+    HideMenu,
+}
+
+impl Model for ModalModel {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|modal_event, _| match modal_event {
+            ModalEvent::ShowTooltip => {
+                self.tooltip_visible.set((true, true));
+            }
+
+            ModalEvent::HideTooltip => {
+                self.tooltip_visible.set((false, true));
+            }
+
+            ModalEvent::ShowMenu => {
+                self.menu_visible.set(true);
+            }
+
+            ModalEvent::HideMenu => {
+                self.menu_visible.set(false);
+            }
+        });
+
+        event.map(|window_event, _| match window_event {
+            WindowEvent::MouseDown(MouseButton::Right) => {
+                self.menu_visible.set(true);
+            }
+            WindowEvent::MouseOver => {
+                if !self.tooltip_visible.get().0 {
+                    self.tooltip_visible.set((true, true));
+                }
+            }
+            WindowEvent::MouseOut => self.tooltip_visible.set((false, true)),
+            WindowEvent::FocusIn => {
+                if !self.tooltip_visible.get().0 {
+                    self.tooltip_visible.set((true, false));
+                }
+            }
+            WindowEvent::FocusOut => self.tooltip_visible.set((false, false)),
+            WindowEvent::FocusVisibility(vis) if !(*vis) => {
+                self.tooltip_visible.set((false, false))
+            }
+            WindowEvent::KeyDown(code, _) if *code == Code::Escape => {
+                self.tooltip_visible.set((false, false));
+                self.menu_visible.set(false);
+            }
+            WindowEvent::PressDown { mouse: _ } => self.tooltip_visible.set((false, true)),
+            _ => {}
+        });
+    }
+}
+
+pub(crate) struct ActionsModel {
+    pub(crate) on_press: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_press_down: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_double_click: Option<Box<dyn Fn(&mut EventContext, MouseButton) + Send + Sync>>,
+    pub(crate) on_hover: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_hover_out: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_over: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_over_out: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_mouse_move: Option<Box<dyn Fn(&mut EventContext, f32, f32) + Send + Sync>>,
+    pub(crate) on_mouse_down: Option<Box<dyn Fn(&mut EventContext, MouseButton) + Send + Sync>>,
+    pub(crate) on_mouse_up: Option<Box<dyn Fn(&mut EventContext, MouseButton) + Send + Sync>>,
+    pub(crate) on_focus_in: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_focus_out: Option<Box<dyn Fn(&mut EventContext) + Send + Sync>>,
+    pub(crate) on_geo_changed: Option<Box<dyn Fn(&mut EventContext, GeoChanged) + Send + Sync>>,
+}
+
+impl ActionsModel {
+    pub(crate) fn new() -> Self {
+        Self {
+            on_press: None,
+            on_press_down: None,
+            on_double_click: None,
+            on_hover: None,
+            on_hover_out: None,
+            on_over: None,
+            on_over_out: None,
+            on_mouse_move: None,
+            on_mouse_down: None,
+            on_mouse_up: None,
+            on_focus_in: None,
+            on_focus_out: None,
+            on_geo_changed: None,
+        }
+    }
+}
+
+impl Model for ActionsModel {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.take(|actions_event, _| match actions_event {
+            ActionsEvent::OnPress(on_press) => {
+                self.on_press = Some(on_press);
+            }
+
+            ActionsEvent::OnPressDown(on_press_down) => {
+                self.on_press_down = Some(on_press_down);
+            }
+
+            ActionsEvent::OnDoubleClick(on_double_click) => {
+                self.on_double_click = Some(on_double_click);
+            }
+
+            ActionsEvent::OnHover(on_hover) => {
+                self.on_hover = Some(on_hover);
+            }
+
+            ActionsEvent::OnHoverOut(on_hover_out) => {
+                self.on_hover_out = Some(on_hover_out);
+            }
+
+            ActionsEvent::OnOver(on_over) => {
+                self.on_over = Some(on_over);
+            }
+
+            ActionsEvent::OnOverOut(on_over_out) => {
+                self.on_over_out = Some(on_over_out);
+            }
+
+            ActionsEvent::OnMouseMove(on_move) => {
+                self.on_mouse_move = Some(on_move);
+            }
+
+            ActionsEvent::OnMouseDown(on_mouse_down) => {
+                self.on_mouse_down = Some(on_mouse_down);
+            }
+
+            ActionsEvent::OnMouseUp(on_mouse_up) => {
+                self.on_mouse_up = Some(on_mouse_up);
+            }
+
+            ActionsEvent::OnFocusIn(on_focus_in) => {
+                self.on_focus_in = Some(on_focus_in);
+            }
+
+            ActionsEvent::OnFocusOut(on_focus_out) => {
+                self.on_focus_out = Some(on_focus_out);
+            }
+
+            ActionsEvent::OnGeoChanged(on_geo_changed) => {
+                self.on_geo_changed = Some(on_geo_changed);
+                cx.cache.set_bounds(cx.current, BoundingBox::default());
+                cx.needs_relayout();
+            }
+        });
+
+        event.map(|window_event, meta| match window_event {
+            WindowEvent::Press { mouse } => {
+                let over = if *mouse { cx.hovered() } else { cx.focused() };
+                if cx.current() != over && !over.is_descendant_of(cx.tree, cx.current()) {
+                    return;
+                }
+
+                if !cx.is_disabled() && cx.current == meta.target {
+                    // Only grab keyboard focus if the view has opted in via
+                    // the FOCUSABLE ability. Without this gate, any view with
+                    // an `on_press` callback steals focus on click even when
+                    // `.focusable(false)` is set, and every subsequent
+                    // Space / Enter keypress then re-dispatches
+                    // `WindowEvent::Press` straight back to the clicked view
+                    // and re-runs its action — a confusing non-feature for
+                    // chrome buttons that are mouse-only by design.
+                    let focusable = cx
+                        .style
+                        .abilities
+                        .get(cx.current())
+                        .is_some_and(|abilities| abilities.contains(Abilities::FOCUSABLE));
+                    if focusable {
+                        cx.focus();
+                    }
+                    if let Some(action) = &self.on_press {
+                        (action)(cx);
+                    }
+                }
+            }
+
+            WindowEvent::PressDown { mouse } => {
+                let over = if *mouse { cx.hovered() } else { cx.focused() };
+                if cx.current() != over && !over.is_descendant_of(cx.tree, cx.current()) {
+                    return;
+                }
+                if !cx.is_disabled() && cx.current == meta.target {
+                    if let Some(action) = &self.on_press_down {
+                        (action)(cx);
+                    }
+                }
+            }
+
+            WindowEvent::MouseDoubleClick(button) => {
+                if meta.target == cx.current && !cx.is_disabled() {
+                    if let Some(action) = &self.on_double_click {
+                        (action)(cx, *button);
+                    }
+                }
+            }
+
+            WindowEvent::MouseEnter => {
+                if meta.target == cx.current() {
+                    if let Some(action) = &self.on_hover {
+                        (action)(cx);
+                    }
+                }
+            }
+
+            WindowEvent::MouseLeave => {
+                if meta.target == cx.current() {
+                    if let Some(action) = &self.on_hover_out {
+                        (action)(cx);
+                    }
+                }
+            }
+
+            WindowEvent::MouseOver => {
+                if let Some(action) = &self.on_over {
+                    (action)(cx);
+                }
+            }
+
+            WindowEvent::MouseOut => {
+                // if meta.target == cx.current() {
+                if let Some(action) = &self.on_over_out {
+                    (action)(cx);
+                }
+                // }
+            }
+
+            WindowEvent::MouseMove(x, y) => {
+                if let Some(action) = &self.on_mouse_move {
+                    (action)(cx, *x, *y);
+                }
+            }
+
+            WindowEvent::MouseDown(mouse_button) => {
+                if let Some(action) = &self.on_mouse_down {
+                    (action)(cx, *mouse_button);
+                }
+            }
+
+            WindowEvent::MouseUp(mouse_button) => {
+                if let Some(action) = &self.on_mouse_up {
+                    (action)(cx, *mouse_button);
+                }
+            }
+
+            WindowEvent::FocusIn => {
+                if let Some(action) = &self.on_focus_in {
+                    (action)(cx);
+                }
+            }
+
+            WindowEvent::FocusOut => {
+                if let Some(action) = &self.on_focus_out {
+                    (action)(cx);
+                }
+            }
+
+            WindowEvent::GeometryChanged(geo) => {
+                if meta.target == cx.current() {
+                    if let Some(action) = &self.on_geo_changed {
+                        (action)(cx, *geo);
+                    }
+                }
+            }
+
+            _ => {}
+        });
+    }
+}
+
+pub(crate) enum ActionsEvent {
+    OnPress(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnPressDown(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnDoubleClick(Box<dyn Fn(&mut EventContext, MouseButton) + Send + Sync>),
+    OnHover(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnHoverOut(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnOver(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnOverOut(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnMouseMove(Box<dyn Fn(&mut EventContext, f32, f32) + Send + Sync>),
+    OnMouseDown(Box<dyn Fn(&mut EventContext, MouseButton) + Send + Sync>),
+    OnMouseUp(Box<dyn Fn(&mut EventContext, MouseButton) + Send + Sync>),
+    OnFocusIn(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnFocusOut(Box<dyn Fn(&mut EventContext) + Send + Sync>),
+    OnGeoChanged(Box<dyn Fn(&mut EventContext, GeoChanged) + Send + Sync>),
+}
+
+/// Modifiers which add an action callback to a view.
+pub trait ActionModifiers<V> {
+    /// Adds a callback which is performed when the the view receives the [`Press`](crate::prelude::WindowEvent::Press) event.
+    /// By default a view receives the [`Press`](crate::prelude::WindowEvent::Press) event when the left mouse button is pressed and then released on the view,
+    /// or when the space or enter keys are pressed and then released while the view is focused.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_press(|_| debug!("View was pressed!"));
+    /// ```
+    fn on_press<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the the view receives the [`PressDown`](crate::prelude::WindowEvent::PressDown) event.
+    // By default a view receives the [`PressDown`](crate::prelude::WindowEvent::PressDown) event when the left mouse button is pressed on the view,
+    /// or when the space or enter keys are pressed while the view is focused.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_press_down(|_| debug!("View was pressed down!"));
+    /// ```
+    fn on_press_down<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the the view receives the [`MouseDoubleClick`](crate::prelude::WindowEvent::MouseDoubleClick) event.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_double_click(|_, _button| debug!("View was double clicked on!"));
+    /// ```
+    fn on_double_click<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, MouseButton) + Send + Sync;
+
+    /// Adds a callback which is performed when the mouse pointer moves over a view.
+    /// This callback is not triggered when the mouse pointer moves over an overlapping child of the view.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_hover(|_| debug!("Mouse cursor entered the view!"));
+    /// ```
+    fn on_hover<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the mouse pointer moves away from a view.
+    /// This callback is not triggered when the mouse pointer moves away from an overlapping child of the view.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_hover_out(|_| debug!("Mouse cursor left the view!"));
+    /// ```
+    fn on_hover_out<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the mouse pointer moves over the bounds of a view,
+    /// including any overlapping children.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_over(|_| debug!("Mouse cursor entered the view bounds!"));
+    /// ```
+    fn on_over<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the mouse pointer moves away from the bounds of a view,
+    /// including any overlapping children.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_over_out(|_| debug!("Mouse cursor left the view bounds!"));
+    /// ```
+    fn on_over_out<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the mouse pointer moves within the bounds of a view.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_mouse_move(|_, x, y| debug!("Cursor moving: {} {}", x, y));
+    /// ```
+    fn on_mouse_move<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, f32, f32) + Send + Sync;
+
+    /// Adds a callback which is performed when a mouse button is pressed on the view.
+    /// Unlike the `on_press` callback, this callback is triggered for all mouse buttons and not for any keyboard keys.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_mouse_down(|_, button| debug!("Mouse button, {:?}, was pressed!", button));
+    /// ```
+    fn on_mouse_down<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, MouseButton) + Send + Sync;
+
+    /// Adds a callback which is performed when a mouse button is released on the view.
+    /// Unlike the `on_release` callback, this callback is triggered for all mouse buttons and not for any keyboard keys.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_mouse_up(|_, button| debug!("Mouse button, {:?}, was released!", button));
+    /// ```
+    fn on_mouse_up<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, MouseButton) + Send + Sync;
+
+    /// Adds a callback which is performed when the view gains keyboard focus.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_focus_in(|_| debug!("View gained keyboard focus!"));
+    /// ```
+    fn on_focus_in<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the view loses keyboard focus.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_focus_out(|_| debug!("View lost keyboard focus!"));
+    /// ```
+    fn on_focus_out<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync;
+
+    /// Adds a callback which is performed when the the view changes size or position after layout.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use vizia_core::prelude::*;
+    /// # let mut cx = &mut Context::default();
+    /// Element::new(cx).on_geo_changed(|_, _| debug!("View geometry changed!"));
+    /// ```
+    fn on_geo_changed<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, GeoChanged) + Send + Sync;
+
+    /// Adds a popup tooltip to the view.
+    fn tooltip<C: Fn(&mut Context) -> Handle<'_, Tooltip> + 'static>(self, content: C) -> Self;
+
+    /// Adds a popup menu to the view.
+    fn menu<C: Fn(&mut Context) -> Handle<'_, Popover> + 'static>(self, content: C) -> Self;
+}
+
+// If the entity doesn't have an `ActionsModel` then add one to the entity
+fn build_action_model(cx: &mut Context, entity: Entity) {
+    if cx.models.get(&entity).and_then(|models| models.get(&TypeId::of::<ActionsModel>())).is_none()
+    {
+        cx.with_current(entity, |cx| {
+            ActionsModel::new().build(cx);
+        });
+    }
+}
+
+fn build_modal_model(cx: &mut Context, entity: Entity) {
+    if cx.models.get(&entity).and_then(|models| models.get(&TypeId::of::<ModalModel>())).is_none() {
+        cx.with_current(entity, |cx| {
+            ModalModel {
+                tooltip_visible: Signal::new((false, true)),
+                menu_visible: Signal::new(false),
+            }
+            .build(cx);
+        });
+    }
+}
+
+impl<V: View> ActionModifiers<V> for Handle<'_, V> {
+    fn tooltip<C: Fn(&mut Context) -> Handle<'_, Tooltip> + 'static>(self, content: C) -> Self {
+        let entity = self.entity();
+
+        build_modal_model(self.cx, entity);
+
+        self.cx.with_current(entity, move |cx| {
+            let tooltip_visible = cx.data::<ModalModel>().tooltip_visible;
+            Binding::new(cx, tooltip_visible, move |cx| {
+                let tooltip_visible = tooltip_visible.get();
+                let tooltip_delay = cx.environment().tooltip_delay;
+                if tooltip_visible.0 {
+                    (content)(cx)
+                        .on_build(|cx| {
+                            if tooltip_visible.1 {
+                                cx.play_animation(
+                                    "tooltip_fade",
+                                    Duration::from_millis(100),
+                                    tooltip_delay,
+                                )
+                            }
+                        })
+                        .id(format!("{entity}"));
+                }
+            });
+        });
+
+        self.described_by(format!("{entity}"))
+    }
+
+    fn menu<C: Fn(&mut Context) -> Handle<'_, Popover> + 'static>(self, content: C) -> Self {
+        let entity = self.entity();
+
+        build_modal_model(self.cx, entity);
+
+        self.cx.with_current(entity, |cx| {
+            let menu_visible = cx.data::<ModalModel>().menu_visible;
+            Binding::new(cx, menu_visible, move |cx| {
+                let is_visible = menu_visible.get();
+                if is_visible {
+                    (content)(cx).on_build(|cx| {
+                        cx.add_listener(move |_: &mut Popover, cx, event| {
+                            event.map(|window_event, _: &mut crate::events::EventMeta| {
+                                match window_event {
+                                    WindowEvent::MouseDown(_) => {
+                                        //if flag && meta.origin != cx.current() {
+                                        // Check if the mouse was pressed outside of any descendants
+                                        if !cx.hovered.is_descendant_of(cx.tree, cx.current) {
+                                            cx.emit(ModalEvent::HideMenu);
+                                        }
+                                        //}
+                                    }
+
+                                    _ => {}
+                                }
+                            });
+                        });
+                    });
+                }
+            });
+        });
+
+        self
+    }
+
+    fn on_press<F>(mut self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        self = self.hoverable(true);
+
+        if let Some(view) = self
+            .cx
+            .views
+            .get_mut(&self.entity)
+            .and_then(|view_handler| view_handler.downcast_mut::<Button>())
+        {
+            view.action = Some(Box::new(action));
+            return self;
+        }
+
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnPress(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_press_down<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnPressDown(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_double_click<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, MouseButton) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnDoubleClick(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_hover<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnHover(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_hover_out<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnHoverOut(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_over<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnOver(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_over_out<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnOverOut(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_mouse_move<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, f32, f32) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnMouseMove(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_mouse_down<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, MouseButton) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnMouseDown(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_mouse_up<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, MouseButton) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnMouseUp(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_focus_in<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnFocusIn(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_focus_out<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnFocusOut(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+
+    fn on_geo_changed<F>(self, action: F) -> Self
+    where
+        F: 'static + Fn(&mut EventContext, GeoChanged) + Send + Sync,
+    {
+        build_action_model(self.cx, self.entity);
+
+        self.cx.emit_custom(
+            Event::new(ActionsEvent::OnGeoChanged(Box::new(action)))
+                .target(self.entity)
+                .origin(self.entity),
+        );
+
+        self
+    }
+}

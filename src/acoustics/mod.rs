@@ -6,7 +6,10 @@
 //! `CABINET_MODEL.md` and `MICROPHONE_MODEL.md`.
 
 pub mod cabinet;
+pub mod diffraction;
+pub mod enclosure;
 pub mod filters;
 pub mod mic;
+pub mod radiation;
 pub mod speaker;
 pub mod stage;

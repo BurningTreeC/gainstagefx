@@ -1,0 +1,31 @@
+[package]
+name = "nice-plug-au2"
+version = "0.1.1"
+edition = "2024"
+rust-version = "1.87"
+authors = [
+  "Michał Kalbarczyk <fazibear@noreply.codeberg.org>",
+]
+license = "ISC"
+description = "Audio Unit (AU2) support for nice-plug"
+repository = "https://codeberg.org/fazibear/nice-plug-addons"
+
+[dependencies]
+nice-plug-core = { git = "https://codeberg.org/RustAudio/nice-plug", rev = "e60b5db09d8606c3dc3e93f982847a00bce17325" }
+log = "0.4"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6.4" }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSColor", "NSGraphics", "NSResponder", "NSView", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSGeometry", "NSObject", "NSThread"] }
+objc2-audio-toolbox = { version = "0.3", default-features = false, features = ["AUAudioUnit", "AUAudioUnitImplementation", "AUCocoaUIView", "AUComponent", "AudioComponent", "AudioUnitParameters", "AudioUnitProperties", "objc2-core-audio-types", "objc2-core-foundation"] }
+objc2-core-audio-types = { version = "0.3.2", default-features = false, features = ["CoreAudioBaseTypes"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["CFArray", "CFBase", "CFData", "CFDictionary", "CFNumber", "CFString", "CFURL"] }
+coreaudio-sys = { version = "0.2", features = ["audio_unit"] }
+libc = "0.2"
+
+[features]
+default = []

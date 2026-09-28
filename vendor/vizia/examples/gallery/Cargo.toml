@@ -1,0 +1,16 @@
+[package]
+name = "gallery"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+vizia = { workspace = true, features = ["tokio", "url-loader"] }
+serde.workspace = true
+reqwest = { workspace = true, features = ["json", "query"] }
+
+[lints]
+workspace = true
