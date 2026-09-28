@@ -246,3 +246,99 @@ pub fn rms_error_in(cab: &'static CabinetProfile, profile: SpeakerProfile) -> f6
     let offset = diff.iter().sum::<f64>() / diff.len() as f64;
     (diff.iter().map(|d| (d - offset).powi(2)).sum::<f64>() / diff.len() as f64).sqrt()
 }
+
+
+/// Print a frequency-by-frequency and octave-band diagnostic comparing the
+/// fitted near-cone path with the complete two-cone JC-120 cabinet.
+///
+/// Each model is independently level-aligned to the smoothed measurement over
+/// the fitted band, exactly like `rms_error_in`, so this diagnoses response
+/// *shape* rather than an arbitrary absolute SPL offset.
+pub fn print_one_vs_two_cone_diagnostic(profile: SpeakerProfile) {
+    let band: Vec<(f64, f64)> = target()
+        .into_iter()
+        .filter(|(f, _)| (FIT_LOW..=FIT_HIGH).contains(f))
+        .collect();
+    let freqs: Vec<f64> = band.iter().map(|(f, _)| *f).collect();
+    let one_raw = modelled_in(&FIT_CABINET, profile, &freqs);
+    let two_raw = modelled_in(&CabinetProfile::JAZZ_OPEN_212, profile, &freqs);
+
+    let best_offset = |model: &[f64]| -> f64 {
+        model
+            .iter()
+            .zip(&band)
+            .map(|(m, (_, t))| m - t)
+            .sum::<f64>()
+            / band.len() as f64
+    };
+    let one_offset = best_offset(&one_raw);
+    let two_offset = best_offset(&two_raw);
+    let one: Vec<f64> = one_raw.iter().map(|v| v - one_offset).collect();
+    let two: Vec<f64> = two_raw.iter().map(|v| v - two_offset).collect();
+
+    println!("\nJC-120 one-cone vs two-cone diagnostic (independently level-aligned)");
+    println!("one offset {one_offset:+.3} dB, two offset {two_offset:+.3} dB");
+    println!("{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Hz", "measured", "one", "two", "two-one", "one err", "two err");
+    for (i, ((f, measured), (one_db, two_db))) in band
+        .iter()
+        .zip(one.iter().zip(&two))
+        .enumerate()
+    {
+        // Print every measurement point. `i` is kept to make it easy to thin
+        // this later without changing any calculations.
+        let _ = i;
+        println!(
+            "{:8.1} {:10.2} {:10.2} {:10.2} {:+10.2} {:+10.2} {:+10.2}",
+            f,
+            measured,
+            one_db,
+            two_db,
+            two_db - one_db,
+            one_db - measured,
+            two_db - measured
+        );
+    }
+
+    const BANDS: [(f64, f64); 7] = [
+        (90.0, 250.0),
+        (250.0, 500.0),
+        (500.0, 1_000.0),
+        (1_000.0, 2_000.0),
+        (2_000.0, 4_000.0),
+        (4_000.0, 8_000.0),
+        (8_000.0, 12_000.0),
+    ];
+    println!("\nBand RMS shape error");
+    println!("{:>15} {:>10} {:>10} {:>10}", "band", "one", "two", "penalty");
+    for (lo, hi) in BANDS {
+        let mut one_sq = 0.0;
+        let mut two_sq = 0.0;
+        let mut n = 0usize;
+        for (((f, measured), one_db), two_db) in band.iter().zip(&one).zip(&two) {
+            let in_band = if hi == FIT_HIGH {
+                (lo..=hi).contains(f)
+            } else {
+                (lo..hi).contains(f)
+            };
+            if in_band {
+                one_sq += (one_db - measured).powi(2);
+                two_sq += (two_db - measured).powi(2);
+                n += 1;
+            }
+        }
+        if n != 0 {
+            let one_rms = (one_sq / n as f64).sqrt();
+            let two_rms = (two_sq / n as f64).sqrt();
+            println!(
+                "{:6.0}-{:5.0} Hz {:10.3} {:10.3} {:+10.3}",
+                lo,
+                hi,
+                one_rms,
+                two_rms,
+                two_rms - one_rms
+            );
+        }
+    }
+    println!();
+}

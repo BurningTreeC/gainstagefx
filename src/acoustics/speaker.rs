@@ -302,14 +302,15 @@ impl SpeakerProfile {
         mms: 28.0e-3,
         bl: 10.72,
         sd: 490.9e-4,
-        // 1.16 dB rms against the measurement from 90 Hz to 12 kHz.
+        // 1.296 dB rms against the measurement from 90 Hz to 12 kHz,
+        // refitted by `examples/jazz_speaker_fit.rs` after the acoustic overhaul.
         breakup: Breakup {
             peaks: [
-                pk(510.0, 6.54, 1.95),
-                pk(3642.0, 8.58, 2.76),
-                pk(10172.0, 12.0, 2.52),
+                pk(545.0, 5.90, 2.09),
+                pk(3733.0, 7.83, 3.62),
+                pk(10328.0, 18.0, 1.90),
             ],
-            lowpass_hz: 10344.0,
+            lowpass_hz: 4791.0,
             lowpass_q: 0.50,
         },
     };
