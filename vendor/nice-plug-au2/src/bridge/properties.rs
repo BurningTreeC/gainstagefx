@@ -207,6 +207,13 @@ pub unsafe extern "C" fn get(
                     kCFStringEncodingUTF8,
                 )
             };
+            let name_key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"name".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
             let state_key = unsafe {
                 CFStringCreateWithCString(
                     ptr::null(),
@@ -219,6 +226,7 @@ pub unsafe extern "C" fn get(
                 || subtype_key.is_null()
                 || manufacturer_key.is_null()
                 || version_key.is_null()
+                || name_key.is_null()
                 || state_key.is_null()
             {
                 bridge::nice_au2_free_state(state_ptr);
@@ -227,6 +235,7 @@ pub unsafe extern "C" fn get(
                     subtype_key,
                     manufacturer_key,
                     version_key,
+                    name_key,
                     state_key,
                 ] {
                     if !object.is_null() {
@@ -274,6 +283,13 @@ pub unsafe extern "C" fn get(
                     (&raw const component_version).cast(),
                 )
             };
+            let name_value = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"GainStageFx".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
             let state_value = unsafe {
                 CFDataCreate(
                     ptr::null(),
@@ -287,6 +303,7 @@ pub unsafe extern "C" fn get(
                 || subtype_value.is_null()
                 || manufacturer_value.is_null()
                 || version_value.is_null()
+                || name_value.is_null()
                 || state_value.is_null()
             {
                 for object in [
@@ -294,6 +311,7 @@ pub unsafe extern "C" fn get(
                     subtype_key,
                     manufacturer_key,
                     version_key,
+                    name_key,
                     state_key,
                 ] {
                     unsafe { CFRelease(object.cast()) };
@@ -303,6 +321,7 @@ pub unsafe extern "C" fn get(
                     subtype_value,
                     manufacturer_value,
                     version_value,
+                    name_value.cast::<c_void>() as *const c_void,
                     state_value,
                 ] {
                     if !object.is_null() {
@@ -317,6 +336,7 @@ pub unsafe extern "C" fn get(
                 subtype_key.cast::<c_void>() as *const c_void,
                 manufacturer_key.cast::<c_void>() as *const c_void,
                 version_key.cast::<c_void>() as *const c_void,
+                name_key.cast::<c_void>() as *const c_void,
                 state_key.cast::<c_void>() as *const c_void,
             ];
             let values = [
@@ -324,6 +344,7 @@ pub unsafe extern "C" fn get(
                 subtype_value,
                 manufacturer_value,
                 version_value,
+                name_value.cast::<c_void>() as *const c_void,
                 state_value,
             ];
 
@@ -345,6 +366,7 @@ pub unsafe extern "C" fn get(
                 subtype_key,
                 manufacturer_key,
                 version_key,
+                name_key,
                 state_key,
             ] {
                 unsafe { CFRelease(object.cast()) };
@@ -354,6 +376,7 @@ pub unsafe extern "C" fn get(
                 subtype_value,
                 manufacturer_value,
                 version_value,
+                name_value.cast::<c_void>() as *const c_void,
                 state_value,
             ] {
                 unsafe { CFRelease(object) };
