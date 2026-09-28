@@ -34,6 +34,11 @@ unsafe extern "C" {
     fn CFDataGetBytePtr(data: *const c_void) -> *const u8;
     fn CFDataGetLength(data: *const c_void) -> isize;
     fn CFGetTypeID(object: *const c_void) -> usize;
+    fn CFNumberCreate(
+        allocator: *const c_void,
+        the_type: isize,
+        value_ptr: *const c_void,
+    ) -> *const c_void;
 
     static kCFTypeDictionaryKeyCallBacks: u8;
     static kCFTypeDictionaryValueCallBacks: u8;
@@ -164,10 +169,9 @@ pub unsafe extern "C" fn get(
     }
     match property {
         kAudioUnitProperty_ClassInfo => {
-            // AUv2 ClassInfo is a CFPropertyListRef. Store the canonical
-            // nice-plug PluginState bytes in a CFData value inside a retained
-            // CFDictionary so AU hosts save exactly the same persistent state
-            // semantics as the other nice-plug wrappers.
+            // AUv2 ClassInfo is a CFPropertyListRef dictionary. Besides our
+            // canonical nice-plug state blob, auval requires the standard
+            // component identity fields to be present and to match this AU.
             let mut state_size = 0u32;
             let state_ptr =
                 bridge::nice_au2_save_state(component.rust_instance, &mut state_size);
@@ -175,19 +179,78 @@ pub unsafe extern "C" fn get(
                 return kAudioUnitErr_InvalidPropertyValue;
             }
 
-            let key = unsafe {
+            let type_key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"type".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
+            let subtype_key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"subtype".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
+            let manufacturer_key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"manufacturer".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
+            let state_key = unsafe {
                 CFStringCreateWithCString(
                     ptr::null(),
                     c"nice-plug-state".as_ptr(),
                     kCFStringEncodingUTF8,
                 )
             };
-            if key.is_null() {
+
+            if type_key.is_null()
+                || subtype_key.is_null()
+                || manufacturer_key.is_null()
+                || state_key.is_null()
+            {
                 bridge::nice_au2_free_state(state_ptr);
+                for object in [type_key, subtype_key, manufacturer_key, state_key] {
+                    if !object.is_null() {
+                        unsafe { CFRelease(object.cast()) };
+                    }
+                }
                 return kAudioUnitErr_InvalidPropertyValue;
             }
 
-            let data = unsafe {
+            // AU ClassInfo stores the component identity as CFNumbers whose
+            // values are the 32-bit AudioComponent FourCCs.
+            const CF_NUMBER_SINT32_TYPE: isize = 3;
+            let component_type = u32::from_be_bytes(*b"aufx") as i32;
+            let component_subtype = u32::from_be_bytes(*b"GSfx") as i32;
+            let component_manufacturer = u32::from_be_bytes(*b"BrTC") as i32;
+
+            let type_value = unsafe {
+                CFNumberCreate(
+                    ptr::null(),
+                    CF_NUMBER_SINT32_TYPE,
+                    (&raw const component_type).cast(),
+                )
+            };
+            let subtype_value = unsafe {
+                CFNumberCreate(
+                    ptr::null(),
+                    CF_NUMBER_SINT32_TYPE,
+                    (&raw const component_subtype).cast(),
+                )
+            };
+            let manufacturer_value = unsafe {
+                CFNumberCreate(
+                    ptr::null(),
+                    CF_NUMBER_SINT32_TYPE,
+                    (&raw const component_manufacturer).cast(),
+                )
+            };
+            let state_value = unsafe {
                 CFDataCreate(
                     ptr::null(),
                     state_ptr.cast_const(),
@@ -195,30 +258,64 @@ pub unsafe extern "C" fn get(
                 )
             };
             bridge::nice_au2_free_state(state_ptr);
-            if data.is_null() {
-                unsafe { CFRelease(key.cast()) };
+
+            if type_value.is_null()
+                || subtype_value.is_null()
+                || manufacturer_value.is_null()
+                || state_value.is_null()
+            {
+                for object in [type_key, subtype_key, manufacturer_key, state_key] {
+                    unsafe { CFRelease(object.cast()) };
+                }
+                for object in [
+                    type_value,
+                    subtype_value,
+                    manufacturer_value,
+                    state_value,
+                ] {
+                    if !object.is_null() {
+                        unsafe { CFRelease(object) };
+                    }
+                }
                 return kAudioUnitErr_InvalidPropertyValue;
             }
 
-            let keys = [key.cast::<c_void>() as *const c_void];
-            let values = [data];
+            let keys = [
+                type_key.cast::<c_void>() as *const c_void,
+                subtype_key.cast::<c_void>() as *const c_void,
+                manufacturer_key.cast::<c_void>() as *const c_void,
+                state_key.cast::<c_void>() as *const c_void,
+            ];
+            let values = [
+                type_value,
+                subtype_value,
+                manufacturer_value,
+                state_value,
+            ];
+
             let dictionary = unsafe {
                 CFDictionaryCreate(
                     ptr::null(),
                     keys.as_ptr(),
                     values.as_ptr(),
-                    1,
+                    keys.len() as isize,
                     (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
                     (&raw const kCFTypeDictionaryValueCallBacks).cast(),
                 )
             };
 
-            // CFDictionaryCreate retained both objects through the CFType
-            // callbacks. The returned dictionary itself is intentionally
-            // retained for the host, as required by ClassInfo.
-            unsafe {
-                CFRelease(key.cast());
-                CFRelease(data);
+            // The dictionary retains its keys and values through the CFType
+            // callbacks. ClassInfo itself is returned retained to the host.
+            for object in [type_key, subtype_key, manufacturer_key, state_key] {
+                unsafe { CFRelease(object.cast()) };
+            }
+            for object in [
+                type_value,
+                subtype_value,
+                manufacturer_value,
+                state_value,
+            ] {
+                unsafe { CFRelease(object) };
             }
 
             if dictionary.is_null() {
