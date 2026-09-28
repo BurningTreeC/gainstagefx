@@ -1,11 +1,10 @@
 //! Cabinet and microphone processing: filters, delay, polar patterns, placement
 //! behaviour, geometry, dual microphones, automation safety and rate independence.
 use gainstagefx::acoustics::cabinet::CabinetProfile;
-use gainstagefx::acoustics::filters::{analog, Biquad, DelayLine};
-use gainstagefx::acoustics::mic::{MicPlacement, MicProfile, Pattern};
+use gainstagefx::acoustics::mic::MicPlacement;
 use gainstagefx::acoustics::speaker::SpeakerProfile;
 use gainstagefx::acoustics::stage::{AcousticStage, MicSlot};
-use std::f64::consts::{PI, TAU};
+use std::f64::consts::TAU;
 
 fn db(x: f64) -> f64 {
     20.0 * x.max(1e-12).log10()
