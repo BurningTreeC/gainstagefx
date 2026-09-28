@@ -243,11 +243,10 @@ impl<P: Plugin> instance::NicePluginFrontend for Au2Frontend<P> {
     }
 }
 
-#[cfg(not(target_os="macos"))]
-fn editor_host(_parent: *mut std::ffi::c_void) -> Option<nice_plug_core::editor::HostMethods> { None }
-#[cfg(target_os="macos")]
-fn editor_host(parent: *mut std::ffi::c_void) -> Option<nice_plug_core::editor::HostMethods> {
-    crate::bridge::editor_host(parent)
+fn editor_host(
+    _parent: *mut std::ffi::c_void,
+) -> Option<nice_plug_core::editor::HostMethods> {
+    None
 }
 
 impl<P: Plugin + 'static> Default for NiceAu2Processor<P> {
