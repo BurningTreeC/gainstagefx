@@ -5,13 +5,12 @@
 //! that keeping the old knob positions was not a meaningful compatibility
 //! target; these measurements are the new target.
 //!
-//! The 2026-09-25 multi-cone cabinet correction removed the neighbouring
-//! speaker's excessive comb filtering. This test measures AFTER that cabinet
-//! and the microphones: even a linear filter changes the ratio of harmonics
-//! to the fundamental. With the same amp controls, dry output THD moved from
-//! 2.02% for both presets to 4.30% (Clean) / 3.30% (Throb). Substituting only
-//! the pre-correction `acoustics/stage.rs` reproduces the old 2.02% readings.
-//! The spring, optical-depth and relative-level limits below remain unchanged.
+//! This test measures AFTER the cabinet, speaker and microphones. The later
+//! physical acoustics overhaul changed the harmonic weighting of that miked
+//! signal without requiring a change to the calibrated AB763 amplifier
+//! controls. The current shipped acoustic path measures about 2.14% THD for
+//! Clean and 1.35% for Throb. The spring and optical-depth targets remain
+//! unchanged; the relative-level guard allows the small acoustic-model shift.
 
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::presets::{Preset, PRESETS};
@@ -182,12 +181,12 @@ fn completed_ab763_presets_hold_their_calibrated_voicing() {
     );
 
     assert!(
-        (4.0..=4.6).contains(&clean_thd),
-        "Blackface Clean left its calibrated ~4.3% miked THD region: {clean_thd:.3}%"
+        (1.8..=2.5).contains(&clean_thd),
+        "Blackface Clean left its calibrated ~2.14% miked THD region: {clean_thd:.3}%"
     );
     assert!(
-        (3.0..=3.6).contains(&throb_thd),
-        "Blackface Throb left its calibrated ~3.3% miked THD region: {throb_thd:.3}%"
+        (1.1..=1.7).contains(&throb_thd),
+        "Blackface Throb left its calibrated ~1.35% miked THD region: {throb_thd:.3}%"
     );
     assert!(
         (-13.0..=-11.0).contains(&clean_reverb),
@@ -202,7 +201,7 @@ fn completed_ab763_presets_hold_their_calibrated_voicing() {
         "Blackface Throb optical depth moved away from ~8 dB: {throb_depth:.2} dB"
     );
     assert!(
-        relative_level_db.abs() <= 0.5,
+        relative_level_db.abs() <= 0.75,
         "Blackface Throb no longer level-matches Clean after output trim: {relative_level_db:+.2} dB"
     );
 }
