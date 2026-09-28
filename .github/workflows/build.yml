@@ -41,6 +41,7 @@ jobs:
             libasound2-dev \
             libgl-dev \
             libegl1-mesa-dev \
+            libwayland-dev \
             libfontconfig1-dev \
             libxkbcommon-x11-dev \
             libjack-dev \
@@ -129,6 +130,7 @@ jobs:
             libasound2-dev \
             libgl-dev \
             libegl1-mesa-dev \
+            libwayland-dev \
             libgl1-mesa-dri \
             xvfb \
             libfontconfig1-dev \
