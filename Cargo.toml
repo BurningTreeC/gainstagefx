@@ -1,10 +1,10 @@
 [package]
 name = "gainstagefx"
-version = "0.33.0"
+version = "0.34.0"
 edition = "2021"
 authors = ["Simon Huber <huber.simon@protonmail.com>"]
 license = "GPL-3.0-or-later"
-description = "GainStageFx, circuit modelled gain stages from subtle saturation to high gain (CLAP/VST3)"
+description = "GainStageFx, circuit modelled gain stages from subtle saturation to high gain (CLAP/VST3/AU)"
 
 [workspace]
 members = ["installer", "xtask", "vendor/nice-plug-au2"]
@@ -31,6 +31,11 @@ nice-plug = { git = "https://codeberg.org/RustAudio/nice-plug", rev = "e60b5db09
 vizia_plug = { path = "vendor/vizia_plug" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# AUv2 is a macOS-only plugin format. Keeping this target-specific prevents
+# CoreAudio/AppKit dependencies from entering Linux and Windows builds.
+[target.'cfg(target_os = "macos")'.dependencies]
+nice-plug-au2 = { path = "vendor/nice-plug-au2" }
 
 [profile.release]
 lto = "thin"

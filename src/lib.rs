@@ -17,3 +17,31 @@ pub mod plugin;
 pub mod presets;
 mod stereo_worker;
 pub mod voice;
+
+// ---------------------------------------------------------------------------
+// macOS Audio Unit v2 export
+// ---------------------------------------------------------------------------
+//
+// AUv2 uses FourCC identifiers rather than the CLAP/VST3 identifiers.
+//
+// IMPORTANT: once these identifiers have shipped, do not change them. Hosts
+// use them to identify the plugin in existing projects.
+//
+// Manufacturer: BrTC = BurningTreeC
+// Subtype:      GSfx = GainStageFx
+//
+// GainStageFx is an audio effect, so its AU component type is "aufx".
+
+#[cfg(target_os = "macos")]
+use nice_plug_au2::{nice_export_au2, Au2Category, Au2Plugin};
+
+#[cfg(target_os = "macos")]
+impl Au2Plugin for plugin::GainStageFx {
+    const AU2_CATEGORY: Au2Category = Au2Category::Effect;
+    const AU2_MANUFACTURER: [u8; 4] = *b"BrTC";
+    const AU2_SUBTYPE: [u8; 4] = *b"GSfx";
+    const AU2_NAME: &'static str = "GainStageFx";
+}
+
+#[cfg(target_os = "macos")]
+nice_export_au2!(plugin::GainStageFx);

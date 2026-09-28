@@ -1330,9 +1330,10 @@ dependencies = [
 
 [[package]]
 name = "gainstagefx"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "nice-plug",
+ "nice-plug-au2",
  "serde",
  "serde_json",
  "vizia_plug",
@@ -2005,6 +2006,7 @@ dependencies = [
 name = "nice-plug-au2"
 version = "0.1.1"
 dependencies = [
+ "cc",
  "coreaudio-sys",
  "libc",
  "log",

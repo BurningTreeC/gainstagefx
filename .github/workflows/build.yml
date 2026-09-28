@@ -74,8 +74,9 @@ jobs:
       #
       # This keeps DSP tests representative while substantially reducing LLVM
       # optimization time.
+      #
       # Finish all test binaries so one failing regression does not hide later
-      # failures (as switching previously hid the Twin preset regression).
+      # failures.
       - name: Run tests
         run: cargo test --profile ci --workspace --no-fail-fast
 
@@ -84,15 +85,9 @@ jobs:
           shellcheck install.sh .github/install-Linux.sh
           python3 tools/test_linux_install.py
 
-      # Use the CI profile here as well.
-      #
       # Some timing/realtime test-support code intentionally requires
-      # release-style compilation. Running Clippy with the default dev profile
-      # makes the release guard unconditional and causes unreachable-code
-      # warnings, which become errors under -D warnings.
-      #
-      # The CI profile gives Clippy release-style cfg/debug-assertion behavior
-      # without paying for Thin/Fat LTO.
+      # release-style compilation. The CI profile gives Clippy release-style
+      # cfg/debug-assertion behavior without paying for Thin/Fat LTO.
       - name: Clippy
         run: cargo clippy --profile ci --workspace --all-targets -- -D warnings
 
@@ -188,30 +183,26 @@ jobs:
       #   lto = "fat"
       #   codegen-units = 1
       #
-      # This keeps ordinary CI reasonably fast while ensuring the binaries
-      # actually published to users receive maximum optimization.
-      #
-      # IMPORTANT:
-      # xtask's bundle and bundle-universal commands must support:
-      #
-      #   --profile release-lto
-      #
-      # and forward that profile to their internal Cargo build commands.
+      # On macOS, nice-plug first creates universal CLAP/VST3 bundles from the
+      # x86_64 and arm64 slices. The same universal Mach-O also contains the
+      # AUv2 entry points exported by nice-plug-au2. tools/package_au2.sh wraps
+      # that binary in a proper Audio Unit .component bundle and ad-hoc signs it.
       - name: Build the plugin
         run: |
           if [[ '${{ matrix.name }}' == 'macos-universal' ]]; then
             export MACOSX_DEPLOYMENT_TARGET=10.13
 
-            # cargo xtask ad-hoc signs the bundles after lipo. This requires
-            # no Apple Developer account. An arm64 binary needs at least an
-            # ad-hoc signature to load.
             if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-              echo "Building tagged macOS release with release-lto profile"
+              echo "Building tagged macOS universal release with release-lto profile"
               cargo xtask bundle-universal "$PACKAGE" --profile release-lto
             else
-              echo "Building macOS CI package with release profile"
+              echo "Building macOS universal CI package with release profile"
               cargo xtask bundle-universal "$PACKAGE" --release
             fi
+
+            echo
+            echo "Creating AUv2 component..."
+            bash tools/package_au2.sh "$PLUGIN"
           else
             if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
               echo "Building tagged release with release-lto profile"
@@ -222,6 +213,138 @@ jobs:
             fi
           fi
 
+      # Do not merely check that a .component directory exists. Verify that it
+      # contains a valid bundle structure, the expected universal executable,
+      # the AU factory/registration symbols, valid plist metadata, and a valid
+      # ad-hoc code signature.
+      - name: Verify the macOS AUv2 component
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+
+          component="target/bundled/$PLUGIN.component"
+          plist="$component/Contents/Info.plist"
+          binary="$component/Contents/MacOS/$PLUGIN"
+
+          echo "Verifying AUv2 bundle structure..."
+
+          test -d "$component"
+          test -d "$component/Contents"
+          test -d "$component/Contents/MacOS"
+          test -d "$component/Contents/Resources"
+          test -f "$plist"
+          test -f "$binary"
+          test -x "$binary"
+
+          echo
+          echo "Validating Info.plist..."
+          plutil -lint "$plist"
+
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")"
+          identifier="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+          package_type="$(/usr/libexec/PlistBuddy -c 'Print :CFBundlePackageType' "$plist")"
+          au_type="$(/usr/libexec/PlistBuddy -c 'Print :AudioComponents:0:type' "$plist")"
+          au_subtype="$(/usr/libexec/PlistBuddy -c 'Print :AudioComponents:0:subtype' "$plist")"
+          au_manufacturer="$(/usr/libexec/PlistBuddy -c 'Print :AudioComponents:0:manufacturer' "$plist")"
+          au_factory="$(/usr/libexec/PlistBuddy -c 'Print :AudioComponents:0:factoryFunction' "$plist")"
+
+          [[ "$executable" == "$PLUGIN" ]]
+          [[ "$identifier" == "com.burningtreec.gainstagefx.au" ]]
+          [[ "$package_type" == "BNDL" ]]
+          [[ "$au_type" == "aufx" ]]
+          [[ "$au_subtype" == "GSfx" ]]
+          [[ "$au_manufacturer" == "BrTC" ]]
+          [[ "$au_factory" == "NiceAu2Factory" ]]
+
+          echo
+          echo "AUv2 metadata:"
+          echo "  executable   = $executable"
+          echo "  identifier   = $identifier"
+          echo "  type         = $au_type"
+          echo "  subtype      = $au_subtype"
+          echo "  manufacturer = $au_manufacturer"
+          echo "  factory      = $au_factory"
+
+          echo
+          echo "Verifying universal architectures..."
+          archs="$(lipo -archs "$binary")"
+          echo "  $archs"
+
+          [[ "$archs" == *"x86_64"* ]]
+          [[ "$archs" == *"arm64"* ]]
+
+          echo
+          echo "Verifying AUv2 factory symbol..."
+          nm -gU "$binary" | grep -E '(_)?NiceAu2Factory$'
+
+          echo
+          echo "Verifying AUv2 registration entry point..."
+          nm -gU "$binary" | grep -E '(_)?nice_au2_register_plugin_entry$'
+
+          echo
+          echo "Verifying AUv2 metadata entry point..."
+          nm -gU "$binary" | grep -E '(_)?nice_au2_metadata$'
+
+          echo
+          echo "Verifying Objective-C Cocoa view factory..."
+          if command -v strings >/dev/null 2>&1; then
+            strings "$binary" | grep 'NiceAu2CocoaViewFactory'
+          fi
+
+          echo
+          echo "Verifying ad-hoc code signature..."
+          codesign \
+            --verify \
+            --deep \
+            --strict \
+            --verbose=2 \
+            "$component"
+
+          echo
+          echo "Code signature details:"
+          codesign -dvv "$component" 2>&1 || true
+
+          echo
+          echo "AUv2 component verification passed."
+
+      # Ask macOS's own Audio Unit validator to discover and validate the
+      # component. Install it temporarily into the current runner user's
+      # Components directory so AudioComponentRegistrar can see it.
+      - name: Validate the macOS AUv2 component with auval
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          set -euo pipefail
+
+          component="target/bundled/$PLUGIN.component"
+          au_dir="$HOME/Library/Audio/Plug-Ins/Components"
+          installed_component="$au_dir/$PLUGIN.component"
+
+          mkdir -p "$au_dir"
+          rm -rf "$installed_component"
+          cp -R "$component" "$installed_component"
+
+          # GitHub's macOS runner has no quarantine reason for this local build,
+          # but clear it anyway so validation tests the same state produced by
+          # our installer.
+          xattr -dr com.apple.quarantine "$installed_component" 2>/dev/null || true
+
+          # Restart the registrar so it does not use stale component metadata.
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+
+          echo "Waiting for AudioComponentRegistrar to rescan..."
+          sleep 3
+
+          echo
+          echo "Registered BurningTreeC Audio Units:"
+          auval -a | grep -E 'BrTC|GainStageFx' || true
+
+          echo
+          echo "Running AUv2 validation..."
+          auval -v aufx GSfx BrTC
+
+          echo
+          echo "AUv2 auval validation passed."
+
       - name: Test the Linux CLAP editor
         if: startsWith(matrix.os, 'ubuntu')
         run: |
@@ -231,12 +354,16 @@ jobs:
 
       - name: Stage the archive contents
         run: |
+          set -euo pipefail
+
           staged="staged/$PLUGIN-${{ matrix.name }}"
           mkdir -p "$staged"
 
           # The standalone binary is a development aid and is not shipped.
           rm -rf "target/bundled/$PLUGIN"
 
+          # The platform-specific bundle command has populated target/bundled.
+          # On macOS this now contains CLAP, VST3 and AUv2 (.component).
           cp -R target/bundled/* "$staged/"
 
           # Ship licensing information with every binary package.
@@ -250,6 +377,12 @@ jobs:
               ;;
 
             macOS)
+              # A macOS package is not complete without all three plugin
+              # formats. Fail before uploading an incomplete artifact.
+              test -d "$staged/$PLUGIN.clap"
+              test -d "$staged/$PLUGIN.vst3"
+              test -d "$staged/$PLUGIN.component"
+
               cp .github/install-macOS.command "$staged/Install.command"
               chmod +x "$staged/Install.command"
               ;;
@@ -261,8 +394,9 @@ jobs:
               ;;
           esac
 
+          echo
           echo "Staged package:"
-          ls -la "$staged"
+          find "$staged" -maxdepth 3 -print
 
       - name: Upload package
         uses: actions/upload-artifact@v4
@@ -297,8 +431,26 @@ jobs:
         with:
           path: artifacts
 
+      - name: Verify downloaded release packages
+        run: |
+          set -euo pipefail
+
+          test -d "artifacts/$PLUGIN-linux"
+          test -d "artifacts/$PLUGIN-macos-universal"
+          test -d "artifacts/$PLUGIN-windows"
+
+          # The macOS release must contain every supported plugin format.
+          test -d "artifacts/$PLUGIN-macos-universal/$PLUGIN.clap"
+          test -d "artifacts/$PLUGIN-macos-universal/$PLUGIN.vst3"
+          test -d "artifacts/$PLUGIN-macos-universal/$PLUGIN.component"
+          test -f "artifacts/$PLUGIN-macos-universal/Install.command"
+
+          echo "All expected release packages are present."
+
       - name: Zip each platform
         run: |
+          set -euo pipefail
+
           mkdir -p release
 
           for dir in artifacts/*/; do
@@ -317,6 +469,7 @@ jobs:
             )
           done
 
+          echo
           echo "Release archives:"
           ls -lah release
 
@@ -334,8 +487,10 @@ jobs:
           `Install.command` on macOS. `README.txt` covers installing by hand.
           Every archive also contains `LICENSE` and `THIRD-PARTY-NOTICES.md`.
 
-          **macOS:** the plugins are ad-hoc signed but not notarized, so macOS
-          quarantines them. `Install.command` in the archive puts them in place
-          and clears the quarantine flag; `README.txt` has the manual commands
-          if you would rather do it yourself.
+          **macOS:** the package contains universal Apple Silicon (`arm64`) and
+          Intel (`x86_64`) CLAP, VST3 and Audio Unit v2 (`.component`) plugins.
+          The plugins are ad-hoc signed but not notarized, so macOS may
+          quarantine downloaded archives. `Install.command` puts all plugin
+          formats in their user-level Audio Plug-Ins directories and clears the
+          quarantine flag. `README.txt` contains the equivalent manual commands.
           NOTES
