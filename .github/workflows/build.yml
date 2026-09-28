@@ -132,6 +132,7 @@ jobs:
             libegl1-mesa-dev \
             libwayland-dev \
             libgl1-mesa-dri \
+            mesa-utils \
             xvfb \
             libfontconfig1-dev \
             libxkbcommon-x11-dev \
@@ -224,7 +225,8 @@ jobs:
       - name: Test the Linux CLAP editor
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a -s '-screen 0 1920x1440x24' \
+          LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a \
+            -s '-screen 0 1920x2160x24 +extension GLX +render' \
             timeout 45s python3 tools/linux_gui_smoke.py "target/bundled/$PLUGIN.clap"
 
       - name: Stage the archive contents
