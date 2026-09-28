@@ -15,12 +15,28 @@ const HOST_CALLBACKS: u32 = 27;
 
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
-    fn CFDictionaryCreateMutable(
+    fn CFDictionaryCreate(
         allocator: *const c_void,
-        capacity: isize,
+        keys: *const *const c_void,
+        values: *const *const c_void,
+        count: isize,
         key_callbacks: *const c_void,
         value_callbacks: *const c_void,
-    ) -> *mut c_void;
+    ) -> *const c_void;
+    fn CFDictionaryGetTypeID() -> usize;
+    fn CFDictionaryGetValue(dictionary: *const c_void, key: *const c_void) -> *const c_void;
+    fn CFDataCreate(
+        allocator: *const c_void,
+        bytes: *const u8,
+        length: isize,
+    ) -> *const c_void;
+    fn CFDataGetTypeID() -> usize;
+    fn CFDataGetBytePtr(data: *const c_void) -> *const u8;
+    fn CFDataGetLength(data: *const c_void) -> isize;
+    fn CFGetTypeID(object: *const c_void) -> usize;
+
+    static kCFTypeDictionaryKeyCallBacks: u8;
+    static kCFTypeDictionaryValueCallBacks: u8;
 }
 
 fn property_callback_eq(
@@ -148,13 +164,63 @@ pub unsafe extern "C" fn get(
     }
     match property {
         kAudioUnitProperty_ClassInfo => {
-            // AUv2 requires ClassInfo to return a retained CFPropertyListRef.
-            // nice-plug's parameter state is already maintained by the instance;
-            // this dictionary gives hosts a valid ClassInfo object and allows the
-            // standard AU state/property round trip instead of returning -10879.
-            let dictionary = unsafe {
-                CFDictionaryCreateMutable(ptr::null(), 0, ptr::null(), ptr::null())
+            // AUv2 ClassInfo is a CFPropertyListRef. Store the canonical
+            // nice-plug PluginState bytes in a CFData value inside a retained
+            // CFDictionary so AU hosts save exactly the same persistent state
+            // semantics as the other nice-plug wrappers.
+            let mut state_size = 0u32;
+            let state_ptr =
+                bridge::nice_au2_save_state(component.rust_instance, &mut state_size);
+            if state_ptr.is_null() {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"nice-plug-state".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
             };
+            if key.is_null() {
+                bridge::nice_au2_free_state(state_ptr);
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let data = unsafe {
+                CFDataCreate(
+                    ptr::null(),
+                    state_ptr.cast_const(),
+                    state_size as isize,
+                )
+            };
+            bridge::nice_au2_free_state(state_ptr);
+            if data.is_null() {
+                unsafe { CFRelease(key.cast()) };
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let keys = [key.cast::<c_void>() as *const c_void];
+            let values = [data];
+            let dictionary = unsafe {
+                CFDictionaryCreate(
+                    ptr::null(),
+                    keys.as_ptr(),
+                    values.as_ptr(),
+                    1,
+                    (&raw const kCFTypeDictionaryKeyCallBacks).cast(),
+                    (&raw const kCFTypeDictionaryValueCallBacks).cast(),
+                )
+            };
+
+            // CFDictionaryCreate retained both objects through the CFType
+            // callbacks. The returned dictionary itself is intentionally
+            // retained for the host, as required by ClassInfo.
+            unsafe {
+                CFRelease(key.cast());
+                CFRelease(data);
+            }
+
             if dictionary.is_null() {
                 return kAudioUnitErr_InvalidPropertyValue;
             }
@@ -370,12 +436,50 @@ pub unsafe extern "C" fn set(
     }
     match property {
         kAudioUnitProperty_ClassInfo if bytes as usize >= size_of::<*mut c_void>() => {
-            // Accept a valid CFPropertyListRef. Full nice-plug state
-            // serialization can be layered onto this property later; rejecting
-            // ClassInfo outright is an AUv2 conformance error.
+            // The setter receives a pointer to the CFPropertyListRef, not the
+            // dictionary object inline.
             let class_info = unsafe { *input.cast::<*const c_void>() };
-            if class_info.is_null() {
+            if class_info.is_null()
+                || unsafe { CFGetTypeID(class_info) } != unsafe { CFDictionaryGetTypeID() }
+            {
                 return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let key = unsafe {
+                CFStringCreateWithCString(
+                    ptr::null(),
+                    c"nice-plug-state".as_ptr(),
+                    kCFStringEncodingUTF8,
+                )
+            };
+            if key.is_null() {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let data = unsafe { CFDictionaryGetValue(class_info, key.cast()) };
+            unsafe { CFRelease(key.cast()) };
+            if data.is_null()
+                || unsafe { CFGetTypeID(data) } != unsafe { CFDataGetTypeID() }
+            {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let length = unsafe { CFDataGetLength(data) };
+            if length < 0 || length > u32::MAX as isize {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+            let state_ptr = unsafe { CFDataGetBytePtr(data) };
+            if state_ptr.is_null() && length != 0 {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+
+            let status = bridge::nice_au2_load_state(
+                component.rust_instance,
+                state_ptr,
+                length as u32,
+            );
+            if status != 0 {
+                return status;
             }
         }
         kAudioUnitProperty_StreamFormat
