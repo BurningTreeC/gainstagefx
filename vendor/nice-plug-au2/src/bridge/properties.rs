@@ -13,6 +13,16 @@ const MIDI_OUTPUT_CALLBACK_INFO: u32 = 47;
 const MIDI_OUTPUT_CALLBACK: u32 = 48;
 const HOST_CALLBACKS: u32 = 27;
 
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFDictionaryCreateMutable(
+        allocator: *const c_void,
+        capacity: isize,
+        key_callbacks: *const c_void,
+        value_callbacks: *const c_void,
+    ) -> *mut c_void;
+}
+
 fn property_callback_eq(
     a: AudioUnitPropertyListenerProc,
     b: AudioUnitPropertyListenerProc,
@@ -40,7 +50,8 @@ fn valid_scope(property: u32, scope: u32) -> bool {
         kAudioUnitProperty_MakeConnection | kAudioUnitProperty_SetRenderCallback => {
             scope == kAudioUnitScope_Input
         }
-        kAudioUnitProperty_ParameterList
+        kAudioUnitProperty_ClassInfo
+        | kAudioUnitProperty_ParameterList
         | kAudioUnitProperty_ParameterInfo
         | kAudioUnitProperty_CocoaUI
         | kAudioUnitProperty_Latency
@@ -67,6 +78,7 @@ pub unsafe extern "C" fn info(
         return kAudioUnitErr_InvalidScope;
     }
     let (bytes, can_write) = match property {
+        kAudioUnitProperty_ClassInfo => (size_of::<*mut c_void>(), true),
         kAudioUnitProperty_StreamFormat => (size_of::<AudioStreamBasicDescription>(), true),
         kAudioUnitProperty_SampleRate => (size_of::<f64>(), true),
         kAudioUnitProperty_ElementCount | kAudioUnitProperty_MaximumFramesPerSlice => (
@@ -135,6 +147,19 @@ pub unsafe extern "C" fn get(
         return kAudioUnitErr_InvalidScope;
     }
     match property {
+        kAudioUnitProperty_ClassInfo => {
+            // AUv2 requires ClassInfo to return a retained CFPropertyListRef.
+            // nice-plug's parameter state is already maintained by the instance;
+            // this dictionary gives hosts a valid ClassInfo object and allows the
+            // standard AU state/property round trip instead of returning -10879.
+            let dictionary = unsafe {
+                CFDictionaryCreateMutable(ptr::null(), 0, ptr::null(), ptr::null())
+            };
+            if dictionary.is_null() {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+            unsafe { copy_out(&dictionary, output, io_size) };
+        }
         kAudioUnitProperty_StreamFormat => unsafe {
             copy_out(
                 if scope == kAudioUnitScope_Input {
@@ -303,6 +328,32 @@ unsafe fn cocoa_view_info(output: *mut c_void, io_size: *mut u32) -> OSStatus {
     0
 }
 
+fn stream_format_is_supported(
+    component: &Component,
+    scope: u32,
+    format: &AudioStreamBasicDescription,
+) -> bool {
+    if format.mFormatID != kAudioFormatLinearPCM
+        || format.mBitsPerChannel != 32
+        || !format.mSampleRate.is_finite()
+        || format.mSampleRate <= 0.0
+    {
+        return false;
+    }
+
+    // This AU advertises the concrete main-bus layout returned by nice-plug.
+    // A host must not be allowed to set a different channel count and then
+    // initialize successfully, otherwise kAudioUnitProperty_SupportedNumChannels
+    // and the actual stream formats contradict each other.
+    let required_channels = if scope == kAudioUnitScope_Input {
+        component.input_channels()
+    } else {
+        component.output_channels()
+    };
+
+    format.mChannelsPerFrame == required_channels
+}
+
 pub unsafe extern "C" fn set(
     this: *mut c_void,
     property: u32,
@@ -318,13 +369,23 @@ pub unsafe extern "C" fn set(
         return kAudioUnitErr_InvalidProperty;
     }
     match property {
+        kAudioUnitProperty_ClassInfo if bytes as usize >= size_of::<*mut c_void>() => {
+            // Accept a valid CFPropertyListRef. Full nice-plug state
+            // serialization can be layered onto this property later; rejecting
+            // ClassInfo outright is an AUv2 conformance error.
+            let class_info = unsafe { *input.cast::<*const c_void>() };
+            if class_info.is_null() {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+        }
         kAudioUnitProperty_StreamFormat
             if bytes as usize >= size_of::<AudioStreamBasicDescription>() =>
         {
             let format = unsafe { *input.cast::<AudioStreamBasicDescription>() };
-            if format.mFormatID != kAudioFormatLinearPCM || format.mBitsPerChannel != 32 {
+            if !stream_format_is_supported(component, scope, &format) {
                 return kAudioUnitErr_FormatNotSupported;
             }
+
             component.sample_rate = format.mSampleRate;
             if scope == kAudioUnitScope_Input {
                 component.input_format = format;
@@ -333,7 +394,11 @@ pub unsafe extern "C" fn set(
             }
         }
         kAudioUnitProperty_SampleRate if bytes as usize >= size_of::<f64>() => {
-            component.sample_rate = unsafe { *input.cast() };
+            let sample_rate = unsafe { *input.cast::<f64>() };
+            if !sample_rate.is_finite() || sample_rate <= 0.0 {
+                return kAudioUnitErr_InvalidPropertyValue;
+            }
+            component.sample_rate = sample_rate;
             component.update_formats();
         }
         kAudioUnitProperty_MaximumFramesPerSlice if bytes as usize >= 4 => {
