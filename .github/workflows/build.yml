@@ -313,7 +313,7 @@ jobs:
       - name: Validate the macOS AUv2 component with auval
         if: startsWith(matrix.os, 'macos')
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           component="target/bundled/$PLUGIN.component"
           au_dir="$HOME/Library/Audio/Plug-Ins/Components"
@@ -323,12 +323,8 @@ jobs:
           rm -rf "$installed_component"
           cp -R "$component" "$installed_component"
 
-          # GitHub's macOS runner has no quarantine reason for this local build,
-          # but clear it anyway so validation tests the same state produced by
-          # our installer.
           xattr -dr com.apple.quarantine "$installed_component" 2>/dev/null || true
 
-          # Restart the registrar so it does not use stale component metadata.
           killall -9 AudioComponentRegistrar 2>/dev/null || true
 
           echo "Waiting for AudioComponentRegistrar to rescan..."
@@ -340,7 +336,27 @@ jobs:
 
           echo
           echo "Running AUv2 validation..."
-          auval -v aufx GSfx BrTC
+
+          set +e
+          auval -v aufx GSfx BrTC 2>&1 | tee /tmp/gainstagefx-auval.log
+          auval_status=${PIPESTATUS[0]}
+          set -e
+
+          echo
+          echo "========================================"
+          echo "AUVAL ERRORS / IMPORTANT CONTEXT"
+          echo "========================================"
+
+          grep -n -B 8 -A 15 \
+              -E 'ERROR:|FAILED|VERIFYING CLASS INFO' \
+              /tmp/gainstagefx-auval.log || true
+
+          echo
+          echo "auval exit status: $auval_status"
+
+          if [ "$auval_status" -ne 0 ]; then
+              exit "$auval_status"
+          fi
 
           echo
           echo "AUv2 auval validation passed."
