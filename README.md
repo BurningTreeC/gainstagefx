@@ -505,7 +505,10 @@ to allocate.
 - **`time`** — trapezoidal companion models, Newton–Raphson with junction
   voltage limiting, and a separate DC matrix for the operating point with
   capacitors open and inductors shorted. Linear parts of a circuit are reduced
-  out once, so each sample only solves what is actually nonlinear.
+  out once, so each sample only solves what is actually nonlinear. A sample
+  whose solve will not settle is handed to a copy of the circuit at twice the
+  rate: two half steps there, then the full step again from their answer, so
+  a failed solve no longer leaves a guess in the audio.
 - **`device`** — the nonlinear parts: Koren triodes, pentodes with screen
   dependence, Shockley diodes, bipolar and JFET transistors, an op-amp, and
   a transformer core whose flux integrates. Parts that impose a voltage rather

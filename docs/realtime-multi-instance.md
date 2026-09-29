@@ -272,6 +272,13 @@ unsettled 22 → 0, fallbacks 805 → 331, backtracks 1,691 → 272 (over twice
 as many solves). The failures come from the step size. Source continuation
 keeps h and does not remove them.
 
+That is now fixed for every circuit (`Simulation::enable_half_step_rescue`).
+A failing sample takes two half steps on a twin built at twice the rate, and
+the full step is then solved again from that answer. Across the catalogue on
+the take, unsettled samples fall 69 → 0. The 71 presets that never failed are
+bit-identical, the other seven change only around their former failures, and
+callback times are unchanged within noise.
+
 ## Earlier notes on the Mark power stage
 
 The Newton pass count on the real take is 2–3 for 73 % of samples. 13 % leave

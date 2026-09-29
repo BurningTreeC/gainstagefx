@@ -15,6 +15,8 @@
 #[cfg(test)]
 mod full_trace;
 #[cfg(test)]
+mod half_step;
+#[cfg(test)]
 mod jacobian_init;
 
 use super::device::{
@@ -1606,6 +1608,29 @@ const DC_ITERATIONS: usize = 500;
 /// `find_operating_point`.
 const INDUCTOR_DC: f64 = 1e4;
 
+/// The half-step twin: the same circuit built at twice the rate, and the
+/// `structure_generation` of the simulation it last followed.
+struct HalfStep {
+    sim: Simulation,
+    generation: u64,
+}
+
+/// Newton passes the full step gets once the half-step twin has bridged it.
+const HALF_STEP_RESOLVE_PASSES: usize = 16;
+
+/// How a half-step rescue ended.
+enum Rescue {
+    /// The twin could not bridge the step either; nothing was changed that
+    /// the ordinary failure path does not already undo.
+    Failed,
+    /// The full step settled from the twin's answer: an ordinary settled
+    /// sample, advanced as usual.
+    Settled,
+    /// The full step did not settle, so the twin's answer and state were
+    /// committed instead; the sample must not be advanced again.
+    Committed,
+}
+
 /// A capacitor's companion, by the trapezoidal rule.
 #[derive(Clone, Copy)]
 struct Capacitor {
@@ -2094,6 +2119,23 @@ pub struct Simulation {
     /// purely numerical state back without restamping or allocating.
     last_settled_linearisation: Vec<Linearisation>,
     last_settled_linearisation_valid: bool,
+    /// The same circuit at twice the rate, for `half_step_rescue`.
+    half_step: Option<Box<HalfStep>>,
+    /// Bumped whenever a control, value, supply or rate change marks the
+    /// matrix for a rebuild, so the half-step twin knows to follow.
+    structure_generation: u64,
+    /// The previous sample's source and auxiliary inputs: where the half-step
+    /// rescue's midpoint sits.
+    previous_input: f64,
+    previous_aux: Vec<f64>,
+    half_step_attempts: u64,
+    half_step_bridged: u64,
+    half_step_rescued: u64,
+    /// Test-only: run the half-step twin on every sample and commit its
+    /// answer, so the state carried between the two rates can be checked
+    /// against the circuit simply run at twice the rate.
+    #[cfg(test)]
+    test_half_step_every_sample: bool,
     #[cfg(test)]
     last_search_cycle_rejected: bool,
     #[cfg(test)]
@@ -2137,6 +2179,205 @@ impl Simulation {
     /// because it received controls while dormant, so copy the prepared numeric
     /// caches as well as the evolving physical and Newton state. Statistics
     /// remain local to each simulation and count only work it actually did.
+    /// Keep a copy of this circuit at twice the rate, for rescuing a sample
+    /// whose Newton solve fails.
+    ///
+    /// A failed solve used to leave its bounded guess in the audio, and on
+    /// the real take in `tests/fixtures` that guess was the loudest thing the
+    /// solver did wrong: 69 samples across the catalogue, most of them in the
+    /// JC-120's transistor power stage, and on Blizzard '80 one of them was a
+    /// pulse as tall as the signal's own peak. Every one of those samples
+    /// failed because the *step* was too long, not because the circuit had no
+    /// answer: run at twice the rate, the JC-120's stage fails none of the 19 s
+    /// where at 1x it failed 22, with fallbacks 805 -> 331 and backtracks
+    /// 1,691 -> 272. That is SPICE's oldest remedy for a transient that will
+    /// not converge -- cut the timestep -- and it works for the same reason:
+    /// over half the interval every reactance moves half as far, and every
+    /// capacitor's companion conductance doubles, which makes the Jacobian
+    /// more diagonally dominant.
+    ///
+    /// So a failing sample is handed to this twin: the state it started from
+    /// is carried across, the twin takes two half steps (the source at its
+    /// midpoint on the first), and the *full* step is then solved again from
+    /// the twin's answer. What comes out is therefore the answer of the same
+    /// discretisation every other sample uses -- only the starting point was
+    /// better. If even that will not settle, the twin's own answer and state
+    /// are committed: a converged solution of the same circuit over the same
+    /// interval, at a finer step, in place of a bounded guess.
+    ///
+    /// A sample that settles never reaches the twin, so a circuit that never
+    /// fails is untouched to the bit: on the take, 71 of the 78 presets. The
+    /// other seven lost all 69 of their unsettled samples, and what changed
+    /// was local -- 60 dB down within 20 ms of each rescue, at the arithmetic
+    /// floor within a second.
+    ///
+    /// Allocates; call it while building, never from the audio thread.
+    /// `Simulation::new` does, for every circuit with a device in it.
+    pub fn enable_half_step_rescue(&mut self) {
+        if self.devices.is_empty() || self.half_step.is_some() {
+            return;
+        }
+        let mut sim = Self::construct(self.circuit.clone(), 2.0 * self.rate);
+        sim.controls.copy_from_slice(&self.controls);
+        sim.values.copy_from_slice(&self.values);
+        sim.supply_scale = self.supply_scale;
+        sim.at_rest = false;
+        sim.rebuild();
+        sim.dirty = false;
+        self.half_step = Some(Box::new(HalfStep {
+            sim,
+            generation: self.structure_generation,
+        }));
+    }
+
+    /// Rescue attempts, samples the half-step twin bridged, and samples the
+    /// full step then settled from the bridged answer.
+    pub fn half_step_health(&self) -> (u64, u64, u64) {
+        (
+            self.half_step_attempts,
+            self.half_step_bridged,
+            self.half_step_rescued,
+        )
+    }
+
+    fn half_step_rescue(&mut self, input: f64) -> Rescue {
+        let Some(mut half) = self.half_step.take() else {
+            return Rescue::Failed;
+        };
+        let rescued = self.half_step_rescue_with(&mut half, input);
+        self.half_step = Some(half);
+        rescued
+    }
+
+    fn half_step_rescue_with(&mut self, half: &mut HalfStep, input: f64) -> Rescue {
+        self.half_step_attempts += 1;
+        let twin = &mut half.sim;
+        if half.generation != self.structure_generation || twin.rate != 2.0 * self.rate {
+            twin.controls.copy_from_slice(&self.controls);
+            twin.values.copy_from_slice(&self.values);
+            twin.supply_scale = self.supply_scale;
+            twin.rate = 2.0 * self.rate;
+            twin.at_rest = false;
+            twin.rebuild();
+            half.generation = self.structure_generation;
+        }
+        twin.dirty = false;
+        twin.at_rest = false;
+        twin.ceiling = self.ceiling;
+        twin.backtracks = self.backtracks;
+        twin.realtime_deadline = self.realtime_deadline;
+
+        // The state this sample started from, re-expressed at the twin's step.
+        twin.voltage.copy_from_slice(&self.earlier);
+        twin.earlier.copy_from_slice(&self.earlier);
+        for (t, &m) in twin.recent_move.iter_mut().zip(&self.recent_move) {
+            *t = 0.5 * m;
+        }
+        twin.last_was_unsettled = false;
+        for (t, m) in twin.capacitors.iter_mut().zip(&self.capacitors) {
+            let current = m.history - m.conductance * m.voltage;
+            t.voltage = m.voltage;
+            t.history = t.conductance * m.voltage + current;
+        }
+        for (t, m) in twin.inductors.iter_mut().zip(&self.inductors) {
+            let volts = -(m.history + m.current) / m.conductance;
+            t.current = m.current;
+            t.history = -(m.current + t.conductance * volts);
+        }
+        for (t, m) in twin.devices.iter_mut().zip(&self.devices) {
+            t.copy_state_across_rates_from(m);
+        }
+        if self.last_settled_linearisation_valid {
+            for (t, saved) in twin
+                .devices
+                .iter_mut()
+                .zip(&self.last_settled_linearisation)
+            {
+                t.relinearise(*saved);
+            }
+            twin.last_settled_linearisation.clear();
+            twin.last_settled_linearisation
+                .extend_from_slice(&self.last_settled_linearisation);
+            twin.last_settled_linearisation_valid = true;
+        }
+        twin.work_base_mode = None;
+        twin.rhs_fixed_loaded = false;
+
+        for ((t, &was), &now) in twin
+            .aux_values
+            .iter_mut()
+            .zip(&self.previous_aux)
+            .zip(&self.aux_values)
+        {
+            *t = 0.5 * (was + now);
+        }
+        twin.process(0.5 * (self.previous_input + input));
+        if twin.last_was_unsettled {
+            return Rescue::Failed;
+        }
+        twin.aux_values.copy_from_slice(&self.aux_values);
+        twin.process(input);
+        if twin.last_was_unsettled {
+            return Rescue::Failed;
+        }
+        self.half_step_bridged += 1;
+
+        #[cfg(test)]
+        let resolve = !self.test_half_step_every_sample;
+        #[cfg(not(test))]
+        let resolve = true;
+        // The full step, started from the bridged answer.
+        self.voltage.copy_from_slice(&twin.voltage);
+        for (m, t) in self.devices.iter_mut().zip(&twin.devices) {
+            m.relinearise(t.linearisation());
+        }
+        self.moved = f64::INFINITY;
+        self.search_merit = 0.0;
+        self.cycle_armed = false;
+        self.cycle_age = 0;
+        self.cycle_here = 0.0;
+        self.cycle_reference = 0.0;
+        let mut before = f64::INFINITY;
+        for pass in 0..if resolve { HALF_STEP_RESOLVE_PASSES } else { 0 } {
+            if self.realtime_deadline_expired() {
+                self.deadline_aborts += 1;
+                break;
+            }
+            self.newton_passes += 1;
+            let stalled = self.moved > before * CONVERGING;
+            before = self.moved;
+            match self.iterate(false, stalled || pass >= FULL_STEPS) {
+                Pass::Settled => {
+                    self.half_step_rescued += 1;
+                    return Rescue::Settled;
+                }
+                Pass::Moved => {}
+                Pass::Stuck => break,
+            }
+        }
+
+        // The full step would not settle even from there. The twin's answer
+        // is still a converged solution of the same circuit over the same
+        // interval, at a finer step: commit it, state and all, rather than
+        // the bounded guess a failed solve leaves.
+        let twin = &half.sim;
+        self.voltage.copy_from_slice(&twin.voltage);
+        for (m, t) in self.capacitors.iter_mut().zip(&twin.capacitors) {
+            let current = t.history - t.conductance * t.voltage;
+            m.voltage = t.voltage;
+            m.history = m.conductance * t.voltage + current;
+        }
+        for (m, t) in self.inductors.iter_mut().zip(&twin.inductors) {
+            let volts = -(t.history + t.current) / t.conductance;
+            m.current = t.current;
+            m.history = -(t.current + m.conductance * volts);
+        }
+        for (m, t) in self.devices.iter_mut().zip(&twin.devices) {
+            m.copy_state_across_rates_from(t);
+        }
+        Rescue::Committed
+    }
+
     pub fn copy_runtime_state_from(&mut self, source: &Self) {
         debug_assert_eq!(self.n, source.n);
         debug_assert_eq!(self.circuit.output, source.circuit.output);
@@ -2176,6 +2417,11 @@ impl Simulation {
         self.last_was_unsettled = source.last_was_unsettled;
         self.last_input = source.last_input;
         self.earlier_input = source.earlier_input;
+        self.previous_input = source.previous_input;
+        self.previous_aux.copy_from_slice(&source.previous_aux);
+        // The values just copied may differ from the ones the half-step twin
+        // was built for; let the next rescue rebuild it rather than trust it.
+        self.structure_generation = self.structure_generation.wrapping_add(1);
         self.last_settled_linearisation
             .copy_from_slice(&source.last_settled_linearisation);
         self.last_settled_linearisation_valid = source.last_settled_linearisation_valid;
@@ -2231,6 +2477,12 @@ impl Simulation {
     }
 
     pub fn new(circuit: Circuit, rate: f64) -> Self {
+        let mut sim = Self::construct(circuit, rate);
+        sim.enable_half_step_rescue();
+        sim
+    }
+
+    fn construct(circuit: Circuit, rate: f64) -> Self {
         let n = circuit.unknowns();
         let aux_count = circuit.aux_inputs;
         let initial_voltages = circuit.initial_voltages.clone();
@@ -2409,6 +2661,15 @@ impl Simulation {
             post_restart_saved_linearisation: Vec::with_capacity(device_count),
             last_settled_linearisation: Vec::with_capacity(device_count),
             last_settled_linearisation_valid: false,
+            half_step: None,
+            structure_generation: 0,
+            previous_input: 0.0,
+            previous_aux: vec![0.0; aux_count],
+            half_step_attempts: 0,
+            half_step_bridged: 0,
+            half_step_rescued: 0,
+            #[cfg(test)]
+            test_half_step_every_sample: false,
             backtrack_count: 0,
             fallbacks: 0,
             nonfinite: 0,
@@ -3404,6 +3665,7 @@ impl Simulation {
         self.last_was_unsettled = false;
         self.last_input = 0.0;
         self.earlier_input = 0.0;
+        self.previous_input = 0.0;
         // The supplied node voltages do not carry the other simulation's
         // device limiter/linearisation bookkeeping. Let the first local
         // Newton stamp establish that state before it can become a rollback
@@ -3433,6 +3695,7 @@ impl Simulation {
             if value.is_finite() && value > 0.0 && *current != value {
                 *current = value;
                 self.dirty = true;
+                self.structure_generation += 1;
             }
         }
     }
@@ -3469,6 +3732,7 @@ impl Simulation {
         if which < self.controls.len() && (self.controls[which] - position).abs() > 1e-12 {
             self.controls[which] = position.clamp(0.0, 1.0);
             self.dirty = true;
+            self.structure_generation += 1;
         }
     }
 
@@ -3485,6 +3749,7 @@ impl Simulation {
         if (self.supply_scale - scale).abs() > 1e-9 {
             self.supply_scale = scale;
             self.dirty = true;
+            self.structure_generation += 1;
         }
     }
 
@@ -3496,6 +3761,7 @@ impl Simulation {
         if (self.rate - rate).abs() > 1e-9 {
             self.rate = rate;
             self.dirty = true;
+            self.structure_generation += 1;
         }
     }
 
@@ -4353,6 +4619,7 @@ impl Simulation {
         self.last_was_unsettled = false;
         self.last_input = 0.0;
         self.earlier_input = 0.0;
+        self.previous_input = 0.0;
         if settled {
             for (saved, device) in self
                 .last_settled_linearisation
@@ -5939,6 +6206,8 @@ impl Simulation {
         // reactance advance at the end of this function; see the advance
         // block for why that gate is necessary.
         let mut failed = false;
+        // Whether the half-step rescue already committed this sample's state.
+        let mut committed = false;
 
         if self.devices.is_empty() {
             // Nothing bends, so the matrix from `rebuild` still stands and one
@@ -7254,6 +7523,23 @@ impl Simulation {
                     self.push_solver_trace(trace);
                 }
             }
+            // Before a failed solve is bounded and used, try the half-step
+            // twin. See `enable_half_step_rescue`.
+            #[cfg(test)]
+            let forced = self.test_half_step_every_sample;
+            #[cfg(not(test))]
+            let forced = false;
+            if (!settled || forced) && self.half_step.is_some() && !self.realtime_deadline_expired()
+            {
+                match self.half_step_rescue(input) {
+                    Rescue::Failed => {}
+                    Rescue::Settled => settled = true,
+                    Rescue::Committed => {
+                        settled = true;
+                        committed = true;
+                    }
+                }
+            }
             if !settled {
                 self.unsettled += 1;
                 if ceiling < MAX_ITERATIONS {
@@ -7400,7 +7686,7 @@ impl Simulation {
         // capacitor whose recurrence carries the wrong term reads 24 dB down
         // on a network that should be flat, and an inductor's diverges to NaN
         // within a few samples.
-        if !failed {
+        if !failed && !committed {
             for c in &mut self.capacitors {
                 let v = across(&self.voltage, c.a, c.b);
                 // Trapezoidal: i = 2C/T (v - v_prev) - i_prev, which rearranges to
@@ -7428,16 +7714,16 @@ impl Simulation {
             for device in &mut self.devices {
                 device.advance();
             }
-            if !self.devices.is_empty() {
-                for (saved, device) in self
-                    .last_settled_linearisation
-                    .iter_mut()
-                    .zip(self.devices.iter())
-                {
-                    *saved = device.linearisation();
-                }
-                self.last_settled_linearisation_valid = true;
+        }
+        if !failed && !self.devices.is_empty() {
+            for (saved, device) in self
+                .last_settled_linearisation
+                .iter_mut()
+                .zip(self.devices.iter())
+            {
+                *saved = device.linearisation();
             }
+            self.last_settled_linearisation_valid = true;
         }
 
         #[cfg(test)]
@@ -7467,6 +7753,8 @@ impl Simulation {
             self.earlier_input = self.last_input;
             self.last_input = input;
         }
+        self.previous_input = input;
+        self.previous_aux.copy_from_slice(&self.aux_values);
         self.voltage[self.circuit.output]
     }
 
@@ -7514,7 +7802,9 @@ impl Simulation {
         self.last_was_unsettled = false;
         self.last_input = 0.0;
         self.earlier_input = 0.0;
+        self.previous_input = 0.0;
         self.aux_values.fill(0.0);
+        self.previous_aux.fill(0.0);
         self.last_settled_linearisation_valid = false;
         self.exact = true;
         self.moved = f64::INFINITY;

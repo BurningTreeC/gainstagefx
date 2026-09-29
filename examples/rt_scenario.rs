@@ -210,6 +210,12 @@ fn row(name: &str, h: SolverHealth, solves: u64) {
         h.unsettled,
         solves
     );
+    if h.half_step_attempts > 0 {
+        println!(
+            "  {name:<6} half-step rescue: {} failed solves, {} bridged, {} settled at the full step",
+            h.half_step_attempts, h.half_step_bridged, h.half_step_rescued
+        );
+    }
 }
 
 fn main() {

@@ -65,6 +65,34 @@ After the 11:19 REAPER capture:
 - **Pipeline start.** It now starts on, so a freshly loaded heavy preset is
   never serial.
 
+Then, the half-step rescue:
+
+- **Unsettled samples were clicks.** A failed solve left its bounded guess in
+  the audio. Two builds of Jazz Chorus that differ only by rounding upstream
+  match to −186 dB except in 3-sample bursts reaching 34 % of peak, exactly
+  where the JC-120's power stage failed. On Blizzard '80 the guess was a pulse
+  as tall as the signal's own peak.
+- **The step was too long.** At 2x the same stage fails none of the 19 s take
+  (22 at 1x), with fallbacks 805 → 331 and backtracks 1,691 → 272.
+- **Rescue.** Every circuit with a device now keeps a twin built at twice the
+  rate (`Simulation::enable_half_step_rescue`). A sample that would end
+  unsettled carries its starting state across, takes two half steps there,
+  and solves the full step again from that answer. If the full step still
+  will not settle, the twin's converged answer and state are committed.
+- **Result on the take:** unsettled samples 69 → 0 across the catalogue. 71 of
+  78 presets are bit-identical; the other seven change only locally (−60 dB
+  within 20 ms of a rescue, the arithmetic floor within a second). No
+  measurable realtime cost; construction +20 ms and +10 MB per chain.
+- **Tests:** `src/dsp/time/half_step.rs` (committing the twin on every sample is
+  the circuit at twice the rate, at all five rates; a circuit that settles is
+  untouched to the bit) and `tests/half_step_rescue.rs` (the Jazz Chorus take
+  settles every sample without allocating). The frozen baselines are
+  unchanged.
+- **Tried and rejected:** a contraction stop on the pedal and preamp only.
+  Details in `docs/realtime-multi-instance.md`.
+- **Harness:** `rt_scenario --events` reports fallbacks as well as unsettled
+  solves, and `--oversampling N` overrides the preset's factor.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):

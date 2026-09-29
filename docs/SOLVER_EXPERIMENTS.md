@@ -41,6 +41,24 @@ claim below roughly 1 % needs repeated runs.
 
 ## Accepted
 
+### Half-step rescue of failed solves
+
+A failed solve used to be bounded and used as it stood. It is a click: 69
+samples across the catalogue on the real take, up to the signal's own peak.
+All of them failed because the step was too long. At twice the rate the
+JC-120's power stage, where 22 of them were, fails none.
+
+Every nonlinear `Simulation` now keeps a twin at twice the rate. A sample that
+would end unsettled carries its state across (capacitor voltage and branch
+current, inductor current, core flux and volts), takes two half steps with the
+source at its midpoint on the first, then re-solves the full step from the
+twin's answer. That leaves the discretisation unchanged: only the starting
+point improved. If the full step still fails, the twin's converged answer and
+state are committed instead. Unsettled 69 → 0. The 71 presets that never
+failed are bit-identical, and the change is local on the other seven. No
+measurable realtime cost. Tests: `src/dsp/time/half_step.rs`,
+`tests/half_step_rescue.rs`.
+
 ### Step 32b -- exact sparse Schur-coupling subtraction
 
 Skips `matrix[slot] -= coupling[slot]` for coupling entries that are canonical

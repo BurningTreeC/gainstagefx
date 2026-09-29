@@ -2152,6 +2152,11 @@ pub struct SolverHealth {
     /// Samples abandoned because the host callback's wall-clock cutoff had
     /// passed. See `Simulation::set_realtime_deadline`.
     pub deadline_aborts: u64,
+    /// Failed solves handed to the half-step rescue, the ones its twin
+    /// bridged, and the ones the full step then settled.
+    pub half_step_attempts: u64,
+    pub half_step_bridged: u64,
+    pub half_step_rescued: u64,
 }
 
 impl SolverHealth {
@@ -2188,6 +2193,15 @@ impl SolverHealth {
                 .continuation_actual_rescues
                 .saturating_sub(before.continuation_actual_rescues),
             deadline_aborts: self.deadline_aborts.saturating_sub(before.deadline_aborts),
+            half_step_attempts: self
+                .half_step_attempts
+                .saturating_sub(before.half_step_attempts),
+            half_step_bridged: self
+                .half_step_bridged
+                .saturating_sub(before.half_step_bridged),
+            half_step_rescued: self
+                .half_step_rescued
+                .saturating_sub(before.half_step_rescued),
         }
     }
 }
@@ -4172,6 +4186,9 @@ impl Chain {
                 continuation_successes,
                 continuation_actual_rescues,
                 deadline_aborts: sim.deadline_aborts(),
+                half_step_attempts: sim.half_step_health().0,
+                half_step_bridged: sim.half_step_health().1,
+                half_step_rescued: sim.half_step_health().2,
             }
         }
 

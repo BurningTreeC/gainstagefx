@@ -2709,6 +2709,19 @@ impl AnyDevice {
         }
     }
 
+    /// `copy_runtime_state_from` between two simulations of one circuit at
+    /// different rates: the same state, but each keeps its own timestep.
+    pub fn copy_state_across_rates_from(&mut self, source: &Self) {
+        let half_step = match self {
+            Self::Core(dst) => Some(dst.half_step),
+            _ => None,
+        };
+        self.copy_runtime_state_from(source);
+        if let (Self::Core(dst), Some(half_step)) = (self, half_step) {
+            dst.half_step = half_step;
+        }
+    }
+
     /// Update one audio-rate resistor by its netlist slot. Returns true when
     /// this is the device that owns the slot.
     #[inline]
