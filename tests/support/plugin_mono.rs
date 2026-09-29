@@ -2,6 +2,13 @@
 //! access to negotiated mono/stereo layout state and solver-health counters.
 use super::*;
 use crate::params::{Cabinet, Circuit, Iron, ToneStack};
+use crate::voice::LATENCY;
+use std::cell::Cell;
+
+thread_local! {
+    /// The latency the plugin last reported from `process`, if it did.
+    static REPORTED: Cell<Option<u32>> = const { Cell::new(None) };
+}
 
 #[path = "allocations.rs"]
 mod allocations;
@@ -60,7 +67,9 @@ impl ActivateContext<GainStageFx> for Host {
     }
     fn execute(&self, _: ()) {}
     fn set_latency_samples(&self, samples: u32) {
-        assert_eq!(samples, LATENCY);
+        // The true figure: the oversampler's own round trip, never more
+        // than the padded maximum.
+        assert!(samples <= LATENCY);
     }
     fn set_current_voice_capacity(&self, _: u32) {
         unreachable!()
@@ -97,8 +106,8 @@ impl ProcessContext<GainStageFx> for Host {
     > {
         unreachable!()
     }
-    fn set_latency_samples(&self, _: u32) {
-        unreachable!()
+    fn set_latency_samples(&self, samples: u32) {
+        REPORTED.with(|reported| reported.set(Some(samples)));
     }
     fn set_current_voice_capacity(&self, _: u32) {
         unreachable!()
@@ -172,6 +181,11 @@ fn initialized(circuit: Circuit, mono: bool, rate: f32) -> GainStageFx {
         },
         &mut Host,
     ));
+    // Realtime activation arms the solver's wall-clock cutoff. These tests
+    // assert convergence and bit-exact channel equivalence, and the cfg(test)
+    // solver diagnostics run slower than real time, so on a loaded machine the
+    // cutoff would decide their outcome. Keep them about the solver.
+    plugin.budget.armed = false;
     plugin.reset();
     plugin
 }
@@ -1940,5 +1954,161 @@ fn the_input_trim_reaches_the_audio_and_the_meter_follows_it() {
     assert!(
         (loud_meter - (unity_meter + 12.0)).abs() < 1.0,
         "the meter read {loud_meter:+.2} dB with 12 dB of boost against {unity_meter:+.2} at unity",
+    );
+}
+
+/// An armed trace is audio-thread work like any other: filling and pushing a
+/// record must not allocate, in any of the channel modes, and every callback
+/// must come out of the writer as one row carrying its mode.
+#[test]
+fn an_armed_trace_does_not_allocate_and_writes_every_callback() {
+    let dir = std::env::temp_dir().join(format!("gsfx-trace-test-{}", std::process::id()));
+    let mut plugin = initialized(Circuit::Crunch, false, 48_000.0);
+    let (trace, path) = crate::rt_trace::RtTrace::to_dir(&dir, plugin.params.clone())
+        .expect("the writer thread starts");
+    plugin.rt_trace = Some(trace);
+    let mut k = 0usize;
+    let mut block = |plugin: &mut GainStageFx, stereo: bool| {
+        let mut left: Vec<f32> = (0..64).map(|i| material(k + i)).collect();
+        let mut right: Vec<f32> = left
+            .iter()
+            .map(|x| if stereo { -x * 0.5 } else { *x })
+            .collect();
+        k += 64;
+        process(plugin, &mut left, Some(&mut right));
+    };
+    for _ in 0..4 {
+        block(&mut plugin, false);
+    }
+    for _ in 0..4 {
+        block(&mut plugin, true);
+    }
+    drop(plugin);
+
+    let mut mono = initialized(Circuit::Crunch, true, 48_000.0);
+    let (trace, mono_path) = crate::rt_trace::RtTrace::to_dir(&dir, mono.params.clone())
+        .expect("the writer thread starts");
+    mono.rt_trace = Some(trace);
+    let mut left: Vec<f32> = (0..64).map(material).collect();
+    process(&mut mono, &mut left, None);
+    drop(mono);
+
+    let text = std::fs::read_to_string(&path).expect("the trace was written");
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next().unwrap().split(',').collect();
+    let column = |name: &str| header.iter().position(|h| *h == name).unwrap();
+    let rows: Vec<Vec<&str>> = lines.map(|l| l.split(',').collect()).collect();
+    assert_eq!(rows.len(), 8, "one row per callback");
+    let modes: Vec<&str> = rows.iter().map(|r| r[column("mode")]).collect();
+    assert_eq!(&modes[..4], ["dual-mono"; 4]);
+    assert_eq!(&modes[4..], ["stereo-parallel"; 4]);
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(row.len(), header.len());
+        assert_eq!(row[column("callback")], i.to_string());
+        let start: u64 = row[column("start_ns")].parse().unwrap();
+        let end: u64 = row[column("end_ns")].parse().unwrap();
+        assert!(end > start);
+        assert_eq!(row[column("samples")], "64");
+        assert!(row[column("gain_passes")].parse::<u64>().unwrap() > 0);
+    }
+    let mono_text = std::fs::read_to_string(&mono_path).expect("the mono trace was written");
+    assert_eq!(
+        mono_text
+            .lines()
+            .nth(1)
+            .unwrap()
+            .split(',')
+            .nth(column("mode")),
+        Some("mono")
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The plugin's block path with the chain pipelined across two threads is the
+/// same plugin to the bit, allocates nothing on the audio thread, and actually
+/// hands the second half to the worker rather than always reclaiming it.
+#[test]
+fn a_pipelined_callback_is_the_serial_callback_and_does_not_allocate() {
+    for (circuit, mono) in [
+        (Circuit::Boogie, false),
+        (Circuit::Plexi, true),
+        (Circuit::Crunch, false),
+    ] {
+        let mut serial = initialized(circuit, mono, 48_000.0);
+        let mut pipelined = initialized(circuit, mono, 48_000.0);
+        pipelined.pipelining = true;
+        serial.pipelining = false;
+        let mut k = 0usize;
+        for _ in 0..48 {
+            let mut a: Vec<f32> = (0..64).map(|i| material(k + i) * 4.0).collect();
+            let mut b = a.clone();
+            k += 64;
+            if mono {
+                process(&mut serial, &mut a, None);
+                process(&mut pipelined, &mut b, None);
+            } else {
+                let (mut ar, mut br) = (a.clone(), b.clone());
+                process(&mut serial, &mut a, Some(&mut ar));
+                process(&mut pipelined, &mut b, Some(&mut br));
+                assert_eq!(ar, br, "{circuit:?} right");
+            }
+            assert_eq!(a, b, "{circuit:?} left");
+            // Keep the adaptive policy from switching either one.
+            pipelined.pipelining = true;
+            serial.pipelining = false;
+        }
+    }
+}
+
+/// The plugin reports its true latency: nothing for a modelled amplifier at 1x,
+/// which is how every one of them ships, and the dry signal is not held back
+/// either. Turning the oversampling up reports the new figure from `process`,
+/// once, and turning it back reports nothing again.
+#[test]
+fn the_plugin_reports_true_latency_and_follows_the_oversampling() {
+    let mut plugin = GainStageFx::default();
+    {
+        let p = Arc::get_mut(&mut plugin.params).unwrap();
+        p.circuit = EnumParam::new("Circuit", Circuit::Boogie);
+        p.oversampling = EnumParam::new("Oversampling", Oversampling::Off);
+        // All dry, so the test hears the dry path's delay and nothing else.
+        p.mix = FloatParam::new("Mix", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 });
+    }
+    assert!(plugin.activate(
+        &GainStageFx::AUDIO_IO_LAYOUTS[1],
+        &BufferConfig {
+            sample_rate: 48_000.0,
+            min_buffer_size: Some(1),
+            max_buffer_size: 1024,
+            process_mode: ProcessMode::Realtime,
+        },
+        &mut Host,
+    ));
+    plugin.reset();
+    assert_eq!(plugin.reported_latency, 0);
+
+    // Dry only: an impulse comes straight through.
+    REPORTED.with(|r| r.set(None));
+    let mut block: Vec<f32> = (0..64).map(|i| if i == 0 { 0.5 } else { 0.0 }).collect();
+    process(&mut plugin, &mut block, None);
+    assert_eq!(block[0], 0.5, "a 1x dry path must not be delayed");
+    assert_eq!(
+        REPORTED.with(Cell::get),
+        None,
+        "nothing changed, nothing reported"
+    );
+
+    // Up to 4x: the Mark is capped at 2x, whose filters take 56 samples.
+    Arc::get_mut(&mut plugin.params).unwrap().oversampling =
+        EnumParam::new("Oversampling", Oversampling::Four);
+    let mut block = vec![0.0f32; 64];
+    process(&mut plugin, &mut block, None);
+    assert_eq!(REPORTED.with(Cell::get), Some(56));
+    REPORTED.with(|r| r.set(None));
+    process(&mut plugin, &mut block, None);
+    assert_eq!(
+        REPORTED.with(Cell::get),
+        None,
+        "reported once, not every block"
     );
 }

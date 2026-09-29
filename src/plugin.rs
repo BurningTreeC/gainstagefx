@@ -4,12 +4,15 @@ use nice_plug::plugin::ParamValue;
 use nice_plug::prelude::*;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::dsp::noise_reduction::NoiseReduction;
 use crate::meters::Meters;
 use crate::params::{Amplifier, Circuit, Diode, GainStageParams, Oversampling};
+use crate::rt_trace::{RtTrace, TraceMode, TraceRecord};
+use crate::stage_worker::StageWorker;
 use crate::stereo_worker::{StereoJob, StereoWorker};
-use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
+use crate::voice::{Chain, PipelineUse, Settings, NOMINAL_DBFS};
 
 /// The input is never hard-gated as a solver optimization.
 ///
@@ -22,6 +25,26 @@ use crate::voice::{Chain, Settings, LATENCY, NOMINAL_DBFS};
 /// on the first transient. FTZ/DAZ already handles denormal arithmetic, so the
 /// chain receives the trimmed source exactly as the host supplied it unless
 /// the user enables the smoothly attenuating input expander.
+/// How many host periods after its start a callback may run before the solvers
+/// abandon hard samples to end it.
+///
+/// Late, deliberately, because an abandoned sample is a click. Measured with
+/// `examples/rt_scenario --cut-from 56 --cut-every 50`, cutting the last eight
+/// samples of one block in fifty: the worst single-sample error was within
+/// 0.2-6.5 dB of the output's peak on every preset tried, and the circuit took
+/// from milliseconds to over a second to find its way back, whether the
+/// abandoned sample's state was frozen, advanced, or advanced with the
+/// predictor kept (`docs/realtime-multi-instance.md`). There is no gentle way
+/// to stop a Newton solve halfway.
+///
+/// So the cutoff only fires once the callback has certainly missed its
+/// deadline, to hold an overrun to one lost cycle rather than several. At 0.9
+/// of the period, where it was, it fired 6,160 times in a 53 s REAPER capture:
+/// too late for the 1.0 ms cycle a USB interface gives one callback in three at
+/// 64/48k, which had already dropped out, and too early for the 1.5 ms ones,
+/// which had not. Every one of those was a click on top of the dropout.
+pub const REALTIME_CUTOFF_PERIODS: f64 = 1.5;
+
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
     meters: Arc<Meters>,
@@ -70,6 +93,29 @@ pub struct GainStageFx {
     /// worker. This keeps the input meter's frame-by-frame decay identical to
     /// the sequential path.
     stereo_right_peak: Vec<f64>,
+    /// Runs the second half of the single chain on another core while this
+    /// thread runs the first half, inside the same callback; see
+    /// `Chain::process_block`. Used for mono and dual-mono, where one chain
+    /// carries the whole load, once that load is worth a second thread.
+    stage_worker: Option<StageWorker>,
+    /// Smoothed fraction of the host period the chain's callbacks take, and
+    /// whether that is enough to pipeline. On above 30 %, off below 20 %.
+    load: f64,
+    pipelining: bool,
+    /// The latency last told to the host. The chains run in true-latency
+    /// mode, so this follows the oversampling: nothing at 1x.
+    reported_latency: u32,
+    /// Per-frame values for the block path, preallocated in `initialize`.
+    block_input: Vec<f64>,
+    block_dry: Vec<f64>,
+    block_mix: Vec<f64>,
+    block_output_trim: Vec<f64>,
+    block_left: Vec<f64>,
+    block_right: Vec<f64>,
+    /// Opt-in per-callback telemetry; see `rt_trace`. `None` unless the host
+    /// was started with `GAINSTAGEFX_RT_TRACE=1`, and then the audio thread
+    /// only fills a record and pushes it into a preallocated ring.
+    rt_trace: Option<RtTrace>,
 }
 /// Return true when a stereo host buffer carries one duplicated mono signal.
 ///
@@ -262,6 +308,7 @@ impl Default for GainStageFx {
         let input_ramp = BlockRamp::new(util::db_to_gain(params.input_trim.value()));
         let output_ramp = BlockRamp::new(util::db_to_gain(params.output_trim.value()));
         let mix_ramp = BlockRamp::new(params.mix.value());
+        let rt_trace = RtTrace::from_env(params.clone());
         Self {
             params,
             meters: Arc::new(Meters::default()),
@@ -281,6 +328,17 @@ impl Default for GainStageFx {
             stereo_mix: Vec::new(),
             stereo_noise_gain: Vec::new(),
             stereo_right_peak: Vec::new(),
+            stage_worker: None,
+            load: 0.0,
+            pipelining: false,
+            reported_latency: 0,
+            block_input: Vec::new(),
+            block_dry: Vec::new(),
+            block_mix: Vec::new(),
+            block_output_trim: Vec::new(),
+            block_left: Vec::new(),
+            block_right: Vec::new(),
+            rt_trace,
         }
     }
 }
@@ -368,8 +426,6 @@ impl Budget {
     /// mechanism that gives up something the solver does not need per pass --
     /// a stage, the transformer, the oversampling -- could use it. Capping
     /// iterations is not that mechanism.
-    const WORKS: bool = false;
-
     pub const fn new() -> Self {
         Self {
             armed: false,
@@ -489,7 +545,7 @@ impl Plugin for GainStageFx {
         // An offline render has none. Iteration capping is currently disabled
         // (`Budget::WORKS == false`), but preserve the mode bookkeeping so a
         // future safe budget mechanism still distinguishes the two cases.
-        self.budget.armed = Budget::WORKS && !matches!(buffer.process_mode, ProcessMode::Offline);
+        self.budget.armed = !matches!(buffer.process_mode, ProcessMode::Offline);
         self.oversampling = self.params.oversampling.value();
 
         // Build one persistent nonlinear chain per negotiated host channel here,
@@ -508,6 +564,7 @@ impl Plugin for GainStageFx {
         self.channels.reserve(channel_count);
         for _ in 0..channel_count {
             let mut chain = Chain::new(self.sample_rate);
+            chain.set_true_latency(true);
             chain.set_oversampling(self.oversampling.factor());
             self.channels.push(chain);
         }
@@ -517,9 +574,30 @@ impl Plugin for GainStageFx {
         self.stereo_mix.resize(max_block, 0.0);
         self.stereo_noise_gain.resize(max_block, 1.0);
         self.stereo_right_peak.resize(max_block, 0.0);
+        for buffer in [
+            &mut self.block_input,
+            &mut self.block_dry,
+            &mut self.block_mix,
+            &mut self.block_output_trim,
+            &mut self.block_left,
+            &mut self.block_right,
+        ] {
+            buffer.resize(max_block, 0.0);
+        }
         if channel_count == 2 {
             self.stereo_worker = Some(StereoWorker::new());
         }
+        if self.stage_worker.is_none() {
+            self.stage_worker = Some(StageWorker::new());
+        }
+        // Start pipelined. The first callbacks after a preset loads are the
+        // heaviest -- the operating point, the new circuit's first attack --
+        // and waiting for the smoothed load to climb past the threshold ran
+        // them on one core: the worst three dropouts of the 11:19 REAPER
+        // capture. A light preset drops back below 20 % within a few dozen
+        // callbacks.
+        self.load = 0.35;
+        self.pipelining = true;
 
         // Ramps are re-seeded from whatever the host loaded into the
         // parameters, which is not necessarily what `Default` saw.
@@ -536,9 +614,22 @@ impl Plugin for GainStageFx {
         self.peak = 0.0;
         self.meters.reset();
 
-        // `Chain` deliberately pads every oversampling setting to the same
-        // latency, so no extra plugin-side FIFO delay is required.
-        context.set_latency_samples(LATENCY);
+        let trace_enabled = self.rt_trace.is_some();
+        for chain in &mut self.channels {
+            chain.set_realtime_stage_timing(trace_enabled);
+        }
+        // The chains' true latency once the first block has applied these
+        // parameters -- computed from them, not read from a chain that has not
+        // seen them yet, so a restart the host makes for a latency change
+        // reports the figure the next block will produce rather than asking
+        // for another restart.
+        let circuit = self.params.circuit.value();
+        self.reported_latency = crate::voice::true_latency(
+            circuit.voice(),
+            self.params.pedal.value().voice(),
+            self.oversampling.factor(),
+        );
+        context.set_latency_samples(self.reported_latency);
         true
     }
 
@@ -567,12 +658,17 @@ impl Plugin for GainStageFx {
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
+        context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // The host shares its audio thread with other plugins. Reassert FTZ
         // and DAZ every callback so another plugin cannot leave denormal
         // handling in a catastrophically slow state for the circuit solver.
         crate::dsp::time::enable_ftz_daz();
+        // One absolute cutoff is shared by every nonlinear circuit in this
+        // callback; see `REALTIME_CUTOFF_PERIODS` for why it is late. Offline
+        // rendering has no wall-clock cutoff.
+        let callback_started = Instant::now();
+        let trace_begin = self.rt_trace.as_ref().map(RtTrace::begin);
 
         // REAPER and other DAWs may present a mono source through a stereo bus.
         // Decide from the signal itself, not from host channel count. While a
@@ -791,6 +887,29 @@ impl Plugin for GainStageFx {
         // the independent right chain can run on the persistent worker while
         // the host audio thread runs the left chain.
         let sample_count = buffer.samples();
+        let realtime_deadline = if self.budget.armed && sample_count != 0 {
+            let host_period = sample_count as f64 / self.sample_rate;
+            Some(callback_started + Duration::from_secs_f64(host_period * REALTIME_CUTOFF_PERIODS))
+        } else {
+            None
+        };
+        for chain in &mut self.channels {
+            chain.set_realtime_deadline(realtime_deadline);
+        }
+        // Taken after the controls and any operating-point hunt, so a traced
+        // callback's counts are its samples' work and nothing else.
+        let trace_before = trace_begin.and(
+            self.channels
+                .first()
+                .map(|chain| (chain.realtime_stage_timings(), chain.solver_breakdown())),
+        );
+        let tracing = trace_before.is_some();
+        let mut trace_first_abort_sample = -1i32;
+        let mut trace_abort_samples = 0u32;
+        let mut trace_largest_output_delta = 0.0f64;
+        let mut trace_worker_wait_ns = 0u64;
+        let mut trace_pipeline = PipelineUse::Serial;
+
         let can_parallel_stereo = !duplicated_mono
             && self.stereo_seen
             && self.channels.len() == 2
@@ -846,6 +965,11 @@ impl Plugin for GainStageFx {
             unsafe { worker.submit(job) };
 
             for (i, sample) in left_samples.iter_mut().take(sample_count).enumerate() {
+                let aborts_before = if tracing {
+                    left_chain.active_deadline_aborts()
+                } else {
+                    0
+                };
                 let raw = *sample as f64;
                 let trimmed = raw * self.stereo_input_trim[i] as f64;
                 let input = trimmed * self.stereo_noise_gain[i];
@@ -857,6 +981,15 @@ impl Plugin for GainStageFx {
                         * self.stereo_output_trim[i] as f64) as f32;
                 }
 
+                if let Some(trace) = self.rt_trace.as_mut().filter(|_| tracing) {
+                    trace.observe_output(*sample as f64, &mut trace_largest_output_delta);
+                    if left_chain.active_deadline_aborts() > aborts_before {
+                        trace_abort_samples += 1;
+                        if trace_first_abort_sample < 0 {
+                            trace_first_abort_sample = i as i32;
+                        }
+                    }
+                }
                 let frame_peak = trimmed.abs().max(self.stereo_right_peak[i]);
                 peak = if frame_peak > peak {
                     frame_peak
@@ -867,9 +1000,92 @@ impl Plugin for GainStageFx {
             // If the worker was not scheduled promptly the audio thread steals
             // an unstarted right job. If it did start, this waits only for that
             // independent chain to finish before the host regains the buffer.
+            let waited = tracing.then(crate::rt_trace::monotonic_ns);
             worker.finish_or_steal();
+            if let Some(waited) = waited {
+                trace_worker_wait_ns = crate::rt_trace::monotonic_ns().saturating_sub(waited);
+            }
+        } else if (self.channels.len() == 1 || duplicated_mono)
+            && sample_count <= self.block_input.len()
+        {
+            // One chain carries every output: a one-channel layout, or a
+            // stereo bus with the same signal on both sides. Run it as a
+            // block, so its two halves can be pipelined across two cores.
+            // The per-frame arithmetic around it is the frame loop's below,
+            // term for term, split into a pass before the chain and one after.
+            let slices = buffer.as_slice();
+            let chain = &mut self.channels[0];
+            for i in 0..sample_count {
+                let input_trim = self.input_ramp.next() as f64;
+                let output_trim = self.output_ramp.next() as f64;
+                let mix = self.mix_ramp.next() as f64;
+                let detector = slices.iter().fold(0.0f64, |peak, channel| {
+                    peak.max((channel[i] as f64 * input_trim).abs())
+                });
+                let noise_gain = self.noise_reduction.next_gain(detector);
+                let trimmed = slices[0][i] as f64 * input_trim;
+                let input = trimmed * noise_gain;
+                self.block_input[i] = input;
+                self.block_dry[i] = chain.delayed_dry(input);
+                self.block_mix[i] = mix;
+                self.block_output_trim[i] = output_trim;
+                peak = if trimmed.abs() > peak {
+                    trimmed.abs()
+                } else {
+                    peak * decay
+                };
+            }
+            let worker = self.stage_worker.as_ref().filter(|_| self.pipelining);
+            trace_pipeline = chain.process_block(
+                &self.block_input[..sample_count],
+                &mut self.block_left[..sample_count],
+                &mut self.block_right[..sample_count],
+                duplicated_mono,
+                worker,
+            );
+            if tracing {
+                let aborts = chain.active_deadline_aborts();
+                if let Some((_, solver)) = trace_before {
+                    let before = solver.pedal.deadline_aborts
+                        + solver.gain.deadline_aborts
+                        + solver.power.deadline_aborts
+                        + solver.iron.deadline_aborts
+                        + solver.line.deadline_aborts;
+                    // Per block here: which samples aborted is not known
+                    // outside the chain, so this counts aborted solves.
+                    trace_abort_samples = aborts.saturating_sub(before) as u32;
+                }
+            }
+            let (left_out, rest) = slices
+                .split_first_mut()
+                .expect("a chain is only built for a channel");
+            let mut right_out = rest.first_mut().filter(|_| duplicated_mono);
+            for (i, left) in left_out[..sample_count].iter_mut().enumerate() {
+                let (dry, mix, output_trim) = (
+                    self.block_dry[i],
+                    self.block_mix[i],
+                    self.block_output_trim[i],
+                );
+                if !bypassed {
+                    *left = ((dry * (1.0 - mix) + self.block_left[i] * mix) * output_trim) as f32;
+                    if let Some(right) = right_out.as_mut() {
+                        right[i] =
+                            ((dry * (1.0 - mix) + self.block_right[i] * mix) * output_trim) as f32;
+                    }
+                }
+                if tracing {
+                    if let Some(trace) = self.rt_trace.as_mut() {
+                        trace.observe_output(*left as f64, &mut trace_largest_output_delta);
+                    }
+                }
+            }
         } else {
-            for mut frame in buffer.iter_samples() {
+            for (frame_index, mut frame) in buffer.iter_samples().enumerate() {
+                let aborts_before = if tracing {
+                    self.channels[0].active_deadline_aborts()
+                } else {
+                    0
+                };
                 // Advance shared automation once per *frame*. Doing this inside
                 // the channel loop would make a stereo stream traverse every
                 // ramp twice as fast as mono.
@@ -932,7 +1148,18 @@ impl Plugin for GainStageFx {
                         }
                     }
 
+                    if index == 0 && tracing {
+                        if let Some(trace) = self.rt_trace.as_mut() {
+                            trace.observe_output(*sample as f64, &mut trace_largest_output_delta);
+                        }
+                    }
                     frame_peak = frame_peak.max(trimmed.abs());
+                }
+                if tracing && self.channels[0].active_deadline_aborts() > aborts_before {
+                    trace_abort_samples += 1;
+                    if trace_first_abort_sample < 0 {
+                        trace_first_abort_sample = frame_index as i32;
+                    }
                 }
 
                 peak = if frame_peak > peak {
@@ -953,6 +1180,74 @@ impl Plugin for GainStageFx {
         // rather than an artificial mono sum or average.
         self.meters
             .set_input_db(20.0 * (self.peak / nominal).max(1e-6).log10() as f32);
+
+        // Pipeline the next callbacks if these have been costing enough of
+        // the period to be worth a second thread: on at once for a heavy
+        // callback, off only once the smoothed load has stayed low. One clock
+        // read a callback; either way the output is the same to the bit.
+        if sample_count > 0 {
+            let period = sample_count as f64 / self.sample_rate;
+            let used = callback_started.elapsed().as_secs_f64() / period;
+            self.load += (used - self.load) * 0.05;
+            if self.load > 0.30 || used > 0.50 {
+                self.pipelining = true;
+            } else if self.load < 0.20 {
+                self.pipelining = false;
+            }
+        }
+
+        // The oversampling changed, so the true latency did: tell the host.
+        // nice-plug hands this to the main thread and the host restarts us.
+        let latency = self.channels[0].latency();
+        if latency != self.reported_latency {
+            self.reported_latency = latency;
+            context.set_latency_samples(latency);
+        }
+
+        if let (Some(trace), Some((start_ns, tid, cpu_start)), Some((stages, solver))) =
+            (self.rt_trace.as_mut(), trace_begin, trace_before)
+        {
+            let chain = &self.channels[0];
+            let solver = chain.solver_breakdown().saturating_delta(solver);
+            let aborts = solver.pedal.deadline_aborts
+                + solver.gain.deadline_aborts
+                + solver.power.deadline_aborts
+                + solver.iron.deadline_aborts
+                + solver.line.deadline_aborts;
+            trace.finish(TraceRecord {
+                callback: 0,
+                start_ns,
+                end_ns: 0,
+                interval_ns: 0,
+                samples: sample_count as u32,
+                sample_rate: self.sample_rate as f32,
+                tid,
+                cpu_start,
+                cpu_end: 0,
+                mode: if self.channels.len() == 1 {
+                    TraceMode::Mono
+                } else if duplicated_mono {
+                    TraceMode::DualMono
+                } else if can_parallel_stereo {
+                    TraceMode::StereoParallel
+                } else {
+                    TraceMode::StereoSequential
+                },
+                identity: Some(chain.identity()),
+                oversampling: chain.effective_oversampling() as u32,
+                budget_ns: realtime_deadline
+                    .map(|deadline| deadline.duration_since(callback_started).as_nanos() as u64)
+                    .unwrap_or(0),
+                deadline_aborts: aborts as u32,
+                abort_samples: trace_abort_samples,
+                first_abort_sample: trace_first_abort_sample,
+                stages: chain.realtime_stage_timings().delta(stages),
+                worker_wait_ns: trace_worker_wait_ns,
+                pipeline: trace_pipeline,
+                solver,
+                largest_output_delta: trace_largest_output_delta as f32,
+            });
+        }
         ProcessStatus::Normal
     }
 }

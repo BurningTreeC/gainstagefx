@@ -25,6 +25,7 @@ use super::netlist::{Adjust, Circuit, Part, GROUND};
 #[cfg(test)]
 use super::partition::JacobianFactors13;
 use super::partition::{ReducedLinear, ReducedNonlinear};
+use std::time::Instant;
 
 /// Enable flush-to-zero and denormals-are-zero in the MXCSR register.
 /// What one Newton pass achieved.
@@ -1673,6 +1674,15 @@ pub struct Simulation {
     /// The trade it makes: a handful of less-converged samples against a block
     /// the host does not get at all.
     ceiling: usize,
+    /// Absolute wall-clock cutoff for realtime nonlinear recovery. `None` for
+    /// offline rendering and for callers that do not have a host deadline.
+    /// Ordinary 1-3 pass solves do not read the clock; only a solve that has
+    /// already become unusually expensive checks this cutoff.
+    realtime_deadline: Option<Instant>,
+    /// Samples whose nonlinear solve was abandoned because the host callback
+    /// deadline was in danger. These use the same bounded failed-iterate path
+    /// as any other unsettled sample and never commit reactive/device state.
+    deadline_aborts: u64,
     /// Samples finished at the ceiling rather than by converging.
     pinched: u64,
     watching: bool,
@@ -2337,6 +2347,8 @@ impl Simulation {
             matrix: vec![0.0; n * n],
             pivots: vec![0; n],
             ceiling: MAX_ITERATIONS,
+            realtime_deadline: None,
+            deadline_aborts: 0,
             pinched: 0,
             watching: false,
             violations: 0,
@@ -4222,6 +4234,23 @@ impl Simulation {
         self.ceiling = passes.clamp(PASS_FLOOR, MAX_ITERATIONS);
     }
 
+    /// Set the absolute realtime cutoff for expensive nonlinear recovery.
+    /// `None` restores deterministic/offline behavior.
+    pub fn set_realtime_deadline(&mut self, deadline: Option<Instant>) {
+        self.realtime_deadline = deadline;
+    }
+
+    /// Number of samples abandoned specifically by the realtime deadline.
+    pub fn deadline_aborts(&self) -> u64 {
+        self.deadline_aborts
+    }
+
+    #[inline]
+    fn realtime_deadline_expired(&self) -> bool {
+        self.realtime_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+    }
+
     /// How many samples finished at the ceiling rather than by converging.
     pub fn pinched(&self) -> u64 {
         self.pinched
@@ -6104,6 +6133,14 @@ impl Simulation {
                 self.search_merit = 0.0;
                 let mut before = f64::INFINITY;
                 for pass in 0..ceiling {
+                    // Most realtime solves finish in 1-3 passes. Avoid a clock
+                    // read on that hot path; once a solve wants a fourth pass,
+                    // preserving the host callback deadline outranks spending
+                    // more time on this one sample.
+                    if pass >= 3 && self.realtime_deadline_expired() {
+                        self.deadline_aborts += 1;
+                        break;
+                    }
                     self.newton_passes += 1;
                     let stalled = self.moved > before * CONVERGING;
                     before = self.moved;
@@ -6293,6 +6330,13 @@ impl Simulation {
                 let mut tail_trace_unsettled_devices = [0usize; TAIL_TRACE_PASSES];
 
                 loop {
+                    // As above, the normal 1-3 pass path is clock-free. A
+                    // difficult continuation/recovery solve may not monopolize
+                    // the audio thread once the callback cutoff has arrived.
+                    if used_passes >= 3 && self.realtime_deadline_expired() {
+                        self.deadline_aborts += 1;
+                        break;
+                    }
                     // The normal path is still capped by `ceiling`. At the
                     // full 64-pass ceiling, proven confirmation windows may add
                     // a few ordinary passes, and a solve that reaches the wall on

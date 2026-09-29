@@ -15,6 +15,8 @@ pub mod meters;
 pub mod params;
 pub mod plugin;
 pub mod presets;
+pub mod rt_trace;
+pub mod stage_worker;
 mod stereo_worker;
 pub mod voice;
 

@@ -2438,90 +2438,18 @@ fn solve_dense_planned_fixed_13_reciprocal_body(
     planned: &mut bool,
 ) -> bool {
     if *planned {
-        let mut sound = true;
-        let mut column = 0usize;
-        while column < 13 {
-            let pivot = plan[column];
-            if pivot < column || pivot >= 13 {
-                let solved =
-                    solve_dense_planned_fixed_search_tail::<13>(matrix, rhs, plan, column, true);
-                *planned = false;
-                return solved;
-            }
-            if pivot != column {
-                let a = column * 13;
-                let b = pivot * 13;
-                let mut offset = column;
-                while offset < 13 {
-                    matrix.swap(a + offset, b + offset);
-                    offset += 1;
-                }
-                rhs.swap(column, pivot);
-            }
-
-            let diagonal_index = column * 13 + column;
-            let diagonal = matrix[diagonal_index];
-            if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
-                let solved =
-                    solve_dense_planned_fixed_search_tail::<13>(matrix, rhs, plan, column, true);
-                *planned = false;
-                return solved;
-            }
-
-            let inverse = 1.0 / diagonal;
-            matrix[diagonal_index] = inverse;
-            let ceiling = diagonal.abs();
-            let pivot_rhs = rhs[column];
-            let pivot_base = column * 13;
-
-            let mut row_index = column + 1;
-            while row_index < 13 {
-                let row_base = row_index * 13;
-                let entry = matrix[row_base + column];
-                if entry != 0.0 {
-                    if entry.abs() > ceiling * 16.0 {
-                        sound = false;
-                    }
-                    let factor = entry * inverse;
-                    let mut target_column = column + 1;
-                    while target_column < 13 {
-                        let target = row_base + target_column;
-                        let source = pivot_base + target_column;
-                        matrix[target] -= factor * matrix[source];
-                        target_column += 1;
-                    }
-                    rhs[row_index] -= factor * pivot_rhs;
-                }
-                row_index += 1;
-            }
-            column += 1;
-        }
-
-        let mut row = 13usize;
-        while row != 0 {
-            row -= 1;
-            let row_base = row * 13;
-            let mut value = rhs[row];
-            let mut column = row + 1;
-            while column < 13 {
-                value -= matrix[row_base + column] * rhs[column];
-                column += 1;
-            }
-            let inverse = matrix[row_base + row];
-            if !inverse.is_finite() || inverse == 0.0 {
-                *planned = false;
-                return false;
-            }
-            rhs[row] = value * inverse;
-            if !rhs[row].is_finite() {
-                *planned = false;
-                return false;
-            }
-        }
-        *planned = sound;
-        return true;
+        return solve_masked_planned(
+            matrix,
+            rhs,
+            13,
+            plan,
+            planned,
+            true,
+            |matrix, rhs, plan, column| {
+                solve_dense_planned_fixed_search_tail::<13>(matrix, rhs, plan, column, true)
+            },
+        );
     }
-
     solve_dense_planned_fixed_search::<13>(matrix, rhs, plan, planned, true)
 }
 
@@ -2781,6 +2709,19 @@ fn solve_dense_planned_body(
     // current partially-factorised prefix is retained and the remaining suffix
     // is searched exactly as before; the plan is then marked unplanned so the
     // next solve relearns it.
+    if *planned && n <= MASKED_MAX {
+        return solve_masked_planned(
+            matrix,
+            rhs,
+            n,
+            plan,
+            planned,
+            reciprocal_pivots,
+            |matrix, rhs, plan, column| {
+                solve_dense_planned_search_tail(matrix, rhs, n, plan, column, reciprocal_pivots)
+            },
+        );
+    }
     if *planned {
         let mut sound = true;
         for column in 0..n {
@@ -2963,6 +2904,191 @@ fn solve_dense_planned_back_substitute(
         }
     }
     true
+}
+
+/// Largest reduced boundary the structure-aware planned solve handles; the
+/// row patterns are `u64` masks. Every reduction in the catalogue is well
+/// under this (the largest is 18).
+const MASKED_MAX: usize = 64;
+
+/// The planned reduced LU, visiting only the entries that can be non-zero.
+///
+/// The reduced Jacobians are mostly zeros: 19 % filled for the Mark IIC+
+/// preamplifier's 18 boundary unknowns, 28 % for the TS808's 14 and 37 % for
+/// the Mark power stage's 13 (`examples/partition_survey`). The dense replay
+/// already skipped a row whose sub-pivot entry was zero, but it still swept
+/// every column of every row it did update, and back-substituted through the
+/// whole upper triangle. On the Puppet Master preset those two sweeps were 29 %
+/// of the callback.
+///
+/// Each row carries a mask of the columns that may be non-zero: seeded from
+/// the values themselves, then widened by exactly the fill an elimination step
+/// can create (`row |= pivot row`). That is a superset of the numerically
+/// non-zero entries, so no term that is not exactly `x -= f * 0.0` is ever
+/// skipped. Every surviving entry sees the same operations, in the same order,
+/// as in the dense kernel -- rows ascending, columns ascending, back
+/// substitution columns ascending -- so the factors and the solution are the
+/// same bits. The one thing that can differ is the sign of an exact zero,
+/// which `-0.0 - 0.0` and `-0.0` leave differently and which nothing reads.
+///
+/// Pivoting is the replayed plan, the `sound` test is the same test on the
+/// same entries, and every exit is the same exit: a plan entry out of range or
+/// a vanishing pivot hands the partly factorised matrix -- identical to the
+/// dense kernel's at that column -- to the caller's dense search `tail`.
+#[inline(always)]
+fn solve_masked_planned(
+    matrix: &mut [f64],
+    rhs: &mut [f64],
+    n: usize,
+    plan: &mut [usize],
+    planned: &mut bool,
+    reciprocal_pivots: bool,
+    tail: impl FnOnce(&mut [f64], &mut [f64], &mut [usize], usize) -> bool,
+) -> bool {
+    debug_assert!(n <= MASKED_MAX && matrix.len() >= n * n && rhs.len() >= n);
+    let mut mask = [0u64; MASKED_MAX];
+    for (row, pattern) in matrix[..n * n].chunks_exact(n).zip(mask.iter_mut()) {
+        let mut bits = 0u64;
+        for (column, &value) in row.iter().enumerate() {
+            bits |= u64::from(value != 0.0) << column;
+        }
+        *pattern = bits;
+    }
+    // Columns strictly after `column`.
+    let after = |column: usize| -> u64 {
+        if column + 1 >= 64 {
+            0
+        } else {
+            !0u64 << (column + 1)
+        }
+    };
+
+    let mut sound = true;
+    for column in 0..n {
+        let pivot = plan[column];
+        if pivot < column || pivot >= n {
+            let solved = tail(matrix, rhs, plan, column);
+            *planned = false;
+            return solved;
+        }
+        if pivot != column {
+            let a = column * n;
+            let b = pivot * n;
+            for offset in column..n {
+                matrix.swap(a + offset, b + offset);
+            }
+            rhs.swap(column, pivot);
+            // Only columns from `column` on were swapped, and only those are
+            // ever read from a mask again.
+            mask.swap(column, pivot);
+        }
+
+        let diagonal_index = column * n + column;
+        let diagonal = matrix[diagonal_index];
+        if diagonal.abs() < 1e-30 || !diagonal.is_finite() {
+            let solved = tail(matrix, rhs, plan, column);
+            *planned = false;
+            return solved;
+        }
+        let pivot_scale = if reciprocal_pivots {
+            let inverse = 1.0 / diagonal;
+            matrix[diagonal_index] = inverse;
+            inverse
+        } else {
+            diagonal
+        };
+
+        let ceiling = diagonal.abs();
+        let upper = mask[column] & after(column);
+        let pivot_rhs = rhs[column];
+        let pivot_base = column * n;
+        for row in column + 1..n {
+            if (mask[row] >> column) & 1 == 0 {
+                continue;
+            }
+            let row_base = row * n;
+            let entry = matrix[row_base + column];
+            if entry == 0.0 {
+                continue;
+            }
+            if entry.abs() > ceiling * 16.0 {
+                sound = false;
+            }
+            let factor = if reciprocal_pivots {
+                entry * pivot_scale
+            } else {
+                entry / pivot_scale
+            };
+            update_row(matrix, row_base, pivot_base, upper, factor);
+            rhs[row] -= factor * pivot_rhs;
+            mask[row] |= upper;
+        }
+    }
+
+    for row in (0..n).rev() {
+        let row_base = row * n;
+        let value = substitute_row(matrix, rhs, row_base, rhs[row], mask[row] & after(row));
+        let diagonal = matrix[row_base + row];
+        if !diagonal.is_finite()
+            || (!reciprocal_pivots && diagonal.abs() < 1e-30)
+            || (reciprocal_pivots && diagonal == 0.0)
+        {
+            *planned = false;
+            return false;
+        }
+        rhs[row] = if reciprocal_pivots {
+            value * diagonal
+        } else {
+            value / diagonal
+        };
+        if !rhs[row].is_finite() {
+            *planned = false;
+            return false;
+        }
+    }
+    *planned = sound;
+    true
+}
+
+/// `matrix[row][j] -= factor * matrix[pivot][j]` for every column in `bits`,
+/// in ascending column order.
+///
+/// A plain bit walk: measured against a contiguous vector sweep over dense
+/// enough spans, the sweep's density test cost more than it saved (+9 % on the
+/// Puppet Master preset), and dropping the bounds checks here saved 4 % on the
+/// Jazz Chorus's 18-unknown transistor power stage.
+#[inline(always)]
+fn update_row(matrix: &mut [f64], row_base: usize, pivot_base: usize, bits: u64, factor: f64) {
+    let mut bits = bits;
+    while bits != 0 {
+        let column = bits.trailing_zeros() as usize;
+        bits &= bits - 1;
+        debug_assert!(pivot_base + column < row_base && row_base + column < matrix.len());
+        // SAFETY: `bits` holds columns of an n x n matrix below `n`, and the
+        // pivot row precedes the target row.
+        unsafe {
+            let source = *matrix.get_unchecked(pivot_base + column);
+            *matrix.get_unchecked_mut(row_base + column) -= factor * source;
+        }
+    }
+}
+
+/// `value - sum(matrix[row][j] * rhs[j])` over the columns in `bits`, taken in
+/// ascending column order as the dense back substitution does.
+#[inline(always)]
+fn substitute_row(matrix: &[f64], rhs: &[f64], row_base: usize, value: f64, bits: u64) -> f64 {
+    let mut value = value;
+    let mut bits = bits;
+    while bits != 0 {
+        let column = bits.trailing_zeros() as usize;
+        bits &= bits - 1;
+        debug_assert!(row_base + column < matrix.len() && column < rhs.len());
+        // SAFETY: as in `update_row`.
+        unsafe {
+            value -= *matrix.get_unchecked(row_base + column) * *rhs.get_unchecked(column);
+        }
+    }
+    value
 }
 
 /// Wide and narrow builds of the two hot dense kernels, chosen by
@@ -3271,9 +3397,10 @@ fn inverse(matrix: &[f64], n: usize) -> Option<Vec<f64>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        condense, merit_stamped_fixed_13, recover_boundary_major_in_place, solve_dense_planned,
-        solve_dense_planned_fixed, solve_dense_planned_fixed_13_reciprocal,
-        test_thread_cpu_time_ns, ReducedLinear, ReducedNonlinear,
+        avx_available, condense, merit_stamped_fixed_13, recover_boundary_major_in_place,
+        solve_dense_planned, solve_dense_planned_fixed, solve_dense_planned_fixed_13_reciprocal,
+        solve_dense_planned_search_tail, solve_masked_planned, test_thread_cpu_time_ns,
+        ReducedLinear, ReducedNonlinear,
     };
 
     #[test]
@@ -3379,6 +3506,98 @@ mod tests {
                 reference.to_bits(),
                 "the wide recovery kernel must be bit-identical to the row-major dot product"
             );
+        }
+    }
+
+    /// The structure-aware replay must be the dense kernel to the bit.
+    ///
+    /// Sparse matrices at the fills the catalogue's reductions actually have,
+    /// with off-diagonal entries large enough that partial pivoting moves rows.
+    /// The dense search learns the plan and solves; replaying that plan with
+    /// row masks on the same matrix must reproduce every factor and every
+    /// solution value exactly. Zero is compared as a value, because the only
+    /// thing skipping `x -= f * 0.0` can change is the sign of an exact zero.
+    #[test]
+    fn masked_planned_replay_is_the_dense_solve_bit_for_bit() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let same = |a: f64, b: f64| a.to_bits() == b.to_bits() || (a == 0.0 && b == 0.0);
+        for n in [5usize, 9, 13, 14, 18, 24] {
+            for fill in [0.12, 0.25, 0.4] {
+                for trial in 0..20 {
+                    let mut matrix = vec![0.0; n * n];
+                    for row in 0..n {
+                        for column in 0..n {
+                            if row == column {
+                                matrix[row * n + column] = 0.5 + next();
+                            } else if next() < fill {
+                                matrix[row * n + column] = (next() - 0.5) * 6.0;
+                            }
+                        }
+                    }
+                    let rhs: Vec<f64> = (0..n).map(|_| next() - 0.5).collect();
+                    for reciprocal in [false, true] {
+                        let (mut dense, mut dense_rhs) = (matrix.clone(), rhs.clone());
+                        let mut plan = vec![0usize; n];
+                        if !solve_dense_planned_search_tail(
+                            &mut dense,
+                            &mut dense_rhs,
+                            n,
+                            &mut plan,
+                            0,
+                            reciprocal,
+                        ) {
+                            continue;
+                        }
+                        let (mut masked, mut masked_rhs) = (matrix.clone(), rhs.clone());
+                        let mut replay = plan.clone();
+                        let mut planned = true;
+                        assert!(solve_masked_planned(
+                            &mut masked,
+                            &mut masked_rhs,
+                            n,
+                            &mut replay,
+                            &mut planned,
+                            reciprocal,
+                            |m, r, p, c| solve_dense_planned_search_tail(m, r, n, p, c, reciprocal),
+                        ));
+                        assert_eq!(replay, plan, "n={n} fill={fill} trial={trial}");
+                        for (i, (&a, &b)) in masked.iter().zip(&dense).enumerate() {
+                            assert!(
+                                same(a, b),
+                                "n={n} fill={fill} trial={trial} entry {i}: {a} vs {b}"
+                            );
+                        }
+                        for (i, (&a, &b)) in masked_rhs.iter().zip(&dense_rhs).enumerate() {
+                            assert!(
+                                same(a, b),
+                                "n={n} fill={fill} trial={trial} x[{i}]: {a} vs {b}"
+                            );
+                        }
+                        if n == 13 && reciprocal {
+                            let mut fixed: [f64; 169] = matrix.clone().try_into().unwrap();
+                            let mut fixed_rhs: [f64; 13] = rhs.clone().try_into().unwrap();
+                            let mut fixed_plan: [usize; 13] = plan.clone().try_into().unwrap();
+                            let mut fixed_planned = true;
+                            assert!(solve_dense_planned_fixed_13_reciprocal(
+                                &mut fixed,
+                                &mut fixed_rhs,
+                                &mut fixed_plan,
+                                &mut fixed_planned,
+                                avx_available(),
+                            ));
+                            for (&a, &b) in fixed_rhs.iter().zip(&dense_rhs) {
+                                assert!(same(a, b), "fixed-13 trial={trial}: {a} vs {b}");
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

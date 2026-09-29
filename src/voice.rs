@@ -35,10 +35,12 @@ use crate::circuits::{
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
-use crate::dsp::oversample::Oversampler;
+use crate::dsp::oversample::{Downsampler, Oversampler, Upsampler};
 use crate::dsp::spring::Tank;
 use crate::dsp::time::Simulation;
 use crate::dsp::tremolo::Tremolo;
+use crate::stage_worker::StageWorker;
+use std::time::Instant;
 
 /// The level a plugin should be set up around: hot enough to be well clear of
 /// the noise floor, quiet enough to leave headroom for a peak. A guitar
@@ -944,6 +946,28 @@ pub fn voice_index(gain: Gain, diode: Diode, amplifier: Amplifier) -> usize {
 /// turns it up.
 pub const MODELLED_MAX_OVERSAMPLING: usize = 2;
 
+/// The oversampling factor a chain actually runs at for a requested one.
+///
+/// A modelled circuit is capped at `MODELLED_MAX_OVERSAMPLING`, and an expensive
+/// pedal in the slot takes the whole oversampled path down to 1x, because the
+/// pedal runs inside it. See `Chain::set_oversampling`, which applies this.
+pub fn effective_oversampling(gain: Gain, pedal: Pedal, requested: usize) -> usize {
+    if pedal != Pedal::None && pedal.is_expensive() {
+        1
+    } else if gain.is_modelled() {
+        requested.min(MODELLED_MAX_OVERSAMPLING)
+    } else {
+        requested
+    }
+}
+
+/// The true latency, in host samples, of a chain running `gain` with `pedal`
+/// at the `requested` oversampling: what `Chain::latency` reports once the
+/// chain is in true-latency mode and those settings have been applied.
+pub fn true_latency(gain: Gain, pedal: Pedal, requested: usize) -> u32 {
+    Oversampler::latency_of(effective_oversampling(gain, pedal, requested))
+}
+
 pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
     let mut at = 0;
     for gain in Gain::ALL {
@@ -1063,7 +1087,7 @@ impl PowerModel {
     /// The speaker-loaded circuit for this stage, whatever kind it is. One
     /// place that knows how each kind is built, rather than a `match` at every
     /// call site that wants one.
-    fn build_loaded(self, load: &LoadValues) -> Result<(Netlist, speaker::LoadSlots), Fault> {
+    pub fn build_loaded(self, load: &LoadValues) -> Result<(Netlist, speaker::LoadSlots), Fault> {
         match self.spec() {
             Some(spec) => power::build_with_speaker(spec, 10_000.0, load),
             None if self == Self::British73Out => neve::output_with_speaker(LOAD, load),
@@ -1073,7 +1097,7 @@ impl PowerModel {
 
     /// How far this stage's nominal load is from the profile's own impedance,
     /// so one measured driver can stand for a 4, 8 or 16 ohm one.
-    fn speaker_scale(self) -> f64 {
+    pub fn speaker_scale(self) -> f64 {
         match self.spec() {
             Some(spec) => power::speaker_scale(spec),
             // The JC-120 drives one 8 ohm speaker a side, which is the
@@ -2125,6 +2149,9 @@ pub struct SolverHealth {
     pub continuation_midpoint_successes: u64,
     pub continuation_successes: u64,
     pub continuation_actual_rescues: u64,
+    /// Samples abandoned because the host callback's wall-clock cutoff had
+    /// passed. See `Simulation::set_realtime_deadline`.
+    pub deadline_aborts: u64,
 }
 
 impl SolverHealth {
@@ -2160,6 +2187,7 @@ impl SolverHealth {
             continuation_actual_rescues: self
                 .continuation_actual_rescues
                 .saturating_sub(before.continuation_actual_rescues),
+            deadline_aborts: self.deadline_aborts.saturating_sub(before.deadline_aborts),
         }
     }
 }
@@ -2415,6 +2443,500 @@ impl Default for Settings {
     }
 }
 
+/// Wall time spent in each stage of `Chain::process`, accumulated only while a
+/// realtime trace is armed (`GAINSTAGEFX_RT_TRACE`); see `plugin::RtTrace`.
+///
+/// `gain` includes the Neve's line stage, `tone` the latency pad and the tone
+/// section, and `cabinet` everything after it: the acoustic or legacy cabinet
+/// and the Jazz Chorus's bucket brigade. Each is two clock reads around the
+/// stage, per sample, so an armed trace costs roughly ten reads a sample.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RealtimeStageTimings {
+    pub pedal_ns: u64,
+    pub gain_ns: u64,
+    pub power_ns: u64,
+    pub iron_ns: u64,
+    pub tone_ns: u64,
+    pub cabinet_ns: u64,
+}
+
+impl RealtimeStageTimings {
+    pub fn delta(self, before: Self) -> Self {
+        Self {
+            pedal_ns: self.pedal_ns.saturating_sub(before.pedal_ns),
+            gain_ns: self.gain_ns.saturating_sub(before.gain_ns),
+            power_ns: self.power_ns.saturating_sub(before.power_ns),
+            iron_ns: self.iron_ns.saturating_sub(before.iron_ns),
+            tone_ns: self.tone_ns.saturating_sub(before.tone_ns),
+            cabinet_ns: self.cabinet_ns.saturating_sub(before.cabinet_ns),
+        }
+    }
+}
+
+/// The largest oversampling factor the chain runs at: one host sample fans out
+/// to at most this many solves in each half.
+const MAX_OVERSAMPLING: usize = 8;
+
+/// Host samples the first half runs ahead before handing them to the second.
+/// Measured on two instances (`examples/async_quantum_deadline`): one-sample
+/// hand-offs lose to synchronisation, 16 to the wait for the first quantum.
+pub const PIPELINE_QUANTUM: usize = 8;
+
+/// Host samples `process_block` can pipeline in one go; longer blocks are
+/// processed in stretches of this many.
+const PIPELINE_CHUNK: usize = 512;
+
+/// How a block's second half was run.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PipelineUse {
+    /// On the calling thread, sample by sample after the first half.
+    #[default]
+    Serial,
+    /// On the `StageWorker`, overlapped with the first half.
+    Worker,
+    /// Offered to the worker, which had not woken by the time the first half
+    /// was done, so the calling thread ran it after all.
+    Reclaimed,
+}
+
+/// Everything in `Chain::process` before the power stage: the oversampler's
+/// interpolators, the pedal, the preamplifier with its reverb send and
+/// tremolo, the Mark's graphic and the Neve's line stage.
+struct Front<'a> {
+    up: Upsampler<'a>,
+    pedal: Option<&'a mut Simulation>,
+    input_scale: f64,
+    hand_off: f64,
+    gain: &'a mut Simulation,
+    graphic: Option<&'a mut Simulation>,
+    line: Option<&'a mut Simulation>,
+    twin: bool,
+    ab763: Option<Ab763>,
+    tank_send: usize,
+    tank: &'a mut Tank,
+    tremolo: &'a mut Tremolo,
+    speed: f64,
+    intensity: f64,
+    drive_previous: &'a mut f64,
+    timing: bool,
+    pedal_ns: u64,
+    gain_ns: u64,
+    #[cfg(test)]
+    trace: Option<&'a mut TwinLevelAccumulator>,
+    #[cfg(test)]
+    reverb_send_plate: usize,
+    #[cfg(test)]
+    v4b_grid: usize,
+    #[cfg(test)]
+    power_traced: bool,
+}
+
+/// The power stage (or the speaker it drives) and everything after it: the
+/// iron, the make-up, the oversampler's decimators, the latency pad, the tone
+/// section, the cabinet and microphones, the Jazz Chorus's bucket brigade and
+/// the switching fade.
+struct Back<'a> {
+    down: Downsampler<'a>,
+    iron: Option<&'a mut Simulation>,
+    iron_scale: f64,
+    iron_trim: f64,
+    power: Option<&'a mut Simulation>,
+    driven: Option<&'a mut Simulation>,
+    motional: usize,
+    motional_previous: &'a mut f64,
+    radiating: bool,
+    pressure_scale: f64,
+    inner_rate: f64,
+    out_of: &'a mut f64,
+    out_of_target: f64,
+    pad: &'a mut Delay,
+    tone: Option<(&'a mut Simulation, f64)>,
+    acoustic: &'a mut AcousticStage,
+    stereo: bool,
+    legacy_cabinet: Option<(&'a mut Simulation, f64)>,
+    chorus: Option<(&'a mut Bbd, f64)>,
+    fade_remaining: &'a mut usize,
+    prev_output: &'a mut f64,
+    prev_output_right: &'a mut f64,
+    timing: bool,
+    iron_ns: u64,
+    power_ns: u64,
+    tone_ns: u64,
+    cabinet_ns: u64,
+}
+
+/// Wall time since `started`, when stage timing is armed.
+#[inline]
+fn lap(started: Option<Instant>) -> u64 {
+    started.map_or(0, |t| t.elapsed().as_nanos() as u64)
+}
+
+impl Front<'_> {
+    fn factor(&self) -> usize {
+        self.up.factor()
+    }
+
+    fn timings(&self) -> (u64, u64) {
+        (self.pedal_ns, self.gain_ns)
+    }
+
+    /// One host sample in; the values the power stage is handed at the
+    /// oversampled rate out, in order. Returns how many (the factor).
+    #[inline]
+    fn sample(&mut self, x: f64, out: &mut [f64; MAX_OVERSAMPLING]) -> usize {
+        // The complete Twin electrical signal path lives in `gain`. The
+        // spring is the only mechanical break: drive it from the previous host
+        // sample's transformer secondary and feed its pickup into the circuit's
+        // independent return port. The optical cell is likewise a real
+        // audio-rate resistor in that same netlist.
+        let tank_pickup = if self.twin {
+            self.tank.process(*self.drive_previous)
+        } else {
+            0.0
+        };
+        if let Some(ab763) = self.ab763 {
+            self.gain.set_aux_input(ab763.tank_return_aux, tank_pickup);
+            let ldr = self.tremolo.resistance(self.speed, self.intensity);
+            self.gain.set_realtime_value(ab763.ldr_slot, ldr);
+            #[cfg(test)]
+            if let Some(trace) = self.trace.as_mut() {
+                trace.transformer_secondary.push(*self.drive_previous);
+                trace.tank_pickup.push(tank_pickup);
+                trace.wet_mix.push(tank_pickup);
+            }
+        }
+        let mut next_tank_drive = *self.drive_previous;
+        let mut up = [0.0; MAX_OVERSAMPLING];
+        let n = self.up.push(x * self.input_scale, &mut up);
+        for (v, slot) in up[..n].iter().zip(out.iter_mut()) {
+            // The pedal, when there is one, between the guitar and the circuit:
+            // a guitar's level in, and out at the level the circuit behind it
+            // was calibrated for. See `pedal_hand_off`.
+            let v = match self.pedal.as_mut() {
+                Some(sim) => {
+                    let started = self.timing.then(Instant::now);
+                    let out = sim.process(*v) * self.hand_off;
+                    self.pedal_ns += lap(started);
+                    out
+                }
+                None => *v,
+            };
+            // The power amplifier comes next, in volts, *before* the make-up.
+            //
+            // Not after it, which is where the signal order would otherwise
+            // put it. The make-up holds the preamplifier's output at a
+            // constant level whatever the Drive knob is doing -- that is its
+            // whole job -- so a power stage behind it would be handed the same
+            // level at every setting and would never be driven any harder.
+            // Which is the one thing a power amplifier is for.
+            //
+            // What that costs is the plugin's tone section, which then sits
+            // *after* the power stage rather than before it. For the 5150 that
+            // section stands in for the amplifier's own stack, so its loss
+            // lands in the wrong place; the master volume absorbs the level,
+            // and the voicing being post-power is an approximation worth
+            // naming. The power stage itself executes in this callback, so it
+            // must use the same effective sample rate as the preamplifier.
+            let started = self.timing.then(Instant::now);
+            let mut amplified = self.gain.process(v);
+            self.gain_ns += lap(started);
+            if self.twin {
+                next_tank_drive = self.gain.voltage_at(self.tank_send);
+                #[cfg(test)]
+                if let Some(trace) = self.trace.as_mut() {
+                    let v2_plate = self.gain.voltage_at(self.reverb_send_plate);
+                    let v4b_grid = self.gain.voltage_at(self.v4b_grid);
+                    trace.v2_plate.push(v2_plate);
+                    trace.dry_source.push(v2_plate);
+                    trace.dry_mix.push(v4b_grid);
+                    trace.v4b_grid.push(v4b_grid);
+                    trace.v4b_to_pi.push(amplified);
+                }
+            }
+            // The graphic equaliser, where the drawing puts it: `EQ INPUT` is
+            // taken from `LEAD OUTPUT`, which is where the preamplifier above
+            // stops, and `EQ OUTPUT` goes to the phase inverter. Late in the
+            // preamplifier and *before* the power stage, which is the whole
+            // point of it -- a low band lifted here lands on the power section
+            // after four gain stages, and the same equaliser at the end of the
+            // chain would be a different amplifier (§9.8). A unity-gain
+            // feedback equaliser with its sliders centred; see
+            // `markiic::graphic`.
+            if let Some(graphic) = self.graphic.as_mut() {
+                amplified = graphic.process(amplified);
+            }
+            if let Some(line) = self.line.as_mut() {
+                let started = self.timing.then(Instant::now);
+                amplified = line.process(amplified);
+                self.gain_ns += lap(started);
+            }
+            #[cfg(test)]
+            if self.twin && self.power_traced {
+                if let Some(trace) = self.trace.as_mut() {
+                    trace.power_input.push(amplified);
+                }
+            }
+            *slot = amplified;
+        }
+        if self.twin {
+            *self.drive_previous = next_tank_drive;
+        }
+        n
+    }
+}
+
+impl Back<'_> {
+    fn timings(&self) -> (u64, u64, u64, u64) {
+        (self.iron_ns, self.power_ns, self.tone_ns, self.cabinet_ns)
+    }
+
+    /// The oversampled values `Front::sample` produced for one host sample
+    /// in; the chain's left and right output for it out.
+    #[inline]
+    fn sample(&mut self, mid: &[f64]) -> (f64, f64) {
+        // One pole toward the target: about a millisecond at any sample rate
+        // the plugin is likely to see.
+        *self.out_of += (self.out_of_target - *self.out_of) * 0.02;
+        let out_of = *self.out_of;
+        let mut processed = [0.0; MAX_OVERSAMPLING];
+        for (&v, slot) in mid.iter().zip(processed.iter_mut()) {
+            *slot = self.oversampled(v, out_of);
+        }
+        let mut y = self.down.pull(&processed[..mid.len()]);
+
+        // Reverb and tremolo have both already been applied at their AB763
+        // nodes ahead of the phase inverter / power stage.
+        // Every setting delays by the same reported amount.
+        let tone_started = self.timing.then(Instant::now);
+        y = self.pad.process(y);
+        if let Some((sim, trim)) = self.tone.as_mut() {
+            y = sim.process(y) * *trim;
+        }
+        self.tone_ns += lap(tone_started);
+        let cabinet_started = self.timing.then(Instant::now);
+        // With a chorus in the circuit the stereo field is the amplifier's,
+        // not the microphones'. Two capsules panned apart and a second speaker
+        // carrying a delay are two different pictures of the same cabinet, and
+        // superimposing them is neither; the Jazz Chorus is stereo because it
+        // has two power amplifiers, so that is what wins. The microphones are
+        // still both heard -- `process` is their blend, summed.
+        let mut right = if self.stereo {
+            let (left, right) = self.acoustic.process_stereo(y);
+            y = left;
+            right
+        } else if self.radiating {
+            y = self.acoustic.process(y);
+            y
+        } else {
+            y
+        };
+        if self.radiating {
+            y *= out_of;
+            right *= out_of;
+        }
+        if let Some((sim, trim)) = self.legacy_cabinet.as_mut() {
+            y = sim.process(y) * *trim;
+            right = y;
+        }
+        // The Jazz Chorus splits here. `CN6` carries the bucket brigade's
+        // output to one of the two power amplifiers and its 12"; the other
+        // gets the dry, and that is where the width comes from. It is not a
+        // mix control and there is no wet/dry sum anywhere: each speaker
+        // carries one signal whole.
+        //
+        // The delay is taken at the end of the chain rather than ahead of the
+        // two power stages, where the board sits. APPROXIMATED, and the
+        // argument is short enough to state: the power stage at these levels
+        // and the speaker are both linear and time-invariant, and an LTI
+        // filter commutes with a swept fractional delay to first order in the
+        // sweep's rate of change. Here that rate is 4.86 ms over a 0.6 s half
+        // period -- 0.8 %, a 14 cent shift -- so filtering before the delay
+        // instead of after moves a corner by 0.8 % and changes nothing else.
+        // A second power stage and a second acoustics path would cost twice
+        // the tail for that.
+        //
+        // The line runs whenever the voice has one, so the knob does not start
+        // from silence; at zero the read is the undelayed dry and `right` is
+        // `y` to the last bit, which is why no existing fixture moves.
+        if let Some((bbd, chorus)) = self.chorus.as_mut() {
+            let wet = bbd.process(y);
+            right = y + (wet - y) * *chorus;
+        }
+        self.cabinet_ns += lap(cabinet_started);
+        // Crossfade from the old circuit's last output to the new one so that
+        // a capacitor-reset discontinuity is inaudible.
+        if *self.fade_remaining > 0 {
+            let t = *self.fade_remaining as f64 / FADE_LEN as f64;
+            *self.fade_remaining -= 1;
+            y = *self.prev_output * t + y * (1.0 - t);
+            right = *self.prev_output_right * t + right * (1.0 - t);
+        }
+        *self.prev_output = y;
+        *self.prev_output_right = right;
+        (y, right)
+    }
+
+    /// One oversampled value through the power stage and the iron.
+    #[inline]
+    fn oversampled(&mut self, amplified: f64, out_of: f64) -> f64 {
+        let mut amplified = amplified;
+        if self.radiating {
+            // A transformer after a loudspeaker has no meaning, so on the
+            // physical path the Iron control sits where an interstage
+            // transformer would: in front of the output stage. Level neutral,
+            // exactly as below.
+            if let Some(sim) = self.iron.as_mut() {
+                let started = self.timing.then(Instant::now);
+                amplified =
+                    sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
+                self.iron_ns += lap(started);
+            }
+            let started = self.timing.then(Instant::now);
+            let cone = match (self.power.as_mut(), self.driven.as_mut()) {
+                (Some(sim), _) => {
+                    sim.process(amplified);
+                    sim.voltage_at(self.motional)
+                }
+                (None, Some(sim)) => sim.process(amplified),
+                (None, None) => 0.0,
+            };
+            self.power_ns += lap(started);
+            // Physical cone acceleration. Keep the amplifier's output
+            // calibration outside the acoustic pressure calculation.
+            let pressure = self.pressure_scale * (cone - *self.motional_previous) * self.inner_rate;
+            *self.motional_previous = cone;
+            return pressure;
+        }
+        if let Some(sim) = self.power.as_mut() {
+            let started = self.timing.then(Instant::now);
+            amplified = sim.process(amplified);
+            self.power_ns += lap(started);
+        }
+        // The iron goes here, in front of the make-up, for the same
+        // reason the power stage does and by the same argument.
+        //
+        // Handed volts rather than a number near one, because what a core
+        // does depends on the flux and flux is in volt seconds. Scaled by
+        // `iron_drive`, which is how far the Drive control has moved from
+        // the position this voice's transformer is matched at -- so
+        // turning up drives the iron harder, which is the one thing a
+        // transformer in this position is for. See `IRON_VOLTS`.
+        //
+        // Normalised by the make-up **at the reference drive** rather than at
+        // the current one. At that position this is exactly what the iron
+        // used to be handed; above it the circuit is putting out more and the
+        // transformer gets it, and below it less. The scale factor divides
+        // back out, so what survives is the core's nonlinearity and nothing
+        // else -- handing the raw pre-make-up volts instead put a valve
+        // stage's tens of volts through a ninety-six times multiplier and
+        // measured 132 per cent distortion at the bottom of the Drive control.
+        if let Some(sim) = self.iron.as_mut() {
+            let started = self.timing.then(Instant::now);
+            amplified = sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
+            self.iron_ns += lap(started);
+        }
+        amplified * out_of
+    }
+}
+
+/// What the stage worker needs to run the second half of a block.
+struct BackJob<'a, 'b> {
+    back: &'b mut Back<'a>,
+    mid: *const f64,
+    factor: usize,
+    left: *mut f64,
+    right: *mut f64,
+}
+
+/// Run the second half for host samples `from..to` of the block `ctx` names.
+///
+/// # Safety
+/// `ctx` is a live `BackJob`; the first half has finished writing `mid` for
+/// every sample below `to` (the worker's Acquire of the published count
+/// orders those writes before this read), and no other thread touches the
+/// `Back` or the outputs until the job is finished.
+unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
+    let job = unsafe { &mut *(ctx as *mut BackJob<'_, '_>) };
+    for i in from..to {
+        let mid = unsafe { std::slice::from_raw_parts(job.mid.add(i * job.factor), job.factor) };
+        let (l, r) = job.back.sample(mid);
+        unsafe {
+            job.left.add(i).write(l);
+            job.right.add(i).write(r);
+        }
+    }
+}
+
+/// The first half on this thread, the second on `worker`, `PIPELINE_QUANTUM`
+/// samples apart. The worker is only ever *offered* the second half: if it
+/// has not claimed it by the time the first half is done, this thread takes
+/// it back and runs it here.
+fn pipelined(
+    front: &mut Front<'_>,
+    back: &mut Back<'_>,
+    input: &[f64],
+    mid: &mut [f64],
+    left: &mut [f64],
+    right: &mut [f64],
+    worker: &StageWorker,
+) -> PipelineUse {
+    let factor = front.factor();
+    let mut used = PipelineUse::Serial;
+    // Raw pointers throughout: the worker reads `mid` and writes the outputs
+    // while this thread still writes later stretches of `mid`, so no `&mut`
+    // to either may be live across the hand-off.
+    let mid_ptr = mid.as_mut_ptr();
+    let (left_ptr, right_ptr) = (left.as_mut_ptr(), right.as_mut_ptr());
+    for chunk_start in (0..input.len()).step_by(PIPELINE_CHUNK) {
+        let chunk = &input[chunk_start..input.len().min(chunk_start + PIPELINE_CHUNK)];
+        let mut job = BackJob {
+            back: &mut *back,
+            mid: mid_ptr,
+            factor,
+            left: unsafe { left_ptr.add(chunk_start) },
+            right: unsafe { right_ptr.add(chunk_start) },
+        };
+        // SAFETY: `job`, `mid` and the outputs outlive the offer, because
+        // `finish` below does not return until the worker is done with them
+        // or has been refused them.
+        unsafe {
+            worker.offer(
+                run_back,
+                &mut job as *mut BackJob<'_, '_> as *mut (),
+                chunk.len(),
+            )
+        };
+        let mut buf = [0.0; MAX_OVERSAMPLING];
+        for (i, &x) in chunk.iter().enumerate() {
+            let n = front.sample(x, &mut buf);
+            debug_assert_eq!(n, factor);
+            // SAFETY: stretch `i` of `mid` is not yet published, so the worker
+            // is not reading it.
+            unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), mid_ptr.add(i * factor), n) };
+            if (i + 1) % PIPELINE_QUANTUM == 0 {
+                worker.publish(i + 1);
+            }
+        }
+        // SAFETY: as above; `finish` returns only once samples 0..len of the
+        // job have been run, by the worker or by this thread.
+        used = match unsafe { worker.finish() } {
+            true => PipelineUse::Worker,
+            false => PipelineUse::Reclaimed,
+        };
+    }
+    used
+}
+
+/// Which circuits a chain is running, for a realtime trace to label its rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChainIdentity {
+    pub voice: Gain,
+    pub pedal: Pedal,
+    pub power: Option<PowerModel>,
+    /// The physical speaker/cabinet/microphone path rather than the DI one.
+    pub radiating: bool,
+}
+
 /// The whole signal path, in the order the signal goes through it.
 ///
 /// It owns *every* circuit that can be selected and switches by index, rather
@@ -2491,8 +3013,11 @@ pub struct Chain {
     /// modelled circuit, but this is retained so switching back restores the
     /// user's choice.
     requested_oversampling: usize,
-    /// Brings the wet path up to `LATENCY` whatever the oversampling is.
+    /// Brings the wet path up to `LATENCY` whatever the oversampling is, or
+    /// does nothing in true-latency mode; see `set_true_latency`.
     pad: Delay,
+    /// Whether `latency()` is the oversampler's own rather than `LATENCY`.
+    true_latency: bool,
     /// Holds the dry signal back by the same amount, so that mixing the two
     /// is a mix rather than a comb filter.
     dry: Delay,
@@ -2575,6 +3100,12 @@ pub struct Chain {
     /// scheduling that reset at the fade boundary keeps the discontinuity
     /// underneath the same switch fade instead of dropping it into live audio.
     deferred_oversample: Option<usize>,
+    /// Optional diagnostic timing. Disabled in normal operation so the audio path pays no clock reads.
+    realtime_stage_timing_enabled: bool,
+    realtime_stage_timings: RealtimeStageTimings,
+    /// The first half's output for a block, handed to the second half; see
+    /// `process_block`. Allocated here so the audio thread never does.
+    mid: Box<[f64]>,
 }
 
 impl Chain {
@@ -2616,6 +3147,7 @@ impl Chain {
         self.deferred_oversample = source.deferred_oversample;
         self.pad.copy_runtime_state_from(&source.pad);
         self.dry.copy_runtime_state_from(&source.dry);
+        self.true_latency = source.true_latency;
         debug_assert_eq!(self.pedal, source.pedal);
         self.gains[self.gain].copy_runtime_state_from(&source.gains[source.gain]);
         if let Some(i) = self.pedal {
@@ -2851,6 +3383,7 @@ impl Chain {
             requested_oversampling: 4,
             pad: Delay::new(1),
             dry: Delay::new(LATENCY as usize),
+            true_latency: false,
             #[cfg(test)]
             twin_reverb_send_plate,
             twin_tank_send,
@@ -2888,6 +3421,9 @@ impl Chain {
             stereo_right: 0.0,
             want_stereo: false,
             deferred_oversample: None,
+            realtime_stage_timing_enabled: false,
+            realtime_stage_timings: RealtimeStageTimings::default(),
+            mid: vec![0.0; PIPELINE_CHUNK * MAX_OVERSAMPLING].into_boxed_slice(),
         };
         chain.set_oversampling(4);
         chain.set_drive(0.5);
@@ -3517,17 +4053,15 @@ impl Chain {
     pub fn set_oversampling(&mut self, factor: usize) {
         let requested_changed = factor != self.requested_oversampling;
         self.requested_oversampling = factor;
-        let mut factor = if voice_at(self.gain).0.is_modelled() {
-            factor.min(MODELLED_MAX_OVERSAMPLING)
+        // The pedal slot counts too. The circuit is not the only thing inside
+        // the oversampler: the pedal runs there as well, so a large one is
+        // paid for at the same multiple. See `Pedal::is_expensive`.
+        let pedal = if self.pedal.is_some() {
+            self.selected_pedal
         } else {
-            factor
+            Pedal::None
         };
-        // ...and the pedal slot counts too. The circuit is not the only thing
-        // inside the oversampler: the pedal runs there as well, so a large one
-        // is paid for at the same multiple. See `Pedal::is_expensive`.
-        if self.pedal.is_some() && self.selected_pedal.is_expensive() {
-            factor = 1;
-        }
+        let factor = effective_oversampling(voice_at(self.gain).0, pedal, factor);
 
         if !requested_changed && factor == self.over.factor() && self.deferred_oversample.is_none()
         {
@@ -3538,8 +4072,7 @@ impl Chain {
             // Keeping this invariant here also makes restoring/reapplying a
             // quality setting idempotent instead of depending on constructor
             // details.
-            self.pad
-                .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+            self.sync_latency();
             self.sync_oversampled_rates();
             return;
         }
@@ -3557,8 +4090,7 @@ impl Chain {
             self.deferred_oversample = None;
         }
 
-        self.pad
-            .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+        self.sync_latency();
         self.sync_oversampled_rates();
     }
 
@@ -3639,6 +4171,7 @@ impl Chain {
                 continuation_midpoint_successes,
                 continuation_successes,
                 continuation_actual_rescues,
+                deadline_aborts: sim.deadline_aborts(),
             }
         }
 
@@ -3758,6 +4291,7 @@ impl Chain {
             h.continuation_midpoint_successes += midpoint_successes;
             h.continuation_successes += successes;
             h.continuation_actual_rescues += actual_rescues;
+            h.deadline_aborts += sim.deadline_aborts();
         }
         h
     }
@@ -3840,9 +4374,40 @@ impl Chain {
         self.mains
     }
 
-    /// One figure, always. See `LATENCY`.
+    /// What the chain delays by. One figure, `LATENCY`, whatever the
+    /// oversampling, unless `set_true_latency` has been asked for -- then the
+    /// oversampler's own round trip, which is nothing at 1x.
     pub fn latency(&self) -> u32 {
-        LATENCY
+        if self.true_latency {
+            self.over.latency()
+        } else {
+            LATENCY
+        }
+    }
+
+    /// Report and delay by the oversampler's real latency rather than padding
+    /// every setting up to `LATENCY`.
+    ///
+    /// The padding keeps the figure a host sees constant as the oversampling
+    /// control moves, so the host never has to renegotiate its delay
+    /// compensation. What it costs is 66 samples -- 1.375 ms at 48 kHz -- on
+    /// every setting, including 1x, where the chain itself delays by nothing:
+    /// every modelled preset ships at 1x, so every live-monitored instance was
+    /// heard 1.375 ms late for no reason at all. The plugin asks for this and
+    /// tells the host whenever the figure changes, which it does only when the
+    /// oversampling does. The frozen fixtures render the padded chain.
+    pub fn set_true_latency(&mut self, on: bool) {
+        self.true_latency = on;
+        self.sync_latency();
+    }
+
+    /// Bring the wet path's padding and the dry path's delay into line with
+    /// `latency()`, for the oversampler's current factor.
+    fn sync_latency(&mut self) {
+        let latency = self.latency();
+        self.pad
+            .set_len((latency - self.over.latency().min(latency)) as usize);
+        self.dry.set_len(latency as usize);
     }
 
     #[cfg(test)]
@@ -3858,8 +4423,14 @@ impl Chain {
     }
 
     /// The dry signal, held back so it lines up with what `process` returns.
+    ///
+    /// A pending oversampling change is installed here too, whichever of the
+    /// two a caller reaches first: in true-latency mode the dry delay's length
+    /// *is* the oversampler's latency, and a dry sample taken before the change
+    /// was installed was held back by the old figure.
     #[inline]
     pub fn delayed_dry(&mut self, x: f64) -> f64 {
+        self.install_deferred_oversampling();
         self.dry.process(x)
     }
 
@@ -3877,50 +4448,35 @@ impl Chain {
         (left, self.stereo_right)
     }
 
-    #[inline]
-    pub fn process(&mut self, x: f64) -> f64 {
-        // Apply any deferred oversampler reset at the START of the crossfade,
-        // before the oversampler processes this sample. This way the entire
-        // FIR-history discontinuity is covered by the fade, and every circuit
-        // in the oversampled path sees the new timestep before it sees audio.
+    /// Install an oversampling change queued by `set_oversampling`.
+    ///
+    /// At the START of the crossfade, before the oversampler processes this
+    /// sample, so the entire FIR-history discontinuity is covered by the fade
+    /// and every circuit in the oversampled path sees the new timestep before
+    /// it sees audio. `fade_remaining` is only ever set to `FADE_LEN` by the
+    /// controls, between blocks, so a block can only need this at its start.
+    fn install_deferred_oversampling(&mut self) {
         if self.fade_remaining == FADE_LEN {
             if let Some(factor) = self.deferred_oversample.take() {
                 self.over.set_factor(factor);
-                self.pad
-                    .set_len((LATENCY - self.over.latency().min(LATENCY)) as usize);
+                self.sync_latency();
                 self.sync_oversampled_rates();
             }
         }
+    }
 
-        // Every nonlinear section before the make-up lives inside the same
-        // oversampler callback: gain, optional power amplifier and optional
-        // transformer. The Mark graphic EQ is linear but sits there because
-        // that is its physical position between preamp and power stage. The
-        // plugin tone section and cabinet remain at host rate below.
-        // One pole toward the target: about a millisecond at any sample rate
-        // the plugin is likely to see.
-        self.out_of += (self.out_of_target - self.out_of) * 0.02;
-        let iron_reference = self.iron_reference;
-        // Resolved before the mutable borrow of the gain simulation below.
-        let ab763_tank_send = self.ab763_tank_send();
-        let gain = &mut self.gains[self.gain];
-        let iron_trim = self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0);
-        let mut iron = self.iron.map(|i| &mut self.irons[i]);
-        let out_of = self.out_of;
-        // The physical path swaps the resistor-loaded power stage for its
-        // speaker-loaded twin (or a voltage-driven speaker when there is no power
-        // stage) and hands on the cone's radiation instead of the terminal voltage.
-        let radiating = self.radiating;
-        let pressure_scale = self.pressure_scale
-            / self
-                .power_selection
-                .resolved(self.voice)
-                .map(|model| model.speaker_scale().sqrt())
-                .unwrap_or(1.0);
+    /// The chain as its two halves: everything before the power stage, and
+    /// the power stage and everything after it. They share no state, which is
+    /// what lets a `StageWorker` run the second half of one stretch of samples
+    /// while this thread runs the first half of the next.
+    fn split(&mut self, stereo: bool) -> (Front<'_>, Back<'_>) {
         let inner_rate = self.rate * self.over.factor() as f64;
-        let motional_previous = &mut self.motional_previous;
-        let (mut power, mut driven, motional) = if radiating {
-            match self.power_selection.resolved(self.voice) {
+        let tank_send = self.ab763_tank_send();
+        let (up, down) = self.over.split();
+        let power_model = self.power_selection.resolved(self.voice);
+        let radiating = self.radiating;
+        let (power, driven, motional) = if radiating {
+            match power_model {
                 Some(model) => {
                     let loaded = &mut self.loaded[model.slot()];
                     (Some(&mut loaded.sim), None, loaded.motional)
@@ -3930,237 +4486,173 @@ impl Chain {
         } else {
             (self.powers[self.power].as_mut(), None, 0)
         };
-        let mut line = (self.voice == Gain::Neve).then_some(self.line.as_mut());
-        let graphic = self.voice.has_graphic();
-        let self_graphic = &mut self.graphic;
         #[cfg(test)]
-        let twin_level_trace = &mut self.twin_level_trace;
-        // The complete Twin electrical signal path now lives in `gain`. The
-        // spring is the only mechanical break: drive it from the previous host
-        // sample's transformer secondary and feed its pickup into the circuit's
-        // independent return port. The optical cell is likewise a real
-        // audio-rate resistor in that same netlist.
+        let power_traced = power.is_some() && !radiating;
         let twin = self.voice.has_reverb_and_tremolo();
-        let tank_pickup = if twin {
-            self.tank.process(self.twin_tank_drive_previous)
-        } else {
-            0.0
-        };
-        if let Some(ab763) = self.voice.ab763() {
-            gain.set_aux_input(ab763.tank_return_aux, tank_pickup);
-            let ldr = self.tremolo.resistance(self.speed, self.intensity);
-            gain.set_realtime_value(ab763.ldr_slot, ldr);
-            #[cfg(test)]
-            if let Some(trace) = twin_level_trace.as_mut() {
-                trace
-                    .transformer_secondary
-                    .push(self.twin_tank_drive_previous);
-                trace.tank_pickup.push(tank_pickup);
-                trace.wet_mix.push(tank_pickup);
-            }
-        }
-        #[cfg(test)]
-        let twin_reverb_send_plate = self.twin_reverb_send_plate;
-        let twin_tank_send = ab763_tank_send;
-        #[cfg(test)]
-        let twin_v4b_grid = self.twin_v4b_grid;
-        let mut next_twin_tank_drive = self.twin_tank_drive_previous;
-        let mut pedal = self.pedal.map(|i| &mut self.pedals[i]);
+        let ab763 = self.voice.ab763();
+        let pedal = self.pedal.map(|i| &mut self.pedals[i]);
         let input_scale = if pedal.is_some() {
             self.pedal_into
         } else {
             self.into
         };
-        let hand_off = self.pedal_hand_off;
-        let mut y = self.over.process(x * input_scale, &mut |v| {
-            // The pedal, when there is one, between the guitar and the circuit:
-            // a guitar's level in, and out at the level the circuit behind it
-            // was calibrated for. See `pedal_hand_off`.
-            let v = match pedal {
-                Some(ref mut sim) => sim.process(v) * hand_off,
-                None => v,
-            };
-            // The power amplifier goes here, in volts, *before* the make-up.
-            //
-            // Not after it, which is where the signal order would otherwise
-            // put it. The make-up holds the preamplifier's output at a
-            // constant level whatever the Drive knob is doing -- that is its
-            // whole job -- so a power stage behind it would be handed the same
-            // level at every setting and would never be driven any harder.
-            // Which is the one thing a power amplifier is for.
-            //
-            // What that costs is the plugin's tone section, which then sits
-            // *after* the power stage rather than before it. For the 5150 that
-            // section stands in for the amplifier's own stack, so its loss
-            // lands in the wrong place; the master volume absorbs the level,
-            // and the voicing being post-power is an approximation worth
-            // naming. The power stage itself executes in this callback, so it
-            // must use the same effective sample rate as the preamplifier.
-            let mut amplified = gain.process(v);
-            if twin {
-                next_twin_tank_drive = gain.voltage_at(twin_tank_send);
-                #[cfg(test)]
-                if let Some(trace) = twin_level_trace.as_mut() {
-                    let v2_plate = gain.voltage_at(twin_reverb_send_plate);
-                    let v4b_grid = gain.voltage_at(twin_v4b_grid);
-                    trace.v2_plate.push(v2_plate);
-                    trace.dry_source.push(v2_plate);
-                    trace.dry_mix.push(v4b_grid);
-                    trace.v4b_grid.push(v4b_grid);
-                    trace.v4b_to_pi.push(amplified);
-                }
-            }
-            // The graphic equaliser, where the drawing puts it: `EQ INPUT` is
-            // taken from `LEAD OUTPUT`, which is where the preamplifier above
-            // stops, and `EQ OUTPUT` goes to the phase inverter. Late in the
-            // preamplifier and *before* the power stage, which is the whole
-            // point of it -- a low band lifted here lands on the power section
-            // after four gain stages, and the same equaliser at the end of the
-            // chain would be a different amplifier (§9.8).
-            if graphic {
-                // A unity-gain feedback equaliser with its sliders centred; see
-                // `markiic::graphic`.
-                amplified = self_graphic.process(amplified);
-            }
-            if let Some(ref mut sim) = line {
-                amplified = sim.process(amplified);
-            }
-            if radiating {
-                // A transformer after a loudspeaker has no meaning, so on the
-                // physical path the Iron control sits where an interstage
-                // transformer would: in front of the output stage. Level neutral,
-                // exactly as below.
-                if let Some(ref mut sim) = iron {
-                    let scale = iron_reference * IRON_VOLTS;
-                    amplified = sim.process(amplified * scale) * iron_trim / scale;
-                }
-                let cone = match (power.as_mut(), driven.as_mut()) {
-                    (Some(sim), _) => {
-                        sim.process(amplified);
-                        sim.voltage_at(motional)
-                    }
-                    (None, Some(sim)) => sim.process(amplified),
-                    (None, None) => 0.0,
-                };
-                // Physical cone acceleration. Keep the amplifier's output
-                // calibration outside the acoustic pressure calculation.
-                let pressure = pressure_scale * (cone - *motional_previous) * inner_rate;
-                *motional_previous = cone;
-                return pressure;
-            }
-            if let Some(ref mut sim) = power {
-                #[cfg(test)]
-                if twin {
-                    if let Some(trace) = twin_level_trace.as_mut() {
-                        trace.power_input.push(amplified);
-                    }
-                }
-                amplified = sim.process(amplified);
-            }
-            // The iron goes here, in front of the make-up, for the same
-            // reason the power stage does and by the same argument.
-            //
-            // Handed volts rather than a number near one, because what a core
-            // does depends on the flux and flux is in volt seconds. Scaled by
-            // `iron_drive`, which is how far the Drive control has moved from
-            // the position this voice's transformer is matched at -- so
-            // turning up drives the iron harder, which is the one thing a
-            // transformer in this position is for. See `IRON_VOLTS`.
-            let amplified = match iron {
-                Some(ref mut sim) => {
-                    // Normalised by the make-up **at the reference drive**
-                    // rather than at the current one. At that position this is
-                    // exactly what the iron used to be handed; above it the
-                    // circuit is putting out more and the transformer gets it,
-                    // and below it less.
-                    //
-                    // The scale factor divides back out, so what survives is
-                    // the core's nonlinearity and nothing else -- handing the
-                    // raw pre-make-up volts instead put a valve stage's tens
-                    // of volts through a ninety-six times multiplier and
-                    // measured 132 per cent distortion at the bottom of the
-                    // Drive control.
-                    let scale = iron_reference * IRON_VOLTS;
-                    sim.process(amplified * scale) * iron_trim / scale
-                }
-                None => amplified,
-            };
-            amplified * out_of
-        });
-        if twin {
-            self.twin_tank_drive_previous = next_twin_tank_drive;
-        }
-        // Reverb and tremolo have both already been applied at their AB763
-        // nodes ahead of the phase inverter / power stage.
-        // Every setting delays by the same reported amount.
-        y = self.pad.process(y);
-        if let Some(i) = self.tone {
-            let (sim, trim) = &mut self.tones[i];
-            y = sim.process(y) * *trim;
-        }
-        // With a chorus in the circuit the stereo field is the amplifier's,
-        // not the microphones'. Two capsules panned apart and a second speaker
-        // carrying a delay are two different pictures of the same cabinet, and
-        // superimposing them is neither; the Jazz Chorus is stereo because it
-        // has two power amplifiers, so that is what wins. The microphones are
-        // still both heard -- `process` is their blend, summed.
-        let mut right = if self.radiating && self.want_stereo && !self.has_chorus {
-            let (left, right) = self.acoustic.process_stereo(y);
-            y = left;
-            right
-        } else if self.radiating {
-            y = self.acoustic.process(y);
-            y
-        } else {
-            y
+        let timing = self.realtime_stage_timing_enabled;
+        let front = Front {
+            up,
+            pedal,
+            input_scale,
+            hand_off: self.pedal_hand_off,
+            gain: &mut self.gains[self.gain],
+            graphic: self.voice.has_graphic().then_some(&mut self.graphic),
+            line: (self.voice == Gain::Neve).then_some(self.line.as_mut()),
+            twin,
+            ab763,
+            tank_send,
+            tank: &mut self.tank,
+            tremolo: &mut self.tremolo,
+            speed: self.speed,
+            intensity: self.intensity,
+            drive_previous: &mut self.twin_tank_drive_previous,
+            timing,
+            pedal_ns: 0,
+            gain_ns: 0,
+            #[cfg(test)]
+            trace: self.twin_level_trace.as_mut(),
+            #[cfg(test)]
+            reverb_send_plate: self.twin_reverb_send_plate,
+            #[cfg(test)]
+            v4b_grid: self.twin_v4b_grid,
+            #[cfg(test)]
+            power_traced,
         };
-        if self.radiating {
-            y *= out_of;
-            right *= out_of;
+        let back = Back {
+            down,
+            iron: self.iron.map(|i| &mut self.irons[i]),
+            iron_scale: self.iron_reference * IRON_VOLTS,
+            iron_trim: self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0),
+            power,
+            driven,
+            motional,
+            motional_previous: &mut self.motional_previous,
+            radiating,
+            pressure_scale: self.pressure_scale
+                / power_model
+                    .map(|model| model.speaker_scale().sqrt())
+                    .unwrap_or(1.0),
+            inner_rate,
+            out_of: &mut self.out_of,
+            out_of_target: self.out_of_target,
+            pad: &mut self.pad,
+            tone: self.tone.map(|i| {
+                let (sim, trim) = &mut self.tones[i];
+                (sim, *trim)
+            }),
+            acoustic: self.acoustic.as_mut(),
+            stereo: stereo && radiating && !self.has_chorus,
+            legacy_cabinet: if !radiating
+                && matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy)
+            {
+                self.cabinet.map(|i| {
+                    let (sim, trim) = &mut self.cabinets[i];
+                    (sim, *trim)
+                })
+            } else {
+                None
+            },
+            chorus: self.has_chorus.then_some((&mut self.bbd, self.chorus)),
+            fade_remaining: &mut self.fade_remaining,
+            prev_output: &mut self.prev_output,
+            prev_output_right: &mut self.prev_output_right,
+            timing,
+            iron_ns: 0,
+            power_ns: 0,
+            tone_ns: 0,
+            cabinet_ns: 0,
+        };
+        (front, back)
+    }
+
+    fn add_stage_timings(&mut self, front: (u64, u64), back: (u64, u64, u64, u64)) {
+        if self.realtime_stage_timing_enabled {
+            let t = &mut self.realtime_stage_timings;
+            t.pedal_ns = t.pedal_ns.saturating_add(front.0);
+            t.gain_ns = t.gain_ns.saturating_add(front.1);
+            t.iron_ns = t.iron_ns.saturating_add(back.0);
+            t.power_ns = t.power_ns.saturating_add(back.1);
+            t.tone_ns = t.tone_ns.saturating_add(back.2);
+            t.cabinet_ns = t.cabinet_ns.saturating_add(back.3);
         }
-        if !self.radiating && matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy) {
-            if let Some(i) = self.cabinet {
-                let (sim, trim) = &mut self.cabinets[i];
-                y = sim.process(y) * *trim;
-                right = y;
-            }
-        }
-        // The Jazz Chorus splits here. `CN6` carries the bucket brigade's
-        // output to one of the two power amplifiers and its 12"; the other
-        // gets the dry, and that is where the width comes from. It is not a
-        // mix control and there is no wet/dry sum anywhere: each speaker
-        // carries one signal whole.
-        //
-        // The delay is taken at the end of the chain rather than ahead of the
-        // two power stages, where the board sits. APPROXIMATED, and the
-        // argument is short enough to state: the power stage at these levels
-        // and the speaker are both linear and time-invariant, and an LTI
-        // filter commutes with a swept fractional delay to first order in the
-        // sweep's rate of change. Here that rate is 4.86 ms over a 0.6 s half
-        // period -- 0.8 %, a 14 cent shift -- so filtering before the delay
-        // instead of after moves a corner by 0.8 % and changes nothing else.
-        // A second power stage and a second acoustics path would cost twice
-        // the tail for that.
-        //
-        // The line runs whenever the voice has one, so the knob does not start
-        // from silence; at zero the read is the undelayed dry and `right` is
-        // `y` to the last bit, which is why no existing fixture moves.
-        if self.has_chorus {
-            let wet = self.bbd.process(y);
-            right = y + (wet - y) * self.chorus;
-        }
-        // Crossfade from the old circuit's last output to the new one so that
-        // a capacitor-reset discontinuity is inaudible.
-        if self.fade_remaining > 0 {
-            let t = self.fade_remaining as f64 / FADE_LEN as f64;
-            self.fade_remaining -= 1;
-            y = self.prev_output * t + y * (1.0 - t);
-            right = self.prev_output_right * t + right * (1.0 - t);
-        }
-        self.prev_output = y;
-        self.prev_output_right = right;
+    }
+
+    #[inline]
+    pub fn process(&mut self, x: f64) -> f64 {
+        self.install_deferred_oversampling();
+        let stereo = self.want_stereo;
+        let (mut front, mut back) = self.split(stereo);
+        let mut mid = [0.0; MAX_OVERSAMPLING];
+        let n = front.sample(x, &mut mid);
+        let (y, right) = back.sample(&mid[..n]);
+        let timings = (front.timings(), back.timings());
+        self.add_stage_timings(timings.0, timings.1);
         self.stereo_right = right;
         y
+    }
+
+    /// A block of samples: `left[i]` is what `process(input[i])` returns and
+    /// `right[i]` what `process_stereo` would put on the right.
+    ///
+    /// With a `StageWorker`, the chain's second half runs on the worker, eight
+    /// samples behind the first half on this thread, so a block takes about
+    /// as long as the slower half instead of both. Both halves are the same
+    /// code `process` runs, the output is the same to the bit, and if the
+    /// worker has not woken by the time the first half is done this thread
+    /// runs the second half itself: there is nothing to wait for that might
+    /// not come.
+    pub fn process_block(
+        &mut self,
+        input: &[f64],
+        left: &mut [f64],
+        right: &mut [f64],
+        stereo: bool,
+        worker: Option<&StageWorker>,
+    ) -> PipelineUse {
+        let len = input.len().min(left.len()).min(right.len());
+        self.install_deferred_oversampling();
+        let mut mid = std::mem::take(&mut self.mid);
+        let (mut front, mut back) = self.split(stereo);
+        let factor = front.factor();
+        let mut used = PipelineUse::Serial;
+        match worker {
+            Some(worker) if len > PIPELINE_QUANTUM && factor <= MAX_OVERSAMPLING => {
+                used = pipelined(
+                    &mut front,
+                    &mut back,
+                    &input[..len],
+                    &mut mid,
+                    &mut left[..len],
+                    &mut right[..len],
+                    worker,
+                );
+            }
+            _ => {
+                let mut buf = [0.0; MAX_OVERSAMPLING];
+                for ((&x, l), r) in input[..len]
+                    .iter()
+                    .zip(&mut left[..len])
+                    .zip(&mut right[..len])
+                {
+                    let n = front.sample(x, &mut buf);
+                    (*l, *r) = back.sample(&buf[..n]);
+                }
+            }
+        }
+        let timings = (front.timings(), back.timings());
+        self.mid = mid;
+        self.add_stage_timings(timings.0, timings.1);
+        if len > 0 {
+            self.stereo_right = right[len - 1];
+        }
+        used
     }
 
     /// Settles the make-up where it is heading, for a chain that has just
@@ -4274,6 +4766,78 @@ impl Chain {
         self.gains[self.gain].set_control(ab763.reverb, self.reverb);
         // The physical 50 k pot is wired opposite the panel-number direction.
         self.gains[self.gain].set_control(ab763.intensity, 1.0 - self.intensity);
+    }
+
+    /// Enable expensive per-stage clock reads for a diagnostic capture.
+    pub fn set_realtime_stage_timing(&mut self, enabled: bool) {
+        self.realtime_stage_timing_enabled = enabled;
+    }
+
+    pub fn realtime_stage_timings(&self) -> RealtimeStageTimings {
+        self.realtime_stage_timings
+    }
+
+    /// Give every nonlinear circuit in this chain the same absolute realtime
+    /// cutoff. Passing `None` disables deadline aborts (offline/reference use).
+    pub fn set_realtime_deadline(&mut self, deadline: Option<Instant>) {
+        for sim in self
+            .gains
+            .iter_mut()
+            .chain(self.powers.iter_mut().flatten())
+            .chain(self.irons.iter_mut())
+            .chain(std::iter::once(self.line.as_mut()))
+            .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
+            .chain(std::iter::once(&mut self.driven.sim))
+            .chain(self.pedals.iter_mut())
+        {
+            sim.set_realtime_deadline(deadline);
+        }
+    }
+
+    /// Deadline aborts in the circuits actually in the path: five reads,
+    /// cheap enough for a trace to take per sample. `deadline_aborts` walks
+    /// the whole catalogue.
+    pub fn active_deadline_aborts(&self) -> u64 {
+        let mut aborts = self.gains[self.gain].deadline_aborts();
+        if let Some(i) = self.pedal {
+            aborts += self.pedals[i].deadline_aborts();
+        }
+        if self.active_driven() {
+            aborts += self.driven.sim.deadline_aborts();
+        } else if let Some(power) = self.active_power() {
+            aborts += power.deadline_aborts();
+        }
+        if let Some(i) = self.iron {
+            aborts += self.irons[i].deadline_aborts();
+        }
+        if self.voice == Gain::Neve {
+            aborts += self.line.deadline_aborts();
+        }
+        aborts
+    }
+
+    /// Which circuits are running, for a trace to label its rows with.
+    pub fn identity(&self) -> ChainIdentity {
+        ChainIdentity {
+            voice: self.voice,
+            pedal: self.selected_pedal,
+            power: self.resolved_power_amp(),
+            radiating: self.radiating,
+        }
+    }
+
+    /// Total nonlinear samples abandoned to protect a realtime callback.
+    pub fn deadline_aborts(&self) -> u64 {
+        self.gains
+            .iter()
+            .chain(self.powers.iter().flatten())
+            .chain(self.irons.iter())
+            .chain(std::iter::once(self.line.as_ref()))
+            .chain(self.loaded.iter().map(|l| &l.sim))
+            .chain(std::iter::once(&self.driven.sim))
+            .chain(self.pedals.iter())
+            .map(Simulation::deadline_aborts)
+            .sum()
     }
 
     /// Cap the Newton passes every circuit in this chain may take.

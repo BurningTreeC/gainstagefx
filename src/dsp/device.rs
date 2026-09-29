@@ -1219,6 +1219,41 @@ impl Pentode {
             self.count * vgk / 600.0
         }
     }
+
+    /// The plate's slope just above zero volts: `d ip / d vpk` at `vpk = 0+`.
+    ///
+    /// The model has an edge there. Above it the knee `atan(vpk / Kvb)` rises
+    /// from zero with slope `1 / Kvb`; at and below it the plate carries
+    /// nothing and every slope is zero. A hard-driven output valve saturates a
+    /// few tens of volts above that edge, and a Newton step toward it lands
+    /// below it about as often as not. Linearised there, the valve has
+    /// vanished from the Jacobian, the next step throws its plate hundreds of
+    /// volts up, the one after throws it back below zero, and the line search
+    /// accepts both. That two-cycle was most of the Mark IIC+ power stage's
+    /// long solves on a driven attack: 8 % of its samples took 8 to 21 passes.
+    ///
+    /// So a pass that *arrives* at the edge from above is linearised with the
+    /// slope from above. Only the Jacobian changes: the current at the edge is
+    /// still exactly zero, so every solution is the same solution. A plate
+    /// that really does rest at or below zero arrives there from zero on the
+    /// following pass and gets the exact (zero) slope back.
+    fn plate_edge_conductance(&self, vgk: f64, vsk: f64) -> f64 {
+        let c = &self.spec;
+        if vsk <= 0.0 {
+            return 0.0;
+        }
+        let inner = c.kp * (self.inv_mu + vgk / vsk);
+        let soft = if inner > 30.0 {
+            inner
+        } else {
+            inner.exp().ln_1p()
+        };
+        let e1 = vsk * self.inv_kp * soft;
+        if e1 <= 0.0 {
+            return 0.0;
+        }
+        self.count * e1.powf(c.ex) * self.inv_kg1 * self.inv_kvb
+    }
 }
 
 impl Device for Pentode {
@@ -1256,6 +1291,14 @@ impl Device for Pentode {
         } else {
             (raw, false)
         };
+        // Arrived at the plate's zero from above: see `plate_edge_conductance`.
+        // The slope is taken where the plate came *from*: the point being
+        // stamped is an overshoot, and its grid can be anywhere.
+        let edge = if vpk == 0.0 && self.vpk > 0.0 {
+            self.plate_edge_conductance(self.vgk, self.vsk)
+        } else {
+            0.0
+        };
         self.clamped = clamped;
         self.delta = (vpk - self.vpk)
             .abs()
@@ -1268,6 +1311,14 @@ impl Device for Pentode {
         let (ip, ig2, gp, gm, gs, gm2, gs2) = match self.trial_eval.take() {
             Some(cached) if cached.matches(vpk, vgk, vsk) => self.split_slopes_from_trial(cached),
             _ => self.split_with_slopes(vpk, vgk, vsk),
+        };
+        let gp = if edge > 0.0 {
+            // The Jacobian is not the plate's own here, so this pass may not
+            // be the one that declares the solve finished.
+            self.clamped = true;
+            gp.max(edge)
+        } else {
+            gp
         };
 
         // Plate branch: its own conductance, plus the two transconductances
@@ -2058,12 +2109,25 @@ impl Device for Bipolar {
         // voltage across it, which is the stage's finite output resistance.
         let vce = vbe - vbc;
         let early = 1.0 + (vce * self.inv_early).max(-0.9);
+        // And the slope of that: `d early / d vce`, where it is not held at
+        // its floor. It was missing from the Jacobian below while the
+        // current kept it, so on an output transistor carrying amps the
+        // linearisation was short an output conductance of `Ic / VA`, and
+        // Newton crept toward the answer instead of converging on it.
+        let d_early = if vce * self.inv_early > -0.9 {
+            self.inv_early
+        } else {
+            0.0
+        };
+        let transport = forward - reverse;
 
-        let ic = (forward - reverse) * early - reverse * self.inv_reverse_beta;
+        let ic = transport * early - reverse * self.inv_reverse_beta;
         let ib = forward * self.inv_forward_beta + reverse * self.inv_reverse_beta;
 
-        let dic_dvbe = gf * early;
-        let dic_dvbc = -gr * (early + self.inv_reverse_beta);
+        // `vce = vbe - vbc`, so the Early term adds to one slope and comes
+        // off the other.
+        let dic_dvbe = gf * early + transport * d_early;
+        let dic_dvbc = -gr * (early + self.inv_reverse_beta) - transport * d_early;
         let dib_dvbe = gf * self.inv_forward_beta;
         let dib_dvbc = gr * self.inv_reverse_beta;
 

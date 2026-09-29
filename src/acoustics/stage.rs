@@ -72,6 +72,20 @@ struct RearPath {
     diffraction: OnePole,
 }
 
+impl RearPath {
+    /// Whether this path can add anything to the capsule, now or later in
+    /// the current ramp. A path with both gains at zero, heading to zero, and
+    /// nothing left ringing in its diffraction pole adds `0.0` every sample,
+    /// and goes on doing so until `geometry` aims it somewhere else.
+    fn can_contribute(&self) -> bool {
+        self.pressure.now != 0.0
+            || self.pressure.target != 0.0
+            || self.velocity.now != 0.0
+            || self.velocity.target != 0.0
+            || !self.diffraction.is_at_rest()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct BreakupPath {
     delay: Ramped,
@@ -90,6 +104,19 @@ struct MicChannel {
     breakup_paths: [BreakupPath; 4],
     driver_count: usize,
     rear: [RearPath; MAX_PATHS],
+    /// The rear paths that can contribute, as indices into `rear` in their
+    /// original order, so the sum over them is the same sum.
+    ///
+    /// Every panel has thirteen routes to each capsule and most of them are
+    /// round an edge the capsule cannot see, so their weight is exactly zero;
+    /// the front panel's own thirteen are zero by construction because it is
+    /// surface-integrated in `front_panel`. On the Puppet Master's closed 4x12
+    /// with two microphones, 24 of 91 per capsule carry any weight. Reading
+    /// the other 67 was two Lagrange interpolations and a one-pole each, every
+    /// sample, adding exactly zero: 12.5 % of that preset's CPU. Rebuilt by
+    /// `geometry`, the only thing that aims a path.
+    rear_live: [u8; MAX_PATHS],
+    rear_live_len: usize,
     off_axis: OnePole,
     baffle: Biquad,
     eq: [Biquad; 6],
@@ -105,6 +132,8 @@ impl MicChannel {
             breakup_paths: [BreakupPath::default(); 4],
             driver_count: 0,
             rear: [RearPath::default(); MAX_PATHS],
+            rear_live: [0; MAX_PATHS],
+            rear_live_len: 0,
             off_axis: OnePole::open(),
             baffle: Biquad::IDENTITY,
             eq: [Biquad::IDENTITY; 6],
@@ -112,6 +141,20 @@ impl MicChannel {
             delays: (0.0, 0.0),
         }
     }
+    /// Re-index the rear paths that can contribute. A superset is always
+    /// correct -- it only costs the reads -- so a path stays listed while its
+    /// diffraction pole is still ringing, and leaves at the next re-aim.
+    fn index_live_rear_paths(&mut self) {
+        let mut len = 0;
+        for (i, path) in self.rear.iter().enumerate() {
+            if path.can_contribute() {
+                self.rear_live[len] = i as u8;
+                len += 1;
+            }
+        }
+        self.rear_live_len = len;
+    }
+
     fn reset(&mut self) {
         for path in &mut self.breakup_paths {
             path.directivity.reset();
@@ -340,6 +383,8 @@ impl AcousticStage {
             dest.driver_count = src.driver_count;
             dest.slot = src.slot;
             dest.rear = src.rear;
+            dest.rear_live = src.rear_live;
+            dest.rear_live_len = src.rear_live_len;
             dest.off_axis = src.off_axis;
             dest.baffle = src.baffle;
             dest.eq = src.eq;
@@ -368,8 +413,8 @@ impl AcousticStage {
         // never follows microphone distance, and is outside the pressure model.
         let a = self.speaker.radius();
         let reference = RHO * ((a * a + REFERENCE_DISTANCE.powi(2)).sqrt() - REFERENCE_DISTANCE);
-        self.calibration = self.speaker.re * self.speaker.mms / self.speaker.bl / reference
-            * self.voicing_norm;
+        self.calibration =
+            self.speaker.re * self.speaker.mms / self.speaker.bl / reference * self.voicing_norm;
         // Regularise only DC: 0.5 Hz is below every modelled capsule's passband.
         self.integrate.set_leaky_integrator(rate, 0.5, 1.0 / PI);
         self.breakup_integrate
@@ -590,6 +635,7 @@ impl AcousticStage {
                     }
                 }
             }
+            mic.index_live_rear_paths();
             mic.delays = (
                 (minima[m] - base) / SPEED_OF_SOUND * self.rate,
                 (longest - base) / SPEED_OF_SOUND * self.rate,
@@ -668,13 +714,18 @@ impl AcousticStage {
                 }
                 p += high;
             }
-            for path in &mut mic.rear {
-                let i = path.source;
-                if ramping {
+            if ramping {
+                // Every path's ramp moves, listed or not: the next `aim`
+                // measures its step from where `now` has got to.
+                for path in &mut mic.rear {
                     path.delay.advance(last);
                     path.pressure.advance(last);
                     path.velocity.advance(last);
                 }
+            }
+            for &k in &mic.rear_live[..mic.rear_live_len] {
+                let path = &mut mic.rear[k as usize];
+                let i = path.source;
                 let q = path.pressure.now * self.rear_acceleration[i].read(path.delay.now)
                     + path.velocity.now * self.rear_velocity[i].read(path.delay.now);
                 p += path.diffraction.process(q);
@@ -727,4 +778,68 @@ impl AcousticStage {
 #[inline]
 fn pan_gains(pan: f64) -> (f64, f64) {
     ((1.0 - pan).clamp(0.0, 1.0), (1.0 + pan).clamp(0.0, 1.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::acoustics::mic::{MicPlacement, MicProfile};
+    use crate::acoustics::speaker::SpeakerProfile;
+
+    /// Skipping a rear path is exact only while it adds exactly nothing: both
+    /// gains zero now and at the end of any ramp, and nothing ringing in its
+    /// diffraction pole. Every cabinet, both capsules, placements from on the
+    /// cone to a metre off and angled, moved while signal is flowing so ramps
+    /// and filters are live: every path left off the list must still be that
+    /// silent, and the listed ones must stay in their original order so the
+    /// sum over them is the same sum.
+    #[test]
+    fn every_unlisted_rear_path_stays_exactly_silent() {
+        let placements = [
+            (0.0, 0.025, 0.0),
+            (0.35, 0.05, 0.0),
+            (1.0, 0.3, 30.0),
+            (0.5, 1.0, 45.0),
+        ];
+        for cabinet in CabinetProfile::ALL {
+            let mut stage = AcousticStage::new(48_000.0);
+            stage.configure(
+                Some(cabinet),
+                &SpeakerProfile::BRIT_V30,
+                MicSlot::Profile(&MicProfile::DYNAMIC_57),
+                MicSlot::Ideal,
+            );
+            let mut k = 0usize;
+            for &(position, distance, angle) in &placements {
+                let a = MicPlacement {
+                    position,
+                    distance,
+                    angle,
+                };
+                let b = MicPlacement {
+                    position: 1.0 - position,
+                    distance: distance * 2.0,
+                    angle: 0.0,
+                };
+                stage.set_placement(a, b, 0.5, 0.0, 0.0, false, false);
+                for _ in 0..3 * RAMP {
+                    stage.process((k as f64 * 0.07).sin() * 50.0);
+                    k += 1;
+                }
+                for mic in &stage.mics {
+                    let listed = &mic.rear_live[..mic.rear_live_len];
+                    assert!(listed.windows(2).all(|w| w[0] < w[1]));
+                    for (index, path) in mic.rear.iter().enumerate() {
+                        if !listed.contains(&(index as u8)) {
+                            assert!(
+                                !path.can_contribute(),
+                                "{} path {index} is unlisted but live",
+                                cabinet.id
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

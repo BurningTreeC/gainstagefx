@@ -152,6 +152,17 @@ fn main() {
         row(&format!("{name} + spk"), circuit);
     }
 
+    println!("-- every PowerModel, speaker-loaded, exactly as Chain builds it --");
+    for model in gainstagefx::voice::PowerModel::ALL {
+        let values = LoadValues::new(
+            &SpeakerProfile::BRIT_V30,
+            &Mounting::BAFFLE,
+            model.speaker_scale(),
+        );
+        let (circuit, _slots) = model.build_loaded(&values).unwrap();
+        row(&format!("{model:?}"), circuit);
+    }
+
     println!("-- speaker alone --");
     let values = LoadValues::new(&SpeakerProfile::BRIT_V30, &Mounting::BAFFLE, 1.0);
     let (circuit, _) = speaker::voltage_driven(&values).unwrap();

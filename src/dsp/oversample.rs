@@ -123,39 +123,51 @@ impl OddPhase {
     }
 }
 
-/// One 2x up/down conversion stage.
-struct Stage {
-    up_fir: OddPhase,
-    up_delay: Delay,
-    down_fir: OddPhase,
-    down_delay: Delay,
+/// The interpolating half of one 2x stage.
+struct UpStage {
+    fir: OddPhase,
+    delay: Delay,
 }
 
-impl Stage {
-    fn copy_runtime_state_from(&mut self, source: &Self) {
-        self.up_fir.copy_runtime_state_from(&source.up_fir);
-        self.up_delay.copy_runtime_state_from(&source.up_delay);
-        self.down_fir.copy_runtime_state_from(&source.down_fir);
-        self.down_delay.copy_runtime_state_from(&source.down_delay);
-    }
+/// The decimating half of one 2x stage.
+///
+/// Up and down are separate state machines: the interpolator's history is its
+/// inputs and the decimator's is the processed samples coming back. Keeping
+/// them in separate vectors lets `Oversampler::split` hand them to two threads
+/// (see `StageWorker`) without either touching the other's state.
+struct DownStage {
+    fir: OddPhase,
+    delay: Delay,
+}
 
-    fn new(m: usize, beta: f64) -> Self {
-        let odd = halfband_odd_taps(m, beta);
+impl UpStage {
+    fn new(odd: &[f64], m: usize) -> Self {
         // The interpolator carries a factor of two to make up for the energy
         // lost to zero stuffing.
-        let up_taps: Vec<f64> = odd.iter().map(|c| c * 2.0).collect();
         Self {
-            up_fir: OddPhase::new(up_taps),
-            up_delay: Delay::new(m / 2),
-            down_fir: OddPhase::new(odd),
-            down_delay: Delay::new(m / 2),
+            fir: OddPhase::new(odd.iter().map(|c| c * 2.0).collect()),
+            delay: Delay::new(m / 2),
         }
     }
 
     /// One input sample in, an even/odd pair at twice the rate out.
     #[inline]
     fn up(&mut self, x: f64) -> (f64, f64) {
-        (self.up_delay.process(x), self.up_fir.push_dot(x))
+        (self.delay.process(x), self.fir.push_dot(x))
+    }
+
+    fn reset(&mut self) {
+        self.fir.reset();
+        self.delay.reset();
+    }
+}
+
+impl DownStage {
+    fn new(odd: Vec<f64>, m: usize) -> Self {
+        Self {
+            fir: OddPhase::new(odd),
+            delay: Delay::new(m / 2),
+        }
     }
 
     /// An even/odd pair at twice the rate in, one sample out.
@@ -163,16 +175,14 @@ impl Stage {
     fn down(&mut self, even: f64, odd: f64) -> f64 {
         // The odd branch needs `o[n - 1 - k]`, so read the history before the
         // new sample goes in.
-        let y = 0.5 * self.down_delay.process(even) + self.down_fir.dot();
-        self.down_fir.push(odd);
+        let y = 0.5 * self.delay.process(even) + self.fir.dot();
+        self.fir.push(odd);
         y
     }
 
     fn reset(&mut self) {
-        self.up_fir.reset();
-        self.up_delay.reset();
-        self.down_fir.reset();
-        self.down_delay.reset();
+        self.fir.reset();
+        self.delay.reset();
     }
 }
 
@@ -181,8 +191,75 @@ impl Stage {
 /// Every stage is built up front and the factor selects how many of them are
 /// used, so changing the setting while playing cannot allocate.
 pub struct Oversampler {
-    stages: Vec<Stage>,
+    ups: Vec<UpStage>,
+    downs: Vec<DownStage>,
     active: usize,
+}
+
+/// The interpolating half of an `Oversampler`, borrowed on its own.
+pub struct Upsampler<'a> {
+    stages: &'a mut [UpStage],
+}
+
+/// The decimating half of an `Oversampler`, borrowed on its own.
+pub struct Downsampler<'a> {
+    stages: &'a mut [DownStage],
+}
+
+impl Upsampler<'_> {
+    /// Oversampled samples per host sample.
+    pub fn factor(&self) -> usize {
+        1 << self.stages.len()
+    }
+
+    /// The oversampled rate's samples for one host sample, in the order
+    /// `Oversampler::process` would hand them to its closure. Returns how
+    /// many were written (the factor).
+    #[inline]
+    pub fn push(&mut self, x: f64, out: &mut [f64]) -> usize {
+        let mut at = 0;
+        Self::run(self.stages, x, out, &mut at);
+        at
+    }
+
+    fn run(stages: &mut [UpStage], x: f64, out: &mut [f64], at: &mut usize) {
+        match stages.split_first_mut() {
+            None => {
+                out[*at] = x;
+                *at += 1;
+            }
+            Some((stage, rest)) => {
+                let (even, odd) = stage.up(x);
+                Self::run(rest, even, out, at);
+                Self::run(rest, odd, out, at);
+            }
+        }
+    }
+}
+
+impl Downsampler<'_> {
+    /// One host sample from the processed oversampled ones `Upsampler::push`
+    /// produced, taken in the same order.
+    #[inline]
+    pub fn pull(&mut self, processed: &[f64]) -> f64 {
+        let mut at = 0;
+        Self::run(self.stages, processed, &mut at)
+    }
+
+    fn run(stages: &mut [DownStage], processed: &[f64], at: &mut usize) -> f64 {
+        match stages.split_first_mut() {
+            None => {
+                let v = processed[*at];
+                *at += 1;
+                v
+            }
+            Some((stage, rest)) => {
+                let even = Self::run(rest, processed, at);
+                let odd = Self::run(rest, processed, at);
+                stage.down(even, odd)
+            }
+        }
+    }
 }
 
 impl Oversampler {
@@ -190,19 +267,34 @@ impl Oversampler {
     /// All stages already exist; installing the active stage count here must
     /// not call `set_factor`, which would clear the history we are preserving.
     pub fn copy_runtime_state_from(&mut self, source: &Self) {
-        debug_assert_eq!(self.stages.len(), source.stages.len());
-        for (dst, src) in self.stages.iter_mut().zip(&source.stages) {
-            dst.copy_runtime_state_from(src);
+        debug_assert_eq!(self.ups.len(), source.ups.len());
+        for (dst, src) in self.ups.iter_mut().zip(&source.ups) {
+            dst.fir.copy_runtime_state_from(&src.fir);
+            dst.delay.copy_runtime_state_from(&src.delay);
+        }
+        for (dst, src) in self.downs.iter_mut().zip(&source.downs) {
+            dst.fir.copy_runtime_state_from(&src.fir);
+            dst.delay.copy_runtime_state_from(&src.delay);
         }
         self.active = source.active;
     }
 
     /// `factor` is rounded down to the nearest supported power of two.
     pub fn new(factor: usize) -> Self {
+        let odd: Vec<Vec<f64>> = STAGES
+            .iter()
+            .map(|&(m, beta)| halfband_odd_taps(m, beta))
+            .collect();
         let mut oversampler = Self {
-            stages: STAGES
+            ups: odd
                 .iter()
-                .map(|&(m, beta)| Stage::new(m, beta))
+                .zip(STAGES)
+                .map(|(taps, (m, _))| UpStage::new(taps, m))
+                .collect(),
+            downs: odd
+                .into_iter()
+                .zip(STAGES)
+                .map(|(taps, (m, _))| DownStage::new(taps, m))
                 .collect(),
             active: 0,
         };
@@ -211,12 +303,7 @@ impl Oversampler {
     }
 
     pub fn set_factor(&mut self, factor: usize) {
-        let active = match factor {
-            0..=1 => 0,
-            2..=3 => 1,
-            4..=7 => 2,
-            _ => 3,
-        };
+        let active = Self::active_stages(factor);
         if active != self.active {
             self.active = active;
             self.reset();
@@ -229,12 +316,44 @@ impl Oversampler {
 
     /// Round trip latency in samples at the host rate.
     pub fn latency(&self) -> u32 {
+        Self::stages_latency(self.active)
+    }
+
+    /// What `latency` will be once `set_factor(factor)` is in effect.
+    pub fn latency_of(factor: usize) -> u32 {
+        Self::stages_latency(Self::active_stages(factor))
+    }
+
+    fn stages_latency(active: usize) -> u32 {
         STAGES
             .iter()
-            .take(self.active)
+            .take(active)
             .enumerate()
             .map(|(i, &(m, _))| (m >> i) as u32)
             .sum()
+    }
+
+    fn active_stages(factor: usize) -> usize {
+        match factor {
+            0..=1 => 0,
+            2..=3 => 1,
+            4..=7 => 2,
+            _ => 3,
+        }
+    }
+
+    /// The two halves, borrowed separately. Pushing every host sample through
+    /// the upsampler, processing what it writes, and pulling it back through
+    /// the downsampler is `process`, operation for operation.
+    pub fn split(&mut self) -> (Upsampler<'_>, Downsampler<'_>) {
+        (
+            Upsampler {
+                stages: &mut self.ups[..self.active],
+            },
+            Downsampler {
+                stages: &mut self.downs[..self.active],
+            },
+        )
     }
 
     /// Run `f` at the oversampled rate for one host rate sample.
@@ -243,27 +362,33 @@ impl Oversampler {
     where
         F: FnMut(f64) -> f64,
     {
-        Self::run(&mut self.stages[..self.active], x, f)
+        Self::run(
+            &mut self.ups[..self.active],
+            &mut self.downs[..self.active],
+            x,
+            f,
+        )
     }
 
     #[inline]
-    fn run<F>(stages: &mut [Stage], x: f64, f: &mut F) -> f64
+    fn run<F>(ups: &mut [UpStage], downs: &mut [DownStage], x: f64, f: &mut F) -> f64
     where
         F: FnMut(f64) -> f64,
     {
-        match stages.split_first_mut() {
-            None => f(x),
-            Some((stage, rest)) => {
-                let (even, odd) = stage.up(x);
-                let even = Self::run(rest, even, f);
-                let odd = Self::run(rest, odd, f);
-                stage.down(even, odd)
+        match (ups.split_first_mut(), downs.split_first_mut()) {
+            (Some((up, ups)), Some((down, downs))) => {
+                let (even, odd) = up.up(x);
+                let even = Self::run(ups, downs, even, f);
+                let odd = Self::run(ups, downs, odd, f);
+                down.down(even, odd)
             }
+            _ => f(x),
         }
     }
 
     pub fn reset(&mut self) {
-        self.stages.iter_mut().for_each(Stage::reset);
+        self.ups.iter_mut().for_each(UpStage::reset);
+        self.downs.iter_mut().for_each(DownStage::reset);
     }
 }
 

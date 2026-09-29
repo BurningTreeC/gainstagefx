@@ -36,6 +36,8 @@
 # dangling reference to the file that is supposed to explain the work.
 !/docs/SOLVER_OPTIMIZATION.md
 !/docs/SOLVER_EXPERIMENTS.md
+# The realtime record IMPLEMENTATION_PROGRESS.md points at, for the same reason.
+!/docs/realtime-multi-instance.md
 
 CLAUDE.md
 AGENTS.md

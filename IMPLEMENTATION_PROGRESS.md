@@ -1,5 +1,70 @@
 # Implementation progress
 
+## 2026-09-29 — REAPER with several instances: the real deadline, and two exact speedups
+
+The 07:43 REAPER captures (Jazz Chorus playback plus Puppet Master '86 live, 48k/64)
+show that the deadline is not 1,333 µs. The SSL 2's 0.5 ms USB packets make PipeWire's
+64-frame cycles 1.5, 1.5, 1.0 ms, and a Puppet callback running into the short one past
+~930 µs was an xrun every time: 2,694 dropouts of 10–13 ms in 81 s. The two instances ran
+in parallel, not serialised. The wall-clock solver cutoff (uncommitted) fires at 1,200 µs,
+which is too late for the short slot and too early for the long ones, and each abort
+freezes the circuit's state for the rest of the callback. Details, tables and the capture
+procedure are in `docs/realtime-multi-instance.md`.
+
+Changed, both bit-exact on all 78 presets over the real take:
+
+- `acoustics/stage.rs`: each capsule reads only the rear paths that can contribute. On
+  the closed 4x12, 67 of 91 per capsule are exactly zero. Puppet −13 %, Jazz −18 %.
+- `dsp/partition.rs`: the replayed reduced LU visits only possibly non-zero entries, a
+  further −4 % on Puppet.
+- Together, Puppet Master '86: mean 929 → 753 µs, p99 1,277 → 1,083 µs, callbacks over
+  930 µs 45 % → 9 %. Jazz Chorus: 617 → 506 µs.
+
+Instrumentation: `src/rt_trace.rs` replaces the in-plugin CSV buffer. It records one
+fixed-size record per callback with CLOCK_MONOTONIC start/end, thread, CPU, mode,
+per-stage time, solver work and deadline aborts per stage. A preallocated SPSC ring
+feeds a writer thread, so nothing is formatted or allocated on the audio thread. The
+old trace never counted abort samples on the dual-mono path; the new one does.
+`tools/rt_trace.py` analyses one or more captures: tails, cadence, P(xrun | duration,
+slot), abort bursts, stage and work by duration band, and, across instances, overlap,
+order, shared threads, cores and SMT pairs. `examples/rt_scenario.rs` plays the real take
+through shipped presets on the dual-mono path and prints each preset's output hash.
+
+`tests/support/plugin_mono.rs` disarms the wall-clock cutoff in its fixture. The
+cfg(test) solver diagnostics run slower than real time, so with the cutoff armed three
+convergence/equivalence tests failed under load.
+
+Later the same day:
+
+- **Pipeline.** `Chain` splits into a front half (pedal, preamp) and a back
+  half (power, iron, tone, cabinet) over disjoint state. The plugin runs the
+  back half on a `StageWorker` inside the same callback, eight samples behind,
+  with no added latency and bit-identical output (`tests/pipeline.rs`). It
+  switches on adaptively above 30 % of the period. Puppet Master '86: mean 434
+  µs, p99.9 680 µs, no callback over 930 µs.
+- **Pentode Jacobian.** A saturated output valve's plate made Newton
+  two-cycle across the model's `vpk = 0` edge. A pass arriving there from
+  above now uses the slope from above. Answers are unchanged; backtracks fall
+  87 % on that preset and 25 % across the catalogue.
+- **Deadline cutoff.** Every abort is a click, measured, whatever happens to
+  the state afterwards. The cutoff moves from 0.9 to 1.5 periods
+  (`REALTIME_CUTOFF_PERIODS`).
+- **Documented negatives:** history predictors, a hybrid LU sweep, and three
+  abort semantics. Details in `docs/realtime-multi-instance.md`.
+
+After the 11:19 REAPER capture:
+
+- **Dropouts.** Two instances, pipelined: 0.34 dropouts a second, against 33.
+  The Puppet's p99.9 was 859 µs in REAPER itself.
+- **True latency.** 0 samples at 1x, instead of a 66-sample pad on every
+  setting. It is reported to the host when the oversampling changes, and
+  activation reports what the next block will produce.
+- **Transistor Jacobian.** `Bipolar::stamp` lacked the Early effect's
+  derivative. With it, every transistor circuit converges faster (the 73P
+  preamp by 28 %) and unsettled samples fall 12 → 7.
+- **Pipeline start.** It now starts on, so a freshly loaded heavy preset is
+  never serial.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):

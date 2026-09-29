@@ -266,6 +266,11 @@ impl OnePole {
         self.y1 = 0.0;
     }
 
+    /// Nothing held from earlier input: fed zeros, it puts out zeros.
+    pub fn is_at_rest(&self) -> bool {
+        self.x1 == 0.0 && self.y1 == 0.0
+    }
+
     pub fn magnitude(&self, rate: f64, hz: f64) -> f64 {
         let w = 2.0 * PI * hz / rate;
         let (c, s) = (w.cos(), -w.sin());

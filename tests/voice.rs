@@ -897,3 +897,79 @@ fn twin_volume_is_a_real_monotonic_level_control() {
         "Twin Volume at zero is not sufficiently below the clean reference: only {bottom_to_clean:.2} dB",
     );
 }
+
+/// In true-latency mode -- the one the plugin runs -- the chain delays by the
+/// oversampler's own round trip and nothing more: no delay at all at 1x, where
+/// every modelled preset runs. The dry path arrives with the wet one.
+#[test]
+fn true_latency_is_the_oversamplers_own_and_the_dry_path_matches() {
+    for (factor, expected) in [(1usize, 0usize), (2, 56), (4, 64), (8, 66)] {
+        let mut chain = Chain::new(RATE);
+        chain.set_true_latency(true);
+        chain.set_voice(Gain::Clean, voice::Diode::Silicon, voice::Amplifier::Valve);
+        chain.set_oversampling(factor);
+        chain.set_drive(0.5);
+        for _ in 0..(RATE as usize / 2) {
+            chain.process(0.0);
+            chain.delayed_dry(0.0);
+        }
+        assert_eq!(chain.latency() as usize, expected, "{factor}x reports");
+
+        let (mut peak, mut dry_at) = ((0usize, 0.0f64), None);
+        for n in 0..200 {
+            let x = if n == 0 { 0.05 } else { 0.0 };
+            let y = chain.process(x).abs();
+            if y > peak.1 {
+                peak = (n, y);
+            }
+            if dry_at.is_none() && chain.delayed_dry(x).abs() > 0.025 {
+                dry_at = Some(n);
+            }
+        }
+        assert_eq!(
+            peak.0, expected,
+            "{factor}x delays by {} and reports {expected}",
+            peak.0
+        );
+        assert_eq!(dry_at, Some(expected), "{factor}x dry path");
+    }
+}
+
+/// The plugin reports its latency at activation from the parameters alone,
+/// before any chain has seen them, using `voice::true_latency`. If that ever
+/// disagreed with what the chain does once the settings arrive, the plugin
+/// would report a new figure from its first block, the host would restart it,
+/// and activation would report the old one again: a restart loop. So the rule
+/// and the chain have to agree for every voice, pedal and request.
+#[test]
+fn the_activation_latency_rule_is_what_the_chain_does() {
+    use gainstagefx::voice::{true_latency, voice_at, Pedal, PedalSettings, Settings, VOICES};
+    let mut chain = Chain::new(RATE);
+    chain.set_true_latency(true);
+    for index in 0..VOICES {
+        let (gain, diode, amplifier) = voice_at(index);
+        for pedal in [Pedal::None, Pedal::HeavyMetal, Pedal::ALL[1]] {
+            for requested in [1usize, 2, 4, 8] {
+                chain.apply(&Settings {
+                    gain,
+                    diode,
+                    amplifier,
+                    oversampling: requested,
+                    pedal: PedalSettings {
+                        pedal,
+                        ..PedalSettings::default()
+                    },
+                    ..Settings::default()
+                });
+                for _ in 0..4 {
+                    chain.process(0.0);
+                }
+                assert_eq!(
+                    chain.latency(),
+                    true_latency(gain, pedal, requested),
+                    "{gain:?} with {pedal:?} at {requested}x"
+                );
+            }
+        }
+    }
+}
