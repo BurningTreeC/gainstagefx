@@ -126,6 +126,19 @@ Then, where the pipelined tail comes from (`rt_scenario --callbacks`,
 - **Tried and rejected:** triggering the rescue early (pass 8 or 16) made the
   Jazz tail worse, p99.9 864 → 1,310 / 997 µs.
 
+Then two more exact speedups, both hash-identical on all 78 presets:
+
+- **Cached delay taps.** `DelayTap` caches a radiation path's Lagrange weights
+  while its delay holds still (`DelayLine::read_tap`), and `PressureField`
+  moves its ramp out of the sum. The cabinet falls from 18 % to 14 % of Jazz
+  Chorus; means improve 1–4 %.
+- **Kernels at both rates.** `examples/kernels.rs` also plays each preset at
+  the other oversampling factor: 88 kernels instead of 76. Jazz Chorus at 2x:
+  739 → 627 µs mean. Puppet at 2x was already covered.
+- **`INSTRUCTIONS.md`:** the ordered checklist for any circuit change or
+  addition: research log, registration, calibration → power trim → kernels,
+  levels, baselines, tests, docs.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):
