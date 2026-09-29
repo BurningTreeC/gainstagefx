@@ -9,7 +9,7 @@
 use super::cabinet::CabinetProfile;
 use super::diffraction::{self, ROUTES};
 use super::enclosure::{CavityRadiation, RADIATORS};
-use super::filters::{Biquad, DelayLine, OnePole};
+use super::filters::{Biquad, DelayLine, DelayTap, OnePole};
 use super::mic::{MicPlacement, MicProfile, Pattern};
 use super::radiation::PressureField;
 use super::speaker::{SpeakerProfile, RHO, SPEED_OF_SOUND};
@@ -67,6 +67,8 @@ impl Ramped {
 struct RearPath {
     source: usize,
     delay: Ramped,
+    /// `delay.now`'s interpolation weights, cached while it holds still.
+    tap: DelayTap,
     pressure: Ramped,
     velocity: Ramped,
     diffraction: OnePole,
@@ -89,6 +91,8 @@ impl RearPath {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct BreakupPath {
     delay: Ramped,
+    /// `delay.now`'s interpolation weights, cached while it holds still.
+    tap: DelayTap,
     pressure: Ramped,
     velocity: Ramped,
     directivity: OnePole,
@@ -704,8 +708,9 @@ impl AcousticStage {
                     path.pressure.advance(last);
                     path.velocity.advance(last);
                 }
-                let mut high = path.pressure.now * self.breakup_acceleration.read(path.delay.now)
-                    + path.velocity.now * self.breakup_velocity.read(path.delay.now);
+                let tap = path.tap.follow(path.delay.now);
+                let mut high = path.pressure.now * self.breakup_acceleration.read_tap(&tap)
+                    + path.velocity.now * self.breakup_velocity.read_tap(&tap);
                 high = path.directivity.process(high);
                 if path.far {
                     for filter in &mut path.beam {
@@ -726,8 +731,9 @@ impl AcousticStage {
             for &k in &mic.rear_live[..mic.rear_live_len] {
                 let path = &mut mic.rear[k as usize];
                 let i = path.source;
-                let q = path.pressure.now * self.rear_acceleration[i].read(path.delay.now)
-                    + path.velocity.now * self.rear_velocity[i].read(path.delay.now);
+                let tap = path.tap.follow(path.delay.now);
+                let q = path.pressure.now * self.rear_acceleration[i].read_tap(&tap)
+                    + path.velocity.now * self.rear_velocity[i].read_tap(&tap);
                 p += path.diffraction.process(q);
             }
             p = mic.off_axis.process(mic.baffle.process(p));

@@ -175,15 +175,22 @@ impl PressureField {
     }
 
     pub fn process(&mut self, acceleration: &DelayLine, velocity: &DelayLine) -> f64 {
-        let mut pressure = 0.0;
-        for (offset, tap) in self.taps[self.first..self.end].iter_mut().enumerate() {
-            if self.ramp == 1 {
+        let taps = &mut self.taps[self.first..self.end];
+        // The ramp is the same for every tap, so move them all first and keep
+        // the branch out of the sum.
+        if self.ramp == 1 {
+            for tap in taps.iter_mut() {
                 tap.pressure = tap.target[0];
                 tap.velocity = tap.target[1];
-            } else if self.ramp > 1 {
+            }
+        } else if self.ramp > 1 {
+            for tap in taps.iter_mut() {
                 tap.pressure += tap.step[0];
                 tap.velocity += tap.step[1];
             }
+        }
+        let mut pressure = 0.0;
+        for (offset, tap) in taps.iter().enumerate() {
             let delay = self.first + offset;
             pressure += tap.pressure * acceleration.read_integer(delay)
                 + tap.velocity * velocity.read_integer(delay);

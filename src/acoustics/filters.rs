@@ -293,6 +293,72 @@ fn first_order_matched(rate: f64, fc: f64, dc2: f64, nyquist2: f64) -> (f64, f64
 /// relative path difference a 1 m microphone range and the largest cabinet can make.
 pub const DELAY_LEN: usize = 2048;
 
+/// Where `DelayLine::read` samples for one delay: its whole and fractional
+/// parts and the four Lagrange weights, worked out once.
+///
+/// A radiation path reads two lines at one delay every sample, and between
+/// geometry moves that delay does not change. Recomputing the weights -- four
+/// divisions among them -- for every read was the single largest cost in the
+/// cabinet (8 % of the Jazz Chorus). A path keeps one of these and `follow`s
+/// its delay, which recomputes only when the delay's bits change; the weights
+/// are the same expressions `read` always used, so the result is the same to
+/// the bit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DelayTap {
+    delay_bits: u64,
+    whole: usize,
+    fraction: f64,
+    weights: [f64; 4],
+}
+
+impl Default for DelayTap {
+    /// Matches no delay, so the first `follow` computes it.
+    fn default() -> Self {
+        Self {
+            delay_bits: u64::MAX,
+            whole: 0,
+            fraction: f64::NAN,
+            weights: [0.0; 4],
+        }
+    }
+}
+
+impl DelayTap {
+    pub fn new(delay: f64) -> Self {
+        let delay_bits = delay.to_bits();
+        let delay = delay.clamp(0.0, (DELAY_LEN - 4) as f64);
+        let whole = delay as usize;
+        let fraction = delay - whole as f64;
+        let weights = if whole == 0 {
+            [0.0; 4]
+        } else {
+            // Interpolating at i + f is u = f + 1 on the taps i-1 .. i+2.
+            let u = fraction + 1.0;
+            [
+                -(u - 1.0) * (u - 2.0) * (u - 3.0) / 6.0,
+                u * (u - 2.0) * (u - 3.0) / 2.0,
+                -u * (u - 1.0) * (u - 3.0) / 2.0,
+                u * (u - 1.0) * (u - 2.0) / 6.0,
+            ]
+        };
+        Self {
+            delay_bits,
+            whole,
+            fraction,
+            weights,
+        }
+    }
+
+    /// This tap at `delay`, recomputed only if the delay has moved.
+    #[inline]
+    pub fn follow(&mut self, delay: f64) -> Self {
+        if delay.to_bits() != self.delay_bits {
+            *self = Self::new(delay);
+        }
+        *self
+    }
+}
+
 /// One circular buffer, read at any number of fractional delays.
 #[derive(Debug, PartialEq)]
 pub struct DelayLine {
@@ -330,21 +396,24 @@ impl DelayLine {
     /// relative delay reads the newest sample exactly and adds no latency.
     #[inline]
     pub fn read(&self, delay: f64) -> f64 {
-        let delay = delay.clamp(0.0, (DELAY_LEN - 4) as f64);
-        let i = delay as usize;
-        let f = delay - i as f64;
+        self.read_tap(&DelayTap::new(delay))
+    }
+
+    /// `read` at a delay whose interpolation weights are already worked out.
+    #[inline]
+    pub fn read_tap(&self, tap: &DelayTap) -> f64 {
+        let (i, f) = (tap.whole, tap.fraction);
         if i == 0 {
+            // The weights and the samples are interleaved in this product, so
+            // it cannot be split into cached weights without changing its
+            // rounding; the fraction alone is cached.
             let (y0, y1, y2) = (self.at(0), self.at(1), self.at(2));
             return y0 * (f - 1.0) * (f - 2.0) * 0.5 - y1 * f * (f - 2.0)
                 + y2 * f * (f - 1.0) * 0.5;
         }
-        // Samples at i-1, i, i+1, i+2 back; interpolate at i + f, i.e. u = f + 1.
+        // Samples at i-1, i, i+1, i+2 back; interpolate at i + f.
         let (ym1, y0, y1, y2) = (self.at(i - 1), self.at(i), self.at(i + 1), self.at(i + 2));
-        let u = f + 1.0;
-        let l0 = -(u - 1.0) * (u - 2.0) * (u - 3.0) / 6.0;
-        let l1 = u * (u - 2.0) * (u - 3.0) / 2.0;
-        let l2 = -u * (u - 1.0) * (u - 3.0) / 2.0;
-        let l3 = u * (u - 1.0) * (u - 2.0) / 6.0;
+        let [l0, l1, l2, l3] = tap.weights;
         ym1 * l0 + y0 * l1 + y1 * l2 + y2 * l3
     }
 
