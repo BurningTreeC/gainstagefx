@@ -4,7 +4,8 @@
 //! cargo run --release --example kernels [-- --seconds 8] [-- --check]
 //! ```
 //!
-//! Plays every preset over the fixture take with the partition census on,
+//! Plays every preset over the fixture take with the partition census on, at
+//! its own oversampling and at the other factor a player can switch it to,
 //! then writes `src/dsp/partition/kernels.rs`: one straight-line elimination
 //! per (pattern, pivot plan) that carries real traffic. See
 //! `gainstagefx::dsp::partition::Kernel` for why and what a kernel must be.
@@ -177,14 +178,32 @@ fn main() {
     kernel_census::enable();
     let take = read_take();
     let length = ((seconds * RATE) as usize).min(take.len());
+    // Each preset at its own factor and at the other one a player can switch
+    // it to: the plans a partition learns depend on the step, so a table built
+    // from the shipped factors alone leaves the other rate on the masked path.
     for preset in PRESETS {
         let scale = 10f64.powf(preset.input_trim as f64 / 20.0);
-        let mut chain = Chain::new(RATE);
-        chain.apply(&preset.settings());
-        chain.settle();
-        chain.find_operating_point();
-        for &x in &take[..length] {
-            chain.process_stereo(x * scale);
+        let mut shipped = None;
+        for other in [false, true] {
+            let mut chain = Chain::new(RATE);
+            chain.apply(&preset.settings());
+            if other {
+                chain.set_oversampling(if shipped == Some(1) { 2 } else { 1 });
+            }
+            // A factor change is installed on the chain's next sample; take
+            // that sample, then find the operating point at the rate in force.
+            chain.process_stereo(0.0);
+            chain.settle();
+            chain.find_operating_point();
+            let factor = chain.effective_oversampling();
+            if other && shipped == Some(factor) {
+                // This voice runs at one factor only.
+                continue;
+            }
+            shipped = Some(factor);
+            for &x in &take[..length] {
+                chain.process_stereo(x * scale);
+            }
         }
         eprint!(".");
     }

@@ -56,8 +56,11 @@ thousands of solves.
 So `examples/kernels.rs` plays the catalogue over the take and counts which
 (pattern, plan) pairs are replayed. It writes `src/dsp/partition/kernels.rs`:
 the masked elimination unrolled for each pair that carries traffic, with
-constant indices and nothing else. On the take, 76 kernels cover 99.6 % of
-184 M replayed solves. A partition works out, at each refresh, every entry a
+constant indices and nothing else. Each preset is played at its own
+oversampling factor and at the other one, because the learned plans depend on
+the step size. 88 kernels cover 99.4 % of 402 M replayed solves. With the
+shipped factors alone, 76 kernels covered those factors, but Jazz Chorus
+switched to 2x lost 15 % (739 → 627 µs mean once covered). A partition works out, at each refresh, every entry a
 pass can hold: its device footprint plus whatever `boundary_base`,
 `merit_linear` and `coupling` hold. It uses a kernel only if the kernel's
 pattern covers that, and only for the plan it has learned. A pattern entry
