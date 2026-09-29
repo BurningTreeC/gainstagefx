@@ -37,6 +37,10 @@
 //! sample by sample, and `--pipeline` gives it a `StageWorker`; both must print
 //! the same output hash as the default. `--block-size` sets the callback length.
 //! `--events` prints every block in which a solve ended unsettled or fell back.
+//! `--callbacks FILE` writes one CSV row per callback: its time, where the
+//! pipeline ran the second half, each stage's solver work, the input's peak
+//! and, with `--stages`, each stage's time -- which is what says what the
+//! slowest callbacks have in common.
 //! `--oversampling N` overrides the preset's factor (the voice's cap still
 //! applies; the header line prints the factor that ran).
 //! `--paced` waits out each callback's period like a host instead of running
@@ -73,6 +77,7 @@ struct Options {
     cut_every: usize,
     events: bool,
     oversampling: Option<usize>,
+    callbacks: Option<String>,
 }
 
 impl Options {
@@ -98,6 +103,7 @@ fn options() -> Options {
         cut_every: 1,
         events: false,
         oversampling: None,
+        callbacks: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -121,6 +127,7 @@ fn options() -> Options {
                 o.cut_every = value().parse().expect("--cut-every takes a block count")
             }
             "--events" => o.events = true,
+            "--callbacks" => o.callbacks = Some(value()),
             "--oversampling" => {
                 o.oversampling = Some(value().parse().expect("--oversampling takes 1, 2, 4 or 8"))
             }
@@ -239,6 +246,17 @@ fn main() {
         if o.deadline { ", deadline armed" } else { "" },
         if o.paced { ", paced" } else { "" },
     );
+    let mut callbacks = o.callbacks.as_ref().map(|p| {
+        let mut file = std::fs::File::create(p).expect("callbacks file");
+        writeln!(
+            file,
+            "preset,block,us,pipeline,input_peak,pedal_passes,gain_passes,power_passes,\
+             power_backtracks,power_fallbacks,power_unsettled,power_rescues,\
+             pedal_us,gain_us,power_us,iron_us,tone_us,cabinet_us"
+        )
+        .unwrap();
+        file
+    });
     let mut out = o
         .write
         .as_ref()
@@ -269,6 +287,7 @@ fn main() {
         let worker = o.pipeline.then(StageWorker::new);
         let (mut inputs, mut right) = (vec![0.0; o.block_len()], vec![0.0; o.block_len()]);
         let mut uses = [0usize; 3];
+        let (mut callback_health, mut callback_stages) = (before, stages_before);
         let mut next = Instant::now();
         for b in 0..blocks {
             if o.paced {
@@ -283,6 +302,7 @@ fn main() {
                     + Duration::from_secs_f64(period * gainstagefx::plugin::REALTIME_CUTOFF_PERIODS)
             }));
             samples.clear();
+            let mut last_use = 0;
             if o.block || o.pipeline {
                 for (k, x) in inputs.iter_mut().enumerate() {
                     *x = take[(b * o.block_len() + k) % take.len()] * scale;
@@ -290,11 +310,12 @@ fn main() {
                 samples.resize(o.block_len(), 0.0);
                 let used =
                     chain.process_block(&inputs, &mut samples, &mut right, true, worker.as_ref());
-                uses[match used {
+                last_use = match used {
                     PipelineUse::Serial => 0,
                     PipelineUse::Worker => 1,
                     PipelineUse::Reclaimed => 2,
-                }] += 1;
+                };
+                uses[last_use] += 1;
             } else {
                 for k in 0..o.block_len() {
                     if let Some(from) = o.cut_from {
@@ -307,6 +328,38 @@ fn main() {
                 }
             }
             times.push(started.elapsed().as_secs_f64() * 1e6);
+            if let Some(file) = callbacks.as_mut() {
+                let health = chain.solver_breakdown();
+                let stages = chain.realtime_stage_timings();
+                let (h, t) = (
+                    health.saturating_delta(callback_health),
+                    stages.delta(callback_stages),
+                );
+                let peak = (0..o.block_len())
+                    .map(|k| (take[(b * o.block_len() + k) % take.len()] * scale).abs())
+                    .fold(0.0, f64::max);
+                let us = |ns: u64| ns as f64 / 1000.0;
+                writeln!(
+                    file,
+                    "{name:?},{b},{:.1},{last_use},{peak:.4},{},{},{},{},{},{},{},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
+                    times[b],
+                    h.pedal.passes,
+                    h.gain.passes,
+                    h.power.passes,
+                    h.power.backtracks,
+                    h.power.fallbacks,
+                    h.power.unsettled,
+                    h.power.half_step_attempts,
+                    us(t.pedal_ns),
+                    us(t.gain_ns),
+                    us(t.power_ns),
+                    us(t.iron_ns),
+                    us(t.tone_ns),
+                    us(t.cabinet_ns),
+                )
+                .unwrap();
+                (callback_health, callback_stages) = (health, stages);
+            }
             if o.events {
                 let now = chain.solver_breakdown();
                 for (stage, h, was) in [

@@ -253,6 +253,7 @@ the experiments.
 | Halve steps in a detected solver orbit | JC-120 unsettled 22 → 21 | Experienced '67 unsettled 16 → 87. |
 | Schur recovery and RHS restricted to each column's non-zero span | exact, ~1–2 % faster | Within run-to-run noise; the loops were already short and vectorised. |
 | Contraction stopping on pedal and preamp only (power stage and iron keep the confirming pass) | preamp passes −6 to −7 %, power unchanged | Brit Crunch and Brit Lead still null only at −73 to −76 dB re peak, so the error is amplified downstream of the preamp too, and the gain is small. |
+| Half-step rescue triggered early, at pass 8 or 16 instead of on failure | more rescues (2,515 / 333 in 19 s) | Jazz pipelined p99.9 864 → 1,310 / 997 µs, max 1,157 → 1,954 / 1,377 µs. On the hard samples the half steps are themselves expensive; a sample that would have settled by pass ~20 costs more rescued. The rescue is a fidelity fix for failures, not a speed fix. |
 | Four pipeline stages (pedal \| preamp \| power \| cabinet) instead of two | exact | Slower: Puppet 433 → 466 µs, Jazz 385 → 439 µs, and 3–5 ms spikes when the workers are oversubscribed. Each extra stage moves a working set of tens to hundreds of kB between cores and lengthens the pipeline's fill within a 64-sample block. Two stages is the sweet spot. |
 
 The JC-120's remaining unsettled samples are approximate orbits of full Newton
@@ -278,6 +279,29 @@ the full step is then solved again from that answer. Across the catalogue on
 the take, unsettled samples fall 69 → 0. The 71 presets that never failed are
 bit-identical, the other seven change only around their former failures, and
 callback times are unchanged within noise.
+
+## Where the pipelined tail comes from
+
+`rt_scenario --pipeline --stages --callbacks FILE` records every callback's time,
+solver work per stage and per-stage time, and `tools/callback_tail.py` compares
+the slowest callbacks with the typical ones. With the rescue and the compiled
+kernels, over the 19 s take:
+
+| preset | p50 | p99.9 | max | what the slowest 0.1 % carry |
+| --- | ---: | ---: | ---: | --- |
+| Jazz Chorus | 324 µs | 880 µs | 1,178 µs | 3.1x the power-stage passes (622 against 198 a block), 7.6 fallbacks, 53 backtracks, and dearer passes (1.47 against 1.17 µs). Callback time correlates 0.92 with power passes. |
+| Puppet Master '86 | 354 µs | 617 µs | 752 µs | the same work (power passes +21 %), done 1.7x slower per pass on the helper (1.53 against 0.91 µs), cabinet 146 against 90 µs; the caller's half is unchanged. |
+
+So Jazz's tail is the JC-120 power stage's hard samples, the clip transitions
+where Newton needs line search. Puppet's, in this harness, is the helper thread
+being slowed by something else sharing or preempting its core. The harness's
+helper has no realtime priority; in REAPER it adopts the audio thread's
+`SCHED_FIFO`, so that part of the tail has to be judged from a REAPER capture,
+not from here.
+
+For Jazz the pipeline is also lopsided: the front half (preamp) is 52 µs, the
+back half (power 247 + cabinet 78 µs) 326 µs. A pipelined Jazz callback is
+essentially its back half.
 
 ## Earlier notes on the Mark power stage
 

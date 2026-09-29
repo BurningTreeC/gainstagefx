@@ -114,6 +114,18 @@ Then, compiled reduced LU kernels:
   build asserts the guaranteed pattern on every reduced solve, and a test
   drives all 78 presets through that assertion.
 
+Then, where the pipelined tail comes from (`rt_scenario --callbacks`,
+`tools/callback_tail.py`; details in `docs/realtime-multi-instance.md`):
+
+- **Jazz Chorus:** its slowest callbacks are the JC-120 power stage's hard
+  samples, with 3.1x the passes plus fallbacks and backtracks (correlation
+  0.92).
+- **Puppet Master '86:** in the harness, its slowest callbacks do the same
+  work 1.7x slower per pass on the helper thread. That is scheduling, which
+  REAPER's realtime priority changes, so it needs a REAPER capture to judge.
+- **Tried and rejected:** triggering the rescue early (pass 8 or 16) made the
+  Jazz tail worse, p99.9 864 → 1,310 / 997 µs.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):
