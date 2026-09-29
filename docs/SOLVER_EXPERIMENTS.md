@@ -41,6 +41,44 @@ claim below roughly 1 % needs repeated runs.
 
 ## Accepted
 
+### Compiled reduced LU kernels
+
+Annotated on the JC-120's power stage, the replayed reduced LU
+(`solve_masked_planned`, 34 % of Jazz Chorus and 28 % of Puppet Master '86)
+spent only about 30 % of its time on arithmetic. The rest went on seeding
+row masks from the values (7 %), walking their bits (15 %), testing entries
+for zero, swapping, and checks. The rejected symbolic LU below failed for the
+same reason: at these sizes, any bookkeeping done at run time costs as much as
+the arithmetic it saves. None of this bookkeeping changes between passes. The
+pattern is fixed until the next rebuild, and a learned plan is replayed for
+thousands of solves.
+
+So `examples/kernels.rs` plays the catalogue over the take and counts which
+(pattern, plan) pairs are replayed. It writes `src/dsp/partition/kernels.rs`:
+the masked elimination unrolled for each pair that carries traffic, with
+constant indices and nothing else. On the take, 76 kernels cover 99.6 % of
+184 M replayed solves. A partition works out, at each refresh, every entry a
+pass can hold: its device footprint plus whatever `boundary_base`,
+`merit_linear` and `coupling` hold. It uses a kernel only if the kernel's
+pattern covers that, and only for the plan it has learned. A pattern entry
+that is zero on a pass is multiplied through where the masked path skips it,
+which leaves every finite value unchanged, so the answer is identical to the
+bit.
+
+All 78 presets' output hashes are identical over the 19 s take. Serial means
+fall 7–17 %: Jazz Chorus 466 → 392 µs, Puppet Master '86 718 → 619 µs,
+Blackface Normal 583 → 484 µs. Pipelined, as the plugin runs, Puppet goes
+432 → 354 µs mean and 585 → 485 µs p99; its p99.9 and max are unchanged.
+Tests:
+- `every_compiled_kernel_is_the_masked_replay`: every kernel against the
+  masked replay, including zeros in the pattern, unsound plans, vanishing
+  pivots and non-finite entries;
+- `the_guaranteed_pattern_holds_across_the_catalogue`: every test build checks
+  the pattern on every reduced solve.
+
+A stale table costs speed, not correctness: a kernel that no longer matches
+is simply not used.
+
 ### Half-step rescue of failed solves
 
 A failed solve used to be bounded and used as it stood. It is a click: 69

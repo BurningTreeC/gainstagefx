@@ -4269,6 +4269,17 @@ impl Simulation {
                         self.nonlinear_boundary = candidate;
                         self.nonlinear_partition = transient;
                         self.nonlinear_partition_dc = dc_partition;
+                        // Where the devices stamp, so each partition can tell
+                        // which compiled kernels cover it.
+                        for partition in [
+                            self.nonlinear_partition.as_mut(),
+                            self.nonlinear_partition_dc.as_mut(),
+                        ]
+                        .into_iter()
+                        .flatten()
+                        {
+                            partition.set_device_footprint(&self.device_matrix_slots, n);
+                        }
                         break;
                     }
                 }

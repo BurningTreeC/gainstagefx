@@ -93,6 +93,27 @@ Then, the half-step rescue:
 - **Harness:** `rt_scenario --events` reports fallbacks as well as unsettled
   solves, and `--oversampling N` overrides the preset's factor.
 
+Then, compiled reduced LU kernels:
+
+- **Where the time went.** The replayed reduced LU was 34 % of Jazz Chorus and
+  28 % of Puppet Master '86, and only about 30 % of its time was arithmetic.
+  The rest was bookkeeping that never changes between passes: masks seeded
+  from the values, bit walks, zero tests.
+- **Kernels.** `examples/kernels.rs` counts which (pattern, pivot plan) pairs
+  the catalogue replays on the take. It writes `src/dsp/partition/kernels.rs`
+  (generated; edit the generator), one straight-line elimination per pair
+  with traffic: 76 kernels, 99.6 % of replayed solves.
+- **When a kernel is used.** A partition works out at each refresh every entry
+  a pass can hold: its device footprint plus its cached linear matrices. It
+  uses a kernel only when the kernel's pattern covers that and the plan
+  matches. Output is the masked replay's to the bit.
+- **Result.** Jazz Chorus mean ~510 → 432 µs, Puppet Master '86 ~765 → 664 µs,
+  with p99 and p99.9 down by similar amounts.
+- **Tests.** Every kernel against the masked replay, covering zeros in the
+  pattern, unsound plans, vanishing pivots and non-finite entries. Every test
+  build asserts the guaranteed pattern on every reduced solve, and a test
+  drives all 78 presets through that assertion.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):
