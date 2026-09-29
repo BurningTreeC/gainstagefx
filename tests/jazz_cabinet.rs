@@ -66,7 +66,6 @@ fn the_two_peaks_the_measurement_names_are_there() {
     assert!(top_db - trough > 1.5, "{top_db:.1} over {trough:.1}");
 }
 
-
 /// Roland's own service notes: 750 x 540 x 270 mm without casters, two 30 cm
 /// speakers. Open-backed, and its Matched speaker is the Jazz 12.
 #[test]

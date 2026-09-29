@@ -113,8 +113,10 @@ impl<P: Plugin + 'static> NiceAu2Processor<P> {
             editor: Mutex::new(editor),
             opened: Mutex::new(Weak::new()),
             context: Arc::new(Au2GuiContext {
-                params: params.clone(), params_by_id: params_by_id.clone(),
-                params_by_hash: params_by_hash.clone(), param_id_to_hash: param_id_to_hash.clone(),
+                params: params.clone(),
+                params_by_id: params_by_id.clone(),
+                params_by_hash: params_by_hash.clone(),
+                param_id_to_hash: param_id_to_hash.clone(),
                 param_id_by_ptr: param_id_by_ptr.clone(),
                 pending_editor_notifications: pending_editor_notifications.clone(),
             }),
@@ -158,7 +160,8 @@ impl<P: Plugin + 'static> NiceAu2Processor<P> {
 
     fn queue_editor_param_changed(&mut self, param_hash: u32, normalized_value: f32) {
         let _ = (param_hash, normalized_value);
-        self.pending_editor_notifications.store(true, Ordering::Release);
+        self.pending_editor_notifications
+            .store(true, Ordering::Release);
     }
 
     fn queue_editor_values_changed(&mut self) {
@@ -194,7 +197,7 @@ impl<P: Plugin + 'static> NiceAu2Processor<P> {
 }
 
 fn queue_editor_values_changed(pending: &Arc<AtomicBool>) {
-    pending.store(true,Ordering::Release);
+    pending.store(true, Ordering::Release);
 }
 
 // The editor and its notification pump are independent of the DSP mutex. A
@@ -209,33 +212,64 @@ struct OpenEditor<H: EditorHandle> {
     _window: H::Window,
 }
 impl<P: Plugin> instance::NicePluginFrontend for Au2Frontend<P> {
-    fn size(&self) -> Option<(u32,u32)> {
+    fn size(&self) -> Option<(u32, u32)> {
         let editor = self.editor.lock().ok()?;
         let size = editor.as_ref()?.size();
-        Some((size.width,size.height))
+        Some((size.width, size.height))
     }
     fn spawn(&self, parent: *mut std::ffi::c_void) -> *mut std::ffi::c_void {
-        if parent.is_null() { return std::ptr::null_mut(); }
-        let Ok(editor) = self.editor.lock() else { return std::ptr::null_mut(); };
-        let Some(editor) = editor.as_ref() else { return std::ptr::null_mut(); };
+        if parent.is_null() {
+            return std::ptr::null_mut();
+        }
+        let Ok(editor) = self.editor.lock() else {
+            return std::ptr::null_mut();
+        };
+        let Some(editor) = editor.as_ref() else {
+            return std::ptr::null_mut();
+        };
         let host = editor_host(parent);
-        let Ok(spawned) = editor.spawn(Some(ParentWindowHandle::AppKitNsView(std::ptr::NonNull::new(parent).unwrap())),false,None,
-            GuiContext::new(self.context.clone()),host) else { return std::ptr::null_mut(); };
-        if spawned.handle.show(&spawned.window).is_err() { return std::ptr::null_mut(); }
+        let Ok(spawned) = editor.spawn(
+            Some(ParentWindowHandle::AppKitNsView(
+                std::ptr::NonNull::new(parent).unwrap(),
+            )),
+            false,
+            None,
+            GuiContext::new(self.context.clone()),
+            host,
+        ) else {
+            return std::ptr::null_mut();
+        };
+        if spawned.handle.show(&spawned.window).is_err() {
+            return std::ptr::null_mut();
+        }
         let handle = Arc::new(Mutex::new(spawned.handle));
         *self.opened.lock().unwrap() = Arc::downgrade(&handle);
-        let view = OpenEditor { _handle:handle, _window:spawned.window };
-        Box::into_raw(Box::new(instance::NiceAu2EditorHandle {handle:Box::new(view)})).cast()
+        let view = OpenEditor {
+            _handle: handle,
+            _window: spawned.window,
+        };
+        Box::into_raw(Box::new(instance::NiceAu2EditorHandle {
+            handle: Box::new(view),
+        }))
+        .cast()
     }
     fn destroy(&self, handle: *mut std::ffi::c_void) {
         if !handle.is_null() {
             // Host editor lifecycle calls, including window destruction, run
             // on the main thread. The native window is never sent to audio.
-            unsafe { drop(Box::from_raw(handle.cast::<instance::NiceAu2EditorHandle>())); }
+            unsafe {
+                drop(Box::from_raw(
+                    handle.cast::<instance::NiceAu2EditorHandle>(),
+                ));
+            }
         }
     }
     fn flush(&self) {
-        if self.context.pending_editor_notifications.swap(false,Ordering::AcqRel) {
+        if self
+            .context
+            .pending_editor_notifications
+            .swap(false, Ordering::AcqRel)
+        {
             if let Some(handle) = self.opened.lock().unwrap().upgrade() {
                 handle.lock().unwrap().state_changed();
             }
@@ -243,9 +277,7 @@ impl<P: Plugin> instance::NicePluginFrontend for Au2Frontend<P> {
     }
 }
 
-fn editor_host(
-    _parent: *mut std::ffi::c_void,
-) -> Option<nice_plug_core::editor::HostMethods> {
+fn editor_host(_parent: *mut std::ffi::c_void) -> Option<nice_plug_core::editor::HostMethods> {
     None
 }
 
@@ -308,9 +340,11 @@ impl GuiContextInner for Au2GuiContext {
     unsafe fn raw_begin_set_parameter(&self, _param: ParamPtr) {}
 
     unsafe fn raw_set_parameter_normalized(&self, param: ParamPtr, normalized: f32) {
-        if !self.param_id_by_ptr.contains_key(&param) || !normalized.is_finite() { return; }
+        if !self.param_id_by_ptr.contains_key(&param) || !normalized.is_finite() {
+            return;
+        }
         unsafe {
-            param._internal_set_normalized_value(normalized.clamp(0.0,1.0));
+            param._internal_set_normalized_value(normalized.clamp(0.0, 1.0));
         }
         queue_editor_values_changed(&self.pending_editor_notifications);
     }
@@ -724,14 +758,15 @@ impl<P: Plugin + 'static> instance::NicePluginInstance for NiceAu2Processor<P> {
             inputs: aux_inputs,
             outputs: aux_outputs,
         };
-        let mut context =
-            Au2ProcessContext::<P>::new(
-                self.sample_rate as f32,
-                self.latency_samples.clone(),
-                &self.midi_events, self.process_offset, num_samples,
-                self.transport_info,
-                &mut self.midi_output,
-            );
+        let mut context = Au2ProcessContext::<P>::new(
+            self.sample_rate as f32,
+            self.latency_samples.clone(),
+            &self.midi_events,
+            self.process_offset,
+            num_samples,
+            self.transport_info,
+            &mut self.midi_output,
+        );
 
         match self
             .plugin
@@ -815,14 +850,16 @@ impl<P: Plugin + 'static> instance::NicePluginInstance for NiceAu2Processor<P> {
         context: crate::render::Au2ProcessEvents<'_>,
     ) -> error::PluginResult<()> {
         if context.midi_events.len() > self.midi_events.capacity() {
-            return Err(error::PluginError::ProcessingError("AU MIDI input capacity exceeded".into()));
+            return Err(error::PluginError::ProcessingError(
+                "AU MIDI input capacity exceeded".into(),
+            ));
         }
         self.midi_events.clear();
         self.midi_events.extend_from_slice(context.midi_events);
         self.transport_info = context.transport;
         self.midi_output.clear();
         let result = self.process_scheduled(inputs, outputs, num_samples, events);
-        if context.midi_output.capacity()-context.midi_output.len() >= self.midi_output.len() {
+        if context.midi_output.capacity() - context.midi_output.len() >= self.midi_output.len() {
             context.midi_output.extend_from_slice(&self.midi_output);
         }
         result
@@ -962,7 +999,6 @@ impl<P: Plugin + 'static> instance::NicePluginInstance for NiceAu2Processor<P> {
     fn frontend(&self) -> Arc<dyn instance::NicePluginFrontend> {
         self.frontend.clone()
     }
-
 }
 
 #[macro_export]
@@ -995,7 +1031,7 @@ macro_rules! nice_export_au2 {
         #[unsafe(no_mangle)]
         pub extern "C" fn nice_au2_metadata() -> $crate::Au2ExportedMetadata {
             let name = <$plugin_ty as $crate::Au2Plugin>::AU2_NAME.as_bytes();
-                $crate::Au2ExportedMetadata {
+            $crate::Au2ExportedMetadata {
                 name_ptr: name.as_ptr(),
                 name_len: name.len(),
                 component_type: <$plugin_ty as $crate::Au2Plugin>::AU2_CATEGORY.component_type(),
@@ -1016,7 +1052,7 @@ fn hash_param_id(id: &str) -> u32 {
     hash & !(1 << 31)
 }
 
-struct Au2ProcessContext<'a,P: Plugin> {
+struct Au2ProcessContext<'a, P: Plugin> {
     transport: Transport,
     latency_samples: Arc<AtomicU32>,
     events: &'a [crate::render::Au2MidiEvent],
@@ -1027,19 +1063,21 @@ struct Au2ProcessContext<'a,P: Plugin> {
     _marker: std::marker::PhantomData<P>,
 }
 
-impl<'a,P: Plugin> Au2ProcessContext<'a,P> {
+impl<'a, P: Plugin> Au2ProcessContext<'a, P> {
     fn new(
         sample_rate: f32,
         latency_samples: Arc<AtomicU32>,
         events: &'a [crate::render::Au2MidiEvent],
-    process_offset: usize,
-    process_length: usize,
+        process_offset: usize,
+        process_length: usize,
         info: crate::render::Au2TransportInfo,
         midi_output: &mut Vec<crate::render::Au2MidiEvent>,
     ) -> Self {
         let mut transport = Transport::new(sample_rate);
         transport.pos_samples = info.sample_position;
-        transport.pos_seconds = info.sample_position.map(|value| value as f64 / sample_rate as f64);
+        transport.pos_seconds = info
+            .sample_position
+            .map(|value| value as f64 / sample_rate as f64);
         transport.playing = info.playing.unwrap_or(false);
         transport.recording = info.recording.unwrap_or(false);
         transport.tempo = info.tempo;
@@ -1052,7 +1090,9 @@ impl<'a,P: Plugin> Au2ProcessContext<'a,P> {
         Self {
             transport,
             latency_samples,
-            events, process_offset, process_length,
+            events,
+            process_offset,
+            process_length,
             event_index: 0,
             midi_output,
             _marker: std::marker::PhantomData,
@@ -1060,7 +1100,7 @@ impl<'a,P: Plugin> Au2ProcessContext<'a,P> {
     }
 }
 
-impl<P: Plugin> ProcessContext<P> for Au2ProcessContext<'_,P> {
+impl<P: Plugin> ProcessContext<P> for Au2ProcessContext<'_, P> {
     fn plugin_api(&self) -> PluginApi {
         PluginApi::Standalone
     }
@@ -1077,22 +1117,47 @@ impl<P: Plugin> ProcessContext<P> for Au2ProcessContext<'_,P> {
         while let Some(event) = self.events.get(self.event_index) {
             self.event_index += 1;
             let at = event.sample_offset as usize;
-            if (self.process_offset..self.process_offset+self.process_length).contains(&at) {
-                if let Ok(note) = NoteEvent::from_midi((at-self.process_offset) as u32,
-                    &[event.status,event.data1,event.data2]) { return Some(note); }
+            if (self.process_offset..self.process_offset + self.process_length).contains(&at) {
+                if let Ok(note) = NoteEvent::from_midi(
+                    (at - self.process_offset) as u32,
+                    &[event.status, event.data1, event.data2],
+                ) {
+                    return Some(note);
+                }
             }
         }
         None
     }
 
-    fn try_send_event(&mut self, event: PluginNoteEvent<P>) -> Result<(), (PluginNoteEvent<P>, nice_plug_core::context::process::SendEventError)> {
+    fn try_send_event(
+        &mut self,
+        event: PluginNoteEvent<P>,
+    ) -> Result<
+        (),
+        (
+            PluginNoteEvent<P>,
+            nice_plug_core::context::process::SendEventError,
+        ),
+    > {
         use nice_plug_core::context::process::SendEventError;
         let Some(nice_plug_core::midi::MidiResult::Basic(bytes)) = event.as_midi() else {
-            return Err((event,SendEventError::InvalidEvent { midi_output_config:P::MIDI_OUTPUT }));
+            return Err((
+                event,
+                SendEventError::InvalidEvent {
+                    midi_output_config: P::MIDI_OUTPUT,
+                },
+            ));
         };
         let output = unsafe { &mut *self.midi_output };
-        if output.len() == output.capacity() { return Err((event,SendEventError::HostBufferFull)); }
-        output.push(crate::render::Au2MidiEvent {status:bytes[0],data1:bytes[1],data2:bytes[2],sample_offset:event.timing()});
+        if output.len() == output.capacity() {
+            return Err((event, SendEventError::HostBufferFull));
+        }
+        output.push(crate::render::Au2MidiEvent {
+            status: bytes[0],
+            data1: bytes[1],
+            data2: bytes[2],
+            sample_offset: event.timing(),
+        });
         Ok(())
     }
     fn request_restart(&self) {}

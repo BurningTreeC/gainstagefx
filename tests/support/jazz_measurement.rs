@@ -247,7 +247,6 @@ pub fn rms_error_in(cab: &'static CabinetProfile, profile: SpeakerProfile) -> f6
     (diff.iter().map(|d| (d - offset).powi(2)).sum::<f64>() / diff.len() as f64).sqrt()
 }
 
-
 /// Print a frequency-by-frequency and octave-band diagnostic comparing the
 /// fitted near-cone path with the complete two-cone JC-120 cabinet.
 ///
@@ -278,12 +277,11 @@ pub fn print_one_vs_two_cone_diagnostic(profile: SpeakerProfile) {
 
     println!("\nJC-120 one-cone vs two-cone diagnostic (independently level-aligned)");
     println!("one offset {one_offset:+.3} dB, two offset {two_offset:+.3} dB");
-    println!("{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
-        "Hz", "measured", "one", "two", "two-one", "one err", "two err");
-    for (i, ((f, measured), (one_db, two_db))) in band
-        .iter()
-        .zip(one.iter().zip(&two))
-        .enumerate()
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "Hz", "measured", "one", "two", "two-one", "one err", "two err"
+    );
+    for (i, ((f, measured), (one_db, two_db))) in band.iter().zip(one.iter().zip(&two)).enumerate()
     {
         // Print every measurement point. `i` is kept to make it easy to thin
         // this later without changing any calculations.
@@ -310,7 +308,10 @@ pub fn print_one_vs_two_cone_diagnostic(profile: SpeakerProfile) {
         (8_000.0, 12_000.0),
     ];
     println!("\nBand RMS shape error");
-    println!("{:>15} {:>10} {:>10} {:>10}", "band", "one", "two", "penalty");
+    println!(
+        "{:>15} {:>10} {:>10} {:>10}",
+        "band", "one", "two", "penalty"
+    );
     for (lo, hi) in BANDS {
         let mut one_sq = 0.0;
         let mut two_sq = 0.0;

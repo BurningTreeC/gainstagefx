@@ -99,7 +99,7 @@ pub trait NicePluginInstance: Send + 'static {
 }
 
 pub trait NicePluginFrontend: Send + Sync {
-    fn size(&self) -> Option<(u32,u32)>;
+    fn size(&self) -> Option<(u32, u32)>;
     fn spawn(&self, parent: *mut std::ffi::c_void) -> *mut std::ffi::c_void;
     fn destroy(&self, handle: *mut std::ffi::c_void);
     fn flush(&self);

@@ -154,7 +154,8 @@ impl EditorView {
         if let Some(previous) = register(instance, self) {
             let _: () = unsafe { msg_send![previous, niceAu2CloseEditorForDestroyedAudioUnit] };
         }
-        let handle = nice_au2_spawn_editor(instance.cast(), (self as *const Self).cast_mut().cast());
+        let handle =
+            nice_au2_spawn_editor(instance.cast(), (self as *const Self).cast_mut().cast());
         ivars.editor_handle.set(handle);
         self.layout_embedded_subviews();
         let _: () = unsafe { msg_send![self, niceAu2RefreshEditorView] };

@@ -25,11 +25,7 @@ unsafe extern "C" {
     ) -> *const c_void;
     fn CFDictionaryGetTypeID() -> usize;
     fn CFDictionaryGetValue(dictionary: *const c_void, key: *const c_void) -> *const c_void;
-    fn CFDataCreate(
-        allocator: *const c_void,
-        bytes: *const u8,
-        length: isize,
-    ) -> *const c_void;
+    fn CFDataCreate(allocator: *const c_void, bytes: *const u8, length: isize) -> *const c_void;
     fn CFDataGetTypeID() -> usize;
     fn CFDataGetBytePtr(data: *const c_void) -> *const u8;
     fn CFDataGetLength(data: *const c_void) -> isize;
@@ -173,25 +169,16 @@ pub unsafe extern "C" fn get(
             // canonical nice-plug state blob, auval requires the standard
             // component identity fields to be present and to match this AU.
             let mut state_size = 0u32;
-            let state_ptr =
-                bridge::nice_au2_save_state(component.rust_instance, &mut state_size);
+            let state_ptr = bridge::nice_au2_save_state(component.rust_instance, &mut state_size);
             if state_ptr.is_null() {
                 return kAudioUnitErr_InvalidPropertyValue;
             }
 
             let type_key = unsafe {
-                CFStringCreateWithCString(
-                    ptr::null(),
-                    c"type".as_ptr(),
-                    kCFStringEncodingUTF8,
-                )
+                CFStringCreateWithCString(ptr::null(), c"type".as_ptr(), kCFStringEncodingUTF8)
             };
             let subtype_key = unsafe {
-                CFStringCreateWithCString(
-                    ptr::null(),
-                    c"subtype".as_ptr(),
-                    kCFStringEncodingUTF8,
-                )
+                CFStringCreateWithCString(ptr::null(), c"subtype".as_ptr(), kCFStringEncodingUTF8)
             };
             let manufacturer_key = unsafe {
                 CFStringCreateWithCString(
@@ -201,18 +188,10 @@ pub unsafe extern "C" fn get(
                 )
             };
             let version_key = unsafe {
-                CFStringCreateWithCString(
-                    ptr::null(),
-                    c"version".as_ptr(),
-                    kCFStringEncodingUTF8,
-                )
+                CFStringCreateWithCString(ptr::null(), c"version".as_ptr(), kCFStringEncodingUTF8)
             };
             let name_key = unsafe {
-                CFStringCreateWithCString(
-                    ptr::null(),
-                    c"name".as_ptr(),
-                    kCFStringEncodingUTF8,
-                )
+                CFStringCreateWithCString(ptr::null(), c"name".as_ptr(), kCFStringEncodingUTF8)
             };
             let state_key = unsafe {
                 CFStringCreateWithCString(
@@ -290,13 +269,8 @@ pub unsafe extern "C" fn get(
                     kCFStringEncodingUTF8,
                 )
             };
-            let state_value = unsafe {
-                CFDataCreate(
-                    ptr::null(),
-                    state_ptr.cast_const(),
-                    state_size as isize,
-                )
-            };
+            let state_value =
+                unsafe { CFDataCreate(ptr::null(), state_ptr.cast_const(), state_size as isize) };
             bridge::nice_au2_free_state(state_ptr);
 
             if type_value.is_null()
@@ -619,9 +593,7 @@ pub unsafe extern "C" fn set(
 
             let data = unsafe { CFDictionaryGetValue(class_info, key.cast()) };
             unsafe { CFRelease(key.cast()) };
-            if data.is_null()
-                || unsafe { CFGetTypeID(data) } != unsafe { CFDataGetTypeID() }
-            {
+            if data.is_null() || unsafe { CFGetTypeID(data) } != unsafe { CFDataGetTypeID() } {
                 return kAudioUnitErr_InvalidPropertyValue;
             }
 
@@ -634,11 +606,8 @@ pub unsafe extern "C" fn set(
                 return kAudioUnitErr_InvalidPropertyValue;
             }
 
-            let status = bridge::nice_au2_load_state(
-                component.rust_instance,
-                state_ptr,
-                length as u32,
-            );
+            let status =
+                bridge::nice_au2_load_state(component.rust_instance, state_ptr, length as u32);
             if status != 0 {
                 return status;
             }
