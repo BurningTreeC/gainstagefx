@@ -531,6 +531,26 @@ impl Plugin for GainStageFx {
             .params
             .entry("pedal".into())
             .or_insert_with(|| ParamValue::String("none".into()));
+        // A pedal selected as the circuit had its single tone control on the
+        // Treble knob until 2026-09-30 (`Gain::own_single_tone`). A session
+        // from before then gets that value back on the knob it has now; every
+        // other circuit's is the middle, where it rests.
+        if !state.params.contains_key("circuit_tone") {
+            let circuit = match state.params.get("circuit") {
+                Some(ParamValue::String(id)) => Circuit::ids()
+                    .and_then(|ids| ids.iter().position(|known| *known == id.as_str())),
+                Some(ParamValue::I32(index)) => usize::try_from(*index).ok(),
+                _ => None,
+            }
+            .and_then(|index| Circuit::ALL.get(index).copied());
+            let tone = match (circuit, state.params.get("treble")) {
+                (Some(c), Some(ParamValue::F32(treble))) if c.single_tone() => *treble,
+                _ => 0.5,
+            };
+            state
+                .params
+                .insert("circuit_tone".into(), ParamValue::F32(tone));
+        }
     }
 
     fn activate(
@@ -751,6 +771,11 @@ impl Plugin for GainStageFx {
             },
             hm2_colour_hi: if circuit == Circuit::Hm2 {
                 self.params.hm2_colour_hi.smoothed.next_step(samples) as f64
+            } else {
+                0.5
+            },
+            circuit_tone: if circuit.single_tone() {
+                self.params.circuit_tone.smoothed.next_step(samples) as f64
             } else {
                 0.5
             },

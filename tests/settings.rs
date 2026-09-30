@@ -48,6 +48,9 @@ fn every_control_reaches_the_circuit() {
         tone_sweep: 0.5,
         hm2_colour_lo: 0.5,
         hm2_colour_hi: 0.5,
+        // A Distortion has no pedal tone of its own, so this reaches nothing
+        // here; `a_pedal_circuits_tone_is_its_own_control` is where it does.
+        circuit_tone: 0.5,
         power_amp: Default::default(),
         acoustic: Default::default(),
         pedal: Default::default(),
@@ -271,6 +274,85 @@ fn heavy_metal_colour_mix_is_separate_from_the_generic_stack() {
         "the dedicated Heavy Metal Colour controls do not reach the circuit: {:.6}%",
         colour_difference * 100.0
     );
+}
+
+/// A pedal's single tone control, with the pedal selected as the circuit, is
+/// its own control (`Settings::circuit_tone`) since 2026-09-30: the stack's
+/// Treble, which it used to ride on, no longer reaches it, and up is brighter
+/// on every one of them -- the Rodent's FILTER included, whose pot runs the
+/// other way, exactly as the pedal slot's knob does.
+#[test]
+fn a_pedal_circuits_tone_is_its_own_control() {
+    use gainstagefx::dsp::measure::{self, Tone as Probe};
+    for gain in [
+        Gain::Screamer,
+        Gain::Green9,
+        Gain::Muff,
+        Gain::Rat,
+        Gain::Ds1,
+    ] {
+        let base = Settings {
+            gain,
+            tone: Tone::Off,
+            cabinet: Cabinet::Off,
+            drive: 0.5,
+            oversampling: 1,
+            ..Settings::default()
+        };
+        let reference = render(&base);
+        let treble = difference(
+            &render(&Settings {
+                treble: 0.05,
+                ..base
+            }),
+            &reference,
+        );
+        assert!(
+            treble < 1e-10,
+            "{}: with the stack out, Treble still reaches the pedal's tone ({:.6} %)",
+            gain.name(),
+            treble * 100.0
+        );
+        let own = difference(
+            &render(&Settings {
+                circuit_tone: 0.05,
+                ..base
+            }),
+            &reference,
+        );
+        assert!(
+            own > 0.01,
+            "{}: the pedal's own tone knob does not reach it ({:.4} %)",
+            gain.name(),
+            own * 100.0
+        );
+        // Small signal, 3 kHz over 300 Hz, at each end of the knob.
+        let tilt = |tone: f64| {
+            let level = |hz: f64| {
+                let mut chain = Chain::new(RATE);
+                chain.apply(&Settings {
+                    circuit_tone: tone,
+                    ..base
+                });
+                chain.settle();
+                let amplitude = 10f64.powf((NOMINAL_DBFS - 30.0) / 20.0);
+                let probe = Probe::near(RATE, 8_192, hz, amplitude);
+                let m = measure::run(probe, (RATE / 4.0) as usize, |x| chain.process(x));
+                20.0 * m.fundamental().magnitude().max(1e-15).log10()
+            };
+            level(3_000.0) - level(300.0)
+        };
+        let (down, up) = (tilt(0.0), tilt(1.0));
+        println!(
+            "{}: 3 kHz over 300 Hz {down:+.1} dB down, {up:+.1} dB up",
+            gain.name()
+        );
+        assert!(
+            up > down + 3.0,
+            "{}: turned up, the tone should brighten: {down:+.1} -> {up:+.1} dB",
+            gain.name()
+        );
+    }
 }
 
 use gainstagefx::voice::Amplifier;

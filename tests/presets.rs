@@ -72,6 +72,7 @@ fn every_preset_is_within_range() {
             ("tone sweep", preset.tone_sweep),
             ("HM-2 colour low", preset.hm2_colour_lo),
             ("HM-2 colour high", preset.hm2_colour_hi),
+            ("circuit tone", preset.circuit_tone),
             ("mix", preset.mix),
         ] {
             assert!(
@@ -100,6 +101,13 @@ fn circuit_specific_tone_controls_are_neutral_in_other_shipped_presets() {
             assert_eq!(
                 preset.tone_sweep, 0.5,
                 "'{}' is not a Metal Zone but carries its Mid Frequency value",
+                preset.name
+            );
+        }
+        if !preset.circuit.single_tone() {
+            assert_eq!(
+                preset.circuit_tone, 0.5,
+                "'{}' has no single pedal tone control but carries one",
                 preset.name
             );
         }
@@ -609,6 +617,39 @@ fn migration_isolates_metal_zone_and_heavy_metal_tone_state() {
     assert_eq!(old_hm2.values["hm2_colour_lo"], 0.2);
     assert_eq!(old_hm2.values["hm2_colour_hi"], 0.8);
     assert_eq!(old_hm2.values["tone_sweep"], 0.5);
+    assert_eq!(old_hm2.values["circuit_tone"], 0.5);
+
+    // A pedal with one tone control, selected as the circuit, had it on Treble
+    // until 2026-09-30. Its own knob takes that position; Treble keeps it for
+    // the plugin's stack.
+    for circuit in [
+        Circuit::Screamer,
+        Circuit::Green9,
+        Circuit::Muff,
+        Circuit::Rat,
+        Circuit::Ds1,
+    ] {
+        // Saved by a player, so with the circuit's stable id beside its
+        // position, as every preset saved since those ids exist is.
+        let id = Circuit::ids().expect("circuits have stable ids")[circuit.to_index()];
+        let mut old = Stored {
+            model_ids: [("circuit".to_string(), id.to_string())]
+                .into_iter()
+                .collect(),
+            name: "Old pedal circuit".into(),
+            values: [
+                ("circuit".into(), normalised(circuit)),
+                ("treble".into(), 0.3),
+            ]
+            .into_iter()
+            .collect(),
+            built_in: false,
+            group: "",
+        };
+        presets::migrate(&mut old, &params);
+        assert_eq!(old.values["circuit_tone"], 0.3, "{}", circuit.name());
+        assert_eq!(old.values["treble"], 0.3, "{}", circuit.name());
+    }
 
     // A non-Boss circuit may not retain hidden values from either model.
     let mut twin = Stored {
@@ -619,6 +660,7 @@ fn migration_isolates_metal_zone_and_heavy_metal_tone_state() {
             ("tone_sweep".into(), 0.93),
             ("hm2_colour_lo".into(), 0.11),
             ("hm2_colour_hi".into(), 0.89),
+            ("circuit_tone".into(), 0.77),
         ]
         .into_iter()
         .collect(),
@@ -629,6 +671,7 @@ fn migration_isolates_metal_zone_and_heavy_metal_tone_state() {
     assert_eq!(twin.values["tone_sweep"], 0.5);
     assert_eq!(twin.values["hm2_colour_lo"], 0.5);
     assert_eq!(twin.values["hm2_colour_hi"], 0.5);
+    assert_eq!(twin.values["circuit_tone"], 0.5);
 }
 
 /// A plugin that has just been added has not loaded a preset, and the strip

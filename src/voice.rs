@@ -316,7 +316,24 @@ impl Gain {
             Gain::Tube610 => "LEVEL",
             Gain::Plexi | Gain::AC30 | Gain::DR103 => "VOLUME",
             Gain::Recto | Gain::Brit2205 => "GAIN",
+            // The pedals, as their boxes print them.
+            Gain::Screamer => "OVERDRIVE",
+            Gain::Rat | Gain::DistPlus | Gain::Hm2 => "DISTORTION",
+            Gain::FuzzFace => "FUZZ",
+            Gain::Mt2 | Gain::Ds1 => "DIST",
             _ => "DRIVE",
+        }
+    }
+
+    /// What the panel calls the level knob (`level_control`) on this circuit:
+    /// MASTER on the amplifiers, and on a pedal the name its box prints --
+    /// which is what the pedal slot's level knob stands for.
+    pub fn level_name(self) -> &'static str {
+        match self {
+            Gain::Screamer | Gain::Green9 | Gain::Hm2 | Gain::Mt2 | Gain::Ds1 => "LEVEL",
+            Gain::Muff | Gain::Rat | Gain::FuzzFace => "VOLUME",
+            Gain::DistPlus => "OUTPUT",
+            _ => "MASTER",
         }
     }
 
@@ -401,16 +418,8 @@ impl Gain {
             Gain::Brit2205 => Some((brit2205::BASS, brit2205::MIDDLE, brit2205::TREBLE)),
             // The original 5150's own stack, off its preamp sheet (2026-09-25).
             Gain::Peavey => Some((evh5150::BASS, evh5150::MIDDLE, evh5150::TREBLE)),
-            // The TS808 and the Muff have a single tone control, which the
-            // Treble knob takes.
-            Gain::Screamer => Some((usize::MAX, usize::MAX, ts808::TONE)),
-            Gain::Muff => Some((usize::MAX, usize::MAX, bigmuff::TONE)),
-            Gain::Green9 => Some((usize::MAX, usize::MAX, ts808::TONE)),
-            // The Rodent's is a **filter**: it runs the other way, and
-            // `tone_runs_backwards` is how the knob is made to agree with it.
-            Gain::Rat => Some((usize::MAX, usize::MAX, rodent::FILTER)),
-            // A Big-Muff-style blend with a scoop in the middle, like the Muff's.
-            Gain::Ds1 => Some((usize::MAX, usize::MAX, orange_dist::TONE)),
+            // The pedals with a single tone control have a knob of their own
+            // (`own_single_tone`), not the stack's Treble.
             // The Heavy Metal's Colour Mix has dedicated plugin parameters.
             // Do not multiplex them onto Bass/Treble: those three remain the
             // optional plugin tone stack and the HM-2 pair is independent.
@@ -469,11 +478,29 @@ impl Gain {
         }
     }
 
-    /// Whether this circuit's own tone control runs the other way from the
-    /// knob. Only the Rodent's, whose FILTER darkens as it turns up -- the same
-    /// inversion the pedal slot carries for it.
-    pub fn tone_runs_backwards(self) -> bool {
-        matches!(self, Gain::Rat)
+    /// A pedal's single tone control, selected as the circuit: which control,
+    /// what its box calls it, and whether the knob runs the other way from the
+    /// pot.
+    ///
+    /// It has a knob and a parameter of its own (`Settings::circuit_tone`),
+    /// drawn beside the stack's three, the way the pedal slot gives it one.
+    /// Until 2026-09-30 it rode on the stack's Treble knob, which the panel
+    /// called TREBLE whenever the plugin's stack was in circuit -- the default
+    /// -- because the knob turned both. So a TS808 picked as the circuit showed
+    /// no Tone knob anywhere, which is how it was reported.
+    ///
+    /// The Rodent's is a **filter**, whose pot darkens as it turns up; the
+    /// knob runs the other way, as the pedal slot's does, so up is brighter on
+    /// every one of these.
+    pub fn own_single_tone(self) -> Option<(usize, &'static str, bool)> {
+        match self {
+            Gain::Screamer | Gain::Green9 => Some((ts808::TONE, "TONE", false)),
+            Gain::Muff => Some((bigmuff::TONE, "TONE", false)),
+            Gain::Rat => Some((rodent::FILTER, "FILTER", true)),
+            // A Big-Muff-style blend with a scoop in the middle, like the Muff's.
+            Gain::Ds1 => Some((orange_dist::TONE, "TONE", false)),
+            _ => None,
+        }
     }
 
     pub fn own_tone_knobs(self) -> [bool; 3] {
@@ -488,10 +515,9 @@ impl Gain {
     /// A TS808 and a Big Muff each have one, and it is not a treble control:
     /// the Screamer's is a shelf either side of a fixed corner and the Muff's
     /// is a blend between a low-pass and a high-pass with a scoop in the
-    /// middle. Both land on the third knob, and the panel says TONE there
-    /// rather than TREBLE so the knob is named after what it turns.
+    /// middle. See `own_single_tone`.
     pub fn single_tone(self) -> bool {
-        self.own_tone_knobs() == [false, false, true]
+        self.own_single_tone().is_some()
     }
 
     /// The *valve* power amplifier behind this circuit, where it has one.
@@ -1328,6 +1354,38 @@ const fn one_tone(
 const NO_TONES: [Option<ToneKnob>; PEDAL_TONES] = [None, None, None, None];
 
 impl Pedal {
+    /// What the slot calls this pedal's drive and level knobs: the names its
+    /// box prints, as the same pedal selected as the circuit has them
+    /// (`Gain::drive_name`, `Gain::level_name`), in the slot's lower case.
+    pub fn drive_and_level_labels(self) -> (&'static str, &'static str) {
+        match self {
+            Pedal::None | Pedal::Green9 => ("drive", "level"),
+            Pedal::Green808 => ("overdrive", "level"),
+            Pedal::BigMuff => ("sustain", "volume"),
+            Pedal::Rodent => ("distortion", "volume"),
+            Pedal::RoundFuzz => ("fuzz", "volume"),
+            Pedal::YellowDist => ("distortion", "output"),
+            Pedal::HeavyMetal => ("distortion", "level"),
+            Pedal::MetalZone | Pedal::OrangeDist => ("dist", "level"),
+        }
+    }
+
+    /// The same pedal as a circuit of its own.
+    pub fn as_circuit(self) -> Option<Gain> {
+        match self {
+            Pedal::None => None,
+            Pedal::Green808 => Some(Gain::Screamer),
+            Pedal::BigMuff => Some(Gain::Muff),
+            Pedal::Green9 => Some(Gain::Green9),
+            Pedal::Rodent => Some(Gain::Rat),
+            Pedal::RoundFuzz => Some(Gain::FuzzFace),
+            Pedal::YellowDist => Some(Gain::DistPlus),
+            Pedal::HeavyMetal => Some(Gain::Hm2),
+            Pedal::MetalZone => Some(Gain::Mt2),
+            Pedal::OrangeDist => Some(Gain::Ds1),
+        }
+    }
+
     pub const ALL: [Pedal; 10] = [
         Pedal::None,
         Pedal::Green808,
@@ -2440,6 +2498,9 @@ pub struct Settings {
     /// Heavy Metal Colour Mix low/high. Ignored by every other circuit.
     pub hm2_colour_lo: f64,
     pub hm2_colour_hi: f64,
+    /// A pedal circuit's single tone control (`Gain::own_single_tone`); the
+    /// middle for every other circuit.
+    pub circuit_tone: f64,
     /// The Jazz 120's bucket-brigade chorus. Zero is the panel's OFF position
     /// and one is CHORUS -- both speakers dry, or one dry and one delayed.
     /// Ignored by every other circuit. See `Gain::has_chorus`.
@@ -2475,6 +2536,7 @@ impl Default for Settings {
             tone_sweep: 0.5,
             hm2_colour_lo: 0.5,
             hm2_colour_hi: 0.5,
+            circuit_tone: 0.5,
             chorus: 0.0,
         }
     }
@@ -4794,31 +4856,27 @@ impl Chain {
 
     /// The three tone knobs, sent to whichever stack is actually in the path:
     /// the circuit's own where it has one, the plugin's otherwise.
-    fn set_tone_knobs(
-        &mut self,
-        bass: f64,
-        mid: f64,
-        treble: f64,
-        sweep: f64,
-        hm2_colour_lo: f64,
-        hm2_colour_hi: f64,
-    ) {
+    fn set_tone_knobs(&mut self, s: &Settings) {
+        let (bass, mid, treble) = (s.bass, s.mid, s.treble);
         let voice = voice_at(self.gain).0;
         if let Some((b, m, t)) = voice.own_tone() {
-            let backwards = voice.tone_runs_backwards();
             let sim = &mut self.gains[self.gain];
             for (which, value) in [(b, bass), (m, mid), (t, treble)] {
                 if which != usize::MAX {
-                    sim.set_control(which, if backwards { 1.0 - value } else { value });
+                    sim.set_control(which, value);
                 }
             }
         }
+        if let Some((which, _, backwards)) = voice.own_single_tone() {
+            let value = s.circuit_tone.clamp(0.0, 1.0);
+            self.gains[self.gain].set_control(which, if backwards { 1.0 - value } else { value });
+        }
         if let Some((which, _)) = voice.own_sweep() {
-            self.gains[self.gain].set_control(which, sweep.clamp(0.0, 1.0));
+            self.gains[self.gain].set_control(which, s.tone_sweep.clamp(0.0, 1.0));
         }
         if let Some(((low, _), (high, _))) = voice.own_colour_mix() {
-            self.gains[self.gain].set_control(low, hm2_colour_lo.clamp(0.0, 1.0));
-            self.gains[self.gain].set_control(high, hm2_colour_hi.clamp(0.0, 1.0));
+            self.gains[self.gain].set_control(low, s.hm2_colour_lo.clamp(0.0, 1.0));
+            self.gains[self.gain].set_control(high, s.hm2_colour_hi.clamp(0.0, 1.0));
         }
         self.set_tone(crate::circuits::tone::BASS, bass);
         self.set_tone(crate::circuits::tone::MID, mid);
@@ -5145,14 +5203,7 @@ impl Chain {
         self.set_cabinet(s.cabinet);
         self.set_oversampling(s.oversampling);
         self.set_drive(s.drive);
-        self.set_tone_knobs(
-            s.bass,
-            s.mid,
-            s.treble,
-            s.tone_sweep,
-            s.hm2_colour_lo,
-            s.hm2_colour_hi,
-        );
+        self.set_tone_knobs(s);
         self.set_reverb_and_tremolo(s);
         self.set_chorus(if self.has_chorus { s.chorus } else { 0.0 });
     }

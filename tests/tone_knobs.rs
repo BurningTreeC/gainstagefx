@@ -13,9 +13,10 @@ use gainstagefx::editor::ToneKnobs;
 use gainstagefx::params::{Circuit, ToneStack};
 use gainstagefx::presets::PRESETS;
 
-/// The circuits whose drawings carry tone controls, and what each one has:
-/// the Mark IIC+ and the Twin a three-knob stack, most of the pedals a single
-/// knob, and the two Boss pedals more than one.
+/// The circuits whose drawings carry tone controls on the three stack knobs,
+/// and which of them: the amplifiers' own stacks and the Metal Zone's three
+/// bands. A pedal's single tone control has a knob of its own instead (see
+/// below), and the Heavy Metal's Colour Mix a pair.
 ///
 /// This table is the panel's claim and `Gain::own_tone` is the circuit's, and
 /// the first test below is what keeps them the same sentence. It caught the
@@ -23,7 +24,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 18] = [
+const OWN: [(Circuit, [bool; 3]); 13] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     // The boost channel's own three; the muted Normal channel's two are not
@@ -44,14 +45,6 @@ const OWN: [(Circuit, [bool; 3]); 18] = [
     // All three, and with more authority than any Fender stack here: the
     // Jazz 120's slope resistor feeds two caps into two entry points.
     (Circuit::Jazz120, [true, true, true]),
-    (Circuit::Screamer, [false, false, true]),
-    (Circuit::Muff, [false, false, true]),
-    (Circuit::Green9, [false, false, true]),
-    // The Rodent's is a filter and it runs backwards; the knob is made to
-    // agree with it by `Gain::tone_runs_backwards`.
-    (Circuit::Rat, [false, false, true]),
-    // The DS-1's Tone: a blend with a scoop, like the Muff's.
-    (Circuit::Ds1, [false, false, true]),
     // The Heavy Metal's Colour Mix now has two dedicated controls of its own,
     // not the generic Bass/Treble knobs. The Metal Zone still has a three-band
     // equaliser plus its own sweep control.
@@ -150,43 +143,50 @@ fn the_plugin_stack_lights_all_three_whatever_is_selected() {
     }
 }
 
-/// A pedal's single control is not a treble control, and the panel says so --
-/// but only while it is the only thing that knob reaches.
+/// A pedal's single tone control, with the pedal selected as the circuit, is
+/// a knob of its own named as its box names it -- TONE, and FILTER on the
+/// Rodent -- whatever the plugin's stack is doing, and the stack's third knob
+/// is its Treble and nothing else.
+///
+/// Until 2026-09-30 the pedal's tone rode on that Treble knob, which the
+/// panel called TREBLE whenever the stack was in circuit, the default. So a
+/// TS808 picked as the circuit showed no Tone knob anywhere: reported, and
+/// this is the test for it.
 #[test]
-fn the_pedals_single_control_is_called_tone() {
-    for circuit in [Circuit::Screamer, Circuit::Muff, Circuit::Ds1] {
-        assert!(
-            circuit.single_tone(),
-            "{} has one tone control",
-            circuit.name()
-        );
-        assert_eq!(
-            ToneKnobs::for_state(circuit, ToneStack::Off).names[2],
-            "TONE",
-            "{} with the stack out turns its own tone control",
-            circuit.name()
-        );
-        assert_eq!(
-            ToneKnobs::for_state(circuit, ToneStack::Wide).names[2],
-            "TREBLE",
-            "{} with the stack in turns the stack's treble as well",
-            circuit.name()
-        );
-    }
+fn a_pedal_circuits_tone_has_its_own_knob() {
+    let expected = [
+        (Circuit::Screamer, "TONE"),
+        (Circuit::Green9, "TONE"),
+        (Circuit::Muff, "TONE"),
+        (Circuit::Rat, "FILTER"),
+        (Circuit::Ds1, "TONE"),
+    ];
     for circuit in Circuit::ALL {
-        // The pedals with one tone control, which is the case this names.
-        if matches!(
-            circuit,
-            Circuit::Screamer | Circuit::Muff | Circuit::Green9 | Circuit::Rat | Circuit::Ds1
-        ) {
-            continue;
+        let name = expected
+            .iter()
+            .find(|(c, _)| *c == circuit)
+            .map(|(_, name)| *name);
+        assert_eq!(circuit.single_tone(), name.is_some(), "{}", circuit.name());
+        for stack in [ToneStack::Off, ToneStack::Wide, ToneStack::Scooping] {
+            let knobs = ToneKnobs::for_state(circuit, stack);
+            assert_eq!(knobs.single, name, "{} {}", circuit.name(), stack.name());
+            assert_eq!(knobs.names, ["BASS", "MID", "TREBLE"], "{}", circuit.name());
+            // No circuit has its own knob in the fourth column twice over.
+            assert!(
+                knobs.single.is_none() || (knobs.sweep.is_none() && knobs.colour_mix.is_none()),
+                "{}",
+                circuit.name()
+            );
         }
-        assert_eq!(
-            ToneKnobs::for_state(circuit, ToneStack::Off).names[2],
-            "TREBLE",
-            "{} has no single tone control to name a knob after",
-            circuit.name()
-        );
+        // With the stack out, its three knobs reach nothing on these pedals.
+        if name.is_some() {
+            assert_eq!(
+                ToneKnobs::for_state(circuit, ToneStack::Off).live,
+                [false; 3],
+                "{}",
+                circuit.name()
+            );
+        }
     }
 }
 
@@ -206,6 +206,29 @@ fn no_shipped_preset_greys_a_knob_that_works() {
                 preset.name,
                 if knobs.live[i] { "live" } else { "grey" },
                 if reaches { "reaches" } else { "reaches no" },
+            );
+        }
+    }
+}
+
+/// A pedal's knobs are called the same in the slot and as the circuit: the
+/// names its box prints, lower case in the slot. One pedal, one set of names.
+#[test]
+fn a_pedal_is_named_the_same_in_the_slot_and_as_the_circuit() {
+    use gainstagefx::voice::Pedal;
+    for pedal in Pedal::ALL {
+        let Some(gain) = pedal.as_circuit() else {
+            continue;
+        };
+        let (drive, level) = pedal.drive_and_level_labels();
+        assert_eq!(drive, gain.drive_name().to_lowercase(), "{pedal:?}");
+        assert_eq!(level, gain.level_name().to_lowercase(), "{pedal:?}");
+        if let Some((_, name, _)) = gain.own_single_tone() {
+            let lower = name.to_lowercase();
+            assert_eq!(
+                pedal.tone_labels(),
+                [Some(lower.as_str()), None, None, None],
+                "{pedal:?}"
             );
         }
     }

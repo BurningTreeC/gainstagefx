@@ -38,6 +38,9 @@ pub struct Preset {
     /// other circuit.
     pub hm2_colour_lo: f32,
     pub hm2_colour_hi: f32,
+    /// A pedal circuit's single tone control (`Gain::own_single_tone`); noon
+    /// for every other circuit.
+    pub circuit_tone: f32,
     pub power_amp: PowerAmp,
     /// Speaker, cabinet and microphones. `CabModel::Legacy` keeps the old baked
     /// `cabinet` filter; see `Chain::set_acoustic`.
@@ -132,6 +135,7 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         tone_sweep: 0.5,
         hm2_colour_lo: 0.5,
         hm2_colour_hi: 0.5,
+        circuit_tone: 0.5,
         power_amp: PowerAmp::Matched,
         cab_model: CabModel::Legacy,
         speaker: SpeakerModel::Matched,
@@ -597,12 +601,12 @@ pub const PRESETS: &[Preset] = &[
     },
     // The modelled four stage fuzz. Its tone control is a scoop rather than a
     // treble cut -- turning it *down* is what makes the notch -- so the stack
-    // is off and the Treble knob is the pedal's own.
+    // is off and the pedal's own Tone knob does the work.
     Preset {
         drive: 0.90,
         circuit: Circuit::Muff,
         tone: ToneStack::Off,
-        treble: 0.35,
+        circuit_tone: 0.35,
         cab_model: CabModel::BritGreen,
         mic_a_position: 0.35,
         mic_b: MicModel::Ribbon121,
@@ -1699,6 +1703,11 @@ impl Preset {
             } else {
                 0.5
             },
+            circuit_tone: if self.circuit.single_tone() {
+                self.circuit_tone as f64
+            } else {
+                0.5
+            },
             twin_low_input: self.twin_low_input,
             twin_bright: self.twin_bright,
             reverb: self.reverb as f64,
@@ -1717,7 +1726,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 56] {
+    pub fn dials(&self) -> [(&'static str, f32); 57] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1737,6 +1746,7 @@ impl Preset {
             ("tone_sweep", self.tone_sweep),
             ("hm2_colour_lo", self.hm2_colour_lo),
             ("hm2_colour_hi", self.hm2_colour_hi),
+            ("circuit_tone", self.circuit_tone),
             ("circuit", self.circuit.to_index() as f32),
             ("power_amp", self.power_amp.to_index() as f32),
             ("mains", self.mains.to_index() as f32),
@@ -2035,6 +2045,9 @@ fn isolate_circuit_controls(values: &mut BTreeMap<String, f32>, circuit: Circuit
         values.insert("hm2_colour_lo".into(), 0.5);
         values.insert("hm2_colour_hi".into(), 0.5);
     }
+    if !circuit.single_tone() {
+        values.insert("circuit_tone".into(), 0.5);
+    }
 }
 
 /// Upgrade routing defaults and resolve saved stable IDs on the UI/state thread.
@@ -2107,6 +2120,15 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
         preset.values.entry("hm2_colour_lo".into()).or_insert(0.5);
         preset.values.entry("hm2_colour_hi".into()).or_insert(0.5);
     }
+    // The same for the pedals with one tone control: until 2026-09-30 it rode
+    // on Treble, so an old preset's Treble is that pedal's tone. Treble stays
+    // as well, for the plugin's stack if the preset had it in.
+    let tone = if circuit.single_tone() {
+        preset.values.get("treble").copied().unwrap_or(0.5)
+    } else {
+        0.5
+    };
+    preset.values.entry("circuit_tone".into()).or_insert(tone);
     isolate_circuit_controls(&mut preset.values, circuit);
     preset.model_ids = model_ids(&preset.values, params);
 }

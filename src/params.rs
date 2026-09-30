@@ -350,14 +350,15 @@ impl Circuit {
     }
 
     /// Whether this circuit's only tone control is the single knob a pedal
-    /// has, which the panel calls TONE rather than TREBLE.
+    /// has, which gets a knob of its own. See `Gain::own_single_tone`.
     pub fn single_tone(self) -> bool {
         self.voice().single_tone()
     }
 
     /// Whether the Reverb, Speed and Intensity knobs reach anything here.
     ///
-    /// Only the Twin has a tank and a tremolo. The panel greys them
+    /// Only the blackface amplifiers' vibrato channels -- the Twin's and the
+    /// Deluxe's -- have a tank and a tremolo. The panel greys them
     /// everywhere else, for the same reason it greys the diode control on a
     /// valve stage: a knob that turns and reaches nothing is
     /// indistinguishable from a fault.
@@ -1128,6 +1129,13 @@ pub struct GainStageParams {
     pub hm2_colour_lo: FloatParam,
     #[id = "hm2_colour_hi"]
     pub hm2_colour_hi: FloatParam,
+    /// A pedal circuit's single tone control: the TS808's, TS9's, Big Muff's
+    /// and DS-1's TONE and the Rodent's FILTER, when the pedal is selected as
+    /// the circuit rather than in the slot. Circuit-scoped like the two above,
+    /// and appended (2026-09-30); until then that control rode on Treble. See
+    /// `voice::Gain::own_single_tone`.
+    #[id = "circuit_tone"]
+    pub circuit_tone: FloatParam,
     #[id = "circuit"]
     pub circuit: EnumParam<Circuit>,
     #[id = "power_amp"]
@@ -1457,6 +1465,7 @@ impl Default for GainStageParams {
             tone_sweep: position("Mid Freq", 0.5),
             hm2_colour_lo: position("HM-2 Colour Low", 0.5),
             hm2_colour_hi: position("HM-2 Colour High", 0.5),
+            circuit_tone: position("Circuit Tone", 0.5),
             circuit: EnumParam::new("Circuit", Circuit::Crunch),
             power_amp: EnumParam::new("Power Amp", PowerAmp::Matched),
             mains: EnumParam::new("Mains", Mains::Nominal),

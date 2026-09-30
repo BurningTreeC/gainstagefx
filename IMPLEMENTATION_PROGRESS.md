@@ -1,5 +1,28 @@
 # Implementation progress
 
+## 2026-09-30 — A pedal selected as the circuit keeps its knobs
+
+Reported: the TS808 has a Tone knob in the pedal slot, and none anywhere when it
+is selected as the circuit. It had one -- its tone rode on the stack's third
+knob -- but the panel called that knob TREBLE whenever the plugin's stack was in
+circuit, which is the default, because it turned both; and the Tone section
+opens closed.
+
+- A pedal with one tone control (TS808, TS9, Big Muff, DS-1, and the Rodent's
+  FILTER) has a knob of its own in the Tone section's fourth column, named as
+  its box names it, on a parameter of its own (`circuit_tone`, appended). The
+  stack's Treble no longer reaches it. `Gain::own_single_tone`.
+- Its drive and level knobs are named as its box names them -- OVERDRIVE,
+  DISTORTION, FUZZ, DIST; LEVEL, VOLUME, OUTPUT -- as the circuit
+  (`Gain::drive_name`, `Gain::level_name`) and in the pedal slot, from one
+  table a test ties together.
+- Migration: a saved preset or a host session from before, with one of these
+  as the circuit, gets its Treble back on the pedal's own knob (`migrate`,
+  `filter_state`); Treble keeps the value for the stack. The one shipped
+  preset on such a circuit, Sustain Fuzz, measures exactly as before.
+- The panel texts that said only the Twin has reverb and tremolo (the Deluxe
+  has them too) and that Presence belongs to the power stage are corrected.
+
 ## 2026-09-30 — README brought up to date
 
 Read against the code, line by line. nice-plug (not nih-plug) and the macOS

@@ -47,10 +47,10 @@ what is in it.
 
 | | | |
 |---|---|---|
-| **1 Input** | Trim, meter, noise reduction, pedal with drive/tone/level | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
+| **1 Input** | Trim, meter, noise reduction, pedal with its own knobs, named as its box names them | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
 | **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp, mains; the blackface amplifiers' input jack and bright switch | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
-| **3 Drive** | Drive, master, presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
-| **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity, chorus | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs: a pedal's single tone control is the third, the Metal Zone adds its swept middle and the Heavy Metal its Colour Mix pair. The second row is the blackface amplifiers' reverb and tremolo and the Jazz 120's chorus. |
+| **3 Drive** | Drive and master, named as the circuit names them (on a pedal, its drive and level), presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
+| **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity, chorus | A passive stack, so it only ever cuts. A modelled amplifier's own stack takes these knobs, and so do the Metal Zone's three bands; a pedal's single tone control (TONE, or the Rodent's FILTER) has a knob of its own beside them, as do the Metal Zone's swept middle and the Heavy Metal's Colour Mix pair. The second row is the blackface amplifiers' reverb and tremolo and the Jazz 120's chorus. |
 | **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, pan, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
 | **6 Output** | Mix, level | The dry path is delayed to match, so mixing is a mix and not a comb filter. |
 
@@ -129,7 +129,9 @@ sources, where they disagree and what was approximated.
 **Every pedal is also a circuit.** The nine in the pedal slot can each be
 selected on their own, with nothing behind them — which is how a pedal into a
 desk was always recorded, and how an HM-2 into an MT-2 becomes expressible: one
-in the slot, the other as the circuit. The list is grouped under **PEDALS**,
+in the slot, the other as the circuit. Selected as the circuit, a pedal keeps
+its knobs and their names: its drive and level on the Drive section's first
+two, its tone controls in the Tone section. The list is grouped under **PEDALS**,
 **AMPLIFIERS** and **MICROPHONE PREAMPS**, because it now holds three different
 kinds of thing.
 
@@ -191,8 +193,8 @@ whichever circuit is selected — so a Green 808 into the American Twin keeps bo
 sets of controls. The pedal is its own netlist, solved before the circuit it
 feeds, so a pedal can also sit in front of itself.
 
-A pedal's knobs are the ones that pedal has, named the way its box names them:
-most have drive, tone and level, the Heavy Metal has two tone controls (its
+A pedal's knobs are the ones that pedal has, named the way its box names them
+(overdrive, sustain, distortion, fuzz; level, volume, output): most have three, the Heavy Metal has two tone controls (its
 Colour Mix pair), the Metal Zone has four including a swept mid, and the panel
 grows a knob for each. The Heavy Metal is also
 the only **gated** distortion here -- two germanium diodes sit in series with

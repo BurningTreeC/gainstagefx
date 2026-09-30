@@ -49,6 +49,48 @@ fn legacy_host_state_resets_power_override_without_changing_old_ids() {
     ));
 }
 
+/// A session from before 2026-09-30 with a single-tone pedal as the circuit
+/// had that pedal's tone on Treble; it comes back on the pedal's own knob.
+/// Any other circuit's rests at the middle, and a newer session keeps its own.
+#[test]
+fn legacy_host_state_moves_a_pedal_circuits_tone_to_its_own_knob() {
+    let session = |circuit: &str, extra: Option<(&str, f32)>| {
+        let mut state = PluginState {
+            version: "0.39.0".into(),
+            params: BTreeMap::new(),
+            fields: BTreeMap::new(),
+        };
+        state
+            .params
+            .insert("circuit".into(), ParamValue::String(circuit.into()));
+        state.params.insert("treble".into(), ParamValue::F32(0.3));
+        if let Some((id, value)) = extra {
+            state.params.insert(id.into(), ParamValue::F32(value));
+        }
+        GainStageFx::filter_state(&mut state);
+        match state.params["circuit_tone"] {
+            ParamValue::F32(v) => v,
+            ref other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(session("ts808", None), 0.3);
+    assert_eq!(session("bigmuff", None), 0.3);
+    assert_eq!(session("pedal_rat_circuit", None), 0.3);
+    assert_eq!(session("markiic", None), 0.5);
+    assert_eq!(session("ts808", Some(("circuit_tone", 0.9))), 0.9);
+    // From before stable ids: the TS808 was entry 7 of the first list.
+    let mut state = PluginState {
+        version: "0.1.0".into(),
+        params: BTreeMap::new(),
+        fields: BTreeMap::new(),
+    };
+    state.params.insert("circuit".into(), ParamValue::I32(7));
+    state.params.insert("treble".into(), ParamValue::F32(0.3));
+    GainStageFx::filter_state(&mut state);
+    assert!(matches!(state.params["circuit_tone"], ParamValue::F32(v) if v == 0.3));
+    assert_eq!(Circuit::ALL[7], Circuit::Screamer);
+}
+
 #[test]
 fn legacy_saved_presets_resolve_matched_and_new_ones_use_stable_ids() {
     let params = GainStageParams::default();

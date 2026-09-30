@@ -315,6 +315,10 @@ fn every_control_is_either_reachable_or_given_a_resting_position() {
         if let Some(which) = gain.own_presence() {
             reachable.push(which);
         }
+        // A pedal's single tone control, on its own knob.
+        if let Some((which, _, _)) = gain.own_single_tone() {
+            reachable.push(which);
+        }
         if let Some(((lo, _), (hi, _))) = gain.own_colour_mix() {
             reachable.extend([lo, hi]);
         }

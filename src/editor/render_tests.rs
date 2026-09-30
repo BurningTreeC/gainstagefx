@@ -168,3 +168,86 @@ fn panel_renders_and_dialogs_follow_signals() {
     );
     Runtime::deinit_on_ui_thread();
 }
+
+/// A pedal selected as the circuit: its own knobs, named as its box names
+/// them -- OVERDRIVE and LEVEL in the Drive section, TONE of its own beside the
+/// stack's three -- drawn in full with every section open. The TS808's tone
+/// had no knob of its own until 2026-09-30.
+#[test]
+fn a_pedal_circuit_draws_its_own_knobs() {
+    Runtime::init_on_ui_thread();
+    let mut cx = Context::new();
+    cx.ignore_default_theme = true;
+    let mut backend = BackendContext::new(cx);
+    let size = (PANEL_W as u32, window_height(0b111111) as u32);
+    let desc = WindowDescription::new().with_inner_size(size.0, size.1);
+    backend.add_main_window(Entity::root(), &desc, 1.0);
+    backend.add_window(Root);
+    backend.0.windows.insert(
+        Entity::root(),
+        WindowState {
+            window_description: desc,
+            ..Default::default()
+        },
+    );
+    backend.context().add_built_in_styles();
+    ParamRegistry::new().build(backend.context());
+    let mut params = GainStageParams::default();
+    params.circuit =
+        nice_plug::prelude::EnumParam::new("Circuit", crate::params::Circuit::Screamer);
+    params.open_sections.store(0b111111, Ordering::Relaxed);
+    let params = Arc::new(params);
+    build_panel(
+        backend.context(),
+        params.clone(),
+        Arc::new(crate::meters::Meters::default()),
+        1.0,
+    );
+    assert_eq!(
+        ToneKnobs::of(&params).single,
+        Some("TONE"),
+        "the TS808's tone has a knob of its own"
+    );
+    assert_eq!(
+        crate::params::Circuit::Screamer.voice().level_name(),
+        "LEVEL"
+    );
+    let mut events = EventManager::new();
+    let mut surface = sk::surfaces::raster_n32_premul((size.0 as i32, size.1 as i32)).unwrap();
+    let mut dirty = sk::surfaces::raster_n32_premul((size.0 as i32, size.1 as i32)).unwrap();
+    for _ in 0..4 {
+        events.flush_events(backend.context(), |_| {});
+        backend.process_style_updates();
+        backend.process_animations();
+        backend.process_visual_updates();
+        backend.draw(Entity::root(), &mut surface, &mut dirty);
+    }
+    let image = surface.image_snapshot();
+    let info = image.image_info();
+    let mut pixels = vec![0u8; (info.width() * info.height() * 4) as usize];
+    image.read_pixels(
+        info,
+        &mut pixels,
+        (info.width() * 4) as usize,
+        (0, 0),
+        sk::image::CachingHint::Allow,
+    );
+    let undrawn = pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|p| p[3] != 255)
+        .count();
+    assert_eq!(undrawn, 0, "{undrawn} pixels never drawn");
+    if let Ok(directory) = std::env::var("GAINSTAGEFX_GUI_SNAPSHOTS") {
+        let data = image
+            .encode(None, sk::EncodedImageFormat::PNG, None)
+            .unwrap();
+        std::fs::write(
+            std::path::Path::new(&directory).join("pedal-circuit.png"),
+            data.as_bytes(),
+        )
+        .unwrap();
+    }
+    Runtime::deinit_on_ui_thread();
+}

@@ -634,6 +634,9 @@ fn input(cx: &mut Context) {
             let pedal = pedal.get();
             let live = pedal != PedalModel::None;
             let labels = pedal.voice().tone_labels();
+            // Drive and level named as the box names them, as the tone knobs
+            // are. See `Pedal::drive_and_level_labels`.
+            let (drive_label, level_label) = pedal.voice().drive_and_level_labels();
             let shown: Vec<(usize, &'static str)> = labels
                 .iter()
                 .enumerate()
@@ -649,7 +652,16 @@ fn input(cx: &mut Context) {
             } else {
                 370.0 / (count - 1) as f32
             };
-            placement_knob(cx, x0, y, 11.0, "drive", |p| &p.pedal_drive, live, percent);
+            placement_knob(
+                cx,
+                x0,
+                y,
+                11.0,
+                drive_label,
+                |p| &p.pedal_drive,
+                live,
+                percent,
+            );
             if shown.is_empty() {
                 // A fuzz with no tone control greys its Tone knob rather than
                 // leaving one that turns nothing.
@@ -679,7 +691,7 @@ fn input(cx: &mut Context) {
                 last,
                 y,
                 11.0,
-                "level",
+                level_label,
                 |p| &p.pedal_level,
                 live,
                 percent,
@@ -1104,17 +1116,21 @@ fn drive(cx: &mut Context) {
     // Greyed where the drawing has no such control -- and the Twin Reverb is
     // one of those. An AB763 has no master volume; its channel Volume is
     // already the Drive knob. See `Gain::level_control`.
+    // Named as the drive is: MASTER on an amplifier, and a pedal's own name
+    // for it -- LEVEL, VOLUME, OUTPUT -- when a pedal is the circuit. See
+    // `Gain::level_name`.
     {
-        let live = parameter_signal.map(|p| p.master_enabled());
+        let live =
+            parameter_signal.map(|p| (p.master_enabled(), p.circuit.value().voice().level_name()));
         Binding::new(cx, live, move |cx| {
-            let live = live.get();
+            let (live, name) = live.get();
             Knob::new(cx, parameter_signal, |p| &p.master, 21.0, live)
                 .position_type(PositionType::Absolute)
                 .left(Pixels(body_x() + 110.0 - 21.0))
                 .top(Pixels(top + 24.0 - 21.0));
             label(
                 cx,
-                "MASTER",
+                name,
                 body_x() + 110.0,
                 top + 24.0 + 21.0 + 10.0,
                 9.5,
@@ -1196,8 +1212,8 @@ fn drive(cx: &mut Context) {
     for (i, line) in [
         "All the way up on Drive is the sound the circuit is named for;",
         "down from there only cleans up, and the level is held across it.",
-        "Master and Presence start at half, which is where the voice was",
-        "calibrated; Presence belongs to the power stage, where it has one.",
+        "Master (a pedal's Level) and Presence start at half, where the voice",
+        "was calibrated; Presence is the power stage's where it has one.",
     ]
     .into_iter()
     .enumerate()
@@ -1300,6 +1316,9 @@ pub struct ToneKnobs {
     /// The Heavy Metal's dedicated Colour Mix pair. These are deliberately
     /// separate from the generic Bass/Treble stack controls.
     pub colour_mix: Option<[&'static str; 2]>,
+    /// A pedal circuit's single tone control, and what its box calls it: a
+    /// knob of its own in the fourth column. See `Gain::own_single_tone`.
+    pub single: Option<&'static str>,
     /// Whether the Chorus knob reaches anything. Only the Jazz 120 has a
     /// bucket brigade; see `Gain::has_chorus`.
     pub chorus: bool,
@@ -1316,25 +1335,20 @@ impl ToneKnobs {
     pub fn for_state(circuit: Circuit, stack: ToneStack) -> Self {
         let in_circuit = stack != ToneStack::Off;
         let own = circuit.own_tone_knobs();
-        // The third knob is the pedal's own control only when the plugin's
-        // stack is out of the way. With the stack in circuit the same knob
-        // turns the stack's treble as well, and calling it TONE while its two
-        // neighbours say BASS and MID would be naming it after the smaller
-        // half of what it does.
-        let sole = circuit.single_tone() && !in_circuit;
         Self {
             live: [
                 in_circuit || own[0],
                 in_circuit || own[1],
                 in_circuit || own[2],
             ],
-            names: ["BASS", "MID", if sole { "TONE" } else { "TREBLE" }],
+            names: ["BASS", "MID", "TREBLE"],
             extras: circuit.has_reverb_and_tremolo(),
             sweep: circuit.voice().own_sweep().map(|(_, name)| name),
             colour_mix: circuit
                 .voice()
                 .own_colour_mix()
                 .map(|((_, low), (_, high))| [low, high]),
+            single: circuit.voice().own_single_tone().map(|(_, name, _)| name),
             chorus: circuit.voice().has_chorus(),
         }
     }
@@ -1374,11 +1388,12 @@ fn tone(cx: &mut Context) {
     // Greying on the stack alone was wrong in both directions. Fourteen of the
     // shipped presets switch the stack out, and a knob that turns and changes
     // nothing is indistinguishable from a fault -- which is how it was
-    // reported, and why the greying went in. But a TS808 and a Big Muff each
-    // have a tone control of their own on the drawing, wired to this knob in
-    // `voice::set_tone_knobs`, and those presets switch the stack out too. So
-    // the pedals' tone knobs were greyed out while still working, which is the
-    // same fault the other way round.
+    // reported, and why the greying went in. But an amplifier's own stack is
+    // wired to these knobs in `voice::set_tone_knobs`, and its presets switch
+    // the plugin's stack out too, so greying on the stack alone greyed knobs
+    // that were working -- the same fault the other way round. (A pedal's
+    // single tone control rode on the third knob for the same reason until
+    // 2026-09-30; it has its own now, in the fourth column.)
     {
         let state = parameter_signal.map(ToneKnobs::of);
         Binding::new(cx, state, move |cx| {
@@ -1390,6 +1405,18 @@ fn tone(cx: &mut Context) {
             if let Some(name) = state.sweep {
                 let x = body_x() + 46.0 + 3.0 * 84.0;
                 Knob::new(cx, parameter_signal, |p| &p.tone_sweep, 18.0, true)
+                    .position_type(PositionType::Absolute)
+                    .left(Pixels(x - 18.0))
+                    .top(Pixels(top + 40.0));
+                label(cx, name, x, top + 86.0, 9.5, 80.0, 0x9aa6b0);
+            }
+            // A pedal's own tone control, selected as the circuit: its own knob
+            // and its own name, as it has in the pedal slot, rather than a ride
+            // on the stack's Treble. Same column as the Metal Zone's sweep; no
+            // circuit has both.
+            if let Some(name) = state.single {
+                let x = body_x() + 46.0 + 3.0 * 84.0;
+                Knob::new(cx, parameter_signal, |p| &p.circuit_tone, 18.0, true)
                     .position_type(PositionType::Absolute)
                     .left(Pixels(x - 18.0))
                     .top(Pixels(top + 40.0));
@@ -1424,7 +1451,7 @@ fn tone(cx: &mut Context) {
                 );
             }
             // Greyed unless the selected circuit has a tank and a tremolo, which
-            // only the Twin does. A knob that turns and reaches nothing is
+            // only the blackface amplifiers' vibrato channels do. A knob that turns and reaches nothing is
             // indistinguishable from a fault -- the same reason the three beside
             // them are greyed, and the same reason BUG-023 happened.
             let live = state.extras;
@@ -1481,9 +1508,9 @@ fn tone(cx: &mut Context) {
     let x = body_x() + 555.0;
     for (i, line) in [
         "A passive stack only ever cuts. The",
-        "scooping voicing has a resonant leg,",
-        "which dips the middle. A circuit with",
-        "tone controls of its own uses these.",
+        "scooping voicing dips the middle. An",
+        "amplifier's own stack uses these three;",
+        "a pedal's own controls sit beside them.",
     ]
     .into_iter()
     .enumerate()
@@ -1499,8 +1526,8 @@ fn tone(cx: &mut Context) {
         );
     }
     for (i, line) in [
-        "Below: the American Twin's spring tank",
-        "and its optical tremolo. Chorus is the",
+        "Below: the blackface amps' spring tank",
+        "and optical tremolo. Chorus is the",
         "Jazz 120's bucket brigade, which sends",
         "one of its two speakers the delay.",
     ]
