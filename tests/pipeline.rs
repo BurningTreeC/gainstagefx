@@ -134,11 +134,23 @@ fn every_voice_pipelined_is_the_serial_chain_to_the_bit() {
             assert!(uses.iter().all(|u| *u == PipelineUse::Reclaimed));
             // A lagging worker hands the cabinet over whenever it has claimed
             // the block; when it has not woken in time the caller reclaims.
-            let (shared, uses, _) = blocks(&settings, stereo, Some(&lagging));
+            // Whether the worker has woken by the time a block's first half is
+            // done is up to the scheduler: with the machine busy (a parallel
+            // test run) it can miss every block, and the caller reclaims them
+            // all. The output must match either way; the hand-over is only
+            // exercised when it happens, so try a few times for it.
+            let (shared, uses) = (0..5)
+                .map(|_| {
+                    let (run, uses, _) = blocks(&settings, stereo, Some(&lagging));
+                    (run, uses)
+                })
+                .find(|(_, uses)| uses.contains(&PipelineUse::Shared))
+                .unwrap_or_else(|| {
+                    panic!("{gain:?} at {oversampling}x: a lagging worker never took a block")
+                });
             assert!(
                 uses.iter()
-                    .all(|u| matches!(u, PipelineUse::Shared | PipelineUse::Reclaimed))
-                    && uses.contains(&PipelineUse::Shared),
+                    .all(|u| matches!(u, PipelineUse::Shared | PipelineUse::Reclaimed)),
                 "a lagging worker should hand the cabinet over: {uses:?}"
             );
             for (name, run) in [

@@ -1154,10 +1154,11 @@ impl ReducedNonlinear {
             )
             .is_some(),
             #[cfg(test)]
+            // On unless disabled, as in the plugin: tests run the shipping path.
             test_sparse_coupling_subtraction: std::env::var_os(
-                "GAINSTAGEFX_TEST_SPARSE_COUPLING_SUBTRACTION",
+                "GAINSTAGEFX_TEST_DISABLE_SPARSE_COUPLING_SUBTRACTION",
             )
-            .is_some(),
+            .is_none(),
             #[cfg(test)]
             test_disable_fixed_13_stamped_merit: std::env::var_os(
                 "GAINSTAGEFX_TEST_DISABLE_FIXED_13_STAMPED_MERIT",
@@ -1773,9 +1774,11 @@ impl ReducedNonlinear {
         {
             self.test_sparse_coupling_subtraction
         }
+        // On: accepted as Step 32b (exact), and measured faster in the plugin
+        // on 2026-09-30 -- until then only the test builds could turn it on.
         #[cfg(not(test))]
         {
-            false
+            true
         }
     }
 

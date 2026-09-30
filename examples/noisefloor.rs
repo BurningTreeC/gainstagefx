@@ -54,7 +54,9 @@ fn take() -> Vec<f64> {
         at += 8 + len + (len & 1);
     }
     data.expect("a data chunk")
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|b| ((b[0] as i32 | (b[1] as i32) << 8 | (b[2] as i32) << 16) << 8 >> 8) as f64)
         .map(|v| v / 8_388_608.0)
         .collect()
@@ -151,7 +153,10 @@ fn main() {
             chain
         };
         let run = |chain: &mut Chain, input: &[f64]| -> Vec<f64> {
-            input.iter().map(|&x| chain.process_stereo(x * scale).0).collect()
+            input
+                .iter()
+                .map(|&x| chain.process_stereo(x * scale).0)
+                .collect()
         };
         let mut chain = fresh();
         let reference = rms(&run(&mut chain, playing));
@@ -167,7 +172,9 @@ fn main() {
         let mut chain = fresh();
         let amplitude = rms(playing) * std::f64::consts::SQRT_2;
         let sine: Vec<f64> = (0..SETTLE_SECONDS * RATE as usize + FFT)
-            .map(|k| amplitude * (std::f64::consts::TAU * (k % PERIOD) as f64 / PERIOD as f64).sin())
+            .map(|k| {
+                amplitude * (std::f64::consts::TAU * (k % PERIOD) as f64 / PERIOD as f64).sin()
+            })
             .collect();
         let out = run(&mut chain, &sine);
         let settle = SETTLE_SECONDS * RATE as usize;

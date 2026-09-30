@@ -24,22 +24,41 @@ an inherited shell cannot change the answer.
 **The hash is asserted, not just printed.** `twin_realtime_recording_solver_trace`
 fails when the trajectory moves, and says so. The assertion arms itself only
 when the run *is* the accepted configuration -- 384,000 frames, no attack
-preset, the five accepted switches at their exact values and no other
-`GAINSTAGEFX_TEST_*` switch set -- and otherwise prints
+preset and no `GAINSTAGEFX_TEST_*` switch set -- and otherwise prints
 `twin_solver_output_hash,checked=false,reason=...`. Switches that change speed
 but not arithmetic are listed in `TRAJECTORY_NEUTRAL_SWITCHES` and leave it
 armed, so a wide/narrow A/B run doubles as a proof of bit-identity.
 
-Accepted trajectory: `newton_passes=1888508`, `search_trials=598209`,
-`backtracks=106884`, `fallbacks=13568`, `cont_successes=813`,
-`restart_attempts=8`, `pivot_replays=1824624`, `unsettled=0`, hash
-`ae73533fafbdafdb`. The run takes about 5 s.
+**The accepted configuration is the solver the plugin ships** (2026-09-30). Until
+then it was five switches turning on a Jacobian-assisted initialisation that only
+test builds contain, so the oracle guarded a solver nobody played -- and a slower
+one (rejected below). The test is `#[ignore]`d, so nothing ran it, and its hash had
+moved twice without being updated, both times by intended changes:
+3286bb6 (the saturated pentode's plate slope and the transistor's Early-effect
+derivative, and the true-latency path) and 47bdd0e (the source-scaled predictor
+for every circuit). Run it after any solver change: `tools/twin_trace.sh`.
 
-Timing on this machine, three consecutive baseline runs: CPU mean 763.5, 762.5,
-760.2 us; p99 1637.0, 1636.3, 1625.9 us. Spread is about 0.4 %, so a timing
-claim below roughly 1 % needs repeated runs.
+Accepted trajectory: `newton_passes=1854355`, `search_trials=478907`,
+`backtracks=72967`, `fallbacks=12374`, `cont_successes=601`,
+`restart_attempts=3`, `pivot_replays=1797328`, `unsettled=0`, hash
+`fb4f55063fe2e350`. The run takes about 3 s.
+
+Timing on this machine (2026-09-30, 6,000 callbacks): mean 393 us, p99 848 us,
+max 1,141 us, none over the deadline. Timing claims below roughly 1 % need
+repeated runs.
 
 ## Accepted
+
+### Step 32b switched on in the plugin
+
+Step 32b below (skip `x -= +0.0` in the Schur coupling subtraction) was accepted
+as exact, but `use_sparse_coupling_subtraction` returned `false` outside test
+builds, so the plugin never ran it. On since 2026-09-30, in test builds by default
+too (`GAINSTAGEFX_TEST_DISABLE_SPARSE_COUPLING_SUBTRACTION` turns it off).
+Output hashes identical on the four presets checked; per-sample callback mean,
+A-B-B-A pinned to one core: Puppet Master '86 -2.5 %, Recto Lead -1.6 %, Ultra
+Lead -1.1 %, Chime Edge -1.0 %, Hi-Headroom Pushed -0.9 %, Machine Rage '92
+-0.7 %, Jazz Chorus -0.6 %, Brown '84 level.
 
 ### The power stage's second half, speculated on the other core
 
@@ -347,6 +366,15 @@ Not an optimization; a correction to the instrument. See
 `docs/SOLVER_OPTIMIZATION.md`. Test-only, hash preserved.
 
 ## Rejected (do not reintroduce without new evidence)
+
+### Jacobian-assisted initialisation (`jacobian_init.rs`) -- rejected
+
+The previous sample's reduced Jacobian proposes the starting point, gated on the
+source's step ratio (3) and fused with the first Newton pass. It was the Twin
+oracle's accepted configuration but only ever compiled into test builds. Measured
+2026-09-30 on the Twin oracle against the shipping solver: mean 401 against 393 us,
+p99 901 against 848 us, max 1,443 against 1,141 us, and 3 callbacks over the
+deadline against none. It stays test-only; the oracle no longer turns it on.
 
 ### Speculation variants -- rejected
 

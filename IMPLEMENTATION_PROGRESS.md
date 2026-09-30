@@ -1,5 +1,28 @@
 # Implementation progress
 
+## 2026-09-30 — Every accepted speedup, in the plugin
+
+Went through every experiment `docs/SOLVER_EXPERIMENTS.md` accepts and every
+switch in `time.rs` and `partition.rs`, asking what a release build does:
+
+- **Live and on:** speculation, node-mapped stamps, the wide RHS accumulation,
+  the compiled kernels, the source-scaled predictor, half-step rescue, the wide
+  AVX kernels, line-search warm start, the accepted-trial device cache,
+  continuation deepening, the limiter's global search, quadratic backtracking,
+  reciprocal pivots, boundary-major recovery, the fixed 13x13 solves.
+- **Accepted but off:** Step 32b, the exact sparse coupling subtraction, returned
+  `false` outside test builds. On now; bit-identical, and 0.6-2.5 % faster per
+  sample on seven of eight presets (Puppet Master '86 -2.5 %).
+- **On only in the oracle:** the Twin regression oracle's "accepted
+  configuration" turned on a Jacobian-assisted initialisation that only test
+  builds contain, so it guarded a solver the plugin never runs -- and measured,
+  a slower one (p99 848 against 901 us). The oracle now guards the shipping
+  solver; the initialisation is recorded as rejected. Its hash had moved twice,
+  unnoticed because the test is ignored, both by intended changes (3286bb6's
+  Jacobians and latency, 47bdd0e's predictor); updated to `fb4f55063fe2e350`.
+- `tests/pipeline.rs` retries its lagging-worker run until the worker takes a
+  block, rather than failing when a busy machine wakes it too late.
+
 ## 2026-09-29 — REAPER with several instances: the real deadline, and two exact speedups
 
 The 07:43 REAPER captures (Jazz Chorus playback plus Puppet Master '86 live, 48k/64)

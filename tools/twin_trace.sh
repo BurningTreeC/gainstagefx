@@ -30,17 +30,20 @@ cleared=(
     GAINSTAGEFX_TEST_CHORD13_MAX_MOVE_RATIO
     GAINSTAGEFX_TEST_CHORD13_MAX_MERIT_RATIO
     GAINSTAGEFX_TEST_JACOBIAN_INIT13_MAX_MERIT_RATIO
+    # The Jacobian-assisted initialisation, which was the accepted
+    # configuration until 2026-09-30 and never the plugin's: see
+    # docs/SOLVER_EXPERIMENTS.md.
+    GAINSTAGEFX_TEST_JACOBIAN_INIT13
+    GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_RATIO
+    GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_STEP
+    GAINSTAGEFX_TEST_JACOBIAN_INIT13_FUSE_FIRST_NEWTON
+    GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION
+    GAINSTAGEFX_TEST_NLSOLVE_DOGLEG_TRUST_REGION
 )
 
-# The accepted configuration. The ratio of 3 is load bearing: a microscopic
-# change below it moves the trajectory.
-accepted=(
-    GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION=1
-    GAINSTAGEFX_TEST_JACOBIAN_INIT13=1
-    GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_RATIO=3
-    GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_STEP=0
-    GAINSTAGEFX_TEST_JACOBIAN_INIT13_FUSE_FIRST_NEWTON=1
-)
+# The accepted configuration: the solver the plugin ships, which no switch
+# changes. Kept as a list so an experiment can be named against it.
+accepted=()
 
 extra=()
 for argument in "$@"; do
@@ -61,6 +64,6 @@ for name in "${cleared[@]}"; do
     unset_flags+=(-u "$name")
 done
 
-exec env "${unset_flags[@]}" "${accepted[@]}" ${extra[@]+"${extra[@]}"} \
+exec env "${unset_flags[@]}" ${accepted[@]+"${accepted[@]}"} ${extra[@]+"${extra[@]}"} \
     cargo test --release --lib twin_realtime_recording_solver_trace \
     -- --ignored --nocapture --test-threads=1

@@ -881,24 +881,18 @@ fn realtime_recording() {
 ///
 /// See `docs/SOLVER_EXPERIMENTS.md` for the configuration this belongs to and
 /// for the rejected experiments that moved it.
-const ACCEPTED_TWIN_OUTPUT_HASH: &str = "ae73533fafbdafdb";
+const ACCEPTED_TWIN_OUTPUT_HASH: &str = "fb4f55063fe2e350";
 
 /// Switches the accepted configuration is defined by, and the values it fixes
 /// them at. A missing or different value means the run is something else and
 /// the hash does not apply to it.
-const ACCEPTED_TWIN_SWITCHES: [(&str, Option<&str>); 5] = [
-    ("GAINSTAGEFX_TEST_DISABLE_NLSOLVE_DOGLEG_TRUST_REGION", None),
-    ("GAINSTAGEFX_TEST_JACOBIAN_INIT13", None),
-    (
-        "GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_RATIO",
-        Some("3"),
-    ),
-    (
-        "GAINSTAGEFX_TEST_JACOBIAN_INIT13_MIN_SOURCE_STEP",
-        Some("0"),
-    ),
-    ("GAINSTAGEFX_TEST_JACOBIAN_INIT13_FUSE_FIRST_NEWTON", None),
-];
+///
+/// None since 2026-09-30: the accepted configuration is the solver the plugin
+/// ships, which no switch changes. Until then it was five switches turning on
+/// a Jacobian-assisted initialisation that only test builds contain -- so the
+/// oracle guarded a solver nobody played, and a slower one (see
+/// `docs/SOLVER_EXPERIMENTS.md`).
+const ACCEPTED_TWIN_SWITCHES: [(&str, Option<&str>); 0] = [];
 
 /// Switches that change how fast the solve runs but not what it computes, so
 /// the hash check stays armed while they are set. Anything else beginning
