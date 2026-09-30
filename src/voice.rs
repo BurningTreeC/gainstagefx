@@ -3563,6 +3563,16 @@ impl Chain {
     }
 
     /// The speaker driven with no power stage, when that is what is in the path.
+    /// Test-only: the power-stage simulation this chain is running.
+    #[cfg(test)]
+    pub(crate) fn test_active_power_mut(&mut self) -> Option<&mut Simulation> {
+        if self.active_driven() {
+            Some(&mut self.driven.sim)
+        } else {
+            self.active_power_mut()
+        }
+    }
+
     fn active_driven(&self) -> bool {
         self.radiating && self.resolved_power_amp().is_none()
     }

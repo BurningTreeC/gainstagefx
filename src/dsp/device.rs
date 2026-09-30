@@ -2027,6 +2027,8 @@ impl Bipolar {
     /// overflows if it is let run.
     fn limit_junction(&self, wanted: f64, old: f64) -> (f64, bool) {
         let critical = self.critical;
+        #[cfg(test)]
+        junction_probe::record(wanted, old, critical);
         if wanted > critical && (wanted - old).abs() > 2.0 * VT {
             if old > 0.0 {
                 let arg = 1.0 + (wanted - old) / VT;
@@ -3370,5 +3372,56 @@ mod jfet_channel_tests {
             "{half} A against {}",
             SPEC.idss * 0.25
         );
+    }
+}
+
+/// Test-only tally of which junction-limiter branch fires, and from where.
+#[cfg(test)]
+pub(crate) mod junction_probe {
+    use std::cell::RefCell;
+    #[derive(Default, Debug, Clone)]
+    pub struct Tally {
+        pub calls: u64,
+        pub free: u64,
+        /// Forward, from a junction already forward biased: the log walk.
+        pub walk: u64,
+        /// ... and where it started, below the critical voltage or above.
+        pub walk_from_below_critical: u64,
+        /// Forward, from reverse bias: `VT ln(v / VT)`.
+        pub from_reverse: u64,
+        pub to_critical: u64,
+        /// Wanted minus old on the walk branch, binned: <0.1, <0.3, <1, <3, >=3 V.
+        pub walk_steps: [u64; 5],
+        pub enabled: bool,
+    }
+    thread_local! { pub static TALLY: RefCell<Tally> = RefCell::new(Tally::default()); }
+    pub fn record(wanted: f64, old: f64, critical: f64) {
+        TALLY.with(|t| {
+            let mut t = t.borrow_mut();
+            if !t.enabled {
+                return;
+            }
+            t.calls += 1;
+            if !(wanted > critical && (wanted - old).abs() > 2.0 * super::VT) {
+                t.free += 1;
+            } else if old > 0.0 {
+                if 1.0 + (wanted - old) / super::VT > 0.0 {
+                    t.walk += 1;
+                    if old < critical {
+                        t.walk_from_below_critical += 1;
+                    }
+                    let step = wanted - old;
+                    let bin = [0.1, 0.3, 1.0, 3.0]
+                        .iter()
+                        .position(|&b| step < b)
+                        .unwrap_or(4);
+                    t.walk_steps[bin] += 1;
+                } else {
+                    t.to_critical += 1;
+                }
+            } else {
+                t.from_reverse += 1;
+            }
+        });
     }
 }

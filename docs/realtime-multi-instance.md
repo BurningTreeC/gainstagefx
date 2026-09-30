@@ -303,6 +303,38 @@ For Jazz the pipeline is also lopsided: the front half (preamp) is 52 µs, the
 back half (power 247 + cabinet 78 µs) 326 µs. A pipelined Jazz callback is
 essentially its back half.
 
+## The 20:23 REAPER capture (rescue, kernels, cached taps)
+
+Three instances, 48 kHz / 64 samples, live FX multiprocessing on: Jazz Chorus
+(258 s), Puppet Master '86 (155 s) and Chime Edge (85 s). The pipeline ran on
+all three.
+
+| instance | mean | p99 | p99.9 | max | over 930 µs | gaps > 4 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Jazz Chorus | 327 µs | 650 µs | 860 µs | 1,745 µs | 96 | 30 |
+| Puppet Master '86 | 349 µs | 565 µs | 689 µs | 1,662 µs | 9 | 8 |
+| Chime Edge | 325 µs | 571 µs | 681 µs | 1,202 µs | 7 | 3 |
+
+- **Scheduling.** REAPER ran Jazz and Puppet in parallel in 57 % of cycles and
+  one after the other in 41 %; Chime Edge always ran before both. Gaps do not
+  track the combined duration of back-to-back instances. They follow single
+  long callbacks.
+- **Where the dropouts come from.** Aligned across instances
+  (`tools/rt_gaps.py`), the 41 instance gaps are 34 distinct dropouts, one
+  every ~8 s overall, against 0.34 a second at 11:19. 26 of them follow a
+  callback over 900 µs. About 20 fall in 35 s of hard playing on Jazz Chorus,
+  each after a Jazz callback of 950–1,750 µs carrying 250–530 power-stage
+  passes against a median of ~100: the JC-120 power stage's hard samples,
+  exactly as `tools/callback_tail.py` found in the harness. One Puppet dropout
+  is the same kind (525 passes). Three follow callbacks of 940–1,660 µs with
+  normal solver work (scheduling). The rest have no long callback before them;
+  one sits after a 193 ms pause in the stream.
+- **Cutoff.** The 1.5-period cutoff never fired: the long callbacks are under
+  2 ms.
+
+So the remaining dropouts are mostly one thing: the JC-120 power stage's hard
+samples under hard playing.
+
 ## Earlier notes on the Mark power stage
 
 The Newton pass count on the real take is 2–3 for 73 % of samples. 13 % leave

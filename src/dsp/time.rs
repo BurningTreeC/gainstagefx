@@ -17,6 +17,8 @@ mod full_trace;
 #[cfg(test)]
 mod half_step;
 #[cfg(test)]
+mod hard_samples;
+#[cfg(test)]
 mod jacobian_init;
 
 use super::device::{
@@ -2136,6 +2138,10 @@ pub struct Simulation {
     /// against the circuit simply run at twice the rate.
     #[cfg(test)]
     test_half_step_every_sample: bool,
+    /// Test-only: Newton stamps, and those where a junction limiter held a
+    /// device back; line-search residual trials likewise.
+    #[cfg(test)]
+    pub(crate) test_stamps: [u64; 4],
     #[cfg(test)]
     last_search_cycle_rejected: bool,
     #[cfg(test)]
@@ -2670,6 +2676,8 @@ impl Simulation {
             half_step_rescued: 0,
             #[cfg(test)]
             test_half_step_every_sample: false,
+            #[cfg(test)]
+            test_stamps: [0; 4],
             backtrack_count: 0,
             fallbacks: 0,
             nonfinite: 0,
@@ -4750,6 +4758,11 @@ impl Simulation {
             device.stamp(&mut stamper, voltage);
         }
         self.exact = !stamper.junction_held;
+        #[cfg(test)]
+        {
+            self.test_stamps[0] += 1;
+            self.test_stamps[1] += u64::from(!self.exact);
+        }
         if self.watching {
             let n = self.n;
             for row in 0..n {
@@ -4804,6 +4817,11 @@ impl Simulation {
             partition.finish_stamp();
         }
         self.exact = exact;
+        #[cfg(test)]
+        {
+            self.test_stamps[0] += 1;
+            self.test_stamps[1] += u64::from(!exact);
+        }
         #[cfg(test)]
         if let Some(started) = profile_started {
             self.test_phase_profile.reduced_stamp_ns = self
@@ -4903,6 +4921,11 @@ impl Simulation {
             (!residual.junction_held, !residual.mapping_failed)
         };
         self.exact = exact;
+        #[cfg(test)]
+        {
+            self.test_stamps[2] += 1;
+            self.test_stamps[3] += u64::from(!exact);
+        }
         if !mapping_ok {
             return None;
         }
