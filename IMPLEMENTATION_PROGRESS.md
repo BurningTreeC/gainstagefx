@@ -179,6 +179,45 @@ Then the 06:39 REAPER capture and two more exact speedups:
   6.6 → 3.7; Jazz Chorus 6 dB hot, serial p99.9 −5 %. `uncovered_plans` in
   `hard_samples.rs` shows what remains uncovered.
 
+Then the power stage's second half, speculated on the other core
+(`SpecBlock` in `voice.rs`):
+
+- **What.** A shadow copy of the power stage solves each block's second half
+  from the block's first state, skipping the first half, on the thread that
+  would otherwise wait. Where the shadow found a solve hard, the real stage
+  starts Newton from the shadow's answer. It fires only on blocks whose first
+  half had a 10+ pass solve: 2 % of Jazz Chorus blocks, 10 % of Brown '84's.
+- **Only where it can pay.** On chains whose preamplifier costs as much as the
+  power stage there is no idle thread and the shadow's inputs arrive too late;
+  ungated, those presets lost up to +32 % at p99.9 (Puppet Master '86 +28 %).
+  A gate compares the two halves' Newton passes weighted by a size-based cost
+  estimate (`Simulation::pass_weight`), counted rather than timed, and opens
+  below 0.5: every preset that gained keeps speculating, every one that lost
+  does not.
+- **Exactness.** Every block path (serial, serial with the worker taking the
+  shadow, pipelined, reclaimed, cabinet handed over) gives the same bits, at
+  all five rates. Against the per-sample chain, which does not speculate, a
+  speculated block agrees to the solver's tolerance: −163 dB or better on all
+  78 presets, and 55 of them never speculate on the take. The frozen baselines
+  run per sample and are untouched.
+- **Timing.** Pipelined, A-B-B-A: mean and p50 unchanged everywhere; on the
+  presets that speculate p99 −8 to −17 % and p99.9 −11 to −20 % (Jazz Chorus
+  p99.9 −16 %, Brown '84 −14 %, Plexi Cranked −20 %, Experienced '67 −11 %);
+  on the rest nothing moves. Serial blocks hand the shadow to the idle stage
+  worker, since alone on the audio thread it cost 100–200 µs a speculated
+  block. The plugin now always passes its worker to `process_block`, with a
+  separate `pipeline` flag.
+- **New API.** `Simulation::{speculative_copy, follow, set_start_point,
+  pass_weight}`, `Chain::{speculated_blocks, speculation_waits,
+  speculation_work, speculation_gate, set_speculation}`,
+  `rt_scenario --no-speculation / --helper`, a `speculated` column in the
+  realtime trace and in `rt_scenario --callbacks`.
+- **A correction.** The estimator (`speculative_second_half`) had been copying
+  the power stage before the chain installed its oversampling, so it measured
+  a 192 kHz stage. It is fixed and checked
+  (`the_estimators_copies_follow_the_chain`). The details and the variants
+  that lost are in `docs/SOLVER_EXPERIMENTS.md`.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):

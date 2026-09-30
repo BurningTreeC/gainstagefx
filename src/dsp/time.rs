@@ -2142,6 +2142,18 @@ pub struct Simulation {
     /// device back; line-search residual trials likewise.
     #[cfg(test)]
     pub(crate) test_stamps: [u64; 4],
+    /// A starting point for the next solve in place of the predictor's; see
+    /// `set_start_point`.
+    start_voltage: Vec<f64>,
+    start_linearisation: Vec<Linearisation>,
+    start_pending: bool,
+    /// For a `speculative_copy`: the `structure_generation` of the simulation
+    /// it follows, as of its last full re-sync.
+    followed_generation: u64,
+    /// For a `speculative_copy`: whether its matrices are the ones that
+    /// generation's rebuild produces. Not when they were copied from a source
+    /// with that rebuild still pending.
+    follows_rebuilt: bool,
     #[cfg(test)]
     last_search_cycle_rejected: bool,
     #[cfg(test)]
@@ -2234,6 +2246,176 @@ impl Simulation {
             sim,
             generation: self.structure_generation,
         }));
+    }
+
+    /// Start the next solve from `voltage`, with the devices linearised at
+    /// `linearisation`, instead of from the predictor's extrapolation. A
+    /// starting point only: the solve still converges to the same test on the
+    /// same equations. Allocation-free.
+    pub fn set_start_point(&mut self, voltage: &[f64], linearisation: &[Linearisation]) {
+        // A linear circuit has no Newton to start, and would carry the point
+        // to whatever solve next had one.
+        if voltage.len() != self.n
+            || linearisation.len() != self.devices.len()
+            || self.devices.is_empty()
+        {
+            return;
+        }
+        self.start_voltage.copy_from_slice(voltage);
+        self.start_linearisation.clear();
+        self.start_linearisation.extend_from_slice(linearisation);
+        self.start_pending = true;
+    }
+
+    /// Every unknown's value after the last solve.
+    pub fn voltages(&self) -> &[f64] {
+        &self.voltage
+    }
+
+    /// How many nonlinear devices this circuit has.
+    pub fn device_count(&self) -> usize {
+        self.devices.len()
+    }
+
+    /// Each device's current linearisation, into `out`.
+    pub fn linearisations_into(&self, out: &mut [Linearisation]) {
+        for (slot, device) in out.iter_mut().zip(&self.devices) {
+            *slot = device.linearisation();
+        }
+    }
+
+    /// Newton passes taken so far.
+    pub fn newton_passes(&self) -> u64 {
+        self.newton_passes
+    }
+
+    /// What one Newton pass of this circuit costs, estimated from its size
+    /// alone, in nanoseconds on the machine it was fitted on: a fixed part,
+    /// one in the unknowns (the RHS, the recovery), and one in the unknowns
+    /// times the reduced system's size (the Schur coupling, the reduced
+    /// solve). ESTIMATED: a fit, in relative error, over every preset's
+    /// circuits (`hard_samples::pass_cost_by_size`); median error 15 %, worst
+    /// 40 %. For decisions that must not depend on timing, where a clock
+    /// would make the output depend on the machine's load.
+    pub fn pass_weight(&self) -> f64 {
+        let n = self.n as f64;
+        let b = self.nonlinear_reduction().map_or(0.0, |(b, _)| b as f64);
+        73.8 + 13.2 * n + 0.63 * n * b
+    }
+
+    /// Newton passes so far, weighted by `pass_weight`.
+    pub fn weighted_passes(&self) -> f64 {
+        self.newton_passes as f64 * self.pass_weight()
+    }
+
+    /// A copy of this simulation to run ahead of it: the same circuit,
+    /// controls and rate and the same running state, with no half-step twin
+    /// of its own. Allocates; call it while building.
+    pub fn speculative_copy(&self) -> Simulation {
+        let mut sim = Self::construct(self.circuit.clone(), self.rate);
+        sim.sync_configuration_from(self);
+        sim.copy_runtime_state_from(self);
+        sim.followed_generation = self.structure_generation;
+        sim.follows_rebuilt = !self.dirty;
+        sim
+    }
+
+    fn sync_configuration_from(&mut self, source: &Self) {
+        self.controls.copy_from_slice(&source.controls);
+        self.values.copy_from_slice(&source.values);
+        self.supply_scale = source.supply_scale;
+        self.rate = source.rate;
+        self.ceiling = source.ceiling;
+        self.backtracks = source.backtracks;
+        self.late_continuation = source.late_continuation;
+        self.at_rest = false;
+        self.dirty = true;
+        self.rebuild();
+        self.dirty = false;
+    }
+
+    /// Bring a `speculative_copy` to where `source` stands now, exactly: every
+    /// piece of state its next solve reads, including the learned pivot plans,
+    /// so what it computes from here depends on `source` and on nothing it did
+    /// before. A moved control is picked up with the prepared matrices; a
+    /// pending rebuild comes across as one, for this copy's own next solve.
+    /// Only a new rate rebuilds here. Allocation-free.
+    pub fn follow(&mut self, source: &Self) {
+        if self.rate != source.rate {
+            self.sync_configuration_from(source);
+        } else if self.followed_generation != source.structure_generation {
+            self.controls.copy_from_slice(&source.controls);
+            self.supply_scale = source.supply_scale;
+        }
+        self.ceiling = source.ceiling;
+        self.backtracks = source.backtracks;
+        self.late_continuation = source.late_continuation;
+        if self.followed_generation == source.structure_generation && self.follows_rebuilt {
+            self.copy_dynamic_state_from(source);
+        } else {
+            self.followed_generation = source.structure_generation;
+            self.copy_runtime_state_from(source);
+            // A source with its rebuild still pending hands over the matrices
+            // it is about to replace. This copy performs the same rebuild if
+            // it solves before the next follow, but it may not: take them
+            // again, whole, once the source has.
+            self.follows_rebuilt = !source.dirty;
+        }
+        self.start_pending = false;
+    }
+
+    /// `copy_runtime_state_from` without what only `rebuild` writes -- the
+    /// linear matrices, their factorisation, the source vectors and the
+    /// partitions' Schur caches -- for a copy that already holds them from a
+    /// source at the same configuration, rebuilt. A rebuild is a pure function
+    /// of the configuration, so a source that has rebuilt again since without
+    /// moving a control (a reset does) holds the same numbers. On a 52-unknown power stage this is
+    /// about 90 ns against the full copy's 3 us.
+    fn copy_dynamic_state_from(&mut self, source: &Self) {
+        self.values.copy_from_slice(&source.values);
+        self.aux_values.copy_from_slice(&source.aux_values);
+        self.pivots.copy_from_slice(&source.pivots);
+        self.reach.copy_from_slice(&source.reach);
+        self.depth.copy_from_slice(&source.depth);
+        self.first.copy_from_slice(&source.first);
+        self.plan.copy_from_slice(&source.plan);
+        self.planned = source.planned;
+        self.voltage.copy_from_slice(&source.voltage);
+        self.predicted.copy_from_slice(&source.predicted);
+        self.earlier.copy_from_slice(&source.earlier);
+        self.recent_move.copy_from_slice(&source.recent_move);
+        self.last_was_unsettled = source.last_was_unsettled;
+        self.last_input = source.last_input;
+        self.earlier_input = source.earlier_input;
+        self.previous_input = source.previous_input;
+        self.previous_aux.copy_from_slice(&source.previous_aux);
+        self.last_settled_linearisation
+            .copy_from_slice(&source.last_settled_linearisation);
+        self.last_settled_linearisation_valid = source.last_settled_linearisation_valid;
+        self.exact = source.exact;
+        self.predictable = source.predictable;
+        self.moved = source.moved;
+        self.capacitors.copy_from_slice(&source.capacitors);
+        self.inductors.copy_from_slice(&source.inductors);
+        for (dst, src) in self.devices.iter_mut().zip(&source.devices) {
+            dst.copy_runtime_state_from(src);
+        }
+        self.device_rate = source.device_rate;
+        self.at_rest = source.at_rest;
+        self.dirty = source.dirty;
+        for (dst, src) in [
+            (&mut self.nonlinear_partition, &source.nonlinear_partition),
+            (
+                &mut self.nonlinear_partition_dc,
+                &source.nonlinear_partition_dc,
+            ),
+        ] {
+            if let (Some(dst), Some(src)) = (dst, src) {
+                dst.copy_learned_state_from(src);
+            }
+        }
+        self.work_base_mode = None;
+        self.rhs_fixed_loaded = false;
     }
 
     /// Rescue attempts, samples the half-step twin bridged, and samples the
@@ -2682,6 +2864,11 @@ impl Simulation {
             test_half_step_every_sample: false,
             #[cfg(test)]
             test_stamps: [0; 4],
+            start_voltage: vec![0.0; n],
+            start_linearisation: Vec::with_capacity(device_count),
+            start_pending: false,
+            followed_generation: u64::MAX,
+            follows_rebuilt: false,
             backtrack_count: 0,
             fallbacks: 0,
             nonfinite: 0,
@@ -6430,6 +6617,14 @@ impl Simulation {
             self.jacobian_assisted_init(suppress_predictor, input);
             #[cfg(test)]
             self.full_trace_predicted();
+            if self.start_pending {
+                // See `set_start_point`: this sample's Newton starts here.
+                self.start_pending = false;
+                self.voltage.copy_from_slice(&self.start_voltage);
+                for (device, &saved) in self.devices.iter_mut().zip(&self.start_linearisation) {
+                    device.relinearise(saved);
+                }
+            }
             // `predicted` used to receive a copy of this starting point on
             // every nonlinear sample. Continuation overwrites the buffer
             // immediately before it needs a backup, and the failure bound uses

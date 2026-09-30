@@ -403,6 +403,24 @@ line-search trials of the hard samples rather than scheduling. The pipeline
 switching itself off in quiet passages accounts for 1–3 long callbacks per
 capture, no more.
 
+## Speculating on the power stage's second half
+
+After the 06:39 capture: the long Jazz Chorus callbacks were clusters of hard
+power-stage solves, which a second core could not share because each starts
+from the last. The power stage now speculates on a block's second half on the
+thread that would otherwise wait (`SpecBlock` in `voice.rs`;
+`docs/SOLVER_EXPERIMENTS.md` has how and what it cost to get right). Over the
+take, pipelined: p99.9 −11 to −20 % on the presets it runs on (Jazz Chorus
+−16 %, Brown '84 −14 %), p50 unchanged. It runs only on chains whose preamp is
+light next to the power stage: Puppet Master '86 is not one of them, and
+speculating there cost 28 % at p99.9, so it does not. With pipelining off, the
+stage worker, idle then, is handed the shadow, so a quiet stretch followed by
+a hard attack does not pay for it on the audio thread.
+
+The trace has a `speculated` column: blocks in the callback that speculated.
+In the next capture, the long Jazz callbacks should show it at 1 and be fewer
+and shorter; any long callback at 0 is a cost this does not reach.
+
 ## Earlier notes on the Mark power stage
 
 The Newton pass count on the real take is 2–3 for 73 % of samples. 13 % leave

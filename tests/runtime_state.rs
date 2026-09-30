@@ -215,3 +215,65 @@ fn chain_copy_preserves_active_sections_delays_and_disabled_twin_tail() {
         });
     }
 }
+
+/// A speculative copy that has followed its source solves exactly as the source
+/// does, whatever it computed before the follow: the per-block follow copies
+/// only per-sample state and learned pivot plans, and relies on everything else
+/// being what the last configuration change left in both. Checked on every
+/// power stage at every rate, across a moved control and a reset.
+#[test]
+fn a_followed_shadow_solves_exactly_as_its_source() {
+    enable_ftz_daz();
+    let drive = |k: usize| {
+        let envelope = (-((k % 700) as f64) / 180.0).exp();
+        12.0 * envelope * ((k as f64 * 0.011).sin() + 0.5 * (k as f64 * 0.047).sin())
+    };
+    for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
+        for gain in Gain::ALL {
+            let Some(built) = voice::build_power(gain) else {
+                continue;
+            };
+            // The source without a half-step twin, so the two can be compared
+            // on hard samples too: the shadow never has one.
+            let mut source = Simulation::new(built.expect("builds"), rate).speculative_copy();
+            source.find_operating_point();
+            let mut shadow = source.speculative_copy();
+            let mut k = 0;
+            for block in 0..16 {
+                // A control moved or a reset between blocks leaves the source
+                // with a rebuild pending when the shadow next follows it, and
+                // on a block the shadow then sits out (as it does whenever a
+                // block does not speculate) only the source performs it.
+                if (block == 5 || block == 11) && source.controls() > 0 {
+                    source.set_control(0, if block == 5 { 0.3 } else { 0.8 });
+                }
+                if block == 8 {
+                    source.reset_deferred();
+                }
+                assert_no_heap(|| shadow.follow(&source));
+                let sits_out = block % 3 == 2;
+                if block % 2 == 0 {
+                    // Somewhere else entirely, so what the shadow learns there
+                    // is not what the source learned.
+                    for j in 0..16 {
+                        shadow.process(-drive(k + 5000 + 37 * j));
+                    }
+                    assert_no_heap(|| shadow.follow(&source));
+                }
+                for _ in 0..64 {
+                    let x = drive(k);
+                    let y = source.process(x);
+                    if !sits_out {
+                        assert_eq!(
+                            y.to_bits(),
+                            shadow.process(x).to_bits(),
+                            "{} at {rate} Hz, block {block}",
+                            gain.name()
+                        );
+                    }
+                    k += 1;
+                }
+            }
+        }
+    }
+}

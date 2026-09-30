@@ -1025,6 +1025,17 @@ impl ReducedNonlinear {
         self.valid = source.valid;
     }
 
+    /// Copy only what changes between refreshes -- the learned pivot plan and
+    /// the kernel it selected -- from an identically configured source whose
+    /// last refresh this one already holds. Everything else here is a pure
+    /// function of the matrices `refresh` was handed. See `Simulation::follow`.
+    pub(crate) fn copy_learned_state_from(&mut self, source: &Self) {
+        self.pivot_plan.copy_from_slice(&source.pivot_plan);
+        self.pivot_planned = source.pivot_planned;
+        self.kernel_slot = source.kernel_slot;
+        self.rhs_prepared = false;
+    }
+
     /// Build a reduction for a fixed boundary set. Construction may allocate;
     /// callers should do it while the simulation itself is being constructed,
     /// never from a Newton pass.

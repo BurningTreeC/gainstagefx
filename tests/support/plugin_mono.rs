@@ -506,6 +506,19 @@ fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
         // sample. If the dormant-right synchronization is complete, waking the
         // auto path after identical history must produce the exact same output.
         reference.stereo_seen = true;
+        // The auto path runs dual-mono blocks through `process_block`, the
+        // reference two chains sample by sample. A block that speculates on its
+        // power stage (`SpecBlock` in `voice.rs`) agrees with the per-sample
+        // path to the solver's tolerance rather than to the bit, which
+        // `tests/pipeline.rs` checks; what this checks is the wake, so both run
+        // without it.
+        for chain in auto
+            .channels
+            .iter_mut()
+            .chain(reference.channels.iter_mut())
+        {
+            chain.set_speculation(false);
+        }
 
         for block in 0..20 {
             let source = std::array::from_fn::<_, 64, _>(|i| material(block * 64 + i));

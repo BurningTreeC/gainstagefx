@@ -90,6 +90,9 @@ pub struct TraceRecord {
     pub worker_wait_ns: u64,
     /// Where the chain's second half ran; see `Chain::process_block`.
     pub pipeline: PipelineUse,
+    /// Blocks in the callback whose power stage speculated on its second
+    /// half; see `SpecBlock` in `voice.rs`.
+    pub speculated: u32,
     pub solver: SolverBreakdown,
     pub largest_output_delta: f32,
 }
@@ -243,7 +246,7 @@ impl Drop for RtTrace {
 const HEADER: &str = "instance,callback,start_ns,end_ns,callback_interval_us,process_us,\
 samples,sample_rate,tid,cpu_start,cpu_end,mode,voice,pedal,power,radiating,oversampling,\
 budget_us,deadline_aborts,abort_samples,first_abort_sample,abort_stages,\
-pedal_us,gain_us,power_us,iron_us,tone_us,cabinet_us,other_us,worker_wait_us,pipeline,\
+pedal_us,gain_us,power_us,iron_us,tone_us,cabinet_us,other_us,worker_wait_us,pipeline,speculated,\
 pedal_passes,gain_passes,power_passes,iron_passes,\
 pedal_backtracks,gain_backtracks,power_backtracks,iron_backtracks,\
 pedal_fallbacks,gain_fallbacks,power_fallbacks,iron_fallbacks,\
@@ -356,7 +359,7 @@ fn write_row(
     };
     write!(
         out,
-        "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{pipeline},",
+        "{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{pipeline},{},",
         us(s.pedal_ns),
         us(s.gain_ns),
         us(s.power_ns),
@@ -365,6 +368,7 @@ fn write_row(
         us(s.cabinet_ns),
         us(process_ns.saturating_sub(staged)),
         us(r.worker_wait_ns),
+        r.speculated,
     )?;
     let gain = |f: fn(&SolverHealth) -> u64| f(&v.gain) + f(&v.line);
     writeln!(
@@ -525,6 +529,7 @@ mod tests {
             stages: RealtimeStageTimings::default(),
             worker_wait_ns: 0,
             pipeline: PipelineUse::Serial,
+            speculated: 0,
             solver: SolverBreakdown::default(),
             largest_output_delta: 0.0,
         }

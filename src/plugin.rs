@@ -909,6 +909,7 @@ impl Plugin for GainStageFx {
         let mut trace_largest_output_delta = 0.0f64;
         let mut trace_worker_wait_ns = 0u64;
         let mut trace_pipeline = PipelineUse::Serial;
+        let mut trace_speculated = 0u32;
 
         let can_parallel_stereo = !duplicated_mono
             && self.stereo_seen
@@ -1035,14 +1036,16 @@ impl Plugin for GainStageFx {
                     peak * decay
                 };
             }
-            let worker = self.stage_worker.as_ref().filter(|_| self.pipelining);
+            let speculated = chain.speculated_blocks();
             trace_pipeline = chain.process_block(
                 &self.block_input[..sample_count],
                 &mut self.block_left[..sample_count],
                 &mut self.block_right[..sample_count],
                 duplicated_mono,
-                worker,
+                self.stage_worker.as_ref(),
+                self.pipelining,
             );
+            trace_speculated = (chain.speculated_blocks() - speculated) as u32;
             if tracing {
                 let aborts = chain.active_deadline_aborts();
                 if let Some((_, solver)) = trace_before {
@@ -1244,6 +1247,7 @@ impl Plugin for GainStageFx {
                 stages: chain.realtime_stage_timings().delta(stages),
                 worker_wait_ns: trace_worker_wait_ns,
                 pipeline: trace_pipeline,
+                speculated: trace_speculated,
                 solver,
                 largest_output_delta: trace_largest_output_delta as f32,
             });

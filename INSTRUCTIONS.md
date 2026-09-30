@@ -119,7 +119,20 @@ presets as they then play.
   `--lib` includes the check that every reduced matrix stays inside the
   pattern the kernels rely on (`the_guaranteed_pattern_holds_across_the_catalogue`).
   `tests/pipeline.rs` checks that the pipelined chain is still bit-identical
-  to the serial one for every voice.
+  to the serial one for every voice, and that the power stage's speculation
+  (`SpecBlock` in `voice.rs`) gives the same bits on every block path. A new
+  power stage gets a shadow automatically; nothing to add. Whether a chain
+  speculates depends on its preamp's cost next to its power stage's
+  (`SPECULATE_BELOW`), estimated from circuit size; `rt_scenario --block`
+  prints the estimate (`front/power work`). A new circuit far off the fit
+  (`hard_samples::pass_cost_by_size`) can land on the wrong side of it:
+  `uv run tools/preset_ab.py --flag=--no-speculation --swap --preset "<preset>"`
+  times it both ways, A-B-B-A, and reports that preset's own change.
+- The per-sample `Chain::process` does not speculate, so on a block that did,
+  `process_block` agrees with it to the solver's tolerance rather than the bit.
+  A test comparing the two to the bit either uses blocks that never speculate
+  or calls `Chain::set_speculation(false)`, as the plugin's dual-mono wake test
+  does.
 - **Solver health and cost** on the real take:
   ```
   cargo run --release --example rt_scenario -- --preset "<preset>" --events
@@ -127,11 +140,14 @@ presets as they then play.
       --callbacks /tmp/cb.csv && python3 tools/callback_tail.py /tmp/cb.csv
   ```
   Look at unsettled samples, fallbacks, half-step rescues, passes per solve,
-  and the pipelined p99/p99.9 against the ~930 µs live budget.
+  and the pipelined p99/p99.9 against the ~930 µs live budget. For a change
+  meant to make things faster, `tools/preset_ab.py` gives every preset's own
+  before-and-after; a median over the catalogue can hide one that got worse.
   `presetcost` and `modelcost` give the catalogue view.
 - For a change meant to be exact (a refactor or an optimisation), compare
   output hashes across every preset:
-  `cargo run --release --example rt_scenario -- --all --seconds 19`.
+  `cargo run --release --example rt_scenario -- --all --seconds 19`, and
+  again with `--pipeline`, which is the path that speculates.
 
 ## 8. Before calling it done
 

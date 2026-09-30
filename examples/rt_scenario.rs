@@ -34,8 +34,13 @@
 //! samples N.. of every Mth block, sample by sample: what an abandoned solve
 //! does to the sound, measured against a run without `--cut-from`.
 //! `--block` runs each callback through `Chain::process_block` instead of
-//! sample by sample, and `--pipeline` gives it a `StageWorker`; both must print
-//! the same output hash as the default. `--block-size` sets the callback length.
+//! sample by sample, and `--pipeline` gives it a `StageWorker`; the two must
+//! print the same output hash. So must the default, sample by sample, unless
+//! a block speculated on its power stage's second half (`SpecBlock` in
+//! `voice.rs`), which the per-sample path never does; `--no-speculation`
+//! turns that off. `--helper` runs the blocks serially with a `StageWorker`
+//! that only takes the power stage's shadow, which is what the plugin does
+//! while it is not pipelining. `--block-size` sets the callback length.
 //! `--events` prints every block in which a solve ended unsettled or fell back.
 //! `--callbacks FILE` writes one CSV row per callback: its time, where the
 //! pipeline ran the second half, each stage's solver work, the input's peak
@@ -78,6 +83,8 @@ struct Options {
     events: bool,
     oversampling: Option<usize>,
     callbacks: Option<String>,
+    speculation: bool,
+    helper: bool,
 }
 
 impl Options {
@@ -104,6 +111,8 @@ fn options() -> Options {
         events: false,
         oversampling: None,
         callbacks: None,
+        speculation: true,
+        helper: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -127,6 +136,11 @@ fn options() -> Options {
                 o.cut_every = value().parse().expect("--cut-every takes a block count")
             }
             "--events" => o.events = true,
+            "--no-speculation" => o.speculation = false,
+            "--helper" => {
+                o.block = true;
+                o.helper = true;
+            }
             "--callbacks" => o.callbacks = Some(value()),
             "--oversampling" => {
                 o.oversampling = Some(value().parse().expect("--oversampling takes 1, 2, 4 or 8"))
@@ -252,7 +266,7 @@ fn main() {
             file,
             "preset,block,us,pipeline,input_peak,pedal_passes,gain_passes,power_passes,\
              power_backtracks,power_fallbacks,power_unsettled,power_rescues,\
-             pedal_us,gain_us,power_us,iron_us,tone_us,cabinet_us"
+             pedal_us,gain_us,power_us,iron_us,tone_us,cabinet_us,speculated"
         )
         .unwrap();
         file
@@ -276,6 +290,7 @@ fn main() {
         chain.settle();
         chain.find_operating_point();
         chain.set_realtime_stage_timing(o.stages);
+        chain.set_speculation(o.speculation);
         let stages_before = chain.realtime_stage_timings();
 
         let before: SolverBreakdown = chain.solver_breakdown();
@@ -284,10 +299,11 @@ fn main() {
         let mut times = Vec::with_capacity(blocks);
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut samples = Vec::with_capacity(o.block_len());
-        let worker = o.pipeline.then(StageWorker::new);
+        let worker = (o.pipeline || o.helper).then(StageWorker::new);
         let (mut inputs, mut right) = (vec![0.0; o.block_len()], vec![0.0; o.block_len()]);
         let mut uses = [0usize; 4];
         let (mut callback_health, mut callback_stages) = (before, stages_before);
+        let mut callback_speculated = chain.speculated_blocks();
         let mut next = Instant::now();
         for b in 0..blocks {
             if o.paced {
@@ -308,8 +324,14 @@ fn main() {
                     *x = take[(b * o.block_len() + k) % take.len()] * scale;
                 }
                 samples.resize(o.block_len(), 0.0);
-                let used =
-                    chain.process_block(&inputs, &mut samples, &mut right, true, worker.as_ref());
+                let used = chain.process_block(
+                    &inputs,
+                    &mut samples,
+                    &mut right,
+                    true,
+                    worker.as_ref(),
+                    o.pipeline,
+                );
                 last_use = match used {
                     PipelineUse::Serial => 0,
                     PipelineUse::Worker => 1,
@@ -340,9 +362,11 @@ fn main() {
                     .map(|k| (take[(b * o.block_len() + k) % take.len()] * scale).abs())
                     .fold(0.0, f64::max);
                 let us = |ns: u64| ns as f64 / 1000.0;
+                let speculated = chain.speculated_blocks() - callback_speculated;
+                callback_speculated = chain.speculated_blocks();
                 writeln!(
                     file,
-                    "{name:?},{b},{:.1},{last_use},{peak:.4},{},{},{},{},{},{},{},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1}",
+                    "{name:?},{b},{:.1},{last_use},{peak:.4},{},{},{},{},{},{},{},{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{speculated}",
                     times[b],
                     h.pedal.passes,
                     h.gain.passes,
@@ -418,6 +442,15 @@ fn main() {
             println!(
                 "  second half on the worker in {} blocks, shared with the caller in {}, reclaimed by the caller in {}",
                 uses[1], uses[3], uses[2]
+            );
+        }
+        if o.block || o.pipeline {
+            let (shadow_passes, starts) = chain.speculation_work();
+            println!(
+                "  power stage's second half speculated in {} blocks; {} solves waited for the shadow; shadow passes {shadow_passes}, starts used {starts}; front/power work {:.2}",
+                chain.speculated_blocks(),
+                chain.speculation_waits(),
+                chain.speculation_gate()
             );
         }
         if o.stages {

@@ -34,6 +34,7 @@ use crate::circuits::{
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
+use crate::dsp::device::Linearisation;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::{Downsampler, Oversampler, Upsampler};
 use crate::dsp::spring::Tank;
@@ -1642,6 +1643,11 @@ impl AcousticSettings {
 /// A speaker-loaded simulation and where to read its cone.
 struct Loaded {
     sim: Simulation,
+    /// A copy that runs ahead of `sim` on a block's second half; see
+    /// `SpecBlock`. Boxed: a test build's `Simulation` is large. None for the
+    /// speaker driven straight from the preamplifier, which has no valves to
+    /// be slow.
+    shadow: Option<Box<Simulation>>,
     slots: LoadSlots,
     motional: usize,
 }
@@ -2517,6 +2523,366 @@ pub enum PipelineUse {
     Shared,
 }
 
+/// A power-stage solve in a block's first half this many Newton passes long
+/// makes the block one whose second half starts from a shadow's answers.
+/// Swept with `hard_samples::speculative_second_half` over 8, 10, 14 and 18:
+/// higher speculates on fewer blocks and gives up more of the tail than it
+/// saves, lower speculates on twice as many for nothing more.
+const SPECULATE_AFTER: u64 = 10;
+
+/// Where the shadow itself needed this many passes, the real solve starts
+/// from its answer; below that the predictor's start is as good. Swept over
+/// 1, 4, 6 and 10; 4 was best on both presets measured.
+const SHADOW_HARD: u64 = 4;
+
+/// Host samples after a block whose first half had a hard solve during which
+/// the calling thread starts each block's shadow as soon as it is free,
+/// rather than once the block has shown it will need one; see `SpecBlock`.
+/// About 10 ms at 48 kHz. Hard attacks come in clusters: measured on the DI
+/// take, eight 64-sample blocks cover every speculated block among the thirty
+/// heaviest on both presets, while starting early on 9 % of Jazz Chorus
+/// blocks and 25 % of Brown '84's rather than on all of them.
+const EAGER_WITHIN: usize = 512;
+
+/// A chain speculates only while its first half's estimated work is below
+/// this fraction of its power stage's. The shadow runs on the thread that runs
+/// the first half, once that is done, and its inputs are the first half's
+/// output: a chain whose preamplifier costs as much as its power stage has no
+/// thread free to run it, and hands it the inputs no faster than the power
+/// stage consumes them, so the power stage waits on every solve. Measured over
+/// the catalogue (`rt_scenario`, pipelined, A-B-B-A), every preset whose front
+/// cost under 0.45 of its power stage's gained -- p99.9 -9 to -23 % -- and
+/// every one over 0.8 lost, up to +32 %. The estimate (`pass_weight`, passes
+/// counted rather than timed) puts the first group at 0.42 and below and the
+/// second at 0.61 and above.
+const SPECULATE_BELOW: f64 = 0.5;
+
+/// Host samples over which that work is averaged, about 0.7 s at 48 kHz: long
+/// enough to describe the chain rather than the note being played. Over tens
+/// of milliseconds it followed the signal, and the first blocks of an attack
+/// after a quiet passage -- the heaviest there are -- found it closed.
+const WORK_WINDOW: f64 = 32_768.0;
+
+/// Second-half solves a block speculates over at most, which is what the
+/// buffers are sized for: 32 host samples at 8x, or 256 at 1x.
+const SPECULATION_MAX: usize = 256;
+
+/// The power stage's second half, solved ahead of time from the wrong state.
+///
+/// What makes a callback run long is a cluster of hard power-stage solves: the
+/// JC-120 or a hot 5150 under a hard attack, where the input jumps most of a
+/// volt a sample and Newton needs twenty passes to follow it. Those solves are
+/// sequential -- each starts from the last one's state -- which is why a
+/// second core could not help with them. Most of that work, though, is
+/// finding where the valves or transistors have gone, and on a hard sample
+/// that is decided by the input far more than by the state it arrived from.
+///
+/// So a shadow copy of the power stage, taken at the block's start, solves the
+/// block's second half *without* first solving the first half, on whichever
+/// thread is otherwise waiting. Its answers are wrong by whatever the skipped
+/// half would have left in the capacitors, and nothing it computes is ever
+/// output. It is only where the real solve starts: where the shadow found a
+/// solve hard, the real one begins Newton at the shadow's unknowns and device
+/// linearisations instead of the predictor's extrapolation, and converges to
+/// the same test on the same equations. Estimated with
+/// `hard_samples::speculative_second_half` on the DI take, in Newton passes on
+/// the critical path, the heaviest 1 % of blocks shorten by 8 % on the Jazz
+/// Chorus and 23 % on Brown '84, and the heaviest 0.1 % by 23 and 29 %.
+///
+/// Only on a chain whose first half is light next to its power stage; see
+/// `SPECULATE_BELOW`. Whether a block speculates is decided from its own
+/// first half: a solve of `SPECULATE_AFTER` passes or more there. That is known to the thread running
+/// the power stage when it reaches the second half, depends on nothing but
+/// the signal, and costs one comparison a solve. It fires on 2 % of Jazz
+/// Chorus blocks and 10 % of Brown '84's, and on none for a clean preset.
+///
+/// The output does not depend on which thread computed the shadow or when.
+/// The shadow starts every block as an exact copy of the real stage
+/// (`Simulation::follow`, at the block's first solve), its inputs are fixed,
+/// and it is advanced one solve at a time by whichever thread holds `busy`:
+/// pipelined, the calling thread whenever it would otherwise wait; serially,
+/// the stage worker, idle then, from the block's first hard solve
+/// (`run_shadow`); and the power half's own thread when it needs an answer
+/// that nobody else is computing. The serial block path speculates on the same
+/// blocks and gets the same answers, so a block is the same to the bit however
+/// it ran (`tests/pipeline.rs`). The per-sample `Chain::process` does not
+/// speculate; on a block that did, the two agree to the solver's tolerance
+/// rather than to the bit.
+struct SpecBlock {
+    shadow: *mut Simulation,
+    /// The block's power-stage inputs, one a solve.
+    mid: *const f64,
+    /// Power solves in the first half: the shadow's first input is
+    /// `mid[start]`.
+    start: usize,
+    /// Shadow solves this block.
+    limit: usize,
+    unknowns: usize,
+    devices: usize,
+    /// Per shadow solve: its unknowns and device linearisations, where it
+    /// was hard, and the Newton passes it took.
+    voltages: *mut f64,
+    linearisations: *mut Linearisation,
+    passes: *mut u16,
+    /// Set by the thread running the power half at a hard first-half solve.
+    hard_seen: AtomicBool,
+    /// Whether the second half is starting from the shadow's answers. Written
+    /// by the power half's thread when it reaches the second half.
+    using: AtomicBool,
+    /// Another thread is committed to advancing the shadow, so the power half
+    /// waits for its answers rather than computing them itself: doing both on
+    /// the critical path is slower than not speculating. The calling thread on
+    /// the pipelined path, until it reclaims the block; the stage worker on
+    /// the serial path, once it has claimed `run_shadow`.
+    helped: AtomicBool,
+    /// Whether the calling thread starts the shadow as soon as it is free,
+    /// before the block has shown it will use it. The shadow's answers do not
+    /// depend on when it was run, so this is free to depend on timing.
+    eager: bool,
+    /// Set by the power half's thread once the shadow has followed the real
+    /// stage, and once it has decided whether to use it; for an eager
+    /// shadow, which does not wait for `hard_seen`.
+    followed: AtomicBool,
+    decided: AtomicBool,
+    /// On the serial path, an idle worker to hand the shadow to once the block
+    /// shows it will use one (null when there is none), and whether it has
+    /// been. See `run_shadow`.
+    helper: *const StageWorker,
+    offered: AtomicBool,
+    /// What the thread advancing the shadow writes, a solve at a time, on a
+    /// cache line of its own: sharing one with the fields above, which the
+    /// power half reads every solve, or with the pipeline's own atomics, cost
+    /// a cross-core miss a solve.
+    progress: ShadowProgress,
+}
+
+/// The shadow's job for a worker that is idle because the block is running
+/// serially: advance it to the end, taking turns with the thread running the
+/// power stage until that thread sees `helped` and leaves it to this one.
+///
+/// # Safety
+/// `ctx` is a live `SpecBlock` whose block has not ended; `end_help` does not
+/// return until this has.
+unsafe fn run_shadow(ctx: *mut (), _from: usize, _to: usize) {
+    let spec = unsafe { &*(ctx as *const SpecBlock) };
+    spec.helped.store(true, Ordering::Relaxed);
+    while spec.progress.done.load(Ordering::Acquire) < spec.limit {
+        if !spec.step() {
+            std::hint::spin_loop();
+        }
+    }
+}
+
+/// A chain's running account of its speculation.
+#[derive(Clone, Copy, Default)]
+struct Speculation {
+    /// Blocks whose second half started from a shadow's answers, and the
+    /// solves in them that had to wait for one.
+    blocks: u64,
+    waits: u64,
+    /// In those blocks: the shadow's Newton passes, and the solves the real
+    /// stage started from its answer.
+    shadow_passes: u64,
+    starts: u64,
+    /// Host samples since a block's first half last had a hard solve.
+    since_hard: usize,
+}
+
+#[repr(align(128))]
+struct ShadowProgress {
+    /// Held by whichever thread is advancing the shadow.
+    busy: AtomicBool,
+    /// Shadow solves done. Each one's answers are written before this is
+    /// Released past it.
+    done: AtomicUsize,
+    /// Second-half solves whose answer was not ready when the power half
+    /// reached them.
+    waits: AtomicUsize,
+    /// Newton passes the shadow has taken this block.
+    passes: AtomicUsize,
+}
+
+impl SpecBlock {
+    /// Advance the shadow by one solve, unless another thread is advancing it
+    /// or it has finished. Returns whether this thread ran one.
+    fn step(&self) -> bool {
+        let progress = &self.progress;
+        if progress
+            .busy
+            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            return false;
+        }
+        let c = progress.done.load(Ordering::Relaxed);
+        let ran = c < self.limit;
+        if ran {
+            // SAFETY: holding `busy` makes the shadow and slot `c` this
+            // thread's. `mid[start + c]` is written: the calling thread runs
+            // the shadow only once its whole first half is, the serial path
+            // writes all of it before the power stage starts, and the power
+            // half's thread runs it only for the solve it has been handed.
+            unsafe {
+                let shadow = &mut *self.shadow;
+                let before = shadow.newton_passes();
+                shadow.process(self.mid.add(self.start + c).read());
+                let passes = shadow.newton_passes() - before;
+                progress
+                    .passes
+                    .fetch_add(passes as usize, Ordering::Relaxed);
+                let hard = passes >= SHADOW_HARD;
+                self.passes.add(c).write(passes.min(u16::MAX as u64) as u16);
+                if hard {
+                    std::ptr::copy_nonoverlapping(
+                        shadow.voltages().as_ptr(),
+                        self.voltages.add(c * self.unknowns),
+                        self.unknowns,
+                    );
+                    shadow.linearisations_into(std::slice::from_raw_parts_mut(
+                        self.linearisations.add(c * self.devices),
+                        self.devices,
+                    ));
+                }
+            }
+            progress.done.store(c + 1, Ordering::Release);
+        }
+        progress.busy.store(false, Ordering::Release);
+        ran
+    }
+
+    /// Hand the shadow to the idle worker, if there is one; this thread keeps
+    /// advancing it too until the worker has woken and claimed it.
+    fn call_helper(&self) {
+        // SAFETY: a non-null `helper` outlives the block (see `serial`).
+        let Some(worker) = (unsafe { self.helper.as_ref() }) else {
+            return;
+        };
+        self.offered.store(true, Ordering::Relaxed);
+        // SAFETY: the worker is idle between blocks on the serial path, and
+        // `self` outlives the offer: `end_help` waits for or reclaims it.
+        unsafe { worker.offer(run_shadow, self as *const Self as *mut (), 1) };
+        worker.publish(1);
+    }
+
+    /// The block is done: take the shadow's job back from a worker that never
+    /// claimed it, or wait for the one that did to see there is nothing left.
+    fn end_help(&self) {
+        // SAFETY: as in `call_helper`.
+        let Some(worker) = (unsafe { self.helper.as_ref() }) else {
+            return;
+        };
+        if !self.offered.load(Ordering::Relaxed) {
+            return;
+        }
+        // SAFETY: offered and published whole in `call_helper`.
+        if !unsafe { worker.try_reclaim() } {
+            while !worker.is_done() {
+                std::hint::spin_loop();
+            }
+        }
+        worker.release();
+    }
+
+    /// Count a finished stretch of `len` host samples into `speculation`.
+    fn tally(spec: Option<&Self>, speculation: &mut Speculation, len: usize) {
+        let Some(spec) = spec else {
+            return;
+        };
+        speculation.since_hard = if spec.hard_seen.load(Ordering::Relaxed) {
+            0
+        } else {
+            speculation.since_hard.saturating_add(len)
+        };
+        if spec.using.load(Ordering::Relaxed) {
+            speculation.blocks += 1;
+            speculation.waits += spec.progress.waits.load(Ordering::Relaxed) as u64;
+            speculation.shadow_passes += spec.progress.passes.load(Ordering::Relaxed) as u64;
+            // SAFETY: the block is over; every slot below `done` is written.
+            let done = spec.progress.done.load(Ordering::Acquire);
+            speculation.starts += (0..done)
+                .filter(|&c| unsafe { spec.passes.add(c).read() } as u64 >= SHADOW_HARD)
+                .count() as u64;
+        }
+    }
+
+    /// Whether a thread with nothing else to do should advance the shadow:
+    /// the block will (or, eager, may) use it, and it is not finished.
+    fn wanted(&self) -> bool {
+        let needed = if self.eager {
+            self.followed.load(Ordering::Acquire)
+                && (!self.decided.load(Ordering::Acquire) || self.using.load(Ordering::Relaxed))
+        } else {
+            self.hard_seen.load(Ordering::Acquire)
+        };
+        needed && self.progress.done.load(Ordering::Relaxed) < self.limit
+    }
+
+    /// One power-stage solve, the `k`th of the block. `seen` is the power
+    /// half's own note of how many shadow solves it has seen done, so it
+    /// reads the shared count only when it has caught up with it.
+    #[inline]
+    fn solve(&self, sim: &mut Simulation, x: f64, k: usize, seen: &mut usize) -> f64 {
+        if k == 0 {
+            // The shadow starts from where the real stage stands now. Here
+            // rather than when the block is set up, because this is the thread
+            // whose cache the real stage's state is in. No other thread
+            // touches the shadow until it sees `followed` or `hard_seen`, both
+            // Released after this.
+            // SAFETY: see above; `shadow` is live for the block.
+            unsafe { (*self.shadow).follow(sim) };
+            self.followed.store(true, Ordering::Release);
+        }
+        if k < self.start {
+            let before = sim.newton_passes();
+            let y = sim.process(x);
+            if sim.newton_passes() - before >= SPECULATE_AFTER
+                && !self.hard_seen.swap(true, Ordering::Release)
+            {
+                self.call_helper();
+            }
+            return y;
+        }
+        let c = k - self.start;
+        if c == 0 && self.hard_seen.load(Ordering::Relaxed) {
+            self.using.store(true, Ordering::Relaxed);
+        }
+        if c == 0 {
+            self.decided.store(true, Ordering::Release);
+        }
+        if c < self.limit && self.using.load(Ordering::Relaxed) {
+            if *seen <= c {
+                *seen = self.progress.done.load(Ordering::Acquire);
+                if *seen <= c {
+                    self.progress.waits.fetch_add(1, Ordering::Relaxed);
+                }
+                while *seen <= c {
+                    if self.helped.load(Ordering::Relaxed) || !self.step() {
+                        std::hint::spin_loop();
+                    }
+                    *seen = self.progress.done.load(Ordering::Acquire);
+                }
+            }
+            // SAFETY: slot `c` was written before `done` was Released past it
+            // and is not written again this block.
+            if unsafe { self.passes.add(c).read() } as u64 >= SHADOW_HARD {
+                unsafe {
+                    sim.set_start_point(
+                        std::slice::from_raw_parts(
+                            self.voltages.add(c * self.unknowns),
+                            self.unknowns,
+                        ),
+                        std::slice::from_raw_parts(
+                            self.linearisations.add(c * self.devices),
+                            self.devices,
+                        ),
+                    );
+                }
+            }
+        }
+        sim.process(x)
+    }
+}
+
 /// Everything in `Chain::process` before the power stage: the oversampler's
 /// interpolators, the pedal, the preamplifier with its reverb send and
 /// tremolo, the Mark's graphic and the Neve's line stage.
@@ -2556,6 +2922,16 @@ struct Front<'a> {
 struct Back<'a> {
     power: BackPower<'a>,
     cabinet: BackCabinet<'a>,
+    /// The power stage's shadow and what it leaves for the real solve, where
+    /// this chain can speculate; see `SpecBlock`.
+    shadow: Option<BackShadow<'a>>,
+}
+
+struct BackShadow<'a> {
+    sim: &'a mut Simulation,
+    voltages: &'a mut [f64],
+    linearisations: &'a mut [Linearisation],
+    passes: &'a mut [u16],
 }
 
 /// The oversampled end of the second half: the iron, the power stage (or the
@@ -2575,6 +2951,12 @@ struct BackPower<'a> {
     inner_rate: f64,
     out_of: &'a mut f64,
     out_of_target: f64,
+    /// The block's speculation, while one is running; null otherwise.
+    spec: *const SpecBlock,
+    /// Power solves so far in the block `spec` belongs to, and how many of
+    /// its shadow's this half has seen done.
+    spec_index: usize,
+    spec_seen: usize,
     timing: bool,
     iron_ns: u64,
     power_ns: u64,
@@ -2721,6 +3103,56 @@ impl Front<'_> {
 }
 
 impl Back<'_> {
+    /// Ready the shadow for `len` host samples whose power-stage inputs are
+    /// at `mid`, `factor` a sample, to be started early if `eager`. None where
+    /// this chain has nothing to speculate on.
+    fn speculation(
+        &mut self,
+        mid: *const f64,
+        factor: usize,
+        len: usize,
+        eager: bool,
+    ) -> Option<SpecBlock> {
+        let shadow = self.shadow.as_mut()?;
+        let real = self.power.power.as_deref()?;
+        let half = len / 2;
+        let limit = ((len - half) * factor).min(SPECULATION_MAX);
+        let (unknowns, devices) = (real.voltages().len(), real.device_count());
+        if half == 0
+            || devices == 0
+            || shadow.voltages.len() < limit * unknowns
+            || shadow.linearisations.len() < limit * devices
+            || shadow.passes.len() < limit
+        {
+            return None;
+        }
+        Some(SpecBlock {
+            shadow: &mut *shadow.sim,
+            mid,
+            start: half * factor,
+            limit,
+            unknowns,
+            devices,
+            voltages: shadow.voltages.as_mut_ptr(),
+            linearisations: shadow.linearisations.as_mut_ptr(),
+            passes: shadow.passes.as_mut_ptr(),
+            hard_seen: AtomicBool::new(false),
+            using: AtomicBool::new(false),
+            helped: AtomicBool::new(false),
+            eager,
+            followed: AtomicBool::new(false),
+            decided: AtomicBool::new(false),
+            helper: std::ptr::null(),
+            offered: AtomicBool::new(false),
+            progress: ShadowProgress {
+                busy: AtomicBool::new(false),
+                done: AtomicUsize::new(0),
+                waits: AtomicUsize::new(0),
+                passes: AtomicUsize::new(0),
+            },
+        })
+    }
+
     fn timings(&self) -> (u64, u64, u64, u64) {
         (
             self.power.iron_ns,
@@ -2740,6 +3172,26 @@ impl Back<'_> {
 }
 
 impl BackPower<'_> {
+    /// One power-stage solve, inside the block's speculation if there is one.
+    #[inline]
+    fn solve(
+        sim: &mut Simulation,
+        x: f64,
+        spec: *const SpecBlock,
+        index: &mut usize,
+        seen: &mut usize,
+    ) -> f64 {
+        // SAFETY: a non-null `spec` is the live block this half is running.
+        match unsafe { spec.as_ref() } {
+            Some(spec) => {
+                let k = *index;
+                *index += 1;
+                spec.solve(sim, x, k, seen)
+            }
+            None => sim.process(x),
+        }
+    }
+
     /// The oversampled values for one host sample in; the decimated value
     /// out, with the make-up it was taken at.
     #[inline]
@@ -2773,7 +3225,13 @@ impl BackPower<'_> {
             let started = self.timing.then(Instant::now);
             let cone = match (self.power.as_mut(), self.driven.as_mut()) {
                 (Some(sim), _) => {
-                    sim.process(amplified);
+                    Self::solve(
+                        sim,
+                        amplified,
+                        self.spec,
+                        &mut self.spec_index,
+                        &mut self.spec_seen,
+                    );
                     sim.voltage_at(self.motional)
                 }
                 (None, Some(sim)) => sim.process(amplified),
@@ -2788,7 +3246,13 @@ impl BackPower<'_> {
         }
         if let Some(sim) = self.power.as_mut() {
             let started = self.timing.then(Instant::now);
-            amplified = sim.process(amplified);
+            amplified = Self::solve(
+                sim,
+                amplified,
+                self.spec,
+                &mut self.spec_index,
+                &mut self.spec_seen,
+            );
             self.power_ns += lap(started);
         }
         // The iron goes here, in front of the make-up, for the same
@@ -2978,6 +3442,9 @@ unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
 /// time, so the output is the serial chain's to the bit (`tests/pipeline.rs`).
 /// When the first half is the heavier one, the worker has finished the whole
 /// block before this thread asks, and nothing changes.
+///
+/// Whenever this thread would otherwise wait, it advances the power stage's
+/// shadow instead, if the block is one that will use it; see `SpecBlock`.
 #[allow(clippy::too_many_arguments)]
 fn pipelined(
     front: &mut Front<'_>,
@@ -2988,6 +3455,7 @@ fn pipelined(
     left: &mut [f64],
     right: &mut [f64],
     worker: &StageWorker,
+    speculation: &mut Speculation,
 ) -> PipelineUse {
     let factor = front.factor();
     let mut used = PipelineUse::Serial;
@@ -2997,13 +3465,25 @@ fn pipelined(
     let mid_ptr = mid.as_mut_ptr();
     let handoff_ptr = handoff.as_mut_ptr();
     let (left_ptr, right_ptr) = (left.as_mut_ptr(), right.as_mut_ptr());
-    let (power_ptr, cabinet_ptr) = (
-        &mut back.power as *mut BackPower<'_>,
-        &mut back.cabinet as *mut BackCabinet<'_>,
-    );
     for chunk_start in (0..input.len()).step_by(PIPELINE_CHUNK) {
         let chunk = &input[chunk_start..input.len().min(chunk_start + PIPELINE_CHUNK)];
         let len = chunk.len();
+        let spec = back.speculation(mid_ptr, factor, len, speculation.since_hard < EAGER_WITHIN);
+        if let Some(spec) = &spec {
+            spec.helped.store(true, Ordering::Relaxed);
+        }
+        back.power.spec = spec
+            .as_ref()
+            .map_or(std::ptr::null(), |s| s as *const SpecBlock);
+        back.power.spec_index = 0;
+        back.power.spec_seen = 0;
+        // Advance the shadow if the block will use it; false if there was
+        // nothing to do, for the caller to spin instead.
+        let shadow_step = || spec.as_ref().is_some_and(|s| s.wanted() && s.step());
+        let (power_ptr, cabinet_ptr) = (
+            &mut back.power as *mut BackPower<'_>,
+            &mut back.cabinet as *mut BackCabinet<'_>,
+        );
         let job = BackJob {
             power: power_ptr,
             cabinet: cabinet_ptr,
@@ -3037,11 +3517,17 @@ fn pipelined(
         worker.publish(len);
         // SAFETY: the whole chunk is published.
         if unsafe { worker.try_reclaim() } {
-            // The worker never started: the whole second half runs here.
+            // The worker never started: the whole second half runs here, and
+            // so does the shadow.
+            if let Some(spec) = &spec {
+                spec.helped.store(false, Ordering::Relaxed);
+            }
             // SAFETY: nobody else holds the job.
             unsafe { run_back(ctx, 0, len) };
             worker.release();
             used = PipelineUse::Reclaimed;
+            SpecBlock::tally(spec.as_ref(), speculation, len);
+            back.power.spec = std::ptr::null();
             continue;
         }
         // The worker has it. If it still has more than a quantum to go, offer
@@ -3062,7 +3548,9 @@ fn pipelined(
                 let at = job.handover.load(Ordering::Acquire);
                 break (at != usize::MAX).then_some(at);
             }
-            std::hint::spin_loop();
+            if !shadow_step() {
+                std::hint::spin_loop();
+            }
         };
         used = PipelineUse::Worker;
         if let Some(from) = handover {
@@ -3072,8 +3560,14 @@ fn pipelined(
             let cabinet = unsafe { &mut *cabinet_ptr };
             let mut next = from;
             while next < len {
-                let powered = job.powered.load(Ordering::Acquire);
-                while next < powered {
+                // The shadow first: the power half may be about to wait for
+                // it, and the cabinet only ever trails. The cabinet first,
+                // with the shadow in its gaps, measured twice the waits and
+                // 5 us more a speculated block.
+                if shadow_step() {
+                    continue;
+                }
+                if next < job.powered.load(Ordering::Acquire) {
                     // SAFETY: written before `powered` was Released past it.
                     let [y, out_of] = unsafe { handoff_ptr.add(next).read() };
                     let (l, r) = cabinet.sample(y, out_of);
@@ -3082,18 +3576,76 @@ fn pipelined(
                         right_ptr.add(chunk_start + next).write(r);
                     }
                     next += 1;
-                }
-                if next < len {
+                } else {
                     std::hint::spin_loop();
                 }
             }
         }
         while !worker.is_done() {
-            std::hint::spin_loop();
+            if !shadow_step() {
+                std::hint::spin_loop();
+            }
         }
         worker.release();
+        SpecBlock::tally(spec.as_ref(), speculation, len);
+        back.power.spec = std::ptr::null();
     }
     used
+}
+
+/// Both halves on this thread, a stretch of `PIPELINE_CHUNK` samples at a
+/// time: the first half for the whole stretch, then the second. The halves
+/// share no state, so this is `Chain::process` sample by sample, except that
+/// with the whole stretch's power-stage inputs in hand it speculates on the
+/// same blocks `pipelined` does and gets the same answers. The shadow is
+/// handed to `helper`, when there is one, as soon as the block shows it will
+/// be used: run here alone, it measured 100 to 200 us on top of each block
+/// that speculated.
+#[allow(clippy::too_many_arguments)]
+fn serial(
+    front: &mut Front<'_>,
+    back: &mut Back<'_>,
+    input: &[f64],
+    mid: &mut [f64],
+    left: &mut [f64],
+    right: &mut [f64],
+    speculation: &mut Speculation,
+    helper: Option<&StageWorker>,
+) {
+    let factor = front.factor();
+    let mut buf = [0.0; MAX_OVERSAMPLING];
+    for chunk_start in (0..input.len()).step_by(PIPELINE_CHUNK) {
+        let chunk = &input[chunk_start..input.len().min(chunk_start + PIPELINE_CHUNK)];
+        for (i, &x) in chunk.iter().enumerate() {
+            let n = front.sample(x, &mut buf);
+            debug_assert_eq!(n, factor);
+            mid[i * factor..(i + 1) * factor].copy_from_slice(&buf[..factor]);
+        }
+        // The shadow runs here, or on `helper` once the block has shown it
+        // needs one, so there is no early start.
+        let mut spec = back.speculation(mid.as_ptr(), factor, chunk.len(), false);
+        if let (Some(spec), Some(worker)) = (spec.as_mut(), helper) {
+            spec.helper = worker;
+        }
+        back.power.spec = spec
+            .as_ref()
+            .map_or(std::ptr::null(), |s| s as *const SpecBlock);
+        back.power.spec_index = 0;
+        back.power.spec_seen = 0;
+        for (i, (l, r)) in left[chunk_start..]
+            .iter_mut()
+            .zip(&mut right[chunk_start..])
+            .take(chunk.len())
+            .enumerate()
+        {
+            (*l, *r) = back.sample(&mid[i * factor..(i + 1) * factor]);
+        }
+        back.power.spec = std::ptr::null();
+        if let Some(spec) = &spec {
+            spec.end_help();
+        }
+        SpecBlock::tally(spec.as_ref(), speculation, chunk.len());
+    }
 }
 
 /// Which circuits a chain is running, for a realtime trace to label its rows.
@@ -3278,6 +3830,27 @@ pub struct Chain {
     /// The power half's output, per host sample, for the samples whose
     /// cabinet the calling thread runs; see `pipelined`.
     handoff: Box<[[f64; 2]]>,
+    /// A copy of each power stage in `powers`, at the same index, that runs
+    /// ahead of it on a block's second half; see `SpecBlock`.
+    power_shadows: Vec<Option<Simulation>>,
+    /// What a shadow leaves for the real solve, `SPECULATION_MAX` solves of
+    /// the largest power stage: every unknown, each device's linearisation,
+    /// and the passes the shadow took over the solve.
+    spec_voltages: Box<[f64]>,
+    spec_linearisations: Box<[Linearisation]>,
+    spec_passes: Box<[u16]>,
+    /// What the power stage's speculation has done, and when it last found a
+    /// block hard; see `SpecBlock`.
+    speculation: Speculation,
+    /// Whether `process_block` speculates at all; on unless a measurement
+    /// wants it off.
+    speculating: bool,
+    /// Running averages of the first half's and the power stage's work per
+    /// host sample, in `Simulation::pass_weight` units; see
+    /// `SPECULATE_BELOW`. Counted, not timed, so the decision they make is
+    /// the same however the blocks ran.
+    front_work: f64,
+    power_work: f64,
 }
 
 impl Chain {
@@ -3454,8 +4027,12 @@ impl Chain {
                     powers.join().expect("power catalogue builds"),
                 )
             });
+        let power_shadows: Vec<Option<Simulation>> = powers
+            .iter()
+            .map(|power| power.as_ref().map(Simulation::speculative_copy))
+            .collect();
         let initial = LoadValues::new(&SpeakerProfile::BRIT_V30, &Mounting::BAFFLE, 1.0);
-        let loaded = PowerModel::ALL
+        let loaded: Vec<Loaded> = PowerModel::ALL
             .iter()
             .map(|model| {
                 let values = LoadValues::new(
@@ -3476,12 +4053,21 @@ impl Chain {
                     sim.set_late_continuation(true);
                 }
                 Loaded {
+                    shadow: Some(Box::new(sim.speculative_copy())),
                     sim,
                     slots,
                     motional,
                 }
             })
             .collect();
+        // Room for the largest shadow's answers.
+        let (spec_unknowns, spec_devices) = power_shadows
+            .iter()
+            .flatten()
+            .chain(loaded.iter().filter_map(|l| l.shadow.as_deref()))
+            .fold((0, 0), |(n, d), sim| {
+                (n.max(sim.voltages().len()), d.max(sim.device_count()))
+            });
         let (driven_circuit, driven_slots) =
             speaker::voltage_driven(&initial).expect("voltage-driven speaker builds");
         let driven_motional = driven_circuit.output;
@@ -3520,6 +4106,7 @@ impl Chain {
             loaded,
             driven: Box::new(Loaded {
                 sim: Simulation::new(driven_circuit, rate),
+                shadow: None,
                 slots: driven_slots,
                 motional: driven_motional,
             }),
@@ -3597,6 +4184,18 @@ impl Chain {
             realtime_stage_timings: RealtimeStageTimings::default(),
             mid: vec![0.0; PIPELINE_CHUNK * MAX_OVERSAMPLING].into_boxed_slice(),
             handoff: vec![[0.0; 2]; PIPELINE_CHUNK].into_boxed_slice(),
+            spec_voltages: vec![0.0; SPECULATION_MAX * spec_unknowns].into_boxed_slice(),
+            spec_linearisations: vec![Linearisation::default(); SPECULATION_MAX * spec_devices]
+                .into_boxed_slice(),
+            spec_passes: vec![0; SPECULATION_MAX].into_boxed_slice(),
+            power_shadows,
+            speculation: Speculation {
+                since_hard: usize::MAX,
+                ..Speculation::default()
+            },
+            speculating: true,
+            front_work: 0.0,
+            power_work: 0.0,
         };
         chain.set_oversampling(4);
         chain.set_drive(0.5);
@@ -4487,6 +5086,12 @@ impl Chain {
         self.active_power()
     }
 
+    /// Test-only: the first half's circuits, pedal and gain, as they run.
+    #[cfg(test)]
+    pub(crate) fn test_front(&self) -> (Option<&Simulation>, &Simulation) {
+        (self.pedal.map(|i| &self.pedals[i]), &self.gains[self.gain])
+    }
+
     /// Puts a whole panel's worth of settings onto the chain.
     ///
     /// Every one of them, in one place. Anything that reaches a circuit has to
@@ -4655,23 +5260,44 @@ impl Chain {
     /// the power stage and everything after it. They share no state, which is
     /// what lets a `StageWorker` run the second half of one stretch of samples
     /// while this thread runs the first half of the next.
-    fn split(&mut self, stereo: bool) -> (Front<'_>, Back<'_>) {
+    fn split(&mut self, stereo: bool, speculate: bool) -> (Front<'_>, Back<'_>) {
         let inner_rate = self.rate * self.over.factor() as f64;
         let tank_send = self.ab763_tank_send();
         let (up, down) = self.over.split();
         let power_model = self.power_selection.resolved(self.voice);
         let radiating = self.radiating;
-        let (power, driven, motional) = if radiating {
+        let (power, driven, motional, shadow) = if radiating {
             match power_model {
                 Some(model) => {
                     let loaded = &mut self.loaded[model.slot()];
-                    (Some(&mut loaded.sim), None, loaded.motional)
+                    (
+                        Some(&mut loaded.sim),
+                        None,
+                        loaded.motional,
+                        loaded.shadow.as_deref_mut(),
+                    )
                 }
-                None => (None, Some(&mut self.driven.sim), self.driven.motional),
+                None => (None, Some(&mut self.driven.sim), self.driven.motional, None),
             }
         } else {
-            (self.powers[self.power].as_mut(), None, 0)
+            (
+                self.powers[self.power].as_mut(),
+                None,
+                0,
+                self.power_shadows[self.power].as_mut(),
+            )
         };
+        // A shadow's inputs have to be known before the real stage runs: on
+        // the physical path the Iron control sits in front of the output
+        // stage, and what it hands on depends on its own first half.
+        let shadow = shadow
+            .filter(|_| speculate && !(radiating && self.iron.is_some()))
+            .map(|sim| BackShadow {
+                sim,
+                voltages: &mut self.spec_voltages,
+                linearisations: &mut self.spec_linearisations,
+                passes: &mut self.spec_passes,
+            });
         #[cfg(test)]
         let power_traced = power.is_some() && !radiating;
         let twin = self.voice.has_reverb_and_tremolo();
@@ -4728,6 +5354,9 @@ impl Chain {
             inner_rate,
             out_of: &mut self.out_of,
             out_of_target: self.out_of_target,
+            spec: std::ptr::null(),
+            spec_index: 0,
+            spec_seen: 0,
             timing,
             iron_ns: 0,
             power_ns: 0,
@@ -4759,7 +5388,14 @@ impl Chain {
             tone_ns: 0,
             cabinet_ns: 0,
         };
-        (front, Back { power, cabinet })
+        (
+            front,
+            Back {
+                power,
+                cabinet,
+                shadow,
+            },
+        )
     }
 
     fn add_stage_timings(&mut self, front: (u64, u64), back: (u64, u64, u64, u64)) {
@@ -4778,7 +5414,7 @@ impl Chain {
     pub fn process(&mut self, x: f64) -> f64 {
         self.install_deferred_oversampling();
         let stereo = self.want_stereo;
-        let (mut front, mut back) = self.split(stereo);
+        let (mut front, mut back) = self.split(stereo, false);
         let mut mid = [0.0; MAX_OVERSAMPLING];
         let n = front.sample(x, &mut mid);
         let (y, right) = back.sample(&mid[..n]);
@@ -4791,13 +5427,15 @@ impl Chain {
     /// A block of samples: `left[i]` is what `process(input[i])` returns and
     /// `right[i]` what `process_stereo` would put on the right.
     ///
-    /// With a `StageWorker`, the chain's second half runs on the worker, eight
-    /// samples behind the first half on this thread, so a block takes about
-    /// as long as the slower half instead of both. Both halves are the same
-    /// code `process` runs, the output is the same to the bit, and if the
-    /// worker has not woken by the time the first half is done this thread
-    /// runs the second half itself: there is nothing to wait for that might
-    /// not come.
+    /// With a `StageWorker` and `pipeline`, the chain's second half runs on
+    /// the worker, eight samples behind the first half on this thread, so a
+    /// block takes about as long as the slower half instead of both. Both
+    /// halves are the same code `process` runs, the output is the same to the
+    /// bit, and if the worker has not woken by the time the first half is done
+    /// this thread runs the second half itself: there is nothing to wait for
+    /// that might not come. Without `pipeline` the worker is only asked to run
+    /// the power stage's shadow (`SpecBlock`) on a block that needs one. The
+    /// output is the same to the bit whichever way a block ran.
     pub fn process_block(
         &mut self,
         input: &[f64],
@@ -4805,16 +5443,20 @@ impl Chain {
         right: &mut [f64],
         stereo: bool,
         worker: Option<&StageWorker>,
+        pipeline: bool,
     ) -> PipelineUse {
         let len = input.len().min(left.len()).min(right.len());
         self.install_deferred_oversampling();
         let mut mid = std::mem::take(&mut self.mid);
         let mut handoff = std::mem::take(&mut self.handoff);
-        let (mut front, mut back) = self.split(stereo);
+        let mut speculation = self.speculation;
+        let work = self.work_so_far();
+        let speculate = self.speculating && self.front_work < SPECULATE_BELOW * self.power_work;
+        let (mut front, mut back) = self.split(stereo, speculate);
         let factor = front.factor();
         let mut used = PipelineUse::Serial;
         match worker {
-            Some(worker) if len > PIPELINE_QUANTUM && factor <= MAX_OVERSAMPLING => {
+            Some(worker) if pipeline && len > PIPELINE_QUANTUM && factor <= MAX_OVERSAMPLING => {
                 used = pipelined(
                     &mut front,
                     &mut back,
@@ -4824,28 +5466,83 @@ impl Chain {
                     &mut left[..len],
                     &mut right[..len],
                     worker,
+                    &mut speculation,
                 );
             }
-            _ => {
-                let mut buf = [0.0; MAX_OVERSAMPLING];
-                for ((&x, l), r) in input[..len]
-                    .iter()
-                    .zip(&mut left[..len])
-                    .zip(&mut right[..len])
-                {
-                    let n = front.sample(x, &mut buf);
-                    (*l, *r) = back.sample(&buf[..n]);
-                }
-            }
+            _ => serial(
+                &mut front,
+                &mut back,
+                &input[..len],
+                &mut mid,
+                &mut left[..len],
+                &mut right[..len],
+                &mut speculation,
+                worker,
+            ),
         }
         let timings = (front.timings(), back.timings());
         self.mid = mid;
         self.handoff = handoff;
+        self.speculation = speculation;
+        if len > 0 {
+            let (front, power) = self.work_so_far();
+            let alpha = len as f64 / (len as f64 + WORK_WINDOW);
+            let per_sample = |now: f64, then: f64| (now - then) / len as f64;
+            self.front_work += (per_sample(front, work.0) - self.front_work) * alpha;
+            self.power_work += (per_sample(power, work.1) - self.power_work) * alpha;
+        }
         self.add_stage_timings(timings.0, timings.1);
         if len > 0 {
             self.stereo_right = right[len - 1];
         }
         used
+    }
+
+    /// Blocks whose power stage started its second half from a shadow's
+    /// answers; see `SpecBlock`.
+    pub fn speculated_blocks(&self) -> u64 {
+        self.speculation.blocks
+    }
+
+    /// Second-half power solves, in those blocks, whose shadow answer was not
+    /// ready when the power stage reached them.
+    pub fn speculation_waits(&self) -> u64 {
+        self.speculation.waits
+    }
+
+    /// In those blocks, the shadow's Newton passes and the solves the real
+    /// stage started from its answer.
+    pub fn speculation_work(&self) -> (u64, u64) {
+        (self.speculation.shadow_passes, self.speculation.starts)
+    }
+
+    /// The first half's estimated work over the power stage's, running; the
+    /// chain speculates below `SPECULATE_BELOW`.
+    pub fn speculation_gate(&self) -> f64 {
+        self.front_work / self.power_work
+    }
+
+    /// Every Newton pass so far in the first half's circuits and in the power
+    /// stage, weighted by what a pass of each costs.
+    fn work_so_far(&self) -> (f64, f64) {
+        let mut front = self.gains[self.gain].weighted_passes();
+        if let Some(i) = self.pedal {
+            front += self.pedals[i].weighted_passes();
+        }
+        if self.voice.has_graphic() {
+            front += self.graphic.weighted_passes();
+        }
+        if self.voice == Gain::Neve {
+            front += self.line.weighted_passes();
+        }
+        let power = self.active_power().map_or(0.0, Simulation::weighted_passes);
+        (front, power)
+    }
+
+    /// Turn the power stage's speculation on or off, for measuring what it
+    /// buys. On by default. Off, `process_block` is `process` to the bit.
+    pub fn set_speculation(&mut self, enabled: bool) {
+        self.speculating = enabled;
     }
 
     /// Settles the make-up where it is heading, for a chain that has just

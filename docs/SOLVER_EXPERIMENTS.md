@@ -41,6 +41,101 @@ claim below roughly 1 % needs repeated runs.
 
 ## Accepted
 
+### The power stage's second half, speculated on the other core
+
+What is left in the tail after the exact speedups is a cluster of hard
+power-stage solves, and those are sequential: each starts from the last. A
+shadow copy of the power stage (`SpecBlock` in `voice.rs`) solves each block's
+second half from the block's *first* state -- skipping the first half -- on
+whichever thread would otherwise wait, and where the shadow found a solve hard
+the real stage starts Newton at the shadow's unknowns and device
+linearisations instead of the predictor's extrapolation. Nothing the shadow
+computes is output, and the real stage converges to the same test on the same
+equations: a block that speculated agrees with the per-sample chain to the
+solver's tolerance (-163 dB relative to peak or better on all 78 presets), and
+every block path -- serial, serial with the stage worker taking the shadow,
+pipelined, reclaimed, cabinet handed over -- agrees with every other to the
+bit, at all five rates (`tests/pipeline.rs`). Whether a block speculates, and
+every answer, depends on the signal alone.
+
+How each choice was made:
+
+- **Which chains.** Only those whose first half is light next to the power
+  stage. The shadow's inputs are the first half's output, and it runs on the
+  thread that computes them: a preamplifier as costly as its power stage hands
+  the shadow its inputs no faster than the power stage consumes them, and
+  leaves no thread free to run it, so the power stage waits on every solve.
+  Ungated, over the catalogue (A-B-B-A, pinned, 8 s each), every preset whose
+  front measured under 0.45 of its power stage gained (p99.9 -9 to -23 %) and
+  every one over 0.8 lost -- Puppet Master '86 p99 +27 %, p99.9 +28 %; Texas
+  Storm '83 p99.9 +32 %; the Blackface and Boutique presets +10 to +23 %. The
+  gate compares the two halves' Newton passes weighted by an estimate of what
+  a pass of each circuit costs (`Simulation::pass_weight`, fitted from size
+  over the catalogue by `hard_samples::pass_cost_by_size`, worst error 40 %),
+  averaged over ~0.7 s, and opens below 0.5. A 40 ms average followed the
+  playing and was still closed for the first blocks of an attack after a quiet
+  passage. Blizzard '80, which gained ungated, sits on the edge and mostly
+  does not speculate.
+- **Which blocks, which starts.** A block speculates when its first half had a
+  solve of 10+ passes, which the power stage's thread knows when it reaches the
+  split; the real stage takes the shadow's answer where the shadow needed 4+
+  passes. Swept with `hard_samples::speculative_second_half` over 8/10/14/18
+  and 1/4/6/10.
+- **The follow.** The shadow is re-copied from the real stage at every block's
+  first solve. `copy_runtime_state_from` cost 3 us a block, and that was the
+  whole of an early p50 regression. The rebuild-only matrices and Schur caches
+  are a pure function of the configuration, so the per-block copy takes only
+  the per-sample state and the learned pivot plans (~90 ns), with a full copy
+  when a control moves and once more after a source's pending rebuild. Exact:
+  `a_followed_shadow_solves_exactly_as_its_source` in `tests/runtime_state.rs`
+  follows every power stage at five rates across control moves, a reset and
+  blocks the shadow sits out.
+- **Who runs it.** Pipelined, the calling thread, in what was its spin; the
+  power half waits for an answer rather than computing it, which had made the
+  typical speculated block 10 us slower than not speculating. The shadow's
+  progress counters sit on a cache line of their own, and the power half
+  re-reads them only once it has caught up. The trailing cabinet goes after the
+  shadow, not before: cabinet-first doubled the waits.
+- **When.** Once the first half has shown a hard solve -- or, within 512 host
+  samples of the last block that did, as soon as the calling thread is free.
+  Hard attacks cluster: that window covered every speculated block among the
+  thirty heaviest on Jazz Chorus and Brown '84 while starting early on 9 % and
+  25 % of their blocks. Waiting for the hard solve every time left the typical
+  speculated Jazz block about 10 us slower.
+- **Serial blocks.** With pipelining off, the shadow on the audio thread alone
+  cost 100-200 us a speculated block (Jazz Chorus serial p99.9 847 -> 1,052 us).
+  The stage worker is idle then, so it is handed the shadow at the first hard
+  solve (`run_shadow`); the plugin now always passes its worker and says
+  separately whether to pipeline. Serial with the helper: Jazz Chorus p99.9
+  -8 %, Brown '84 p99 -14 %, p99.9 -20 %.
+
+Pipelined over the take (`tools/preset_ab.py`: A-B-B-A, pinned to two cores,
+8 s each; the max is a single callback and noisy -- presets that never
+speculate moved by up to 3x between identical runs):
+
+| | mean | p50 | p99 | p99.9 |
+| --- | ---: | ---: | ---: | ---: |
+| Jazz Chorus | 0 % | 0 % | +1 % | -16 % |
+| Jazz Clean | -1 % | 0 % | -2 % | -15 % |
+| Brown '84 (full take, 3 runs) | -1 % | 0 % | -11 % | -14 % |
+| Brown '78 | -1 % | 0 % | -11 % | -15 % |
+| Plexi Cranked | -1 % | 0 % | -13 % | -20 % |
+| Plexi Crunch | -2 % | 0 % | -16 % | -18 % |
+| Blackout '80 | -1 % | 0 % | -17 % | -13 % |
+| Experienced '67 | 0 % | +1 % | -8 % | -11 % |
+| gated off (Puppet, Recto, Blackface, Boutique, ...) | 0 % | 0 % | 0 to +1 % | -7 to +1 % |
+
+Across all 78 presets ungated, the median moved by at most 0.3 % in every
+column, which is how the regressions above hid: a median over the catalogue is
+not a check on any one preset.
+
+The estimator's first numbers were twice too good. It copied the power stage
+before the chain's first call had installed the preset's oversampling, so it
+solved at 192 kHz for inputs recorded at 48 (222 passes a block against the
+chain's 208): Jazz Chorus -16 % / -27 % on the heaviest 1 % / 0.1 %, against
+-8 % / -23 % once corrected. `the_estimators_copies_follow_the_chain` now checks
+its copies against the chain solve for solve.
+
 ### Device stamps map their nodes once; the reduced RHS accumulates four wide
 
 Two exact changes to the per-pass pipeline of a transistor power stage,
@@ -252,6 +347,31 @@ Not an optimization; a correction to the instrument. See
 `docs/SOLVER_OPTIMIZATION.md`. Test-only, hash preserved.
 
 ## Rejected (do not reintroduce without new evidence)
+
+### Speculation variants -- rejected
+
+Measured while building the speculative second half above:
+
+- **The power half computing the shadow itself when it is behind.** Both jobs
+  on the critical path: the typical speculated block ran 10 us slower than not
+  speculating.
+- **The cabinet before the shadow** in the calling thread's trailing loop:
+  twice the waits, 5 us more a speculated block.
+- **Starting the shadow only at the first hard solve, always.** Correct, but
+  the power half then waits on a shadow that started late; see the eager
+  window above.
+- **Taking the shadow's answer where the real stage's *previous* solve was
+  hard,** which needs no wait on an easy stretch: a quarter to a third of the
+  gain lost against taking it where the shadow's own solve was hard (Brown '84
+  heaviest 1 %: -17 % against -24 %).
+- **Bounding the wait by a pass budget** (an answer usable only if the
+  shadow's passes up to it fit in the real stage's first half): 1-3 points of
+  the gain lost on the presets it helps, and no help for the presets it hurt,
+  whose problem was the front's cost rather than the shadow's.
+- **Speculating on every chain.** See the gate above.
+- **A per-block (40 ms) work average for the gate.** See the gate above.
+- **A shadow with its own half-step twin:** no measurable difference.
+- **The full state copy each block:** 3 us a block; see the follow above.
 
 ### Coupling subtracted only over the device footprint -- rejected
 
