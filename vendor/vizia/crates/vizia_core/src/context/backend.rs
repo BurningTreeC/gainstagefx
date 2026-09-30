@@ -165,7 +165,11 @@ impl BackendContext {
 
         self.0.style.needs_relayout(window_entity);
         self.0.style.needs_retransform(window_entity);
-        self.0.style.needs_reclip(window_entity);
+        // Every view's clip, not only the window's. A view's clip is its
+        // parent's intersected with its own, and one whose layout does not
+        // change with the window -- everything above a section that opened,
+        // say -- is otherwise never reclipped and stays cut at the old size.
+        self.0.needs_reclip(window_entity);
     }
 
     /// Temporarily sets the current entity, calls the provided closure, and then resets the current entity back to previous.

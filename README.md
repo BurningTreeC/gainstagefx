@@ -34,9 +34,12 @@ and sound as they did.
 ## The panel
 
 Six numbered bands in the order the signal goes through them, with an arrow at
-the foot of each pointing into the next. 780 × 912 at its own size, and the
-button in the strip scales it from 75 % to 150 % — it is drawn rather than
-pictured, so it is sharp at any of them. The model lists are dropdowns, and
+the foot of each pointing into the next. Each band opens and closes from its
+header row — number, name and chevron — and the window grows and shrinks to
+fit what is open: a fresh panel opens with the input alone, and the session
+remembers which are open. 780 wide; 306 tall with only the input open, 968 with
+all six. The button in the strip scales it from 75 % to 150 % — it is drawn
+rather than pictured, so it is sharp at any of them. The model lists are dropdowns, and
 the wheel over a closed one steps through it, which is the quickest way to hear
 what is in it.
 

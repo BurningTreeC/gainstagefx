@@ -17,16 +17,20 @@ use super::style::*;
 /// The numbering itself is laid on as labels rather than drawn here -- text on
 /// a canvas needs a font registered on the paint, and a paint without one
 /// draws nothing and says nothing about it.
-pub struct Faceplate;
+pub struct Faceplate {
+    /// Which sections are open, so each band is drawn at its height.
+    open: u8,
+}
 
 impl Faceplate {
-    pub fn new(cx: &mut Context) -> Handle<'_, Self> {
-        Self.build(cx, |_| {})
+    pub fn new(cx: &mut Context, open: u8) -> Handle<'_, Self> {
+        Self { open }
+            .build(cx, |_| {})
             .position_type(PositionType::Absolute)
             .left(Pixels(0.0))
             .top(Pixels(0.0))
             .width(Pixels(PANEL_W))
-            .height(Pixels(WINDOW_H))
+            .height(Pixels(window_height(open)))
             .hoverable(false)
     }
 }
@@ -113,9 +117,9 @@ impl View for Faceplate {
         strip.rect(b.x, b.y, b.width(), HEADER_H * scale);
         canvas.fill_path(&strip, &vg::Paint::color(rgba(0x000000, 0.28)));
 
-        for (index, (_, _, height)) in SECTIONS.iter().enumerate() {
-            let top = b.y + section_top(index) * scale;
-            let h = height * scale;
+        for index in 0..SECTIONS.len() {
+            let top = b.y + section_top(self.open, index) * scale;
+            let h = section_height(self.open, index) * scale;
 
             // Alternating shade, very slight: enough to see the banding
             // without turning the panel into stripes.
@@ -143,7 +147,8 @@ impl View for Faceplate {
             );
 
             // The arrow down the gutter, which says the signal goes this way.
-            if index + 1 < SECTIONS.len() {
+            // Not in a closed section, whose one row the number and name fill.
+            if index + 1 < SECTIONS.len() && is_open(self.open, index) {
                 let x = b.x + 27.0 * scale;
                 let y = top + h - 10.0 * scale;
                 let mut arrow = vg::Path::new();

@@ -45,10 +45,41 @@ pub const SECTIONS: [(&str, &str, f32); 6] = [
 /// Width of the numbered gutter down the left.
 pub const GUTTER_W: f32 = 78.0;
 
-pub fn section_top(index: usize) -> f32 {
-    HEADER_H + SECTIONS.iter().take(index).map(|s| s.2).sum::<f32>()
+/// A closed section is a strip this tall: its number, its name, and the
+/// chevron that opens it. An open one keeps the same row at its top, so the
+/// place to click to close a section is where it was clicked to open.
+pub const CLOSED_H: f32 = 30.0;
+
+/// Which sections are open, one bit each in signal order. The first one open
+/// and the rest closed until the player says otherwise: the input is where a
+/// session starts, and the rest can be opened as they are needed.
+pub const FIRST_OPEN: u8 = 0b000001;
+
+pub fn is_open(open: u8, index: usize) -> bool {
+    open & (1 << index) != 0
 }
 
+/// How tall a section is drawn, open or closed.
+pub fn section_height(open: u8, index: usize) -> f32 {
+    if is_open(open, index) {
+        SECTIONS[index].2
+    } else {
+        CLOSED_H
+    }
+}
+
+/// Where a section starts, with the ones above it open or closed.
+pub fn section_top(open: u8, index: usize) -> f32 {
+    HEADER_H + (0..index).map(|i| section_height(open, i)).sum::<f32>()
+}
+
+/// The window's height for a set of open sections: it grows and shrinks to
+/// fit them rather than leaving closed ones as empty panel.
+pub fn window_height(open: u8) -> f32 {
+    section_top(open, SECTIONS.len())
+}
+
+/// Every section open: the tallest the window gets.
 pub const PANEL_H: f32 = {
     let mut total = 0.0;
     let mut i = 0;
@@ -58,7 +89,6 @@ pub const PANEL_H: f32 = {
     }
     total
 };
-pub const WINDOW_H: f32 = PANEL_H + HEADER_H;
 
 /// A knob sweeps this many degrees, zero at the lower left.
 pub const SWEEP: f32 = 280.0;

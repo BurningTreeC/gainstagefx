@@ -39,6 +39,29 @@ pub fn request_user_scale(
 #[derive(Clone, Copy, Debug)]
 pub struct WindowScaleChanged(pub f64);
 
+/// Settle a change of the unzoomed size (`WindowEvent::SetSize`) against the
+/// size the OS committed at `zoom`: the requested size if the window arrived
+/// at it, the previous one if the host kept that, `None` while it is still
+/// neither -- an earlier resize can report in between.
+pub fn settle_inner_size(
+    committed: (f64, f64),
+    zoom: f64,
+    requested: (u32, u32),
+    previous: (u32, u32),
+) -> Option<(u32, u32)> {
+    let at = |(width, height): (u32, u32)| {
+        (committed.0 - width as f64 * zoom).abs() <= 1.0
+            && (committed.1 - height as f64 * zoom).abs() <= 1.0
+    };
+    if at(requested) {
+        Some(requested)
+    } else if at(previous) {
+        Some(previous)
+    } else {
+        None
+    }
+}
+
 /// Resolve zoom from the size the OS actually committed. Preserve the requested
 /// value when only pixel rounding differs; a refused host resize reports the old size.
 pub fn resolve_user_scale(logical: (f64, f64), base: (u32, u32), requested: f64) -> f64 {

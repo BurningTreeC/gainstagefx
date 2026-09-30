@@ -433,18 +433,21 @@ pub fn menu(cx: &mut Context) {
                 .sum::<f32>()
                 + 2.0 * MENU_PAD
                 + 2.0;
-            let scrolls = natural > MENU_MAX_H;
-            let height = natural.min(MENU_MAX_H);
+            // No taller than the window has room for under its strip, which
+            // with most sections closed can be less than the usual cap.
+            let window = super::current_height(cx);
+            let height = natural.min(MENU_MAX_H).min(window - HEADER_H - 8.0);
+            let scrolls = natural > height;
             let width = opened.width.max(MENU_MIN_W);
             let left = opened.x.min(PANEL_W - width - 4.0).max(4.0);
             // Below the button when it fits, above it when it does not, and
             // pinned to the foot of the window if neither does.
-            let top = if opened.bottom + 1.0 + height <= WINDOW_H - 4.0 {
+            let top = if opened.bottom + 1.0 + height <= window - 4.0 {
                 opened.bottom + 1.0
             } else if opened.top - 1.0 - height >= HEADER_H {
                 opened.top - 1.0 - height
             } else {
-                (WINDOW_H - 4.0 - height).max(HEADER_H)
+                (window - 4.0 - height).max(HEADER_H)
             };
             let choice = opened.choice;
 
@@ -466,7 +469,10 @@ pub fn menu(cx: &mut Context) {
                 // The scroll bar's track draws whether or not there is anything
                 // to scroll, so a list that fits does without one.
                 if scrolls {
+                    // Down only: a horizontal bar would sit over the last
+                    // row, and nothing here is wider than the list.
                     ScrollView::new(cx, list)
+                        .show_horizontal_scrollbar(false)
                         .width(Stretch(1.0))
                         .height(Stretch(1.0));
                 } else {
@@ -589,12 +595,13 @@ struct Catch;
 
 impl Catch {
     fn build_into(cx: &mut Context) {
+        let height = super::current_height(cx);
         Self.build(cx, |_| {})
             .position_type(PositionType::Absolute)
             .left(Pixels(0.0))
             .top(Pixels(0.0))
             .width(Pixels(PANEL_W))
-            .height(Pixels(WINDOW_H));
+            .height(Pixels(height));
     }
 }
 

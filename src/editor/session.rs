@@ -32,7 +32,8 @@ use crate::presets::{self, Stored, GROUPS, SAVED};
 /// is now sixty-seven in twelve, which is about seventeen hundred pixels of
 /// list: at 330 the groups near the bottom -- Alternative, Metal / Heavy, Blues
 /// -- were four screens down a scroll bar nobody was going to find. The panel
-/// is 880 px tall below its header, so the list may as well use it.
+/// is 880 px tall below its header with every section open, so the list may
+/// as well use it -- and with sections closed, whatever the window has left.
 const MENU_H: f32 = crate::editor::style::PANEL_H - 48.0;
 const MENU_W: f32 = 300.0;
 const ROW_H: f32 = 22.0;
@@ -704,6 +705,7 @@ pub fn menu(cx: &mut Context) {
                 return;
             }
             Backdrop::new(cx, SessionEvent::Close);
+            let height = MENU_H.min(super::current_height(cx) - HEADER_H - 6.0);
 
             VStack::new(cx, |cx| {
                 ScrollView::new(cx, move |cx| {
@@ -736,6 +738,10 @@ pub fn menu(cx: &mut Context) {
                         });
                     };
                 })
+                // Down only. The rows are as wide as the list, so there is
+                // nothing to scroll across -- and the bar vizia draws for it
+                // anyway sat over the last preset.
+                .show_horizontal_scrollbar(false)
                 .width(Stretch(1.0))
                 .height(Stretch(1.0));
             })
@@ -744,7 +750,7 @@ pub fn menu(cx: &mut Context) {
             .left(Pixels(BUTTON_X))
             .top(Pixels(HEADER_H - 2.0))
             .width(Pixels(MENU_W))
-            .height(Pixels(MENU_H))
+            .height(Pixels(height))
             .background_color(Color::rgb(0x1c, 0x20, 0x23))
             .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
             .border_width(Pixels(1.0));
@@ -840,7 +846,7 @@ pub fn dialogs(cx: &mut Context) {
             Backdrop::new(cx, SessionEvent::Cancel);
 
             let left = (PANEL_W - DIALOG_W) / 2.0;
-            let top = (WINDOW_H - DIALOG_H) / 2.0;
+            let top = ((super::current_height(cx) - DIALOG_H) / 2.0).max(HEADER_H);
 
             VStack::new(cx, move |cx| {
                 let title = match which {
@@ -996,6 +1002,7 @@ pub struct Backdrop {
 
 impl Backdrop {
     pub fn new(cx: &mut Context, close: SessionEvent) -> Handle<'_, Self> {
+        let height = super::current_height(cx);
         // Captured as a maker rather than a value, because the view outlives
         // the one event it was built with.
         let which = match close {
@@ -1016,7 +1023,7 @@ impl Backdrop {
         .left(Pixels(0.0))
         .top(Pixels(0.0))
         .width(Pixels(PANEL_W))
-        .height(Pixels(WINDOW_H))
+        .height(Pixels(height))
     }
 }
 

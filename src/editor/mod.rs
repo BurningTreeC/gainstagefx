@@ -6,6 +6,12 @@
 //! out of, what leaves. An arrow at the foot of each band points into the
 //! next.
 //!
+//! Each band opens and closes from its header row, and the window grows and
+//! shrinks to fit what is open, so a player keeps in view the sections they
+//! are working with and the order of the rest stays readable as six rows. A
+//! fresh panel opens with the input alone; which are open is kept with the
+//! session (`GainStageParams::open_sections`).
+//!
 //! This is deliberate and it is the one thing the previous version could not
 //! be given afterwards. Its controls sat where they had been added, so the
 //! panel recorded the order the plugin was built in rather than the order the
@@ -22,6 +28,7 @@ mod style;
 mod widgets;
 
 use fonts as vizia_assets;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 use vizia_plug::vizia::prelude::*;
 use vizia_plug::{create_vizia_editor, ViziaState, ViziaTheming};
@@ -31,6 +38,7 @@ use crate::params::{
     ToneStack,
 };
 use dropdown::{Choice, DropButton, Dropdowns};
+use paint::PanelCanvas;
 use panel::Faceplate;
 use style::*;
 use widgets::{Knob, Meter, Selector};
@@ -39,21 +47,58 @@ pub struct Panel {
     pub params: Arc<GainStageParams>,
     pub meters: Arc<crate::meters::Meters>,
     parameter_signal: Signal<Arc<GainStageParams>>,
+    /// Which sections are open; see `style::is_open`.
+    open: Signal<u8>,
+}
+
+pub enum PanelEvent {
+    /// Open a closed section or close an open one.
+    ToggleSection(usize),
 }
 
 impl Model for Panel {
-    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
         event.map(|_: &vizia_plug::widgets::RawParamEvent, _| {
             self.parameter_signal.set(self.params.clone())
+        });
+        event.map(|panel: &PanelEvent, meta| match panel {
+            PanelEvent::ToggleSection(index) => {
+                let open = self.open.get_untracked() ^ (1 << index);
+                // The stored set first: the host asks the editor its size in
+                // answer to the resize, and `default_state` reads it there.
+                self.params.open_sections.store(open, Ordering::Relaxed);
+                self.open.set(open);
+                cx.emit(WindowEvent::SetSize(WindowSize {
+                    width: PANEL_W as u32,
+                    height: window_height(open) as u32,
+                }));
+                meta.consume();
+            }
         });
     }
 }
 
+/// The window's height as the panel stands now.
+fn current_height(cx: &Context) -> f32 {
+    window_height(cx.data::<Panel>().open.get_untracked())
+}
+
 pub const BASE_DPI: f64 = 1.5;
 
-pub fn default_state() -> Arc<ViziaState> {
+pub use style::{window_height, FIRST_OPEN};
+
+/// The editor's state, sized to whichever sections `open` says are open.
+pub fn default_state(open: Arc<AtomicU8>) -> Arc<ViziaState> {
     // The menu starts at 100%, which renders at the requested base DPI of 1.5.
-    ViziaState::new_with_base_scale_factor(|| (PANEL_W as u32, WINDOW_H as u32), BASE_DPI)
+    ViziaState::new_with_base_scale_factor(
+        move || {
+            (
+                PANEL_W as u32,
+                window_height(open.load(Ordering::Relaxed)) as u32,
+            )
+        },
+        BASE_DPI,
+    )
 }
 
 /// Updates the scale used by `Editor::size()` and saved in the host session.
@@ -110,21 +155,28 @@ fn build_panel(
         params: params.clone(),
         parameter_signal: Signal::new(params.clone()),
         meters: meters.clone(),
+        open: Signal::new(params.open_sections.load(Ordering::Relaxed)),
     }
     .build(cx);
 
     session::Session::build_into(cx, params.clone(), scale);
     Dropdowns::build_into(cx, params.clone());
 
-    Faceplate::new(cx);
-    gutter(cx);
+    {
+        let open = cx.data::<Panel>().open;
+        Binding::new(cx, open, move |cx| {
+            Faceplate::new(cx, open.get());
+        });
+    }
     strip(cx);
-    input(cx);
-    circuit(cx);
-    drive(cx);
-    tone(cx);
-    cabinet(cx);
-    output(cx);
+    section(cx, 0, input);
+    section(cx, 1, circuit);
+    section(cx, 2, drive);
+    section(cx, 3, tone);
+    section(cx, 4, cabinet);
+    section(cx, 5, output);
+    // After the sections, so a header takes the click over the band it heads.
+    gutter(cx);
 
     // Last, so they draw over the panel and take the clicks first. The
     // dialogs come after the menu: a question has to sit on top of
@@ -225,23 +277,147 @@ fn body_w() -> f32 {
     PANEL_W - body_x() - 18.0
 }
 
+/// A section's controls, in a box that sits wherever the sections above it
+/// leave it and is not there at all while the section is closed. Everything
+/// inside is placed from the section's own top.
+fn section(cx: &mut Context, index: usize, content: fn(&mut Context)) {
+    let open = cx.data::<Panel>().open;
+    VStack::new(cx, content)
+        .position_type(PositionType::Absolute)
+        .left(Pixels(0.0))
+        .top(open.map(move |open| Pixels(section_top(*open, index))))
+        .width(Pixels(PANEL_W))
+        .height(Pixels(SECTIONS[index].2))
+        .display(open.map(move |open| Display::from(is_open(*open, index))));
+}
+
 /// The numbering down the left, which is what makes the order legible before
-/// anything else on the panel is read.
+/// anything else on the panel is read -- and the handle each section opens
+/// and closes by.
+///
+/// Every section's number and name sit on one row at its top, the same row
+/// open or closed, with a chevron saying which: so the place to click to
+/// close a section is where it was clicked to open. A closed section is that
+/// row and nothing else, and all of it opens it.
 fn gutter(cx: &mut Context) {
-    for (index, (number, name, height)) in SECTIONS.iter().enumerate() {
-        let mid = section_top(index) + height / 2.0;
-        Label::new(cx, *number)
-            .position_type(PositionType::Absolute)
-            .left(Pixels(12.0))
-            .top(Pixels(mid - 14.0))
-            .width(Pixels(20.0))
-            .height(Pixels(28.0))
-            .alignment(Alignment::Left)
-            .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
-            .font_size(22.0)
-            .color(Color::rgba(0xff, 0xff, 0xff, 0x24))
-            .hoverable(false);
-        label(cx, name, 52.0, mid, 9.5, 56.0, 0x8b959d);
+    let open = cx.data::<Panel>().open;
+    Binding::new(cx, open, move |cx| {
+        let open = open.get();
+        for (index, (number, name, _)) in SECTIONS.iter().enumerate() {
+            let top = section_top(open, index);
+            let mid = top + CLOSED_H / 2.0;
+            let is_open = is_open(open, index);
+            Fold::new(cx, index, is_open)
+                .position_type(PositionType::Absolute)
+                .left(Pixels(0.0))
+                .top(Pixels(top))
+                // The header row: the gutter's width while the controls are
+                // beside it, the whole band while it is all there is.
+                .width(Pixels(if is_open { GUTTER_W } else { PANEL_W }))
+                .height(Pixels(CLOSED_H));
+            Label::new(cx, *number)
+                .position_type(PositionType::Absolute)
+                .left(Pixels(19.0))
+                .top(Pixels(mid - 14.0))
+                .width(Pixels(16.0))
+                .height(Pixels(28.0))
+                .alignment(Alignment::Left)
+                .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
+                .font_size(20.0)
+                .color(Color::rgba(
+                    0xff,
+                    0xff,
+                    0xff,
+                    if is_open { 0x30 } else { 0x24 },
+                ))
+                .hoverable(false);
+            Label::new(cx, *name)
+                .position_type(PositionType::Absolute)
+                .left(Pixels(35.0))
+                .top(Pixels(mid - LABEL_H / 2.0))
+                .width(Pixels(GUTTER_W - 35.0))
+                .height(Pixels(LABEL_H))
+                .alignment(Alignment::Left)
+                .font_family(vec![FamilyOwned::Named(String::from(vizia_assets::ROBOTO))])
+                .font_size(9.5)
+                .color(if is_open {
+                    Color::rgb(0xb4, 0xbe, 0xc6)
+                } else {
+                    Color::rgb(0x8b, 0x95, 0x9d)
+                })
+                .hoverable(false);
+        }
+    });
+}
+
+/// The click target that opens or closes a section, and the chevron that
+/// says which it will do.
+struct Fold {
+    index: usize,
+    open: bool,
+    hovered: bool,
+}
+
+impl Fold {
+    fn new(cx: &mut Context, index: usize, open: bool) -> Handle<'_, Self> {
+        Self {
+            index,
+            open,
+            hovered: false,
+        }
+        .build(cx, |_| {})
+        .cursor(CursorIcon::Hand)
+    }
+}
+
+impl View for Fold {
+    fn element(&self) -> Option<&'static str> {
+        Some("section-fold")
+    }
+
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|window: &WindowEvent, meta| match window {
+            WindowEvent::MouseDown(MouseButton::Left) => {
+                cx.emit(PanelEvent::ToggleSection(self.index));
+                meta.consume();
+            }
+            WindowEvent::MouseEnter => {
+                self.hovered = true;
+                cx.needs_redraw();
+            }
+            WindowEvent::MouseLeave => {
+                self.hovered = false;
+                cx.needs_redraw();
+            }
+            _ => {}
+        });
+    }
+
+    fn draw(&self, cx: &mut DrawContext, canvas: &Canvas) {
+        let b = cx.bounds();
+        let s = cx.scale_factor();
+        if self.hovered {
+            // The row it acts on, lit.
+            let mut row = paint::Path::new();
+            row.rect(b.x, b.y, b.width(), b.height());
+            canvas.fill_path(&row, &paint::Paint::color(rgba(GLOW, 0.06)));
+        }
+        let (x, y) = (b.x + 10.0 * s, b.y + CLOSED_H / 2.0 * s);
+        let mut chevron = paint::Path::new();
+        if self.open {
+            chevron.move_to(x - 3.5 * s, y - 1.5 * s);
+            chevron.line_to(x, y + 2.0 * s);
+            chevron.line_to(x + 3.5 * s, y - 1.5 * s);
+        } else {
+            chevron.move_to(x - 1.5 * s, y - 3.5 * s);
+            chevron.line_to(x + 2.0 * s, y);
+            chevron.line_to(x - 1.5 * s, y + 3.5 * s);
+        }
+        let alpha = if self.hovered { 0.55 } else { 0.30 };
+        canvas.stroke_path(
+            &chevron,
+            &paint::Paint::color(rgba(0xffffff, alpha)).with_line_width(1.4 * s),
+        );
     }
 }
 
@@ -366,7 +542,7 @@ fn strip(cx: &mut Context) {
 
 fn input(cx: &mut Context) {
     let parameter_signal = cx.data::<Panel>().parameter_signal;
-    let top = section_top(0);
+    let top = 0.0;
 
     knob(
         cx,
@@ -518,7 +694,7 @@ fn input(cx: &mut Context) {
 
 fn circuit(cx: &mut Context) {
     let parameter_signal = cx.data::<Panel>().parameter_signal;
-    let top = section_top(1);
+    let top = 0.0;
 
     // Six lists in two columns, read left to right in the order the signal
     // meets them: what the circuit is, what part bends and what part
@@ -882,7 +1058,7 @@ pub fn describe(circuit: Circuit) -> String {
 
 fn drive(cx: &mut Context) {
     let parameter_signal = cx.data::<Panel>().parameter_signal;
-    let top = section_top(2);
+    let top = 0.0;
 
     // Named after the pot it turns on the device selected, not after the
     // section. See `Gain::drive_name`.
@@ -1165,7 +1341,7 @@ impl ToneKnobs {
 
 fn tone(cx: &mut Context) {
     let parameter_signal = cx.data::<Panel>().parameter_signal;
-    let top = section_top(3);
+    let top = 0.0;
 
     row(
         cx,
@@ -1206,7 +1382,7 @@ fn tone(cx: &mut Context) {
         let state = parameter_signal.map(ToneKnobs::of);
         Binding::new(cx, state, move |cx| {
             let state = state.get();
-            let top = section_top(3);
+            let top = 0.0;
             // The fourth knob, where the circuit has a control of its own past the
             // three. It draws in the row's fourth column, which is clear of the
             // paragraph beside it, and only for the circuit that has one.
@@ -1348,7 +1524,7 @@ fn tone(cx: &mut Context) {
 
 fn cabinet(cx: &mut Context) {
     let parameter_signal = cx.data::<Panel>().parameter_signal;
-    let top = section_top(4);
+    let top = 0.0;
     let grid = Grid::new(top);
     let left = Grid::left();
     let right = Grid::right();
@@ -1610,7 +1786,7 @@ pub fn cabinet_summary(p: &GainStageParams) -> String {
 // ---------------------------------------------------------------------------
 
 fn output(cx: &mut Context) {
-    let top = section_top(5);
+    let top = 0.0;
 
     knob(
         cx,

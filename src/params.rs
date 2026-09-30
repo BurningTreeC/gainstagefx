@@ -19,6 +19,7 @@
 //! about the plugin rather than the sound.
 
 use nice_plug::prelude::*;
+use std::sync::atomic::AtomicU8;
 use std::sync::{Arc, Mutex};
 use vizia_plug::ViziaState;
 
@@ -1060,6 +1061,13 @@ pub struct GainStageParams {
     #[persist = "editor-state"]
     pub editor_state: Arc<ViziaState>,
 
+    /// Which of the panel's sections are open, one bit each in signal order.
+    /// Kept with the session rather than with presets: it is how this player
+    /// has the panel laid out, not part of a sound. The editor's size follows
+    /// it, so it is read by `editor_state`'s size function as well.
+    #[persist = "open-sections"]
+    pub open_sections: Arc<AtomicU8>,
+
     /// The name of the preset showing in the strip, kept with the state so a
     /// reopened session still says what it was set from.
     #[persist = "preset-name"]
@@ -1410,8 +1418,10 @@ fn decibels(name: &str, span: f32) -> FloatParam {
 
 impl Default for GainStageParams {
     fn default() -> Self {
+        let open_sections = Arc::new(AtomicU8::new(crate::editor::FIRST_OPEN));
         Self {
-            editor_state: crate::editor::default_state(),
+            editor_state: crate::editor::default_state(open_sections.clone()),
+            open_sections,
             preset_name: Mutex::new(String::from(crate::presets::NONE)),
 
             input_trim: decibels("Input", 24.0),

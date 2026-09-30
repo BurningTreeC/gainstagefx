@@ -29,5 +29,5 @@ pub mod prelude {
 
 #[cfg(feature = "baseview")]
 pub use vizia_baseview::{
-    TextInputActive, UserScaleChanged, WindowScaleChanged, request_user_scale, resolve_user_scale,
+    TextInputActive, UserScaleChanged, WindowScaleChanged, request_user_scale, resolve_user_scale, settle_inner_size,
 };

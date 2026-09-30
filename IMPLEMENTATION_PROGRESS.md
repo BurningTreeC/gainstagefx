@@ -1,5 +1,38 @@
 # Implementation progress
 
+## 2026-09-30 — the panel's sections open and close
+
+Each of the six sections now opens and closes from its header row (chevron,
+number, name, at the top of the band whether it is open or not), several can
+be open at once, and a fresh panel opens with only the input. The window grows
+and shrinks to fit what is open: 306 px tall with the input alone, 968 with all
+six.
+
+- `editor/style.rs`: `section_top`, `section_height` and `window_height` take
+  the set of open sections; a closed one is `CLOSED_H` (30 px).
+- `editor/mod.rs`: each section's controls sit in a box placed at its current
+  top and hidden while it is closed, positioned from the section's own top; a
+  `Fold` view per header toggles it (`PanelEvent::ToggleSection`).
+- `params.rs`: `open_sections`, persisted with the session (not with presets);
+  `editor::default_state` sizes the editor from it, so the host is told the
+  size of what is open.
+- `vendor/vizia` baseview backend: `WindowEvent::SetSize` changes the unzoomed
+  size at the current zoom, confirmed or rolled back by the size the host
+  commits (`settle_inner_size`). Before, a host resize could only mean a zoom.
+- The preset list, the dialogs and the dropdown lists fit whatever height the
+  window has.
+- Tests: the render test opens and closes sections and checks the stored set
+  and the size requested; `tests/scaling.rs` checks the size follows the set,
+  survives a session, and that a refused resize rolls back.
+- **Tried in REAPER:** the window resized, but a panel that grew was not drawn
+  below its old height. vizia reclipped only the window on a resize, and a view
+  whose layout the resize did not change -- everything above the section that
+  opened -- kept its clip at the old size. `set_window_size` now reclips the
+  whole tree. The render test reproduces the backend's resize (fresh surfaces,
+  new root size, refresh) and fails if any pixel of the window is left undrawn.
+- The preset list and the dropdown lists no longer show a horizontal scroll bar,
+  which sat over the last entry.
+
 ## 2026-09-30 — Every accepted speedup, in the plugin
 
 Went through every experiment `docs/SOLVER_EXPERIMENTS.md` accepts and every

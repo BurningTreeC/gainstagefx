@@ -174,6 +174,9 @@ pub(crate) struct ApplicationRunner {
     pub dirty_surface: skia_safe::Surface,
     window_description: WindowDescription,
     requested_user_scale: f64,
+    /// The unzoomed size before a `WindowEvent::SetSize` still waiting for
+    /// the native size to confirm it; restored if the host keeps that size.
+    previous_inner_size: Option<WindowSize>,
     /// `true` when the underlying baseview window was opened via
     /// a parent or `wait_for_parent` setting (i.e. the application is embedded
     /// inside a host such as a DAW). Gates lifecycle decisions that
@@ -208,6 +211,7 @@ impl ApplicationRunner {
             surface,
             dirty_surface,
             requested_user_scale: window_description.user_scale_factor,
+            previous_inner_size: None,
             window_description,
             is_parented,
             physical_scale,
@@ -234,6 +238,33 @@ impl ApplicationRunner {
         }
     }
 
+    /// Change the window's unzoomed size and keep its zoom: the content has
+    /// grown or shrunk, the way an editor with collapsible sections does.
+    /// Like a zoom, the new size is committed by `handle_resized`, and a host
+    /// that keeps the old one puts the old one back.
+    fn apply_inner_size(&mut self, size: WindowSize) {
+        let previous = self.window_description.inner_size;
+        if size == previous || size.width == 0 || size.height == 0 {
+            return;
+        }
+        let scale = self.requested_user_scale;
+        let logical = baseview::dpi::LogicalSize::new(
+            size.width as f64 * scale,
+            size.height as f64 * scale,
+        );
+        self.window_description.inner_size = size;
+        let requested = if self.physical_scale {
+            self.window_context.resize(logical.to_physical::<u32>(1.0)).is_ok()
+        } else {
+            self.window_context.resize(logical).is_ok()
+        };
+        if requested {
+            self.previous_inner_size.get_or_insert(previous);
+        } else {
+            self.window_description.inner_size = previous;
+        }
+    }
+
     /// Handle all reactivity within a frame. The window instance is used to resize the window when
     /// needed.
     pub fn on_frame_update(&mut self) -> Result<(), baseview::HandlerError> {
@@ -250,6 +281,7 @@ impl ApplicationRunner {
         // scale change requests get latched into locals here and applied
         // after the drain.
         let mut pending_user_scale: Option<f64> = None;
+        let mut pending_inner_size: Option<WindowSize> = None;
         self.event_manager.flush_events(self.cx.context(), |window_event| {
             // For some reason calling window.close() crashes baseview on macos
             // WindowEvent::WindowClose => *should_close = true,
@@ -263,12 +295,18 @@ impl ApplicationRunner {
                 WindowEvent::SetUserScale(factor) => {
                     pending_user_scale = Some(*factor);
                 }
+                WindowEvent::SetSize(size) => {
+                    pending_inner_size = Some(*size);
+                }
                 _ => {}
             }
         });
 
         if let Some(new_user_scale) = pending_user_scale {
             self.apply_user_scale(new_user_scale);
+        }
+        if let Some(size) = pending_inner_size {
+            self.apply_inner_size(size);
         }
 
         let context =
@@ -462,12 +500,27 @@ impl ApplicationRunner {
 
         unsafe { context.make_not_current() }?;
 
+        let committed = if self.physical_scale {
+            (new_size.physical.width as f64, new_size.physical.height as f64)
+        } else {
+            (new_size.logical.width, new_size.logical.height)
+        };
+        // A new unzoomed size in flight: confirmed when the window arrives at
+        // it, undone when the host kept the old one.
+        if let Some(previous) = self.previous_inner_size {
+            let requested = self.window_description.inner_size;
+            if let Some((width, height)) = crate::settle_inner_size(
+                committed,
+                self.requested_user_scale,
+                (requested.width, requested.height),
+                (previous.width, previous.height),
+            ) {
+                self.window_description.inner_size = WindowSize { width, height };
+                self.previous_inner_size = None;
+            }
+        }
         let zoom = crate::resolve_user_scale(
-            if self.physical_scale {
-                (new_size.physical.width as f64, new_size.physical.height as f64)
-            } else {
-                (new_size.logical.width, new_size.logical.height)
-            },
+            committed,
             (self.window_description.inner_size.width, self.window_description.inner_size.height),
             self.requested_user_scale,
         );
