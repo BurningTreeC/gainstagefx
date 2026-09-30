@@ -348,8 +348,8 @@ def main():
         needed_now.update(bundled(package, licence_texts(package)))
     out.append("## License texts")
     out.append("")
-    out.append("The GPLv3, which covers both this plugin and the `vst3-sys` crate,")
-    out.append("is in `LICENSE` rather than repeated here.")
+    out.append("The GPLv3, which covers this plugin, is in `LICENSE` rather than")
+    out.append("repeated here.")
     out.append("")
     # The GPL text lives in LICENSE, so it is not repeated here.
     skip = {"GPLv3", "GPL-3.0", "GPL-3.0-or-later"}

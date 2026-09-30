@@ -1,5 +1,19 @@
 # Implementation progress
 
+## 2026-09-30 — README brought up to date
+
+Read against the code, line by line. nice-plug (not nih-plug) and the macOS
+Audio Unit; the zoom's 75-200 %; the Circuit and Tone sections' full contents;
+the topologies' distortion figures as `calibration.rs` has them now (Crunch 30,
+High Gain 48, Overdrive 30, Distortion 42, Console 3 %); the three circuits
+missing from the table (American Deluxe, its Normal channel, Jazz 120) and the
+American Deluxe 6V6 stage; twelve cabinets, 78 presets, 610 tests; which presets
+use the mains setting; the cost table dated (2026-09-16, before the kernels and
+the pipelining); the macOS build and archive; and the licence: the VST3 bindings
+are the MIT/Apache `vst3` crate now, not the GPL `vst3-sys`, so that sentence
+went, here and in the notices generator. The picture is the offscreen render of
+all six sections open, which `render_tests` now draws and checks too.
+
 ## 2026-09-30 — CI: a test build's stack, and the smoke test's window size
 
 The push of 3570ffe (main and v0.40.0) failed two jobs.

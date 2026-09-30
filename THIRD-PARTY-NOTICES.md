@@ -619,8 +619,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## License texts
 
-The GPLv3, which covers both this plugin and the `vst3-sys` crate,
-is in `LICENSE` rather than repeated here.
+The GPLv3, which covers this plugin, is in `LICENSE` rather than
+repeated here.
 
 ### Apache-2.0
 

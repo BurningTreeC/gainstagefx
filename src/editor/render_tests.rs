@@ -127,6 +127,18 @@ fn panel_renders_and_dialogs_follow_signals() {
             "{name}"
         );
     }
+    // And the rest opened in one go: the tallest the window gets, drawn in
+    // full. (With GAINSTAGEFX_GUI_SNAPSHOTS set, this is the picture of the
+    // whole panel.)
+    for index in [0, 1, 3, 4] {
+        backend.context().emit(PanelEvent::ToggleSection(index));
+    }
+    render(&mut backend, "all-open");
+    assert_eq!(params.open_sections.load(Ordering::Relaxed), 0b111111);
+    assert_eq!(
+        resized.take(),
+        Some((PANEL_W as u32, window_height(0b111111) as u32))
+    );
     // Exercise automation notifications as well as each transient overlay.
     backend.context().emit(RawParamEvent::ParametersChanged);
     for (event, name) in [

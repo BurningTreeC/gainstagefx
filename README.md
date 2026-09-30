@@ -3,7 +3,8 @@
 Circuit modelled gain stages, from subtle preamplifier saturation to a scooped
 high gain sound, and the rest of a guitar rig behind them: a pedal in front,
 a power stage, a speaker that loads it, a cabinet and up to two microphones.
-CLAP and VST3, built with [nih-plug].
+CLAP and VST3 on Linux, Windows and macOS, and an Audio Unit (v2) on macOS as
+well; built with [nice-plug], with a [vizia] panel.
 
 ![The panel](docs/panel.png)
 
@@ -38,17 +39,18 @@ the foot of each pointing into the next. Each band opens and closes from its
 header row — number, name and chevron — and the window grows and shrinks to
 fit what is open: a fresh panel opens with the input alone, and the session
 remembers which are open. 780 wide; 306 tall with only the input open, 968 with
-all six. The button in the strip scales it from 75 % to 150 % — it is drawn
-rather than pictured, so it is sharp at any of them. The model lists are dropdowns, and
+all six. The button in the strip scales it from 75 % to 200 %, in seven steps
+(the wheel over it steps through them too) — it is drawn rather than pictured,
+so it is sharp at any of them. The model lists are dropdowns, and
 the wheel over a closed one steps through it, which is the quickest way to hear
 what is in it.
 
 | | | |
 |---|---|---|
 | **1 Input** | Trim, meter, noise reduction, pedal with drive/tone/level | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
-| **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
+| **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp, mains; the blackface amplifiers' input jack and bright switch | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
 | **3 Drive** | Drive, master, presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
-| **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs. The second row belongs to the Twin. |
+| **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity, chorus | A passive stack, so it only ever cuts. A modelled circuit's own tone controls take these knobs: a pedal's single tone control is the third, the Metal Zone adds its swept middle and the Heavy Metal its Colour Mix pair. The second row is the blackface amplifiers' reverb and tremolo and the Jazz 120's chorus. |
 | **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, pan, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
 | **6 Output** | Mix, level | The dry path is delayed to match, so mixing is a mix and not a comb filter. |
 
@@ -72,12 +74,17 @@ not remove hum or hiss underneath a sustained note.
 | Circuit | What it is | Measured at full drive |
 |---|---|---|
 | Clean | One valve stage barely working | 3 % distortion, almost all second harmonic |
-| Crunch | Two stages, the second driven by the first | 15 % |
-| High Gain | Three stages, all clipping on every note | 40 % |
-| Overdrive | Diodes across the feedback resistor | 20 %, and it cleans up when hit harder |
-| Distortion | Diodes across the signal to ground | 38 %, a ceiling the output stops at |
-| Console | A step-up transformer into a discrete stage | 5 %, essentially all second harmonic |
+| Crunch | Two stages, the second driven by the first | 30 % |
+| High Gain | Three stages, all clipping on every note | 48 % |
+| Overdrive | Diodes across the feedback resistor | 30 % (silicon), and it cleans up when hit harder |
+| Distortion | Diodes across the signal to ground | 42 % (silicon), a ceiling the output stops at |
+| Console | A step-up transformer into a discrete stage | 3 %, almost all second harmonic with a valve |
 | Studio | An op-amp on a studio rail | 0.00 % across the band — see below |
+
+Measured on a guitar's 0.122 V, except the Clean stage, the Console and the
+Studio, which are fed the level that gives them their intended figure (about a
+volt for the Clean stage); `src/calibration.rs` records each one, and
+`examples/calibrate.rs` regenerates it.
 
 The two clipper families are not a matter of degree. In the loop, the diodes
 lower the *gain*, so the output never stops following the input — which is why
@@ -102,12 +109,15 @@ sources, where they disagree and what was approximated.
 | British 4K E | A 1980s console channel's microphone input: a 1:10 transformer into two op-amps around one gain pot | none |
 | Tube 610 | A 1960s valve console channel: four triodes in two feedback loops, a transformer at each end | none |
 | American Twin | A 1960s blackface clean channel with spring reverb and optical tremolo | American 6L6 Clean |
+| American Deluxe | The smaller blackface combo's vibrato channel: the same design with spring reverb and optical tremolo, no middle control, into two 6V6s on a valve rectifier | American Deluxe 6V6 |
+| American Deluxe Normal | The same amplifier through its normal channel: no bright capacitor, no reverb, no tremolo | American Deluxe 6V6 |
 | Brit 800 | An early-80s British 100 W master-volume lead preamp: four triodes, a cathode follower into its own stack | Brit EL34 |
 | Brit 2205 | The boost channel of a mid-80s British 50 W two-channel head: a diode-biased second stage and a diode clipper, then the stack, the master and a make-up stage | Brit 2205 EL34 |
 | Brit Plexi | A late-60s British 100 W lead amp with no master: the bright channel's three triodes into its own stack, so the Volume decides how hard the power valves work | Brit Plexi EL34 |
 | Brit AC30 | A 60s British 30 W combo: a top-boost valve into a stack with no middle control, then self-biased power valves with no feedback loop at all | AC30 EL84 |
 | Brit DR103 | A British 100 W head built for headroom: five triodes, a master volume, and an inverter the driver holds still so it cannot shift its bias | DR103 EL34 |
-| Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off | Recto 6L6 (or Recto 6L6 Tube) |
+| Cali Rectifier | A 90s American two-channel head, red channel: five triodes with one run cold on 39 k, which is where its bottom end is squared off; its presence is in the preamplifier | Recto 6L6 (or Recto 6L6 Tube) |
+| Jazz 120 | A transistor 2x12 combo's first channel, with its bucket-brigade chorus | its own transistor power amplifier, which comes with it |
 | Green 9 | The green overdrive with the later pedal's output resistors | none |
 | Rodent | A hard-clipping distortion whose slow op-amp runs out of gain-bandwidth before it runs out of gain | none |
 | Round Fuzz | Two germanium transistors and a feedback resistor | none |
@@ -208,14 +218,15 @@ one transformer, so running it from a variac brings every rail down together: th
 have less room, the bias follows them, and the amplifier goes soft and compressed at a
 setting where it used to be loud and clean. It is a selection rather than a knob because
 that is what it was — how the rig was wired, not something anyone swept while playing.
-The Brown '78 and Brown '84 presets use it, because the engineer who recorded those
-records says the amplifier ran at 80 to 85 volts.
+The Brown '78 and Brown '84 presets run at 70 %, because the engineer who recorded
+those records says the amplifier ran at 80 to 85 volts; Blizzard '80 runs at 80 %, the
+nearest setting to the 90 volts that player is reported to have used.
 
 ## The power stage
 
 | Choice | What it is |
 |---|---|
-| Matched | The selected amplifier's own power stage; none for pedals, topologies and the studio preamplifiers |
+| Matched | The selected amplifier's own power stage; none for pedals, topologies and the studio preamplifiers. The Jazz 120's transistor amplifier and the British 73's line driver come with them and are not in this list |
 | Bypass | No power stage: phase inverter, output valves, feedback and output transformer all skipped |
 | Cali 6L6 | Two 6L6s, long-tailed-pair inverter, a light loop with the presence in series with it |
 | American 6L6 Clean | Four 6L6s with a 12AT7 inverter and light feedback — the clean one |
@@ -227,6 +238,7 @@ records says the amplifier ran at 80 to 85 volts.
 | DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop; the inverter's grids held by a follower on its own divider, and the Hiwatt's presence loop back to the last preamp valve, which behind the Brit DR103 is built into this stage; the Brit DR103's own |
 | Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing, with no feedback loop, as in the red channel's Modern mode; the Cali Rectifier's own |
 | Recto 6L6 Tube | The same stage with its rectifier switch on valve: two 5U4GB, so the rail sits lower and sags under a chord |
+| American Deluxe 6V6 | Two 6V6s behind a 12AT7 inverter on a GZ34 valve rectifier, with the AB763's light feedback and no presence; the American Deluxe's own |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
 output valves with their screen supplies, a centre-tapped transformer with a
@@ -253,7 +265,7 @@ stage is behind it; behind any other circuit the Recto stages grey it.
 ## Speaker, cabinet and microphones
 
 **Cabinet:** Legacy (the old resistor load and Combo/Stack filter, the default),
-Bypass (the driver on an open baffle), or one of eleven cabinets with real
+Bypass (the driver on an open baffle), or one of twelve cabinets with real
 dimensions and driver layouts: Brit 1960 4x12, Cali Oversized 4x12, Brit Closed
 4x12, Brit Green 4x12, Brit V30 4x12, Oversized 4x12, American Open 2x12,
 American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12, American Closed 4x12.
@@ -401,7 +413,9 @@ with the stable ids saved sessions use, and what is approximated in each.
 
 One channel at 48 kHz, as a fraction of the time available, with each preset
 set up exactly as it ships — pedal, power stage, cabinet and microphones
-included.
+included. Measured on 2026-09-16; the solver has become faster since
+(compiled elimination kernels, and the heaviest chains split across two
+threads), so these are upper bounds until they are measured again.
 
 | Studio Preamp | Valve Colour | Blues Crunch | Scooped Metal | British 73 Pre | Plexi Crunch | Brit Crunch | Blackface Clean | Blackout '80 | Experienced '67 | Ultra Rhythm | Boutique Lead | Texas Storm '83 | Puppet Master '86 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -442,7 +456,7 @@ side with `cargo run --release --example stutter`.
 
 ## Presets
 
-Seventy-three, ordered quietest first within each group so the list reads as a
+Seventy-eight, in twelve groups shown quietest first so the list reads as a
 range: Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier, and
 five groups of chains aimed at particular records — **Classic Rock**,
 **Psychedelic / Lead**, **Alternative**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier
@@ -459,7 +473,8 @@ from parts the plugin actually has; which parts of each rig are documented and
 which are approximated is written down in [`PRESETS.md`](PRESETS.md).
 
 Save your own with the button beside the name; they go to
-`~/.config/gainstagefx/presets` on Linux and macOS, and to
+`~/.config/gainstagefx/presets` on Linux and macOS (`$XDG_CONFIG_HOME` first,
+where it is set), and to
 `%APPDATA%\GainStageFx\Presets` on Windows, as readable JSON, and appear under
 their own **Saved** heading at the foot of the list. Only those can be deleted — saving
 under a shipped preset's name writes a new file beside it rather than replacing
@@ -476,8 +491,10 @@ store stable model ids as well as positions.
 Built archives for Linux, macOS and Windows are attached to each
 [release](https://github.com/BurningTreeC/gainstagefx/releases), built from the
 tag by GitHub Actions. Download the one for your platform and run the installer
-inside it — `install.sh`, `Install.command` or `install.exe`. `README.txt` in
-the archive covers installing by hand.
+inside it — `install.sh`, `Install.command` or `install.exe`. The macOS archive
+carries universal (Apple Silicon and Intel) CLAP, VST3 and Audio Unit plugins,
+ad-hoc signed but not notarized; `Install.command` clears the quarantine flag.
+`README.txt` in the archive covers installing by hand.
 
 ## Building
 
@@ -485,17 +502,23 @@ the archive covers installing by hand.
 cargo xtask bundle gainstagefx --release   # CLAP and VST3 in target/bundled
 cargo test --release                        # the measurements
 cargo run --release --features standalone   # the panel without a DAW
-./install.sh                                # into the usual places
+./install.sh                                # into ~/.clap and ~/.vst3 (Linux)
 ```
 
+On macOS, `cargo xtask bundle-universal gainstagefx --release` builds universal
+bundles, and `bash tools/package_au2.sh GainStageFx` then wraps the same binary
+as an Audio Unit (`target/bundled/GainStageFx.component`), which is what the
+release workflow does.
+
 The source-tree installer uses `jq` to read Cargo's configured target directory.
-It builds the `release-lto` profile and installs both formats. Use
+It builds the `release-lto` profile and installs both formats, each in a
+`BurningTreeC` folder. Use
 `./install.sh --no-build` to install the bundles already built in that target
 directory. `CLAP_PATH` and `VST3_PATH` can each override one destination directory;
 search-path lists are rejected. Restart the DAW after updating a loaded plugin.
 
 Every claim in this README that has a number in it is checked by a test that
-measures it. `cargo test --release` runs 355 of them, at 44.1, 48,
+measures it. `cargo test --release` runs 610 of them, at 44.1, 48,
 88.2, 96 and 192 kHz where the rate matters, and the audio path is tested not
 to allocate.
 
@@ -524,21 +547,30 @@ to allocate.
   dependence, Shockley diodes, bipolar and JFET transistors, an op-amp, and
   a transformer core whose flux integrates. Parts that impose a voltage rather
   than a conductance get a branch unknown of their own.
+- **`partition`** — the reductions `time` uses: the linear part of a circuit
+  eliminated once, and the reduced systems' pivot plans, each replayed by the
+  kernel compiled for it.
 - **`measure`** — bin-aligned probe tones with phase continuous across the
   settle boundary.
+- the effects and utilities around the circuits: the spring reverb, the optical
+  tremolo, the bucket-brigade chorus, the noise reduction and the oversampler.
 
 `src/circuits` holds the netlists: the topologies, the pedals, the preamplifier
 channels and `power`, which builds every power stage with either a resistor or a
 speaker as its load. `src/acoustics` holds the speaker profiles, the cabinets,
 the microphones and the stage that places them. `src/voice.rs` wires the chain
-together.
+together, and splits a heavy one across two threads: the second half of each
+block is handed to a worker while the first is solved, and a shadow copy of the
+power stage can solve ahead where that pays.
 
 The two solvers overlap deliberately. On a linear network they must agree, and
 `tests/agreement.rs` is the only real check either of them has.
 
-More: [`ARCHITECTURE.md`](ARCHITECTURE.md), [`DSP.md`](DSP.md),
-[`MODELS.md`](MODELS.md), [`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md),
-[`IMPLEMENTATION_PROGRESS.md`](IMPLEMENTATION_PROGRESS.md).
+More: [`docs/MODEL_INVENTORY.md`](docs/MODEL_INVENTORY.md) and
+[`IMPLEMENTATION_PROGRESS.md`](IMPLEMENTATION_PROGRESS.md) are current;
+[`ARCHITECTURE.md`](ARCHITECTURE.md), [`DSP.md`](DSP.md) and
+[`MODELS.md`](MODELS.md) are an audit of 2026-09-14 and have drifted since --
+read them for the reasoning, and the code for the facts.
 
 ## What the measurements caught
 
@@ -598,14 +630,14 @@ measurement, and several times it was me:
   audible. A test now switches the Twin's power stage behind three other
   circuits and back.
 
-[nih-plug]: https://github.com/robbert-vdh/nih-plug
+[nice-plug]: https://codeberg.org/RustAudio/nice-plug
+[vizia]: https://github.com/vizia/vizia
 
 ## Licence
 
 GPL-3.0-or-later — the full text is in [`LICENSE`](LICENSE).
 
-The VST3 bindings this links are GPL, so the whole is. Every crate it links is
-listed with its own licence and copyright notice in
+Every crate it links is listed with its own licence and copyright notice in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md); regenerate that with
 `python3 tools/third-party-notices.py`.
 
