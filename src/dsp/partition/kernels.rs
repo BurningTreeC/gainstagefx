@@ -6,6 +6,127 @@
 use super::{Bail, Kernel};
 
 fn kernel_0(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[6];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[7] -= f * m[1];
+    r[1] -= f * pr;
+    let d = m[7];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[7] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[13];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[14] -= f * m[8];
+    r[2] -= f * pr;
+    let d = m[14];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[14] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[20];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[21] -= f * m[15];
+    m[23] -= f * m[17];
+    r[3] -= f * pr;
+    let e = m[32];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[33] -= f * m[15];
+    m[35] -= f * m[17];
+    r[5] -= f * pr;
+    m.swap(21, 33);
+    m.swap(22, 34);
+    m.swap(23, 35);
+    r.swap(3, 5);
+    let d = m[21];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[21] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[35] -= f * m[23];
+    r[5] -= f * pr;
+    m.swap(28, 34);
+    m.swap(29, 35);
+    r.swap(4, 5);
+    let d = m[28];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[28] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[35] -= f * m[29];
+    r[5] -= f * pr;
+    let d = m[35];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[35] = inv;
+    let v = r[5];
+    let d = m[35];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[29] * r[5];
+    let d = m[28];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[23] * r[5];
+    let d = m[21];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[15] * r[3];
+    v -= m[17] * r[5];
+    let d = m[14];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[8] * r[2];
+    let d = m[7];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_1(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 8);
@@ -223,127 +344,6 @@ fn kernel_0(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> 
     let mut v = r[0];
     v -= m[1] * r[1];
     v -= m[4] * r[4];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_1(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[6];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[7] -= f * m[1];
-    r[1] -= f * pr;
-    let d = m[7];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[7] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[13];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[14] -= f * m[8];
-    r[2] -= f * pr;
-    let d = m[14];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[14] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[20];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[21] -= f * m[15];
-    m[23] -= f * m[17];
-    r[3] -= f * pr;
-    let e = m[32];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[33] -= f * m[15];
-    m[35] -= f * m[17];
-    r[5] -= f * pr;
-    m.swap(21, 33);
-    m.swap(22, 34);
-    m.swap(23, 35);
-    r.swap(3, 5);
-    let d = m[21];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[21] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[33];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[35] -= f * m[23];
-    r[5] -= f * pr;
-    m.swap(28, 34);
-    m.swap(29, 35);
-    r.swap(4, 5);
-    let d = m[28];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[28] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[35] -= f * m[29];
-    r[5] -= f * pr;
-    let d = m[35];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[35] = inv;
-    let v = r[5];
-    let d = m[35];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[29] * r[5];
-    let d = m[28];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[23] * r[5];
-    let d = m[21];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[15] * r[3];
-    v -= m[17] * r[5];
-    let d = m[14];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[8] * r[2];
-    let d = m[7];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -1080,312 +1080,6 @@ fn kernel_3(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> 
 }
 
 fn kernel_4(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[9];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[10] -= f * m[1];
-    m[11] -= f * m[2];
-    r[1] -= f * pr;
-    let e = m[18];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[19] -= f * m[1];
-    m[20] -= f * m[2];
-    r[2] -= f * pr;
-    let d = m[10];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[10] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[19];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[20] -= f * m[11];
-    r[2] -= f * pr;
-    let d = m[20];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[20] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[38];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[40] -= f * m[22];
-    r[4] -= f * pr;
-    let d = m[30];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[30] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[39];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[40] -= f * m[31];
-    m[41] -= f * m[32];
-    r[4] -= f * pr;
-    let e = m[48];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[49] -= f * m[31];
-    m[50] -= f * m[32];
-    r[5] -= f * pr;
-    let d = m[40];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[40] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[49];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[50] -= f * m[41];
-    r[5] -= f * pr;
-    let d = m[50];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[50] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[68];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[70] -= f * m[52];
-    r[7] -= f * pr;
-    let d = m[60];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[60] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[69];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[70] -= f * m[61];
-    m[71] -= f * m[62];
-    r[7] -= f * pr;
-    let e = m[78];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[79] -= f * m[61];
-    m[80] -= f * m[62];
-    r[8] -= f * pr;
-    let d = m[70];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[70] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[79];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[80] -= f * m[71];
-    r[8] -= f * pr;
-    let d = m[80];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[80] = inv;
-    let v = r[8];
-    let d = m[80];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[71] * r[8];
-    let d = m[70];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[61] * r[7];
-    v -= m[62] * r[8];
-    let d = m[60];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[52] * r[7];
-    let d = m[50];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[41] * r[5];
-    let d = m[40];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[31] * r[4];
-    v -= m[32] * r[5];
-    let d = m[30];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[22] * r[4];
-    let d = m[20];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[11] * r[2];
-    let d = m[10];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_5(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[6];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[7] -= f * m[1];
-    m[8] -= f * m[2];
-    r[1] -= f * pr;
-    let e = m[12];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[13] -= f * m[1];
-    m[14] -= f * m[2];
-    r[2] -= f * pr;
-    let d = m[7];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[7] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[13];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[14] -= f * m[8];
-    r[2] -= f * pr;
-    let d = m[14];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[14] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[26];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[28] -= f * m[16];
-    r[4] -= f * pr;
-    let d = m[21];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[21] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[27];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[28] -= f * m[22];
-    m[29] -= f * m[23];
-    r[4] -= f * pr;
-    let e = m[33];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[34] -= f * m[22];
-    m[35] -= f * m[23];
-    r[5] -= f * pr;
-    let d = m[28];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[28] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[35] -= f * m[29];
-    r[5] -= f * pr;
-    let d = m[35];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[35] = inv;
-    let v = r[5];
-    let d = m[35];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[29] * r[5];
-    let d = m[28];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[22] * r[4];
-    v -= m[23] * r[5];
-    let d = m[21];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[16] * r[4];
-    let d = m[14];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[8] * r[2];
-    let d = m[7];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_6(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -1975,6 +1669,312 @@ fn kernel_6(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> 
     let mut v = r[0];
     v -= m[3] * r[3];
     v -= m[5] * r[5];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_5(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[6];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[7] -= f * m[1];
+    m[8] -= f * m[2];
+    r[1] -= f * pr;
+    let e = m[12];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[13] -= f * m[1];
+    m[14] -= f * m[2];
+    r[2] -= f * pr;
+    let d = m[7];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[7] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[13];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[14] -= f * m[8];
+    r[2] -= f * pr;
+    let d = m[14];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[14] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[26];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[28] -= f * m[16];
+    r[4] -= f * pr;
+    let d = m[21];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[21] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[27];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[28] -= f * m[22];
+    m[29] -= f * m[23];
+    r[4] -= f * pr;
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[22];
+    m[35] -= f * m[23];
+    r[5] -= f * pr;
+    let d = m[28];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[28] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[35] -= f * m[29];
+    r[5] -= f * pr;
+    let d = m[35];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[35] = inv;
+    let v = r[5];
+    let d = m[35];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[29] * r[5];
+    let d = m[28];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[22] * r[4];
+    v -= m[23] * r[5];
+    let d = m[21];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[16] * r[4];
+    let d = m[14];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[8] * r[2];
+    let d = m[7];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_6(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[9];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[10] -= f * m[1];
+    m[11] -= f * m[2];
+    r[1] -= f * pr;
+    let e = m[18];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[19] -= f * m[1];
+    m[20] -= f * m[2];
+    r[2] -= f * pr;
+    let d = m[10];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[10] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[19];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[20] -= f * m[11];
+    r[2] -= f * pr;
+    let d = m[20];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[20] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[38];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[40] -= f * m[22];
+    r[4] -= f * pr;
+    let d = m[30];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[30] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[39];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[40] -= f * m[31];
+    m[41] -= f * m[32];
+    r[4] -= f * pr;
+    let e = m[48];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[49] -= f * m[31];
+    m[50] -= f * m[32];
+    r[5] -= f * pr;
+    let d = m[40];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[40] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[49];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[50] -= f * m[41];
+    r[5] -= f * pr;
+    let d = m[50];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[50] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[68];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[70] -= f * m[52];
+    r[7] -= f * pr;
+    let d = m[60];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[60] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[69];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[70] -= f * m[61];
+    m[71] -= f * m[62];
+    r[7] -= f * pr;
+    let e = m[78];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[79] -= f * m[61];
+    m[80] -= f * m[62];
+    r[8] -= f * pr;
+    let d = m[70];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[70] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[79];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[80] -= f * m[71];
+    r[8] -= f * pr;
+    let d = m[80];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[80] = inv;
+    let v = r[8];
+    let d = m[80];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[71] * r[8];
+    let d = m[70];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[61] * r[7];
+    v -= m[62] * r[8];
+    let d = m[60];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[52] * r[7];
+    let d = m[50];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[41] * r[5];
+    let d = m[40];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[31] * r[4];
+    v -= m[32] * r[5];
+    let d = m[30];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[22] * r[4];
+    let d = m[20];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[11] * r[2];
+    let d = m[10];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[2] * r[2];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -3627,63 +3627,6 @@ fn kernel_9(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> 
 }
 
 fn kernel_10(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 9]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..3).map(<&mut [f64; 3]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[6];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[7] -= f * m[1];
-    m[8] -= f * m[2];
-    r[2] -= f * pr;
-    m.swap(4, 7);
-    m.swap(5, 8);
-    r.swap(1, 2);
-    let d = m[4];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[4] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[7];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[8] -= f * m[5];
-    r[2] -= f * pr;
-    let d = m[8];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[8] = inv;
-    let v = r[2];
-    let d = m[8];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[5] * r[2];
-    let d = m[4];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_11(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -4120,6 +4063,63 @@ fn kernel_11(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     let mut v = r[0];
     v -= m[3] * r[3];
     v -= m[5] * r[5];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_11(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 9]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..3).map(<&mut [f64; 3]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[6];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[7] -= f * m[1];
+    m[8] -= f * m[2];
+    r[2] -= f * pr;
+    m.swap(4, 7);
+    m.swap(5, 8);
+    r.swap(1, 2);
+    let d = m[4];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[4] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[7];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[8] -= f * m[5];
+    r[2] -= f * pr;
+    let d = m[8];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[8] = inv;
+    let v = r[2];
+    let d = m[8];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[5] * r[2];
+    let d = m[4];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[2] * r[2];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -5113,346 +5113,6 @@ fn kernel_15(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_16(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[18];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[19] -= f * m[1];
-    m[20] -= f * m[2];
-    r[1] -= f * pr;
-    let e = m[36];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[37] -= f * m[1];
-    m[38] -= f * m[2];
-    r[2] -= f * pr;
-    let d = m[19];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[19] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[37];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[38] -= f * m[20];
-    r[2] -= f * pr;
-    let d = m[38];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[38] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[56];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[57] -= f * m[39];
-    r[3] -= f * pr;
-    let d = m[57];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[57] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[75];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[76] -= f * m[58];
-    m[77] -= f * m[59];
-    r[4] -= f * pr;
-    let d = m[76];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[76] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[94];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[95] -= f * m[77];
-    r[5] -= f * pr;
-    let d = m[95];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[95] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[113];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[114] -= f * m[96];
-    r[6] -= f * pr;
-    let d = m[114];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[114] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[132];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[133] -= f * m[115];
-    m[134] -= f * m[116];
-    r[7] -= f * pr;
-    let d = m[133];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[133] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[151];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[152] -= f * m[134];
-    r[8] -= f * pr;
-    let d = m[152];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[152] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[170];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[171] -= f * m[153];
-    r[9] -= f * pr;
-    let d = m[171];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[171] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[189];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[190] -= f * m[172];
-    m[191] -= f * m[173];
-    r[10] -= f * pr;
-    let d = m[190];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[190] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[208];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[209] -= f * m[191];
-    r[11] -= f * pr;
-    let d = m[209];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[209] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[227];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[228] -= f * m[210];
-    r[12] -= f * pr;
-    let d = m[228];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[228] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[246];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[247] -= f * m[229];
-    m[248] -= f * m[230];
-    r[13] -= f * pr;
-    let d = m[247];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[247] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[265];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[266] -= f * m[248];
-    r[14] -= f * pr;
-    let d = m[266];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[266] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[284];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[285] -= f * m[267];
-    r[15] -= f * pr;
-    let d = m[285];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[285] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[303];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[304] -= f * m[286];
-    m[305] -= f * m[287];
-    r[16] -= f * pr;
-    let d = m[304];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[304] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[16];
-    let e = m[322];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[323] -= f * m[305];
-    r[17] -= f * pr;
-    let d = m[323];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(17)); }
-    let inv = 1.0 / d;
-    m[323] = inv;
-    let v = r[17];
-    let d = m[323];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[17] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[16];
-    v -= m[305] * r[17];
-    let d = m[304];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[286] * r[16];
-    v -= m[287] * r[17];
-    let d = m[285];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[267] * r[15];
-    let d = m[266];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[248] * r[14];
-    let d = m[247];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[229] * r[13];
-    v -= m[230] * r[14];
-    let d = m[228];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[210] * r[12];
-    let d = m[209];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[191] * r[11];
-    let d = m[190];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[172] * r[10];
-    v -= m[173] * r[11];
-    let d = m[171];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[153] * r[9];
-    let d = m[152];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[134] * r[8];
-    let d = m[133];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[115] * r[7];
-    v -= m[116] * r[8];
-    let d = m[114];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[96] * r[6];
-    let d = m[95];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[77] * r[5];
-    let d = m[76];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[58] * r[4];
-    v -= m[59] * r[5];
-    let d = m[57];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[39] * r[3];
-    let d = m[38];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[20] * r[2];
-    let d = m[19];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_17(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -6037,6 +5697,346 @@ fn kernel_17(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     let mut v = r[0];
     v -= m[3] * r[3];
     v -= m[5] * r[5];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_17(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[18];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[19] -= f * m[1];
+    m[20] -= f * m[2];
+    r[1] -= f * pr;
+    let e = m[36];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[37] -= f * m[1];
+    m[38] -= f * m[2];
+    r[2] -= f * pr;
+    let d = m[19];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[19] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[37];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[38] -= f * m[20];
+    r[2] -= f * pr;
+    let d = m[38];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[38] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[56];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[57] -= f * m[39];
+    r[3] -= f * pr;
+    let d = m[57];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[57] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[75];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[76] -= f * m[58];
+    m[77] -= f * m[59];
+    r[4] -= f * pr;
+    let d = m[76];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[76] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[94];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[95] -= f * m[77];
+    r[5] -= f * pr;
+    let d = m[95];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[95] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[113];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[114] -= f * m[96];
+    r[6] -= f * pr;
+    let d = m[114];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[114] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[132];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[133] -= f * m[115];
+    m[134] -= f * m[116];
+    r[7] -= f * pr;
+    let d = m[133];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[133] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[151];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[152] -= f * m[134];
+    r[8] -= f * pr;
+    let d = m[152];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[152] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[170];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[171] -= f * m[153];
+    r[9] -= f * pr;
+    let d = m[171];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[171] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[189];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[190] -= f * m[172];
+    m[191] -= f * m[173];
+    r[10] -= f * pr;
+    let d = m[190];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[190] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[208];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[209] -= f * m[191];
+    r[11] -= f * pr;
+    let d = m[209];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[209] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[227];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[228] -= f * m[210];
+    r[12] -= f * pr;
+    let d = m[228];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[228] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[246];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[247] -= f * m[229];
+    m[248] -= f * m[230];
+    r[13] -= f * pr;
+    let d = m[247];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[247] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[265];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[266] -= f * m[248];
+    r[14] -= f * pr;
+    let d = m[266];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[266] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[284];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[285] -= f * m[267];
+    r[15] -= f * pr;
+    let d = m[285];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[285] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[15];
+    let e = m[303];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[304] -= f * m[286];
+    m[305] -= f * m[287];
+    r[16] -= f * pr;
+    let d = m[304];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
+    let inv = 1.0 / d;
+    m[304] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[16];
+    let e = m[322];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[323] -= f * m[305];
+    r[17] -= f * pr;
+    let d = m[323];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(17)); }
+    let inv = 1.0 / d;
+    m[323] = inv;
+    let v = r[17];
+    let d = m[323];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[17] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[16];
+    v -= m[305] * r[17];
+    let d = m[304];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[16] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[15];
+    v -= m[286] * r[16];
+    v -= m[287] * r[17];
+    let d = m[285];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[267] * r[15];
+    let d = m[266];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[248] * r[14];
+    let d = m[247];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[229] * r[13];
+    v -= m[230] * r[14];
+    let d = m[228];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[210] * r[12];
+    let d = m[209];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[191] * r[11];
+    let d = m[190];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[172] * r[10];
+    v -= m[173] * r[11];
+    let d = m[171];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[153] * r[9];
+    let d = m[152];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[134] * r[8];
+    let d = m[133];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[115] * r[7];
+    v -= m[116] * r[8];
+    let d = m[114];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[96] * r[6];
+    let d = m[95];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[77] * r[5];
+    let d = m[76];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[58] * r[4];
+    v -= m[59] * r[5];
+    let d = m[57];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[39] * r[3];
+    let d = m[38];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[20] * r[2];
+    let d = m[19];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[2] * r[2];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -7882,455 +7882,6 @@ fn kernel_20(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_21(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[13];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[16] -= f * m[3];
-    m[18] -= f * m[5];
-    r[1] -= f * pr;
-    let e = m[65];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[68] -= f * m[3];
-    m[70] -= f * m[5];
-    r[5] -= f * pr;
-    m.swap(14, 27);
-    m.swap(15, 28);
-    m.swap(16, 29);
-    m.swap(17, 30);
-    m.swap(18, 31);
-    m.swap(19, 32);
-    r.swap(1, 2);
-    let d = m[14];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[14] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[27];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[30] -= f * m[17];
-    m[32] -= f * m[19];
-    r[2] -= f * pr;
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[56] -= f * m[17];
-    m[58] -= f * m[19];
-    r[4] -= f * pr;
-    let e = m[79];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[82] -= f * m[17];
-    m[84] -= f * m[19];
-    r[6] -= f * pr;
-    m.swap(28, 80);
-    m.swap(29, 81);
-    m.swap(30, 82);
-    m.swap(31, 83);
-    m.swap(32, 84);
-    m.swap(35, 87);
-    m.swap(36, 88);
-    m.swap(38, 90);
-    r.swap(2, 6);
-    let d = m[28];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[28] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[54];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[56] -= f * m[30];
-    m[58] -= f * m[32];
-    m[61] -= f * m[35];
-    m[62] -= f * m[36];
-    m[64] -= f * m[38];
-    r[4] -= f * pr;
-    let e = m[80];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[82] -= f * m[30];
-    m[84] -= f * m[32];
-    m[87] -= f * m[35];
-    m[88] -= f * m[36];
-    m[90] -= f * m[38];
-    r[6] -= f * pr;
-    let d = m[42];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[42] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[68];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[46];
-    m[73] -= f * m[47];
-    m[76] -= f * m[50];
-    r[5] -= f * pr;
-    let e = m[81];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[85] -= f * m[46];
-    m[86] -= f * m[47];
-    m[89] -= f * m[50];
-    r[6] -= f * pr;
-    let e = m[94];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[98] -= f * m[46];
-    m[99] -= f * m[47];
-    m[102] -= f * m[50];
-    r[7] -= f * pr;
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[111] -= f * m[46];
-    m[112] -= f * m[47];
-    m[115] -= f * m[50];
-    r[8] -= f * pr;
-    let e = m[146];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[150] -= f * m[46];
-    m[151] -= f * m[47];
-    m[154] -= f * m[50];
-    r[11] -= f * pr;
-    let d = m[56];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[56] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[82];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[83] -= f * m[57];
-    m[84] -= f * m[58];
-    m[85] -= f * m[59];
-    m[87] -= f * m[61];
-    m[88] -= f * m[62];
-    m[90] -= f * m[64];
-    r[6] -= f * pr;
-    let d = m[70];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[70] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[83];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[85] -= f * m[72];
-    m[86] -= f * m[73];
-    m[89] -= f * m[76];
-    r[6] -= f * pr;
-    let d = m[84];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[84] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[123];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[124] -= f * m[85];
-    m[125] -= f * m[86];
-    m[126] -= f * m[87];
-    m[127] -= f * m[88];
-    m[128] -= f * m[89];
-    m[129] -= f * m[90];
-    r[9] -= f * pr;
-    let e = m[136];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[137] -= f * m[85];
-    m[138] -= f * m[86];
-    m[139] -= f * m[87];
-    m[140] -= f * m[88];
-    m[141] -= f * m[89];
-    m[142] -= f * m[90];
-    r[10] -= f * pr;
-    let e = m[162];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[163] -= f * m[85];
-    m[164] -= f * m[86];
-    m[165] -= f * m[87];
-    m[166] -= f * m[88];
-    m[167] -= f * m[89];
-    m[168] -= f * m[90];
-    r[12] -= f * pr;
-    let d = m[98];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[98] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[111];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[112] -= f * m[99];
-    m[115] -= f * m[102];
-    r[8] -= f * pr;
-    let e = m[124];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[125] -= f * m[99];
-    m[128] -= f * m[102];
-    r[9] -= f * pr;
-    let e = m[137];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[138] -= f * m[99];
-    m[141] -= f * m[102];
-    r[10] -= f * pr;
-    let e = m[150];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[151] -= f * m[99];
-    m[154] -= f * m[102];
-    r[11] -= f * pr;
-    let e = m[163];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[164] -= f * m[99];
-    m[167] -= f * m[102];
-    r[12] -= f * pr;
-    let d = m[112];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[112] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[125];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[126] -= f * m[113];
-    m[127] -= f * m[114];
-    m[128] -= f * m[115];
-    r[9] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[113];
-    m[140] -= f * m[114];
-    m[141] -= f * m[115];
-    r[10] -= f * pr;
-    let e = m[151];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[152] -= f * m[113];
-    m[153] -= f * m[114];
-    m[154] -= f * m[115];
-    r[11] -= f * pr;
-    let e = m[164];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[165] -= f * m[113];
-    m[166] -= f * m[114];
-    m[167] -= f * m[115];
-    r[12] -= f * pr;
-    m.swap(126, 139);
-    m.swap(127, 140);
-    m.swap(128, 141);
-    m.swap(129, 142);
-    r.swap(9, 10);
-    let d = m[126];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[126] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[139];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[140] -= f * m[127];
-    m[141] -= f * m[128];
-    m[142] -= f * m[129];
-    r[10] -= f * pr;
-    let e = m[152];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[153] -= f * m[127];
-    m[154] -= f * m[128];
-    m[155] -= f * m[129];
-    r[11] -= f * pr;
-    let e = m[165];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[166] -= f * m[127];
-    m[167] -= f * m[128];
-    m[168] -= f * m[129];
-    r[12] -= f * pr;
-    m.swap(140, 153);
-    m.swap(141, 154);
-    m.swap(142, 155);
-    r.swap(10, 11);
-    let d = m[140];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[140] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[153];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[154] -= f * m[141];
-    m[155] -= f * m[142];
-    r[11] -= f * pr;
-    let e = m[166];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[167] -= f * m[141];
-    m[168] -= f * m[142];
-    r[12] -= f * pr;
-    let d = m[154];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[154] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[167];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[168] -= f * m[155];
-    r[12] -= f * pr;
-    let d = m[168];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[168] = inv;
-    let v = r[12];
-    let d = m[168];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[155] * r[12];
-    let d = m[154];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[141] * r[11];
-    v -= m[142] * r[12];
-    let d = m[140];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[127] * r[10];
-    v -= m[128] * r[11];
-    v -= m[129] * r[12];
-    let d = m[126];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[113] * r[9];
-    v -= m[114] * r[10];
-    v -= m[115] * r[11];
-    let d = m[112];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[99] * r[8];
-    v -= m[102] * r[11];
-    let d = m[98];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[85] * r[7];
-    v -= m[86] * r[8];
-    v -= m[87] * r[9];
-    v -= m[88] * r[10];
-    v -= m[89] * r[11];
-    v -= m[90] * r[12];
-    let d = m[84];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[72] * r[7];
-    v -= m[73] * r[8];
-    v -= m[76] * r[11];
-    let d = m[70];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[57] * r[5];
-    v -= m[58] * r[6];
-    v -= m[59] * r[7];
-    v -= m[61] * r[9];
-    v -= m[62] * r[10];
-    v -= m[64] * r[12];
-    let d = m[56];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[46] * r[7];
-    v -= m[47] * r[8];
-    v -= m[50] * r[11];
-    let d = m[42];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[30] * r[4];
-    v -= m[32] * r[6];
-    v -= m[35] * r[9];
-    v -= m[36] * r[10];
-    v -= m[38] * r[12];
-    let d = m[28];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[17] * r[4];
-    v -= m[19] * r[6];
-    let d = m[14];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[3] * r[3];
-    v -= m[5] * r[5];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_22(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -9084,6 +8635,455 @@ fn kernel_22(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
+fn kernel_22(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[13];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[16] -= f * m[3];
+    m[18] -= f * m[5];
+    r[1] -= f * pr;
+    let e = m[65];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[68] -= f * m[3];
+    m[70] -= f * m[5];
+    r[5] -= f * pr;
+    m.swap(14, 27);
+    m.swap(15, 28);
+    m.swap(16, 29);
+    m.swap(17, 30);
+    m.swap(18, 31);
+    m.swap(19, 32);
+    r.swap(1, 2);
+    let d = m[14];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[14] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[27];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[30] -= f * m[17];
+    m[32] -= f * m[19];
+    r[2] -= f * pr;
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[56] -= f * m[17];
+    m[58] -= f * m[19];
+    r[4] -= f * pr;
+    let e = m[79];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[82] -= f * m[17];
+    m[84] -= f * m[19];
+    r[6] -= f * pr;
+    m.swap(28, 80);
+    m.swap(29, 81);
+    m.swap(30, 82);
+    m.swap(31, 83);
+    m.swap(32, 84);
+    m.swap(35, 87);
+    m.swap(36, 88);
+    m.swap(38, 90);
+    r.swap(2, 6);
+    let d = m[28];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[28] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[54];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[56] -= f * m[30];
+    m[58] -= f * m[32];
+    m[61] -= f * m[35];
+    m[62] -= f * m[36];
+    m[64] -= f * m[38];
+    r[4] -= f * pr;
+    let e = m[80];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[82] -= f * m[30];
+    m[84] -= f * m[32];
+    m[87] -= f * m[35];
+    m[88] -= f * m[36];
+    m[90] -= f * m[38];
+    r[6] -= f * pr;
+    let d = m[42];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[42] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[68];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[72] -= f * m[46];
+    m[73] -= f * m[47];
+    m[76] -= f * m[50];
+    r[5] -= f * pr;
+    let e = m[81];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[46];
+    m[86] -= f * m[47];
+    m[89] -= f * m[50];
+    r[6] -= f * pr;
+    let e = m[94];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[98] -= f * m[46];
+    m[99] -= f * m[47];
+    m[102] -= f * m[50];
+    r[7] -= f * pr;
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[111] -= f * m[46];
+    m[112] -= f * m[47];
+    m[115] -= f * m[50];
+    r[8] -= f * pr;
+    let e = m[146];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[150] -= f * m[46];
+    m[151] -= f * m[47];
+    m[154] -= f * m[50];
+    r[11] -= f * pr;
+    let d = m[56];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[56] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[82];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[83] -= f * m[57];
+    m[84] -= f * m[58];
+    m[85] -= f * m[59];
+    m[87] -= f * m[61];
+    m[88] -= f * m[62];
+    m[90] -= f * m[64];
+    r[6] -= f * pr;
+    let d = m[70];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[70] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[83];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[72];
+    m[86] -= f * m[73];
+    m[89] -= f * m[76];
+    r[6] -= f * pr;
+    let d = m[84];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[84] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[123];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[124] -= f * m[85];
+    m[125] -= f * m[86];
+    m[126] -= f * m[87];
+    m[127] -= f * m[88];
+    m[128] -= f * m[89];
+    m[129] -= f * m[90];
+    r[9] -= f * pr;
+    let e = m[136];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[137] -= f * m[85];
+    m[138] -= f * m[86];
+    m[139] -= f * m[87];
+    m[140] -= f * m[88];
+    m[141] -= f * m[89];
+    m[142] -= f * m[90];
+    r[10] -= f * pr;
+    let e = m[162];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[163] -= f * m[85];
+    m[164] -= f * m[86];
+    m[165] -= f * m[87];
+    m[166] -= f * m[88];
+    m[167] -= f * m[89];
+    m[168] -= f * m[90];
+    r[12] -= f * pr;
+    let d = m[98];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[98] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[111];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[112] -= f * m[99];
+    m[115] -= f * m[102];
+    r[8] -= f * pr;
+    let e = m[124];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[125] -= f * m[99];
+    m[128] -= f * m[102];
+    r[9] -= f * pr;
+    let e = m[137];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[138] -= f * m[99];
+    m[141] -= f * m[102];
+    r[10] -= f * pr;
+    let e = m[150];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[151] -= f * m[99];
+    m[154] -= f * m[102];
+    r[11] -= f * pr;
+    let e = m[163];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[164] -= f * m[99];
+    m[167] -= f * m[102];
+    r[12] -= f * pr;
+    let d = m[112];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[112] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[125];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[126] -= f * m[113];
+    m[127] -= f * m[114];
+    m[128] -= f * m[115];
+    r[9] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[113];
+    m[140] -= f * m[114];
+    m[141] -= f * m[115];
+    r[10] -= f * pr;
+    let e = m[151];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[152] -= f * m[113];
+    m[153] -= f * m[114];
+    m[154] -= f * m[115];
+    r[11] -= f * pr;
+    let e = m[164];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[165] -= f * m[113];
+    m[166] -= f * m[114];
+    m[167] -= f * m[115];
+    r[12] -= f * pr;
+    m.swap(126, 139);
+    m.swap(127, 140);
+    m.swap(128, 141);
+    m.swap(129, 142);
+    r.swap(9, 10);
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[127];
+    m[141] -= f * m[128];
+    m[142] -= f * m[129];
+    r[10] -= f * pr;
+    let e = m[152];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[153] -= f * m[127];
+    m[154] -= f * m[128];
+    m[155] -= f * m[129];
+    r[11] -= f * pr;
+    let e = m[165];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[166] -= f * m[127];
+    m[167] -= f * m[128];
+    m[168] -= f * m[129];
+    r[12] -= f * pr;
+    m.swap(140, 153);
+    m.swap(141, 154);
+    m.swap(142, 155);
+    r.swap(10, 11);
+    let d = m[140];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[140] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[153];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[154] -= f * m[141];
+    m[155] -= f * m[142];
+    r[11] -= f * pr;
+    let e = m[166];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[167] -= f * m[141];
+    m[168] -= f * m[142];
+    r[12] -= f * pr;
+    let d = m[154];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[154] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[167];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[168] -= f * m[155];
+    r[12] -= f * pr;
+    let d = m[168];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[168] = inv;
+    let v = r[12];
+    let d = m[168];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[155] * r[12];
+    let d = m[154];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[141] * r[11];
+    v -= m[142] * r[12];
+    let d = m[140];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[127] * r[10];
+    v -= m[128] * r[11];
+    v -= m[129] * r[12];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[113] * r[9];
+    v -= m[114] * r[10];
+    v -= m[115] * r[11];
+    let d = m[112];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[99] * r[8];
+    v -= m[102] * r[11];
+    let d = m[98];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[85] * r[7];
+    v -= m[86] * r[8];
+    v -= m[87] * r[9];
+    v -= m[88] * r[10];
+    v -= m[89] * r[11];
+    v -= m[90] * r[12];
+    let d = m[84];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[72] * r[7];
+    v -= m[73] * r[8];
+    v -= m[76] * r[11];
+    let d = m[70];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[57] * r[5];
+    v -= m[58] * r[6];
+    v -= m[59] * r[7];
+    v -= m[61] * r[9];
+    v -= m[62] * r[10];
+    v -= m[64] * r[12];
+    let d = m[56];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[46] * r[7];
+    v -= m[47] * r[8];
+    v -= m[50] * r[11];
+    let d = m[42];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[30] * r[4];
+    v -= m[32] * r[6];
+    v -= m[35] * r[9];
+    v -= m[36] * r[10];
+    v -= m[38] * r[12];
+    let d = m[28];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[17] * r[4];
+    v -= m[19] * r[6];
+    let d = m[14];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[3] * r[3];
+    v -= m[5] * r[5];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
 fn kernel_23(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
@@ -9304,189 +9304,78 @@ fn kernel_23(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_24(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
+    let Ok(m) = <&mut [f64; 16]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..4).map(<&mut [f64; 4]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
     let inv = 1.0 / d;
     m[0] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[0];
-    let e = m[16];
+    let e = m[4];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[18] -= f * m[2];
-    m[19] -= f * m[3];
+    m[5] -= f * m[1];
+    m[6] -= f * m[2];
+    r[1] -= f * pr;
+    let e = m[8];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[9] -= f * m[1];
+    m[10] -= f * m[2];
     r[2] -= f * pr;
-    let e = m[24];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[26] -= f * m[2];
-    m[27] -= f * m[3];
-    r[3] -= f * pr;
-    let d = m[9];
+    let d = m[5];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
     let inv = 1.0 / d;
-    m[9] = inv;
+    m[5] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[1];
-    let e = m[17];
+    let e = m[9];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[18] -= f * m[10];
-    m[20] -= f * m[12];
+    m[10] -= f * m[6];
     r[2] -= f * pr;
-    let e = m[33];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[34] -= f * m[10];
-    m[36] -= f * m[12];
-    r[4] -= f * pr;
-    let d = m[18];
+    m.swap(10, 14);
+    m.swap(11, 15);
+    r.swap(2, 3);
+    let d = m[10];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
     let inv = 1.0 / d;
-    m[18] = inv;
+    m[10] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[2];
-    let e = m[26];
+    let e = m[14];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[27] -= f * m[19];
-    m[28] -= f * m[20];
+    m[15] -= f * m[11];
     r[3] -= f * pr;
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[35] -= f * m[19];
-    m[36] -= f * m[20];
-    r[4] -= f * pr;
-    m.swap(27, 35);
-    m.swap(28, 36);
-    m.swap(29, 37);
-    m.swap(30, 38);
-    r.swap(3, 4);
-    let d = m[27];
+    let d = m[15];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
     let inv = 1.0 / d;
-    m[27] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[35];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[28];
-    m[37] -= f * m[29];
-    m[38] -= f * m[30];
-    r[4] -= f * pr;
-    let e = m[43];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[44] -= f * m[28];
-    m[45] -= f * m[29];
-    m[46] -= f * m[30];
-    r[5] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[44];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[37];
-    m[46] -= f * m[38];
-    r[5] -= f * pr;
-    let e = m[52];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[53] -= f * m[37];
-    m[54] -= f * m[38];
-    r[6] -= f * pr;
-    let d = m[45];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[45] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[46];
-    m[55] -= f * m[47];
-    r[6] -= f * pr;
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[62];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[63] -= f * m[55];
-    r[7] -= f * pr;
-    let d = m[63];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[63] = inv;
-    let v = r[7];
-    let d = m[63];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[55] * r[7];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[46] * r[6];
-    v -= m[47] * r[7];
-    let d = m[45];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[37] * r[5];
-    v -= m[38] * r[6];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[28] * r[4];
-    v -= m[29] * r[5];
-    v -= m[30] * r[6];
-    let d = m[27];
+    m[15] = inv;
+    let v = r[3];
+    let d = m[15];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[3] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[2];
-    v -= m[19] * r[3];
-    v -= m[20] * r[4];
-    let d = m[18];
+    v -= m[11] * r[3];
+    let d = m[10];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[2] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[1];
-    v -= m[10] * r[2];
-    v -= m[12] * r[4];
-    let d = m[9];
+    v -= m[6] * r[2];
+    let d = m[5];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[1] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[0];
+    v -= m[1] * r[1];
     v -= m[2] * r[2];
-    v -= m[3] * r[3];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -9496,6 +9385,452 @@ fn kernel_24(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_25(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[14];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[15] -= f * m[1];
+    m[20] -= f * m[6];
+    r[1] -= f * pr;
+    let e = m[84];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[1];
+    m[90] -= f * m[6];
+    r[6] -= f * pr;
+    m.swap(15, 85);
+    m.swap(18, 88);
+    m.swap(20, 90);
+    m.swap(25, 95);
+    r.swap(1, 6);
+    let d = m[15];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[15] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[85];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[18];
+    m[90] -= f * m[20];
+    m[95] -= f * m[25];
+    r[6] -= f * pr;
+    m.swap(30, 44);
+    m.swap(31, 45);
+    m.swap(35, 49);
+    m.swap(36, 50);
+    r.swap(2, 3);
+    let d = m[30];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[30] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[44];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[31];
+    m[49] -= f * m[35];
+    r[3] -= f * pr;
+    let e = m[100];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[101] -= f * m[31];
+    m[105] -= f * m[35];
+    r[7] -= f * pr;
+    let e = m[114];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[115] -= f * m[31];
+    m[119] -= f * m[35];
+    r[8] -= f * pr;
+    m.swap(45, 101);
+    m.swap(49, 105);
+    m.swap(50, 106);
+    m.swap(51, 107);
+    m.swap(53, 109);
+    r.swap(3, 7);
+    let d = m[45];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[45] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[101];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[105] -= f * m[49];
+    m[107] -= f * m[51];
+    m[109] -= f * m[53];
+    r[7] -= f * pr;
+    let e = m[115];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[119] -= f * m[49];
+    m[121] -= f * m[51];
+    m[123] -= f * m[53];
+    r[8] -= f * pr;
+    m.swap(60, 74);
+    m.swap(61, 75);
+    m.swap(62, 76);
+    m.swap(64, 78);
+    r.swap(4, 5);
+    let d = m[60];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[60] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[74];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[75] -= f * m[61];
+    m[78] -= f * m[64];
+    r[5] -= f * pr;
+    let e = m[88];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[89] -= f * m[61];
+    m[92] -= f * m[64];
+    r[6] -= f * pr;
+    let e = m[116];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[117] -= f * m[61];
+    m[120] -= f * m[64];
+    r[8] -= f * pr;
+    m.swap(75, 117);
+    m.swap(76, 118);
+    m.swap(77, 119);
+    m.swap(78, 120);
+    m.swap(79, 121);
+    m.swap(81, 123);
+    r.swap(5, 8);
+    let d = m[75];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[75] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[89];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[91] -= f * m[77];
+    m[92] -= f * m[78];
+    m[93] -= f * m[79];
+    m[95] -= f * m[81];
+    r[6] -= f * pr;
+    let e = m[117];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[119] -= f * m[77];
+    m[120] -= f * m[78];
+    m[121] -= f * m[79];
+    m[123] -= f * m[81];
+    r[8] -= f * pr;
+    let d = m[90];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[90] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[118];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[119] -= f * m[91];
+    m[120] -= f * m[92];
+    m[121] -= f * m[93];
+    m[123] -= f * m[95];
+    r[8] -= f * pr;
+    let e = m[160];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[161] -= f * m[91];
+    m[162] -= f * m[92];
+    m[163] -= f * m[93];
+    m[165] -= f * m[95];
+    r[11] -= f * pr;
+    let d = m[105];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[105] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[119];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[120] -= f * m[106];
+    m[121] -= f * m[107];
+    m[123] -= f * m[109];
+    r[8] -= f * pr;
+    let e = m[133];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[134] -= f * m[106];
+    m[135] -= f * m[107];
+    m[137] -= f * m[109];
+    r[9] -= f * pr;
+    let e = m[161];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[106];
+    m[163] -= f * m[107];
+    m[165] -= f * m[109];
+    r[11] -= f * pr;
+    m.swap(120, 162);
+    m.swap(121, 163);
+    m.swap(123, 165);
+    m.swap(124, 166);
+    m.swap(125, 167);
+    r.swap(8, 11);
+    let d = m[120];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[120] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[134];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[135] -= f * m[121];
+    m[137] -= f * m[123];
+    m[138] -= f * m[124];
+    m[139] -= f * m[125];
+    r[9] -= f * pr;
+    let e = m[162];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[163] -= f * m[121];
+    m[165] -= f * m[123];
+    m[166] -= f * m[124];
+    m[167] -= f * m[125];
+    r[11] -= f * pr;
+    m.swap(135, 149);
+    m.swap(136, 150);
+    m.swap(137, 151);
+    m.swap(138, 152);
+    m.swap(139, 153);
+    r.swap(9, 10);
+    let d = m[135];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[135] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[149];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[150] -= f * m[136];
+    m[152] -= f * m[138];
+    r[10] -= f * pr;
+    let e = m[163];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[164] -= f * m[136];
+    m[166] -= f * m[138];
+    r[11] -= f * pr;
+    let e = m[177];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[178] -= f * m[136];
+    m[180] -= f * m[138];
+    r[12] -= f * pr;
+    m.swap(150, 178);
+    m.swap(151, 179);
+    m.swap(152, 180);
+    m.swap(153, 181);
+    r.swap(10, 12);
+    let d = m[150];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[150] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[164];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[165] -= f * m[151];
+    m[166] -= f * m[152];
+    m[167] -= f * m[153];
+    r[11] -= f * pr;
+    let e = m[178];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[151];
+    m[180] -= f * m[152];
+    m[181] -= f * m[153];
+    r[12] -= f * pr;
+    m.swap(165, 179);
+    m.swap(166, 180);
+    m.swap(167, 181);
+    r.swap(11, 12);
+    let d = m[165];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[165] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[179];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[180] -= f * m[166];
+    m[181] -= f * m[167];
+    r[12] -= f * pr;
+    let e = m[193];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[194] -= f * m[166];
+    m[195] -= f * m[167];
+    r[13] -= f * pr;
+    m.swap(180, 194);
+    m.swap(181, 195);
+    r.swap(12, 13);
+    let d = m[180];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[180] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[194];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[195] -= f * m[181];
+    r[13] -= f * pr;
+    let d = m[195];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[195] = inv;
+    let v = r[13];
+    let d = m[195];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[181] * r[13];
+    let d = m[180];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[166] * r[12];
+    v -= m[167] * r[13];
+    let d = m[165];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[151] * r[11];
+    v -= m[152] * r[12];
+    v -= m[153] * r[13];
+    let d = m[150];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[136] * r[10];
+    v -= m[138] * r[12];
+    let d = m[135];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[121] * r[9];
+    v -= m[123] * r[11];
+    v -= m[124] * r[12];
+    v -= m[125] * r[13];
+    let d = m[120];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[106] * r[8];
+    v -= m[107] * r[9];
+    v -= m[109] * r[11];
+    let d = m[105];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[91] * r[7];
+    v -= m[92] * r[8];
+    v -= m[93] * r[9];
+    v -= m[95] * r[11];
+    let d = m[90];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[77] * r[7];
+    v -= m[78] * r[8];
+    v -= m[79] * r[9];
+    v -= m[81] * r[11];
+    let d = m[75];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[61] * r[5];
+    v -= m[64] * r[8];
+    let d = m[60];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[49] * r[7];
+    v -= m[51] * r[9];
+    v -= m[53] * r[11];
+    let d = m[45];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[31] * r[3];
+    v -= m[35] * r[7];
+    let d = m[30];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[18] * r[4];
+    v -= m[20] * r[6];
+    v -= m[25] * r[11];
+    let d = m[15];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[6] * r[6];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_26(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -10014,7 +10349,7 @@ fn kernel_25(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_26(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_27(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 16]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..4).map(<&mut [f64; 4]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -10029,23 +10364,10 @@ fn kernel_26(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     m[5] -= f * m[1];
     m[6] -= f * m[2];
     r[1] -= f * pr;
-    let e = m[8];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[9] -= f * m[1];
-    m[10] -= f * m[2];
-    r[2] -= f * pr;
     let d = m[5];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
     let inv = 1.0 / d;
     m[5] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[9];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[10] -= f * m[6];
-    r[2] -= f * pr;
     m.swap(10, 14);
     m.swap(11, 15);
     r.swap(2, 3);
@@ -10095,7 +10417,7 @@ fn kernel_26(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_27(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_28(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -10622,74 +10944,6 @@ fn kernel_27(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_28(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 16]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..4).map(<&mut [f64; 4]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[4];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[5] -= f * m[1];
-    m[6] -= f * m[2];
-    r[1] -= f * pr;
-    let d = m[5];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[5] = inv;
-    m.swap(10, 14);
-    m.swap(11, 15);
-    r.swap(2, 3);
-    let d = m[10];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[10] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[14];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[15] -= f * m[11];
-    r[3] -= f * pr;
-    let d = m[15];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[15] = inv;
-    let v = r[3];
-    let d = m[15];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[11] * r[3];
-    let d = m[10];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[6] * r[2];
-    let d = m[5];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
 fn kernel_29(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
@@ -11039,509 +11293,6 @@ fn kernel_30(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_31(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[14];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[15] -= f * m[1];
-    m[20] -= f * m[6];
-    r[1] -= f * pr;
-    let e = m[84];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[85] -= f * m[1];
-    m[90] -= f * m[6];
-    r[6] -= f * pr;
-    m.swap(15, 85);
-    m.swap(18, 88);
-    m.swap(20, 90);
-    m.swap(25, 95);
-    r.swap(1, 6);
-    let d = m[15];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[15] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[85];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[18];
-    m[90] -= f * m[20];
-    m[95] -= f * m[25];
-    r[6] -= f * pr;
-    m.swap(30, 44);
-    m.swap(31, 45);
-    m.swap(35, 49);
-    m.swap(36, 50);
-    r.swap(2, 3);
-    let d = m[30];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[30] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[44];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[31];
-    m[49] -= f * m[35];
-    r[3] -= f * pr;
-    let e = m[100];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[101] -= f * m[31];
-    m[105] -= f * m[35];
-    r[7] -= f * pr;
-    let e = m[114];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[115] -= f * m[31];
-    m[119] -= f * m[35];
-    r[8] -= f * pr;
-    m.swap(45, 101);
-    m.swap(49, 105);
-    m.swap(50, 106);
-    m.swap(51, 107);
-    m.swap(53, 109);
-    r.swap(3, 7);
-    let d = m[45];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[45] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[101];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[105] -= f * m[49];
-    m[107] -= f * m[51];
-    m[109] -= f * m[53];
-    r[7] -= f * pr;
-    let e = m[115];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[119] -= f * m[49];
-    m[121] -= f * m[51];
-    m[123] -= f * m[53];
-    r[8] -= f * pr;
-    m.swap(60, 74);
-    m.swap(61, 75);
-    m.swap(62, 76);
-    m.swap(64, 78);
-    r.swap(4, 5);
-    let d = m[60];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[60] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[74];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[75] -= f * m[61];
-    m[78] -= f * m[64];
-    r[5] -= f * pr;
-    let e = m[88];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[89] -= f * m[61];
-    m[92] -= f * m[64];
-    r[6] -= f * pr;
-    let e = m[116];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[117] -= f * m[61];
-    m[120] -= f * m[64];
-    r[8] -= f * pr;
-    m.swap(75, 117);
-    m.swap(76, 118);
-    m.swap(77, 119);
-    m.swap(78, 120);
-    m.swap(79, 121);
-    m.swap(81, 123);
-    r.swap(5, 8);
-    let d = m[75];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[75] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[89];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[91] -= f * m[77];
-    m[92] -= f * m[78];
-    m[93] -= f * m[79];
-    m[95] -= f * m[81];
-    r[6] -= f * pr;
-    let e = m[117];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[119] -= f * m[77];
-    m[120] -= f * m[78];
-    m[121] -= f * m[79];
-    m[123] -= f * m[81];
-    r[8] -= f * pr;
-    let d = m[90];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[90] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[118];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[119] -= f * m[91];
-    m[120] -= f * m[92];
-    m[121] -= f * m[93];
-    m[123] -= f * m[95];
-    r[8] -= f * pr;
-    let e = m[160];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[161] -= f * m[91];
-    m[162] -= f * m[92];
-    m[163] -= f * m[93];
-    m[165] -= f * m[95];
-    r[11] -= f * pr;
-    let d = m[105];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[105] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[119];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[120] -= f * m[106];
-    m[121] -= f * m[107];
-    m[123] -= f * m[109];
-    r[8] -= f * pr;
-    let e = m[133];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[134] -= f * m[106];
-    m[135] -= f * m[107];
-    m[137] -= f * m[109];
-    r[9] -= f * pr;
-    let e = m[161];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[106];
-    m[163] -= f * m[107];
-    m[165] -= f * m[109];
-    r[11] -= f * pr;
-    m.swap(120, 162);
-    m.swap(121, 163);
-    m.swap(123, 165);
-    m.swap(124, 166);
-    m.swap(125, 167);
-    r.swap(8, 11);
-    let d = m[120];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[120] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[134];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[135] -= f * m[121];
-    m[137] -= f * m[123];
-    m[138] -= f * m[124];
-    m[139] -= f * m[125];
-    r[9] -= f * pr;
-    let e = m[162];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[163] -= f * m[121];
-    m[165] -= f * m[123];
-    m[166] -= f * m[124];
-    m[167] -= f * m[125];
-    r[11] -= f * pr;
-    m.swap(135, 149);
-    m.swap(136, 150);
-    m.swap(137, 151);
-    m.swap(138, 152);
-    m.swap(139, 153);
-    r.swap(9, 10);
-    let d = m[135];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[135] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[149];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[150] -= f * m[136];
-    m[152] -= f * m[138];
-    r[10] -= f * pr;
-    let e = m[163];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[164] -= f * m[136];
-    m[166] -= f * m[138];
-    r[11] -= f * pr;
-    let e = m[177];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[178] -= f * m[136];
-    m[180] -= f * m[138];
-    r[12] -= f * pr;
-    m.swap(150, 178);
-    m.swap(151, 179);
-    m.swap(152, 180);
-    m.swap(153, 181);
-    r.swap(10, 12);
-    let d = m[150];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[150] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[164];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[165] -= f * m[151];
-    m[166] -= f * m[152];
-    m[167] -= f * m[153];
-    r[11] -= f * pr;
-    let e = m[178];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[151];
-    m[180] -= f * m[152];
-    m[181] -= f * m[153];
-    r[12] -= f * pr;
-    m.swap(165, 179);
-    m.swap(166, 180);
-    m.swap(167, 181);
-    r.swap(11, 12);
-    let d = m[165];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[165] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[179];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[180] -= f * m[166];
-    m[181] -= f * m[167];
-    r[12] -= f * pr;
-    let e = m[193];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[194] -= f * m[166];
-    m[195] -= f * m[167];
-    r[13] -= f * pr;
-    m.swap(180, 194);
-    m.swap(181, 195);
-    r.swap(12, 13);
-    let d = m[180];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[180] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[194];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[195] -= f * m[181];
-    r[13] -= f * pr;
-    let d = m[195];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[195] = inv;
-    let v = r[13];
-    let d = m[195];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[181] * r[13];
-    let d = m[180];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[166] * r[12];
-    v -= m[167] * r[13];
-    let d = m[165];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[151] * r[11];
-    v -= m[152] * r[12];
-    v -= m[153] * r[13];
-    let d = m[150];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[136] * r[10];
-    v -= m[138] * r[12];
-    let d = m[135];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[121] * r[9];
-    v -= m[123] * r[11];
-    v -= m[124] * r[12];
-    v -= m[125] * r[13];
-    let d = m[120];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[106] * r[8];
-    v -= m[107] * r[9];
-    v -= m[109] * r[11];
-    let d = m[105];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[91] * r[7];
-    v -= m[92] * r[8];
-    v -= m[93] * r[9];
-    v -= m[95] * r[11];
-    let d = m[90];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[77] * r[7];
-    v -= m[78] * r[8];
-    v -= m[79] * r[9];
-    v -= m[81] * r[11];
-    let d = m[75];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[61] * r[5];
-    v -= m[64] * r[8];
-    let d = m[60];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[49] * r[7];
-    v -= m[51] * r[9];
-    v -= m[53] * r[11];
-    let d = m[45];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[31] * r[3];
-    v -= m[35] * r[7];
-    let d = m[30];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[18] * r[4];
-    v -= m[20] * r[6];
-    v -= m[25] * r[11];
-    let d = m[15];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[6] * r[6];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_32(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 9]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..3).map(<&mut [f64; 3]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[6];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[7] -= f * m[1];
-    m[8] -= f * m[2];
-    r[2] -= f * pr;
-    m.swap(4, 7);
-    m.swap(5, 8);
-    r.swap(1, 2);
-    let d = m[4];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[4] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[7];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[8] -= f * m[5];
-    r[2] -= f * pr;
-    let d = m[8];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[8] = inv;
-    let v = r[2];
-    let d = m[8];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[5] * r[2];
-    let d = m[4];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_33(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -12347,657 +12098,7 @@ fn kernel_33(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_34(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
-    m.swap(0, 8);
-    m.swap(1, 9);
-    m.swap(4, 12);
-    m.swap(5, 13);
-    r.swap(0, 1);
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[8];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[9] -= f * m[1];
-    m[12] -= f * m[4];
-    r[1] -= f * pr;
-    let e = m[32];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[33] -= f * m[1];
-    m[36] -= f * m[4];
-    r[4] -= f * pr;
-    let e = m[40];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[41] -= f * m[1];
-    m[44] -= f * m[4];
-    r[5] -= f * pr;
-    m.swap(9, 33);
-    m.swap(11, 35);
-    m.swap(12, 36);
-    m.swap(13, 37);
-    m.swap(15, 39);
-    r.swap(1, 4);
-    let d = m[9];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[9] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[33];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[35] -= f * m[11];
-    m[36] -= f * m[12];
-    m[39] -= f * m[15];
-    r[4] -= f * pr;
-    let e = m[41];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[43] -= f * m[11];
-    m[44] -= f * m[12];
-    m[47] -= f * m[15];
-    r[5] -= f * pr;
-    m.swap(18, 50);
-    m.swap(21, 53);
-    m.swap(22, 54);
-    m.swap(23, 55);
-    r.swap(2, 6);
-    let d = m[18];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[18] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[42];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[21];
-    m[46] -= f * m[22];
-    m[47] -= f * m[23];
-    r[5] -= f * pr;
-    let e = m[50];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[53] -= f * m[21];
-    m[54] -= f * m[22];
-    m[55] -= f * m[23];
-    r[6] -= f * pr;
-    let d = m[27];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[27] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[35];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[28];
-    m[39] -= f * m[31];
-    r[4] -= f * pr;
-    let e = m[43];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[44] -= f * m[28];
-    m[47] -= f * m[31];
-    r[5] -= f * pr;
-    let e = m[59];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[60] -= f * m[28];
-    m[63] -= f * m[31];
-    r[7] -= f * pr;
-    m.swap(36, 60);
-    m.swap(37, 61);
-    m.swap(38, 62);
-    m.swap(39, 63);
-    r.swap(4, 7);
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[44];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[37];
-    m[46] -= f * m[38];
-    m[47] -= f * m[39];
-    r[5] -= f * pr;
-    let e = m[60];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[61] -= f * m[37];
-    m[62] -= f * m[38];
-    m[63] -= f * m[39];
-    r[7] -= f * pr;
-    let d = m[45];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[45] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[46];
-    m[55] -= f * m[47];
-    r[6] -= f * pr;
-    let e = m[61];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[62] -= f * m[46];
-    m[63] -= f * m[47];
-    r[7] -= f * pr;
-    m.swap(54, 62);
-    m.swap(55, 63);
-    r.swap(6, 7);
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[62];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[63] -= f * m[55];
-    r[7] -= f * pr;
-    let d = m[63];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[63] = inv;
-    let v = r[7];
-    let d = m[63];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[55] * r[7];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[46] * r[6];
-    v -= m[47] * r[7];
-    let d = m[45];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[37] * r[5];
-    v -= m[38] * r[6];
-    v -= m[39] * r[7];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[28] * r[4];
-    v -= m[31] * r[7];
-    let d = m[27];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[21] * r[5];
-    v -= m[22] * r[6];
-    v -= m[23] * r[7];
-    let d = m[18];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[11] * r[3];
-    v -= m[12] * r[4];
-    v -= m[15] * r[7];
-    let d = m[9];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[4] * r[4];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_35(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[39];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[42] -= f * m[3];
-    m[48] -= f * m[9];
-    r[3] -= f * pr;
-    let e = m[117];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[120] -= f * m[3];
-    m[126] -= f * m[9];
-    r[9] -= f * pr;
-    m.swap(14, 27);
-    m.swap(15, 28);
-    m.swap(20, 33);
-    m.swap(21, 34);
-    m.swap(22, 35);
-    m.swap(23, 36);
-    r.swap(1, 2);
-    let d = m[14];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[14] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[27];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[28] -= f * m[15];
-    m[33] -= f * m[20];
-    r[2] -= f * pr;
-    let e = m[92];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[93] -= f * m[15];
-    m[98] -= f * m[20];
-    r[7] -= f * pr;
-    let e = m[105];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[106] -= f * m[15];
-    m[111] -= f * m[20];
-    r[8] -= f * pr;
-    let e = m[118];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[119] -= f * m[15];
-    m[124] -= f * m[20];
-    r[9] -= f * pr;
-    let e = m[131];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[132] -= f * m[15];
-    m[137] -= f * m[20];
-    r[10] -= f * pr;
-    m.swap(28, 93);
-    m.swap(33, 98);
-    m.swap(34, 99);
-    m.swap(35, 100);
-    m.swap(36, 101);
-    r.swap(2, 7);
-    let d = m[28];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[28] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[93];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[98] -= f * m[33];
-    m[99] -= f * m[34];
-    m[100] -= f * m[35];
-    m[101] -= f * m[36];
-    r[7] -= f * pr;
-    let e = m[106];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[111] -= f * m[33];
-    m[112] -= f * m[34];
-    m[113] -= f * m[35];
-    m[114] -= f * m[36];
-    r[8] -= f * pr;
-    let e = m[119];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[124] -= f * m[33];
-    m[125] -= f * m[34];
-    m[126] -= f * m[35];
-    m[127] -= f * m[36];
-    r[9] -= f * pr;
-    let e = m[132];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[137] -= f * m[33];
-    m[138] -= f * m[34];
-    m[139] -= f * m[35];
-    m[140] -= f * m[36];
-    r[10] -= f * pr;
-    m.swap(42, 55);
-    m.swap(43, 56);
-    m.swap(47, 60);
-    m.swap(48, 61);
-    r.swap(3, 4);
-    let d = m[42];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[42] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[55];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[56] -= f * m[43];
-    m[60] -= f * m[47];
-    r[4] -= f * pr;
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[108] -= f * m[43];
-    m[112] -= f * m[47];
-    r[8] -= f * pr;
-    let e = m[120];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[121] -= f * m[43];
-    m[125] -= f * m[47];
-    r[9] -= f * pr;
-    m.swap(56, 108);
-    m.swap(59, 111);
-    m.swap(60, 112);
-    m.swap(61, 113);
-    m.swap(62, 114);
-    r.swap(4, 8);
-    let d = m[56];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[56] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[108];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[111] -= f * m[59];
-    m[112] -= f * m[60];
-    m[113] -= f * m[61];
-    m[114] -= f * m[62];
-    r[8] -= f * pr;
-    let e = m[121];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[124] -= f * m[59];
-    m[125] -= f * m[60];
-    m[126] -= f * m[61];
-    m[127] -= f * m[62];
-    r[9] -= f * pr;
-    m.swap(70, 83);
-    m.swap(71, 84);
-    m.swap(74, 87);
-    m.swap(75, 88);
-    r.swap(5, 6);
-    let d = m[70];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[70] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[83];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[84] -= f * m[71];
-    m[87] -= f * m[74];
-    r[6] -= f * pr;
-    let e = m[122];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[123] -= f * m[71];
-    m[126] -= f * m[74];
-    r[9] -= f * pr;
-    let e = m[135];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[136] -= f * m[71];
-    m[139] -= f * m[74];
-    r[10] -= f * pr;
-    m.swap(84, 123);
-    m.swap(85, 124);
-    m.swap(86, 125);
-    m.swap(87, 126);
-    m.swap(88, 127);
-    r.swap(6, 9);
-    let d = m[84];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[84] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[123];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[124] -= f * m[85];
-    m[125] -= f * m[86];
-    m[126] -= f * m[87];
-    m[127] -= f * m[88];
-    r[9] -= f * pr;
-    let e = m[136];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[137] -= f * m[85];
-    m[138] -= f * m[86];
-    m[139] -= f * m[87];
-    m[140] -= f * m[88];
-    r[10] -= f * pr;
-    let d = m[98];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[98] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[111];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[112] -= f * m[99];
-    m[113] -= f * m[100];
-    m[114] -= f * m[101];
-    r[8] -= f * pr;
-    let e = m[124];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[125] -= f * m[99];
-    m[126] -= f * m[100];
-    m[127] -= f * m[101];
-    r[9] -= f * pr;
-    let e = m[137];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[138] -= f * m[99];
-    m[139] -= f * m[100];
-    m[140] -= f * m[101];
-    r[10] -= f * pr;
-    let d = m[112];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[112] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[125];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[126] -= f * m[113];
-    m[127] -= f * m[114];
-    r[9] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[113];
-    m[140] -= f * m[114];
-    r[10] -= f * pr;
-    let d = m[126];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[126] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[139];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[140] -= f * m[127];
-    r[10] -= f * pr;
-    let d = m[140];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[140] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[153];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[154] -= f * m[141];
-    m[155] -= f * m[142];
-    r[11] -= f * pr;
-    let d = m[154];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[154] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[167];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[168] -= f * m[155];
-    r[12] -= f * pr;
-    let d = m[168];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[168] = inv;
-    let v = r[12];
-    let d = m[168];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[155] * r[12];
-    let d = m[154];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[141] * r[11];
-    v -= m[142] * r[12];
-    let d = m[140];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[127] * r[10];
-    let d = m[126];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[113] * r[9];
-    v -= m[114] * r[10];
-    let d = m[112];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[99] * r[8];
-    v -= m[100] * r[9];
-    v -= m[101] * r[10];
-    let d = m[98];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[85] * r[7];
-    v -= m[86] * r[8];
-    v -= m[87] * r[9];
-    v -= m[88] * r[10];
-    let d = m[84];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[71] * r[6];
-    v -= m[74] * r[9];
-    let d = m[70];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[59] * r[7];
-    v -= m[60] * r[8];
-    v -= m[61] * r[9];
-    v -= m[62] * r[10];
-    let d = m[56];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[43] * r[4];
-    v -= m[47] * r[8];
-    let d = m[42];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[33] * r[7];
-    v -= m[34] * r[8];
-    v -= m[35] * r[9];
-    v -= m[36] * r[10];
-    let d = m[28];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[15] * r[2];
-    v -= m[20] * r[7];
-    let d = m[14];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[3] * r[3];
-    v -= m[9] * r[9];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_36(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_32(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -13659,7 +12760,1042 @@ fn kernel_36(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
+fn kernel_33(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
+    m.swap(0, 8);
+    m.swap(1, 9);
+    m.swap(4, 12);
+    m.swap(5, 13);
+    r.swap(0, 1);
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[8];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[9] -= f * m[1];
+    m[12] -= f * m[4];
+    r[1] -= f * pr;
+    let e = m[32];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[33] -= f * m[1];
+    m[36] -= f * m[4];
+    r[4] -= f * pr;
+    let e = m[40];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[41] -= f * m[1];
+    m[44] -= f * m[4];
+    r[5] -= f * pr;
+    m.swap(9, 33);
+    m.swap(11, 35);
+    m.swap(12, 36);
+    m.swap(13, 37);
+    m.swap(15, 39);
+    r.swap(1, 4);
+    let d = m[9];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[9] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[35] -= f * m[11];
+    m[36] -= f * m[12];
+    m[39] -= f * m[15];
+    r[4] -= f * pr;
+    let e = m[41];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[43] -= f * m[11];
+    m[44] -= f * m[12];
+    m[47] -= f * m[15];
+    r[5] -= f * pr;
+    m.swap(18, 50);
+    m.swap(21, 53);
+    m.swap(22, 54);
+    m.swap(23, 55);
+    r.swap(2, 6);
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[42];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[21];
+    m[46] -= f * m[22];
+    m[47] -= f * m[23];
+    r[5] -= f * pr;
+    let e = m[50];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[53] -= f * m[21];
+    m[54] -= f * m[22];
+    m[55] -= f * m[23];
+    r[6] -= f * pr;
+    let d = m[27];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[27] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[28];
+    m[39] -= f * m[31];
+    r[4] -= f * pr;
+    let e = m[43];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[44] -= f * m[28];
+    m[47] -= f * m[31];
+    r[5] -= f * pr;
+    let e = m[59];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[60] -= f * m[28];
+    m[63] -= f * m[31];
+    r[7] -= f * pr;
+    m.swap(36, 60);
+    m.swap(37, 61);
+    m.swap(38, 62);
+    m.swap(39, 63);
+    r.swap(4, 7);
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[44];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[37];
+    m[46] -= f * m[38];
+    m[47] -= f * m[39];
+    r[5] -= f * pr;
+    let e = m[60];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[61] -= f * m[37];
+    m[62] -= f * m[38];
+    m[63] -= f * m[39];
+    r[7] -= f * pr;
+    let d = m[45];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[45] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[46];
+    m[55] -= f * m[47];
+    r[6] -= f * pr;
+    let e = m[61];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[62] -= f * m[46];
+    m[63] -= f * m[47];
+    r[7] -= f * pr;
+    m.swap(54, 62);
+    m.swap(55, 63);
+    r.swap(6, 7);
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[62];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[63] -= f * m[55];
+    r[7] -= f * pr;
+    let d = m[63];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[63] = inv;
+    let v = r[7];
+    let d = m[63];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[55] * r[7];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[46] * r[6];
+    v -= m[47] * r[7];
+    let d = m[45];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[37] * r[5];
+    v -= m[38] * r[6];
+    v -= m[39] * r[7];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[28] * r[4];
+    v -= m[31] * r[7];
+    let d = m[27];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[21] * r[5];
+    v -= m[22] * r[6];
+    v -= m[23] * r[7];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[11] * r[3];
+    v -= m[12] * r[4];
+    v -= m[15] * r[7];
+    let d = m[9];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[4] * r[4];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_34(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[39];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[42] -= f * m[3];
+    m[48] -= f * m[9];
+    r[3] -= f * pr;
+    let e = m[117];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[120] -= f * m[3];
+    m[126] -= f * m[9];
+    r[9] -= f * pr;
+    m.swap(14, 27);
+    m.swap(15, 28);
+    m.swap(20, 33);
+    m.swap(21, 34);
+    m.swap(22, 35);
+    m.swap(23, 36);
+    r.swap(1, 2);
+    let d = m[14];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[14] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[27];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[28] -= f * m[15];
+    m[33] -= f * m[20];
+    r[2] -= f * pr;
+    let e = m[92];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[93] -= f * m[15];
+    m[98] -= f * m[20];
+    r[7] -= f * pr;
+    let e = m[105];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[106] -= f * m[15];
+    m[111] -= f * m[20];
+    r[8] -= f * pr;
+    let e = m[118];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[119] -= f * m[15];
+    m[124] -= f * m[20];
+    r[9] -= f * pr;
+    let e = m[131];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[132] -= f * m[15];
+    m[137] -= f * m[20];
+    r[10] -= f * pr;
+    m.swap(28, 93);
+    m.swap(33, 98);
+    m.swap(34, 99);
+    m.swap(35, 100);
+    m.swap(36, 101);
+    r.swap(2, 7);
+    let d = m[28];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[28] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[93];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[98] -= f * m[33];
+    m[99] -= f * m[34];
+    m[100] -= f * m[35];
+    m[101] -= f * m[36];
+    r[7] -= f * pr;
+    let e = m[106];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[111] -= f * m[33];
+    m[112] -= f * m[34];
+    m[113] -= f * m[35];
+    m[114] -= f * m[36];
+    r[8] -= f * pr;
+    let e = m[119];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[124] -= f * m[33];
+    m[125] -= f * m[34];
+    m[126] -= f * m[35];
+    m[127] -= f * m[36];
+    r[9] -= f * pr;
+    let e = m[132];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[137] -= f * m[33];
+    m[138] -= f * m[34];
+    m[139] -= f * m[35];
+    m[140] -= f * m[36];
+    r[10] -= f * pr;
+    m.swap(42, 55);
+    m.swap(43, 56);
+    m.swap(47, 60);
+    m.swap(48, 61);
+    r.swap(3, 4);
+    let d = m[42];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[42] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[55];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[56] -= f * m[43];
+    m[60] -= f * m[47];
+    r[4] -= f * pr;
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[108] -= f * m[43];
+    m[112] -= f * m[47];
+    r[8] -= f * pr;
+    let e = m[120];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[121] -= f * m[43];
+    m[125] -= f * m[47];
+    r[9] -= f * pr;
+    m.swap(56, 108);
+    m.swap(59, 111);
+    m.swap(60, 112);
+    m.swap(61, 113);
+    m.swap(62, 114);
+    r.swap(4, 8);
+    let d = m[56];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[56] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[108];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[111] -= f * m[59];
+    m[112] -= f * m[60];
+    m[113] -= f * m[61];
+    m[114] -= f * m[62];
+    r[8] -= f * pr;
+    let e = m[121];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[124] -= f * m[59];
+    m[125] -= f * m[60];
+    m[126] -= f * m[61];
+    m[127] -= f * m[62];
+    r[9] -= f * pr;
+    m.swap(70, 83);
+    m.swap(71, 84);
+    m.swap(74, 87);
+    m.swap(75, 88);
+    r.swap(5, 6);
+    let d = m[70];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[70] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[83];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[84] -= f * m[71];
+    m[87] -= f * m[74];
+    r[6] -= f * pr;
+    let e = m[122];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[123] -= f * m[71];
+    m[126] -= f * m[74];
+    r[9] -= f * pr;
+    let e = m[135];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[136] -= f * m[71];
+    m[139] -= f * m[74];
+    r[10] -= f * pr;
+    m.swap(84, 123);
+    m.swap(85, 124);
+    m.swap(86, 125);
+    m.swap(87, 126);
+    m.swap(88, 127);
+    r.swap(6, 9);
+    let d = m[84];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[84] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[123];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[124] -= f * m[85];
+    m[125] -= f * m[86];
+    m[126] -= f * m[87];
+    m[127] -= f * m[88];
+    r[9] -= f * pr;
+    let e = m[136];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[137] -= f * m[85];
+    m[138] -= f * m[86];
+    m[139] -= f * m[87];
+    m[140] -= f * m[88];
+    r[10] -= f * pr;
+    let d = m[98];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[98] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[111];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[112] -= f * m[99];
+    m[113] -= f * m[100];
+    m[114] -= f * m[101];
+    r[8] -= f * pr;
+    let e = m[124];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[125] -= f * m[99];
+    m[126] -= f * m[100];
+    m[127] -= f * m[101];
+    r[9] -= f * pr;
+    let e = m[137];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[138] -= f * m[99];
+    m[139] -= f * m[100];
+    m[140] -= f * m[101];
+    r[10] -= f * pr;
+    let d = m[112];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[112] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[125];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[126] -= f * m[113];
+    m[127] -= f * m[114];
+    r[9] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[113];
+    m[140] -= f * m[114];
+    r[10] -= f * pr;
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[127];
+    r[10] -= f * pr;
+    let d = m[140];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[140] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[153];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[154] -= f * m[141];
+    m[155] -= f * m[142];
+    r[11] -= f * pr;
+    let d = m[154];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[154] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[167];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[168] -= f * m[155];
+    r[12] -= f * pr;
+    let d = m[168];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[168] = inv;
+    let v = r[12];
+    let d = m[168];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[155] * r[12];
+    let d = m[154];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[141] * r[11];
+    v -= m[142] * r[12];
+    let d = m[140];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[127] * r[10];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[113] * r[9];
+    v -= m[114] * r[10];
+    let d = m[112];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[99] * r[8];
+    v -= m[100] * r[9];
+    v -= m[101] * r[10];
+    let d = m[98];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[85] * r[7];
+    v -= m[86] * r[8];
+    v -= m[87] * r[9];
+    v -= m[88] * r[10];
+    let d = m[84];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[71] * r[6];
+    v -= m[74] * r[9];
+    let d = m[70];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[59] * r[7];
+    v -= m[60] * r[8];
+    v -= m[61] * r[9];
+    v -= m[62] * r[10];
+    let d = m[56];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[43] * r[4];
+    v -= m[47] * r[8];
+    let d = m[42];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[33] * r[7];
+    v -= m[34] * r[8];
+    v -= m[35] * r[9];
+    v -= m[36] * r[10];
+    let d = m[28];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[15] * r[2];
+    v -= m[20] * r[7];
+    let d = m[14];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[3] * r[3];
+    v -= m[9] * r[9];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_35(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[16];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[18] -= f * m[2];
+    m[19] -= f * m[3];
+    r[2] -= f * pr;
+    let e = m[24];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[26] -= f * m[2];
+    m[27] -= f * m[3];
+    r[3] -= f * pr;
+    let d = m[9];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[9] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[17];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[18] -= f * m[10];
+    m[20] -= f * m[12];
+    r[2] -= f * pr;
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[10];
+    m[36] -= f * m[12];
+    r[4] -= f * pr;
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[26];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[27] -= f * m[19];
+    m[28] -= f * m[20];
+    r[3] -= f * pr;
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[35] -= f * m[19];
+    m[36] -= f * m[20];
+    r[4] -= f * pr;
+    m.swap(27, 35);
+    m.swap(28, 36);
+    m.swap(29, 37);
+    m.swap(30, 38);
+    r.swap(3, 4);
+    let d = m[27];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[27] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[28];
+    m[37] -= f * m[29];
+    m[38] -= f * m[30];
+    r[4] -= f * pr;
+    let e = m[43];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[44] -= f * m[28];
+    m[45] -= f * m[29];
+    m[46] -= f * m[30];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[44];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[37];
+    m[46] -= f * m[38];
+    r[5] -= f * pr;
+    let e = m[52];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[53] -= f * m[37];
+    m[54] -= f * m[38];
+    r[6] -= f * pr;
+    let d = m[45];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[45] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[46];
+    m[55] -= f * m[47];
+    r[6] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[62];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[63] -= f * m[55];
+    r[7] -= f * pr;
+    let d = m[63];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[63] = inv;
+    let v = r[7];
+    let d = m[63];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[55] * r[7];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[46] * r[6];
+    v -= m[47] * r[7];
+    let d = m[45];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[37] * r[5];
+    v -= m[38] * r[6];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[28] * r[4];
+    v -= m[29] * r[5];
+    v -= m[30] * r[6];
+    let d = m[27];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[19] * r[3];
+    v -= m[20] * r[4];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[10] * r[2];
+    v -= m[12] * r[4];
+    let d = m[9];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    v -= m[3] * r[3];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_36(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 9]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..3).map(<&mut [f64; 3]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[6];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[7] -= f * m[1];
+    m[8] -= f * m[2];
+    r[2] -= f * pr;
+    m.swap(4, 7);
+    m.swap(5, 8);
+    r.swap(1, 2);
+    let d = m[4];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[4] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[7];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[8] -= f * m[5];
+    r[2] -= f * pr;
+    let d = m[8];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[8] = inv;
+    let v = r[2];
+    let d = m[8];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[5] * r[2];
+    let d = m[4];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
 fn kernel_37(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[32];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[4];
+    r[4] -= f * pr;
+    m.swap(9, 33);
+    m.swap(12, 36);
+    m.swap(13, 37);
+    m.swap(14, 38);
+    r.swap(1, 4);
+    let d = m[9];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[9] = inv;
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[42];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[21];
+    r[5] -= f * pr;
+    let d = m[27];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[27] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[43];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[29];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[52];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[53] -= f * m[37];
+    r[6] -= f * pr;
+    let d = m[45];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[45] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[46];
+    m[55] -= f * m[47];
+    r[6] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let d = m[63];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[63] = inv;
+    let v = r[7];
+    let d = m[63];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[55] * r[7];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[46] * r[6];
+    v -= m[47] * r[7];
+    let d = m[45];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[37] * r[5];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[29] * r[5];
+    let d = m[27];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[21] * r[5];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[12] * r[4];
+    v -= m[14] * r[6];
+    let d = m[9];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[4] * r[4];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_38(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -14404,229 +14540,7 @@ fn kernel_37(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_38(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[32];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[4];
-    r[4] -= f * pr;
-    m.swap(9, 33);
-    m.swap(12, 36);
-    m.swap(13, 37);
-    m.swap(14, 38);
-    r.swap(1, 4);
-    let d = m[9];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[9] = inv;
-    let d = m[18];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[18] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[42];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[21];
-    r[5] -= f * pr;
-    let d = m[27];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[27] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[43];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[29];
-    r[5] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[52];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[53] -= f * m[37];
-    r[6] -= f * pr;
-    let d = m[45];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[45] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[46];
-    m[55] -= f * m[47];
-    r[6] -= f * pr;
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let d = m[63];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[63] = inv;
-    let v = r[7];
-    let d = m[63];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[55] * r[7];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[46] * r[6];
-    v -= m[47] * r[7];
-    let d = m[45];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[37] * r[5];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[29] * r[5];
-    let d = m[27];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[21] * r[5];
-    let d = m[18];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[12] * r[4];
-    v -= m[14] * r[6];
-    let d = m[9];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[4] * r[4];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
 fn kernel_39(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 16]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..4).map(<&mut [f64; 4]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[4];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[5] -= f * m[1];
-    m[6] -= f * m[2];
-    r[1] -= f * pr;
-    let e = m[8];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[9] -= f * m[1];
-    m[10] -= f * m[2];
-    r[2] -= f * pr;
-    let d = m[5];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[5] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[9];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[10] -= f * m[6];
-    m[11] -= f * m[7];
-    r[2] -= f * pr;
-    let e = m[13];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[14] -= f * m[6];
-    m[15] -= f * m[7];
-    r[3] -= f * pr;
-    let d = m[10];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[10] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[14];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[15] -= f * m[11];
-    r[3] -= f * pr;
-    let d = m[15];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[15] = inv;
-    let v = r[3];
-    let d = m[15];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[11] * r[3];
-    let d = m[10];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[6] * r[2];
-    v -= m[7] * r[3];
-    let d = m[5];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_40(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -15287,6 +15201,92 @@ fn kernel_40(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     v -= m[6] * r[6];
     v -= m[8] * r[8];
     v -= m[11] * r[11];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_40(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 16]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..4).map(<&mut [f64; 4]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[4];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[5] -= f * m[1];
+    m[6] -= f * m[2];
+    r[1] -= f * pr;
+    let e = m[8];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[9] -= f * m[1];
+    m[10] -= f * m[2];
+    r[2] -= f * pr;
+    let d = m[5];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[5] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[9];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[10] -= f * m[6];
+    m[11] -= f * m[7];
+    r[2] -= f * pr;
+    let e = m[13];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[14] -= f * m[6];
+    m[15] -= f * m[7];
+    r[3] -= f * pr;
+    let d = m[10];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[10] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[14];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[15] -= f * m[11];
+    r[3] -= f * pr;
+    let d = m[15];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[15] = inv;
+    let v = r[3];
+    let d = m[15];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[11] * r[3];
+    let d = m[10];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[6] * r[2];
+    v -= m[7] * r[3];
+    let d = m[5];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[2] * r[2];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -16429,6 +16429,697 @@ fn kernel_42(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_43(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[2];
+    r[2] -= f * pr;
+    m.swap(18, 52);
+    m.swap(19, 53);
+    m.swap(20, 54);
+    m.swap(21, 55);
+    m.swap(22, 56);
+    r.swap(1, 3);
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[37] -= f * m[20];
+    m[38] -= f * m[21];
+    r[2] -= f * pr;
+    let e = m[86];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[20];
+    m[89] -= f * m[21];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[37];
+    m[55] -= f * m[38];
+    m[56] -= f * m[39];
+    m[57] -= f * m[40];
+    m[59] -= f * m[42];
+    m[61] -= f * m[44];
+    r[3] -= f * pr;
+    let e = m[70];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[71] -= f * m[37];
+    m[72] -= f * m[38];
+    m[73] -= f * m[39];
+    m[74] -= f * m[40];
+    m[76] -= f * m[42];
+    m[78] -= f * m[44];
+    r[4] -= f * pr;
+    let e = m[87];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[37];
+    m[89] -= f * m[38];
+    m[90] -= f * m[39];
+    m[91] -= f * m[40];
+    m[93] -= f * m[42];
+    m[95] -= f * m[44];
+    r[5] -= f * pr;
+    let e = m[104];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[105] -= f * m[37];
+    m[106] -= f * m[38];
+    m[107] -= f * m[39];
+    m[108] -= f * m[40];
+    m[110] -= f * m[42];
+    m[112] -= f * m[44];
+    r[6] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[37];
+    m[140] -= f * m[38];
+    m[141] -= f * m[39];
+    m[142] -= f * m[40];
+    m[144] -= f * m[42];
+    m[146] -= f * m[44];
+    r[8] -= f * pr;
+    let e = m[172];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[173] -= f * m[37];
+    m[174] -= f * m[38];
+    m[175] -= f * m[39];
+    m[176] -= f * m[40];
+    m[178] -= f * m[42];
+    m[180] -= f * m[44];
+    r[10] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[71];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[72] -= f * m[55];
+    m[73] -= f * m[56];
+    m[74] -= f * m[57];
+    m[76] -= f * m[59];
+    m[78] -= f * m[61];
+    r[4] -= f * pr;
+    let e = m[88];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[89] -= f * m[55];
+    m[90] -= f * m[56];
+    m[91] -= f * m[57];
+    m[93] -= f * m[59];
+    m[95] -= f * m[61];
+    r[5] -= f * pr;
+    let e = m[105];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[106] -= f * m[55];
+    m[107] -= f * m[56];
+    m[108] -= f * m[57];
+    m[110] -= f * m[59];
+    m[112] -= f * m[61];
+    r[6] -= f * pr;
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[55];
+    m[141] -= f * m[56];
+    m[142] -= f * m[57];
+    m[144] -= f * m[59];
+    m[146] -= f * m[61];
+    r[8] -= f * pr;
+    let e = m[173];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[174] -= f * m[55];
+    m[175] -= f * m[56];
+    m[176] -= f * m[57];
+    m[178] -= f * m[59];
+    m[180] -= f * m[61];
+    r[10] -= f * pr;
+    m.swap(72, 140);
+    m.swap(73, 141);
+    m.swap(74, 142);
+    m.swap(76, 144);
+    m.swap(77, 145);
+    m.swap(78, 146);
+    m.swap(79, 147);
+    r.swap(4, 8);
+    let d = m[72];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[72] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[89];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[90] -= f * m[73];
+    m[91] -= f * m[74];
+    m[93] -= f * m[76];
+    m[94] -= f * m[77];
+    m[95] -= f * m[78];
+    m[96] -= f * m[79];
+    r[5] -= f * pr;
+    let e = m[106];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[107] -= f * m[73];
+    m[108] -= f * m[74];
+    m[110] -= f * m[76];
+    m[111] -= f * m[77];
+    m[112] -= f * m[78];
+    m[113] -= f * m[79];
+    r[6] -= f * pr;
+    let e = m[140];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[141] -= f * m[73];
+    m[142] -= f * m[74];
+    m[144] -= f * m[76];
+    m[145] -= f * m[77];
+    m[146] -= f * m[78];
+    m[147] -= f * m[79];
+    r[8] -= f * pr;
+    let e = m[174];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[175] -= f * m[73];
+    m[176] -= f * m[74];
+    m[178] -= f * m[76];
+    m[179] -= f * m[77];
+    m[180] -= f * m[78];
+    m[181] -= f * m[79];
+    r[10] -= f * pr;
+    m.swap(90, 141);
+    m.swap(91, 142);
+    m.swap(92, 143);
+    m.swap(93, 144);
+    m.swap(94, 145);
+    m.swap(95, 146);
+    m.swap(96, 147);
+    r.swap(5, 8);
+    let d = m[90];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[90] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[108] -= f * m[91];
+    m[110] -= f * m[93];
+    m[111] -= f * m[94];
+    m[112] -= f * m[95];
+    m[113] -= f * m[96];
+    r[6] -= f * pr;
+    let e = m[141];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[142] -= f * m[91];
+    m[144] -= f * m[93];
+    m[145] -= f * m[94];
+    m[146] -= f * m[95];
+    m[147] -= f * m[96];
+    r[8] -= f * pr;
+    let e = m[158];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[159] -= f * m[91];
+    m[161] -= f * m[93];
+    m[162] -= f * m[94];
+    m[163] -= f * m[95];
+    m[164] -= f * m[96];
+    r[9] -= f * pr;
+    let e = m[175];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[176] -= f * m[91];
+    m[178] -= f * m[93];
+    m[179] -= f * m[94];
+    m[180] -= f * m[95];
+    m[181] -= f * m[96];
+    r[10] -= f * pr;
+    let d = m[108];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[108] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[142];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[143] -= f * m[109];
+    m[144] -= f * m[110];
+    m[145] -= f * m[111];
+    m[146] -= f * m[112];
+    m[147] -= f * m[113];
+    r[8] -= f * pr;
+    let e = m[159];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[160] -= f * m[109];
+    m[161] -= f * m[110];
+    m[162] -= f * m[111];
+    m[163] -= f * m[112];
+    m[164] -= f * m[113];
+    r[9] -= f * pr;
+    let e = m[176];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[177] -= f * m[109];
+    m[178] -= f * m[110];
+    m[179] -= f * m[111];
+    m[180] -= f * m[112];
+    m[181] -= f * m[113];
+    r[10] -= f * pr;
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[143];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[145] -= f * m[128];
+    m[147] -= f * m[130];
+    m[148] -= f * m[131];
+    m[151] -= f * m[134];
+    r[8] -= f * pr;
+    let e = m[160];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[128];
+    m[164] -= f * m[130];
+    m[165] -= f * m[131];
+    m[168] -= f * m[134];
+    r[9] -= f * pr;
+    let e = m[177];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[128];
+    m[181] -= f * m[130];
+    m[182] -= f * m[131];
+    m[185] -= f * m[134];
+    r[10] -= f * pr;
+    let e = m[194];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[196] -= f * m[128];
+    m[198] -= f * m[130];
+    m[199] -= f * m[131];
+    m[202] -= f * m[134];
+    r[11] -= f * pr;
+    let e = m[211];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[213] -= f * m[128];
+    m[215] -= f * m[130];
+    m[216] -= f * m[131];
+    m[219] -= f * m[134];
+    r[12] -= f * pr;
+    let e = m[262];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[264] -= f * m[128];
+    m[266] -= f * m[130];
+    m[267] -= f * m[131];
+    m[270] -= f * m[134];
+    r[15] -= f * pr;
+    let d = m[144];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[144] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[161];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[145];
+    m[163] -= f * m[146];
+    m[164] -= f * m[147];
+    m[165] -= f * m[148];
+    m[168] -= f * m[151];
+    r[9] -= f * pr;
+    let e = m[178];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[145];
+    m[180] -= f * m[146];
+    m[181] -= f * m[147];
+    m[182] -= f * m[148];
+    m[185] -= f * m[151];
+    r[10] -= f * pr;
+    let d = m[162];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[162] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[179];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[180] -= f * m[163];
+    m[181] -= f * m[164];
+    m[182] -= f * m[165];
+    m[185] -= f * m[168];
+    r[10] -= f * pr;
+    let e = m[196];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[197] -= f * m[163];
+    m[198] -= f * m[164];
+    m[199] -= f * m[165];
+    m[202] -= f * m[168];
+    r[11] -= f * pr;
+    let e = m[213];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[214] -= f * m[163];
+    m[215] -= f * m[164];
+    m[216] -= f * m[165];
+    m[219] -= f * m[168];
+    r[12] -= f * pr;
+    let e = m[264];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[265] -= f * m[163];
+    m[266] -= f * m[164];
+    m[267] -= f * m[165];
+    m[270] -= f * m[168];
+    r[15] -= f * pr;
+    let d = m[180];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[180] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[197];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[198] -= f * m[181];
+    m[199] -= f * m[182];
+    m[202] -= f * m[185];
+    r[11] -= f * pr;
+    let e = m[214];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[215] -= f * m[181];
+    m[216] -= f * m[182];
+    m[219] -= f * m[185];
+    r[12] -= f * pr;
+    let e = m[265];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[266] -= f * m[181];
+    m[267] -= f * m[182];
+    m[270] -= f * m[185];
+    r[15] -= f * pr;
+    let d = m[198];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[198] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[215];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[216] -= f * m[199];
+    m[219] -= f * m[202];
+    r[12] -= f * pr;
+    let e = m[266];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[267] -= f * m[199];
+    m[270] -= f * m[202];
+    r[15] -= f * pr;
+    let d = m[216];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[216] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[250];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[251] -= f * m[217];
+    m[252] -= f * m[218];
+    m[253] -= f * m[219];
+    r[14] -= f * pr;
+    let e = m[267];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[268] -= f * m[217];
+    m[269] -= f * m[218];
+    m[270] -= f * m[219];
+    r[15] -= f * pr;
+    let d = m[234];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[234] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[251];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[252] -= f * m[235];
+    m[254] -= f * m[237];
+    r[14] -= f * pr;
+    let e = m[268];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[269] -= f * m[235];
+    m[271] -= f * m[237];
+    r[15] -= f * pr;
+    let e = m[285];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[286] -= f * m[235];
+    m[288] -= f * m[237];
+    r[16] -= f * pr;
+    let d = m[252];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[252] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[269];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[270] -= f * m[253];
+    m[271] -= f * m[254];
+    r[15] -= f * pr;
+    let e = m[286];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[287] -= f * m[253];
+    m[288] -= f * m[254];
+    r[16] -= f * pr;
+    let d = m[270];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[270] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[15];
+    let e = m[287];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[288] -= f * m[271];
+    r[16] -= f * pr;
+    let d = m[288];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
+    let inv = 1.0 / d;
+    m[288] = inv;
+    let v = r[16];
+    let d = m[288];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[16] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[15];
+    v -= m[271] * r[16];
+    let d = m[270];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[253] * r[15];
+    v -= m[254] * r[16];
+    let d = m[252];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[235] * r[14];
+    v -= m[237] * r[16];
+    let d = m[234];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[217] * r[13];
+    v -= m[218] * r[14];
+    v -= m[219] * r[15];
+    let d = m[216];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[199] * r[12];
+    v -= m[202] * r[15];
+    let d = m[198];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[181] * r[11];
+    v -= m[182] * r[12];
+    v -= m[185] * r[15];
+    let d = m[180];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[163] * r[10];
+    v -= m[164] * r[11];
+    v -= m[165] * r[12];
+    v -= m[168] * r[15];
+    let d = m[162];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[145] * r[9];
+    v -= m[146] * r[10];
+    v -= m[147] * r[11];
+    v -= m[148] * r[12];
+    v -= m[151] * r[15];
+    let d = m[144];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[128] * r[9];
+    v -= m[130] * r[11];
+    v -= m[131] * r[12];
+    v -= m[134] * r[15];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[109] * r[7];
+    v -= m[110] * r[8];
+    v -= m[111] * r[9];
+    v -= m[112] * r[10];
+    v -= m[113] * r[11];
+    let d = m[108];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[91] * r[6];
+    v -= m[93] * r[8];
+    v -= m[94] * r[9];
+    v -= m[95] * r[10];
+    v -= m[96] * r[11];
+    let d = m[90];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[73] * r[5];
+    v -= m[74] * r[6];
+    v -= m[76] * r[8];
+    v -= m[77] * r[9];
+    v -= m[78] * r[10];
+    v -= m[79] * r[11];
+    let d = m[72];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[55] * r[4];
+    v -= m[56] * r[5];
+    v -= m[57] * r[6];
+    v -= m[59] * r[8];
+    v -= m[61] * r[10];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[37] * r[3];
+    v -= m[38] * r[4];
+    v -= m[39] * r[5];
+    v -= m[40] * r[6];
+    v -= m[42] * r[8];
+    v -= m[44] * r[10];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[20] * r[3];
+    v -= m[21] * r[4];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_44(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 441]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..21).map(<&mut [f64; 21]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -17474,7 +18165,7 @@ fn kernel_43(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_44(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_45(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -17688,7 +18379,7 @@ fn kernel_44(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_45(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_46(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -17885,697 +18576,6 @@ fn kernel_45(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     let mut v = r[0];
     v -= m[1] * r[1];
     v -= m[3] * r[3];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_46(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[2];
-    r[2] -= f * pr;
-    m.swap(18, 52);
-    m.swap(19, 53);
-    m.swap(20, 54);
-    m.swap(21, 55);
-    m.swap(22, 56);
-    r.swap(1, 3);
-    let d = m[18];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[18] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[35];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[37] -= f * m[20];
-    m[38] -= f * m[21];
-    r[2] -= f * pr;
-    let e = m[86];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[20];
-    m[89] -= f * m[21];
-    r[5] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[37];
-    m[55] -= f * m[38];
-    m[56] -= f * m[39];
-    m[57] -= f * m[40];
-    m[59] -= f * m[42];
-    m[61] -= f * m[44];
-    r[3] -= f * pr;
-    let e = m[70];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[71] -= f * m[37];
-    m[72] -= f * m[38];
-    m[73] -= f * m[39];
-    m[74] -= f * m[40];
-    m[76] -= f * m[42];
-    m[78] -= f * m[44];
-    r[4] -= f * pr;
-    let e = m[87];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[37];
-    m[89] -= f * m[38];
-    m[90] -= f * m[39];
-    m[91] -= f * m[40];
-    m[93] -= f * m[42];
-    m[95] -= f * m[44];
-    r[5] -= f * pr;
-    let e = m[104];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[105] -= f * m[37];
-    m[106] -= f * m[38];
-    m[107] -= f * m[39];
-    m[108] -= f * m[40];
-    m[110] -= f * m[42];
-    m[112] -= f * m[44];
-    r[6] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[37];
-    m[140] -= f * m[38];
-    m[141] -= f * m[39];
-    m[142] -= f * m[40];
-    m[144] -= f * m[42];
-    m[146] -= f * m[44];
-    r[8] -= f * pr;
-    let e = m[172];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[173] -= f * m[37];
-    m[174] -= f * m[38];
-    m[175] -= f * m[39];
-    m[176] -= f * m[40];
-    m[178] -= f * m[42];
-    m[180] -= f * m[44];
-    r[10] -= f * pr;
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[71];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[55];
-    m[73] -= f * m[56];
-    m[74] -= f * m[57];
-    m[76] -= f * m[59];
-    m[78] -= f * m[61];
-    r[4] -= f * pr;
-    let e = m[88];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[89] -= f * m[55];
-    m[90] -= f * m[56];
-    m[91] -= f * m[57];
-    m[93] -= f * m[59];
-    m[95] -= f * m[61];
-    r[5] -= f * pr;
-    let e = m[105];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[106] -= f * m[55];
-    m[107] -= f * m[56];
-    m[108] -= f * m[57];
-    m[110] -= f * m[59];
-    m[112] -= f * m[61];
-    r[6] -= f * pr;
-    let e = m[139];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[140] -= f * m[55];
-    m[141] -= f * m[56];
-    m[142] -= f * m[57];
-    m[144] -= f * m[59];
-    m[146] -= f * m[61];
-    r[8] -= f * pr;
-    let e = m[173];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[174] -= f * m[55];
-    m[175] -= f * m[56];
-    m[176] -= f * m[57];
-    m[178] -= f * m[59];
-    m[180] -= f * m[61];
-    r[10] -= f * pr;
-    m.swap(72, 140);
-    m.swap(73, 141);
-    m.swap(74, 142);
-    m.swap(76, 144);
-    m.swap(77, 145);
-    m.swap(78, 146);
-    m.swap(79, 147);
-    r.swap(4, 8);
-    let d = m[72];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[72] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[89];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[90] -= f * m[73];
-    m[91] -= f * m[74];
-    m[93] -= f * m[76];
-    m[94] -= f * m[77];
-    m[95] -= f * m[78];
-    m[96] -= f * m[79];
-    r[5] -= f * pr;
-    let e = m[106];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[107] -= f * m[73];
-    m[108] -= f * m[74];
-    m[110] -= f * m[76];
-    m[111] -= f * m[77];
-    m[112] -= f * m[78];
-    m[113] -= f * m[79];
-    r[6] -= f * pr;
-    let e = m[140];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[141] -= f * m[73];
-    m[142] -= f * m[74];
-    m[144] -= f * m[76];
-    m[145] -= f * m[77];
-    m[146] -= f * m[78];
-    m[147] -= f * m[79];
-    r[8] -= f * pr;
-    let e = m[174];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[175] -= f * m[73];
-    m[176] -= f * m[74];
-    m[178] -= f * m[76];
-    m[179] -= f * m[77];
-    m[180] -= f * m[78];
-    m[181] -= f * m[79];
-    r[10] -= f * pr;
-    m.swap(90, 141);
-    m.swap(91, 142);
-    m.swap(92, 143);
-    m.swap(93, 144);
-    m.swap(94, 145);
-    m.swap(95, 146);
-    m.swap(96, 147);
-    r.swap(5, 8);
-    let d = m[90];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[90] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[108] -= f * m[91];
-    m[110] -= f * m[93];
-    m[111] -= f * m[94];
-    m[112] -= f * m[95];
-    m[113] -= f * m[96];
-    r[6] -= f * pr;
-    let e = m[141];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[142] -= f * m[91];
-    m[144] -= f * m[93];
-    m[145] -= f * m[94];
-    m[146] -= f * m[95];
-    m[147] -= f * m[96];
-    r[8] -= f * pr;
-    let e = m[158];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[159] -= f * m[91];
-    m[161] -= f * m[93];
-    m[162] -= f * m[94];
-    m[163] -= f * m[95];
-    m[164] -= f * m[96];
-    r[9] -= f * pr;
-    let e = m[175];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[176] -= f * m[91];
-    m[178] -= f * m[93];
-    m[179] -= f * m[94];
-    m[180] -= f * m[95];
-    m[181] -= f * m[96];
-    r[10] -= f * pr;
-    let d = m[108];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[108] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[142];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[143] -= f * m[109];
-    m[144] -= f * m[110];
-    m[145] -= f * m[111];
-    m[146] -= f * m[112];
-    m[147] -= f * m[113];
-    r[8] -= f * pr;
-    let e = m[159];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[160] -= f * m[109];
-    m[161] -= f * m[110];
-    m[162] -= f * m[111];
-    m[163] -= f * m[112];
-    m[164] -= f * m[113];
-    r[9] -= f * pr;
-    let e = m[176];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[177] -= f * m[109];
-    m[178] -= f * m[110];
-    m[179] -= f * m[111];
-    m[180] -= f * m[112];
-    m[181] -= f * m[113];
-    r[10] -= f * pr;
-    let d = m[126];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[126] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[143];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[145] -= f * m[128];
-    m[147] -= f * m[130];
-    m[148] -= f * m[131];
-    m[151] -= f * m[134];
-    r[8] -= f * pr;
-    let e = m[160];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[128];
-    m[164] -= f * m[130];
-    m[165] -= f * m[131];
-    m[168] -= f * m[134];
-    r[9] -= f * pr;
-    let e = m[177];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[128];
-    m[181] -= f * m[130];
-    m[182] -= f * m[131];
-    m[185] -= f * m[134];
-    r[10] -= f * pr;
-    let e = m[194];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[196] -= f * m[128];
-    m[198] -= f * m[130];
-    m[199] -= f * m[131];
-    m[202] -= f * m[134];
-    r[11] -= f * pr;
-    let e = m[211];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[213] -= f * m[128];
-    m[215] -= f * m[130];
-    m[216] -= f * m[131];
-    m[219] -= f * m[134];
-    r[12] -= f * pr;
-    let e = m[262];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[264] -= f * m[128];
-    m[266] -= f * m[130];
-    m[267] -= f * m[131];
-    m[270] -= f * m[134];
-    r[15] -= f * pr;
-    let d = m[144];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[144] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[161];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[145];
-    m[163] -= f * m[146];
-    m[164] -= f * m[147];
-    m[165] -= f * m[148];
-    m[168] -= f * m[151];
-    r[9] -= f * pr;
-    let e = m[178];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[145];
-    m[180] -= f * m[146];
-    m[181] -= f * m[147];
-    m[182] -= f * m[148];
-    m[185] -= f * m[151];
-    r[10] -= f * pr;
-    let d = m[162];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[162] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[179];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[180] -= f * m[163];
-    m[181] -= f * m[164];
-    m[182] -= f * m[165];
-    m[185] -= f * m[168];
-    r[10] -= f * pr;
-    let e = m[196];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[197] -= f * m[163];
-    m[198] -= f * m[164];
-    m[199] -= f * m[165];
-    m[202] -= f * m[168];
-    r[11] -= f * pr;
-    let e = m[213];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[214] -= f * m[163];
-    m[215] -= f * m[164];
-    m[216] -= f * m[165];
-    m[219] -= f * m[168];
-    r[12] -= f * pr;
-    let e = m[264];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[265] -= f * m[163];
-    m[266] -= f * m[164];
-    m[267] -= f * m[165];
-    m[270] -= f * m[168];
-    r[15] -= f * pr;
-    let d = m[180];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[180] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[197];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[198] -= f * m[181];
-    m[199] -= f * m[182];
-    m[202] -= f * m[185];
-    r[11] -= f * pr;
-    let e = m[214];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[215] -= f * m[181];
-    m[216] -= f * m[182];
-    m[219] -= f * m[185];
-    r[12] -= f * pr;
-    let e = m[265];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[266] -= f * m[181];
-    m[267] -= f * m[182];
-    m[270] -= f * m[185];
-    r[15] -= f * pr;
-    let d = m[198];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[198] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[215];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[216] -= f * m[199];
-    m[219] -= f * m[202];
-    r[12] -= f * pr;
-    let e = m[266];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[267] -= f * m[199];
-    m[270] -= f * m[202];
-    r[15] -= f * pr;
-    let d = m[216];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[216] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[250];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[251] -= f * m[217];
-    m[252] -= f * m[218];
-    m[253] -= f * m[219];
-    r[14] -= f * pr;
-    let e = m[267];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[268] -= f * m[217];
-    m[269] -= f * m[218];
-    m[270] -= f * m[219];
-    r[15] -= f * pr;
-    let d = m[234];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[234] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[251];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[252] -= f * m[235];
-    m[254] -= f * m[237];
-    r[14] -= f * pr;
-    let e = m[268];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[269] -= f * m[235];
-    m[271] -= f * m[237];
-    r[15] -= f * pr;
-    let e = m[285];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[286] -= f * m[235];
-    m[288] -= f * m[237];
-    r[16] -= f * pr;
-    let d = m[252];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[252] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[269];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[270] -= f * m[253];
-    m[271] -= f * m[254];
-    r[15] -= f * pr;
-    let e = m[286];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[287] -= f * m[253];
-    m[288] -= f * m[254];
-    r[16] -= f * pr;
-    let d = m[270];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[270] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[287];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[288] -= f * m[271];
-    r[16] -= f * pr;
-    let d = m[288];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[288] = inv;
-    let v = r[16];
-    let d = m[288];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[271] * r[16];
-    let d = m[270];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[253] * r[15];
-    v -= m[254] * r[16];
-    let d = m[252];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[235] * r[14];
-    v -= m[237] * r[16];
-    let d = m[234];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[217] * r[13];
-    v -= m[218] * r[14];
-    v -= m[219] * r[15];
-    let d = m[216];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[199] * r[12];
-    v -= m[202] * r[15];
-    let d = m[198];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[181] * r[11];
-    v -= m[182] * r[12];
-    v -= m[185] * r[15];
-    let d = m[180];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[163] * r[10];
-    v -= m[164] * r[11];
-    v -= m[165] * r[12];
-    v -= m[168] * r[15];
-    let d = m[162];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[145] * r[9];
-    v -= m[146] * r[10];
-    v -= m[147] * r[11];
-    v -= m[148] * r[12];
-    v -= m[151] * r[15];
-    let d = m[144];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[128] * r[9];
-    v -= m[130] * r[11];
-    v -= m[131] * r[12];
-    v -= m[134] * r[15];
-    let d = m[126];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[109] * r[7];
-    v -= m[110] * r[8];
-    v -= m[111] * r[9];
-    v -= m[112] * r[10];
-    v -= m[113] * r[11];
-    let d = m[108];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[91] * r[6];
-    v -= m[93] * r[8];
-    v -= m[94] * r[9];
-    v -= m[95] * r[10];
-    v -= m[96] * r[11];
-    let d = m[90];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[73] * r[5];
-    v -= m[74] * r[6];
-    v -= m[76] * r[8];
-    v -= m[77] * r[9];
-    v -= m[78] * r[10];
-    v -= m[79] * r[11];
-    let d = m[72];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[55] * r[4];
-    v -= m[56] * r[5];
-    v -= m[57] * r[6];
-    v -= m[59] * r[8];
-    v -= m[61] * r[10];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[37] * r[3];
-    v -= m[38] * r[4];
-    v -= m[39] * r[5];
-    v -= m[40] * r[6];
-    v -= m[42] * r[8];
-    v -= m[44] * r[10];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[20] * r[3];
-    v -= m[21] * r[4];
-    let d = m[18];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[2] * r[2];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -19379,720 +19379,6 @@ fn kernel_47(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_48(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[2];
-    r[2] -= f * pr;
-    m.swap(18, 52);
-    m.swap(19, 53);
-    m.swap(20, 54);
-    m.swap(21, 55);
-    m.swap(22, 56);
-    r.swap(1, 3);
-    let d = m[18];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[18] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[35];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[37] -= f * m[20];
-    m[38] -= f * m[21];
-    r[2] -= f * pr;
-    let e = m[86];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[20];
-    m[89] -= f * m[21];
-    r[5] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[37];
-    m[55] -= f * m[38];
-    m[56] -= f * m[39];
-    m[57] -= f * m[40];
-    m[59] -= f * m[42];
-    m[61] -= f * m[44];
-    r[3] -= f * pr;
-    let e = m[70];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[71] -= f * m[37];
-    m[72] -= f * m[38];
-    m[73] -= f * m[39];
-    m[74] -= f * m[40];
-    m[76] -= f * m[42];
-    m[78] -= f * m[44];
-    r[4] -= f * pr;
-    let e = m[87];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[37];
-    m[89] -= f * m[38];
-    m[90] -= f * m[39];
-    m[91] -= f * m[40];
-    m[93] -= f * m[42];
-    m[95] -= f * m[44];
-    r[5] -= f * pr;
-    let e = m[104];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[105] -= f * m[37];
-    m[106] -= f * m[38];
-    m[107] -= f * m[39];
-    m[108] -= f * m[40];
-    m[110] -= f * m[42];
-    m[112] -= f * m[44];
-    r[6] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[37];
-    m[140] -= f * m[38];
-    m[141] -= f * m[39];
-    m[142] -= f * m[40];
-    m[144] -= f * m[42];
-    m[146] -= f * m[44];
-    r[8] -= f * pr;
-    let e = m[172];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[173] -= f * m[37];
-    m[174] -= f * m[38];
-    m[175] -= f * m[39];
-    m[176] -= f * m[40];
-    m[178] -= f * m[42];
-    m[180] -= f * m[44];
-    r[10] -= f * pr;
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[71];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[55];
-    m[73] -= f * m[56];
-    m[74] -= f * m[57];
-    m[76] -= f * m[59];
-    m[78] -= f * m[61];
-    r[4] -= f * pr;
-    let e = m[88];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[89] -= f * m[55];
-    m[90] -= f * m[56];
-    m[91] -= f * m[57];
-    m[93] -= f * m[59];
-    m[95] -= f * m[61];
-    r[5] -= f * pr;
-    let e = m[105];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[106] -= f * m[55];
-    m[107] -= f * m[56];
-    m[108] -= f * m[57];
-    m[110] -= f * m[59];
-    m[112] -= f * m[61];
-    r[6] -= f * pr;
-    let e = m[139];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[140] -= f * m[55];
-    m[141] -= f * m[56];
-    m[142] -= f * m[57];
-    m[144] -= f * m[59];
-    m[146] -= f * m[61];
-    r[8] -= f * pr;
-    let e = m[173];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[174] -= f * m[55];
-    m[175] -= f * m[56];
-    m[176] -= f * m[57];
-    m[178] -= f * m[59];
-    m[180] -= f * m[61];
-    r[10] -= f * pr;
-    m.swap(72, 140);
-    m.swap(73, 141);
-    m.swap(74, 142);
-    m.swap(76, 144);
-    m.swap(77, 145);
-    m.swap(78, 146);
-    m.swap(79, 147);
-    r.swap(4, 8);
-    let d = m[72];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[72] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[89];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[90] -= f * m[73];
-    m[91] -= f * m[74];
-    m[93] -= f * m[76];
-    m[94] -= f * m[77];
-    m[95] -= f * m[78];
-    m[96] -= f * m[79];
-    r[5] -= f * pr;
-    let e = m[106];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[107] -= f * m[73];
-    m[108] -= f * m[74];
-    m[110] -= f * m[76];
-    m[111] -= f * m[77];
-    m[112] -= f * m[78];
-    m[113] -= f * m[79];
-    r[6] -= f * pr;
-    let e = m[140];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[141] -= f * m[73];
-    m[142] -= f * m[74];
-    m[144] -= f * m[76];
-    m[145] -= f * m[77];
-    m[146] -= f * m[78];
-    m[147] -= f * m[79];
-    r[8] -= f * pr;
-    let e = m[174];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[175] -= f * m[73];
-    m[176] -= f * m[74];
-    m[178] -= f * m[76];
-    m[179] -= f * m[77];
-    m[180] -= f * m[78];
-    m[181] -= f * m[79];
-    r[10] -= f * pr;
-    m.swap(90, 141);
-    m.swap(91, 142);
-    m.swap(92, 143);
-    m.swap(93, 144);
-    m.swap(94, 145);
-    m.swap(95, 146);
-    m.swap(96, 147);
-    r.swap(5, 8);
-    let d = m[90];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[90] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[108] -= f * m[91];
-    m[110] -= f * m[93];
-    m[111] -= f * m[94];
-    m[112] -= f * m[95];
-    m[113] -= f * m[96];
-    r[6] -= f * pr;
-    let e = m[141];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[142] -= f * m[91];
-    m[144] -= f * m[93];
-    m[145] -= f * m[94];
-    m[146] -= f * m[95];
-    m[147] -= f * m[96];
-    r[8] -= f * pr;
-    let e = m[158];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[159] -= f * m[91];
-    m[161] -= f * m[93];
-    m[162] -= f * m[94];
-    m[163] -= f * m[95];
-    m[164] -= f * m[96];
-    r[9] -= f * pr;
-    let e = m[175];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[176] -= f * m[91];
-    m[178] -= f * m[93];
-    m[179] -= f * m[94];
-    m[180] -= f * m[95];
-    m[181] -= f * m[96];
-    r[10] -= f * pr;
-    let d = m[108];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[108] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[142];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[143] -= f * m[109];
-    m[144] -= f * m[110];
-    m[145] -= f * m[111];
-    m[146] -= f * m[112];
-    m[147] -= f * m[113];
-    r[8] -= f * pr;
-    let e = m[159];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[160] -= f * m[109];
-    m[161] -= f * m[110];
-    m[162] -= f * m[111];
-    m[163] -= f * m[112];
-    m[164] -= f * m[113];
-    r[9] -= f * pr;
-    let e = m[176];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[177] -= f * m[109];
-    m[178] -= f * m[110];
-    m[179] -= f * m[111];
-    m[180] -= f * m[112];
-    m[181] -= f * m[113];
-    r[10] -= f * pr;
-    m.swap(126, 160);
-    m.swap(127, 161);
-    m.swap(128, 162);
-    m.swap(129, 163);
-    m.swap(130, 164);
-    m.swap(131, 165);
-    m.swap(134, 168);
-    r.swap(7, 9);
-    let d = m[126];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[126] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[143];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[144] -= f * m[127];
-    m[145] -= f * m[128];
-    m[146] -= f * m[129];
-    m[147] -= f * m[130];
-    r[8] -= f * pr;
-    let e = m[160];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[161] -= f * m[127];
-    m[162] -= f * m[128];
-    m[163] -= f * m[129];
-    m[164] -= f * m[130];
-    r[9] -= f * pr;
-    let e = m[177];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[178] -= f * m[127];
-    m[179] -= f * m[128];
-    m[180] -= f * m[129];
-    m[181] -= f * m[130];
-    r[10] -= f * pr;
-    let e = m[194];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[195] -= f * m[127];
-    m[196] -= f * m[128];
-    m[197] -= f * m[129];
-    m[198] -= f * m[130];
-    r[11] -= f * pr;
-    let e = m[211];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[212] -= f * m[127];
-    m[213] -= f * m[128];
-    m[214] -= f * m[129];
-    m[215] -= f * m[130];
-    r[12] -= f * pr;
-    let e = m[262];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[263] -= f * m[127];
-    m[264] -= f * m[128];
-    m[265] -= f * m[129];
-    m[266] -= f * m[130];
-    r[15] -= f * pr;
-    let d = m[144];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[144] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[161];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[145];
-    m[163] -= f * m[146];
-    m[164] -= f * m[147];
-    r[9] -= f * pr;
-    let e = m[178];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[145];
-    m[180] -= f * m[146];
-    m[181] -= f * m[147];
-    r[10] -= f * pr;
-    let e = m[195];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[196] -= f * m[145];
-    m[197] -= f * m[146];
-    m[198] -= f * m[147];
-    r[11] -= f * pr;
-    let e = m[212];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[213] -= f * m[145];
-    m[214] -= f * m[146];
-    m[215] -= f * m[147];
-    r[12] -= f * pr;
-    let e = m[263];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[264] -= f * m[145];
-    m[265] -= f * m[146];
-    m[266] -= f * m[147];
-    r[15] -= f * pr;
-    let d = m[162];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[162] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[179];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[180] -= f * m[163];
-    m[181] -= f * m[164];
-    m[182] -= f * m[165];
-    m[185] -= f * m[168];
-    r[10] -= f * pr;
-    let e = m[196];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[197] -= f * m[163];
-    m[198] -= f * m[164];
-    m[199] -= f * m[165];
-    m[202] -= f * m[168];
-    r[11] -= f * pr;
-    let e = m[213];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[214] -= f * m[163];
-    m[215] -= f * m[164];
-    m[216] -= f * m[165];
-    m[219] -= f * m[168];
-    r[12] -= f * pr;
-    let e = m[264];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[265] -= f * m[163];
-    m[266] -= f * m[164];
-    m[267] -= f * m[165];
-    m[270] -= f * m[168];
-    r[15] -= f * pr;
-    let d = m[180];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[180] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[197];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[198] -= f * m[181];
-    m[199] -= f * m[182];
-    m[202] -= f * m[185];
-    r[11] -= f * pr;
-    let e = m[214];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[215] -= f * m[181];
-    m[216] -= f * m[182];
-    m[219] -= f * m[185];
-    r[12] -= f * pr;
-    let e = m[265];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[266] -= f * m[181];
-    m[267] -= f * m[182];
-    m[270] -= f * m[185];
-    r[15] -= f * pr;
-    let d = m[198];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[198] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[215];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[216] -= f * m[199];
-    m[219] -= f * m[202];
-    r[12] -= f * pr;
-    let e = m[266];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[267] -= f * m[199];
-    m[270] -= f * m[202];
-    r[15] -= f * pr;
-    let d = m[216];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[216] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[250];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[251] -= f * m[217];
-    m[252] -= f * m[218];
-    m[253] -= f * m[219];
-    r[14] -= f * pr;
-    let e = m[267];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[268] -= f * m[217];
-    m[269] -= f * m[218];
-    m[270] -= f * m[219];
-    r[15] -= f * pr;
-    let d = m[234];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[234] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[251];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[252] -= f * m[235];
-    m[254] -= f * m[237];
-    r[14] -= f * pr;
-    let e = m[268];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[269] -= f * m[235];
-    m[271] -= f * m[237];
-    r[15] -= f * pr;
-    let e = m[285];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[286] -= f * m[235];
-    m[288] -= f * m[237];
-    r[16] -= f * pr;
-    let d = m[252];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[252] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[269];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[270] -= f * m[253];
-    m[271] -= f * m[254];
-    r[15] -= f * pr;
-    let e = m[286];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[287] -= f * m[253];
-    m[288] -= f * m[254];
-    r[16] -= f * pr;
-    let d = m[270];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[270] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[287];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[288] -= f * m[271];
-    r[16] -= f * pr;
-    let d = m[288];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[288] = inv;
-    let v = r[16];
-    let d = m[288];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[271] * r[16];
-    let d = m[270];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[253] * r[15];
-    v -= m[254] * r[16];
-    let d = m[252];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[235] * r[14];
-    v -= m[237] * r[16];
-    let d = m[234];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[217] * r[13];
-    v -= m[218] * r[14];
-    v -= m[219] * r[15];
-    let d = m[216];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[199] * r[12];
-    v -= m[202] * r[15];
-    let d = m[198];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[181] * r[11];
-    v -= m[182] * r[12];
-    v -= m[185] * r[15];
-    let d = m[180];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[163] * r[10];
-    v -= m[164] * r[11];
-    v -= m[165] * r[12];
-    v -= m[168] * r[15];
-    let d = m[162];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[145] * r[9];
-    v -= m[146] * r[10];
-    v -= m[147] * r[11];
-    let d = m[144];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[127] * r[8];
-    v -= m[128] * r[9];
-    v -= m[129] * r[10];
-    v -= m[130] * r[11];
-    let d = m[126];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[109] * r[7];
-    v -= m[110] * r[8];
-    v -= m[111] * r[9];
-    v -= m[112] * r[10];
-    v -= m[113] * r[11];
-    let d = m[108];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[91] * r[6];
-    v -= m[93] * r[8];
-    v -= m[94] * r[9];
-    v -= m[95] * r[10];
-    v -= m[96] * r[11];
-    let d = m[90];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[73] * r[5];
-    v -= m[74] * r[6];
-    v -= m[76] * r[8];
-    v -= m[77] * r[9];
-    v -= m[78] * r[10];
-    v -= m[79] * r[11];
-    let d = m[72];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[55] * r[4];
-    v -= m[56] * r[5];
-    v -= m[57] * r[6];
-    v -= m[59] * r[8];
-    v -= m[61] * r[10];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[37] * r[3];
-    v -= m[38] * r[4];
-    v -= m[39] * r[5];
-    v -= m[40] * r[6];
-    v -= m[42] * r[8];
-    v -= m[44] * r[10];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[20] * r[3];
-    v -= m[21] * r[4];
-    let d = m[18];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_49(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -20750,7 +20036,7 @@ fn kernel_49(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_50(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_49(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -21653,7 +20939,922 @@ fn kernel_50(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
+fn kernel_50(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[2];
+    r[2] -= f * pr;
+    m.swap(18, 52);
+    m.swap(19, 53);
+    m.swap(20, 54);
+    m.swap(21, 55);
+    m.swap(22, 56);
+    r.swap(1, 3);
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[37] -= f * m[20];
+    m[38] -= f * m[21];
+    r[2] -= f * pr;
+    let e = m[86];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[20];
+    m[89] -= f * m[21];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[37];
+    m[55] -= f * m[38];
+    m[56] -= f * m[39];
+    m[57] -= f * m[40];
+    m[59] -= f * m[42];
+    m[61] -= f * m[44];
+    r[3] -= f * pr;
+    let e = m[70];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[71] -= f * m[37];
+    m[72] -= f * m[38];
+    m[73] -= f * m[39];
+    m[74] -= f * m[40];
+    m[76] -= f * m[42];
+    m[78] -= f * m[44];
+    r[4] -= f * pr;
+    let e = m[87];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[37];
+    m[89] -= f * m[38];
+    m[90] -= f * m[39];
+    m[91] -= f * m[40];
+    m[93] -= f * m[42];
+    m[95] -= f * m[44];
+    r[5] -= f * pr;
+    let e = m[104];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[105] -= f * m[37];
+    m[106] -= f * m[38];
+    m[107] -= f * m[39];
+    m[108] -= f * m[40];
+    m[110] -= f * m[42];
+    m[112] -= f * m[44];
+    r[6] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[37];
+    m[140] -= f * m[38];
+    m[141] -= f * m[39];
+    m[142] -= f * m[40];
+    m[144] -= f * m[42];
+    m[146] -= f * m[44];
+    r[8] -= f * pr;
+    let e = m[172];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[173] -= f * m[37];
+    m[174] -= f * m[38];
+    m[175] -= f * m[39];
+    m[176] -= f * m[40];
+    m[178] -= f * m[42];
+    m[180] -= f * m[44];
+    r[10] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[71];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[72] -= f * m[55];
+    m[73] -= f * m[56];
+    m[74] -= f * m[57];
+    m[76] -= f * m[59];
+    m[78] -= f * m[61];
+    r[4] -= f * pr;
+    let e = m[88];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[89] -= f * m[55];
+    m[90] -= f * m[56];
+    m[91] -= f * m[57];
+    m[93] -= f * m[59];
+    m[95] -= f * m[61];
+    r[5] -= f * pr;
+    let e = m[105];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[106] -= f * m[55];
+    m[107] -= f * m[56];
+    m[108] -= f * m[57];
+    m[110] -= f * m[59];
+    m[112] -= f * m[61];
+    r[6] -= f * pr;
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[55];
+    m[141] -= f * m[56];
+    m[142] -= f * m[57];
+    m[144] -= f * m[59];
+    m[146] -= f * m[61];
+    r[8] -= f * pr;
+    let e = m[173];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[174] -= f * m[55];
+    m[175] -= f * m[56];
+    m[176] -= f * m[57];
+    m[178] -= f * m[59];
+    m[180] -= f * m[61];
+    r[10] -= f * pr;
+    m.swap(72, 140);
+    m.swap(73, 141);
+    m.swap(74, 142);
+    m.swap(76, 144);
+    m.swap(77, 145);
+    m.swap(78, 146);
+    m.swap(79, 147);
+    r.swap(4, 8);
+    let d = m[72];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[72] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[89];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[90] -= f * m[73];
+    m[91] -= f * m[74];
+    m[93] -= f * m[76];
+    m[94] -= f * m[77];
+    m[95] -= f * m[78];
+    m[96] -= f * m[79];
+    r[5] -= f * pr;
+    let e = m[106];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[107] -= f * m[73];
+    m[108] -= f * m[74];
+    m[110] -= f * m[76];
+    m[111] -= f * m[77];
+    m[112] -= f * m[78];
+    m[113] -= f * m[79];
+    r[6] -= f * pr;
+    let e = m[140];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[141] -= f * m[73];
+    m[142] -= f * m[74];
+    m[144] -= f * m[76];
+    m[145] -= f * m[77];
+    m[146] -= f * m[78];
+    m[147] -= f * m[79];
+    r[8] -= f * pr;
+    let e = m[174];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[175] -= f * m[73];
+    m[176] -= f * m[74];
+    m[178] -= f * m[76];
+    m[179] -= f * m[77];
+    m[180] -= f * m[78];
+    m[181] -= f * m[79];
+    r[10] -= f * pr;
+    m.swap(90, 141);
+    m.swap(91, 142);
+    m.swap(92, 143);
+    m.swap(93, 144);
+    m.swap(94, 145);
+    m.swap(95, 146);
+    m.swap(96, 147);
+    r.swap(5, 8);
+    let d = m[90];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[90] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[108] -= f * m[91];
+    m[110] -= f * m[93];
+    m[111] -= f * m[94];
+    m[112] -= f * m[95];
+    m[113] -= f * m[96];
+    r[6] -= f * pr;
+    let e = m[141];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[142] -= f * m[91];
+    m[144] -= f * m[93];
+    m[145] -= f * m[94];
+    m[146] -= f * m[95];
+    m[147] -= f * m[96];
+    r[8] -= f * pr;
+    let e = m[158];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[159] -= f * m[91];
+    m[161] -= f * m[93];
+    m[162] -= f * m[94];
+    m[163] -= f * m[95];
+    m[164] -= f * m[96];
+    r[9] -= f * pr;
+    let e = m[175];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[176] -= f * m[91];
+    m[178] -= f * m[93];
+    m[179] -= f * m[94];
+    m[180] -= f * m[95];
+    m[181] -= f * m[96];
+    r[10] -= f * pr;
+    let d = m[108];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[108] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[142];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[143] -= f * m[109];
+    m[144] -= f * m[110];
+    m[145] -= f * m[111];
+    m[146] -= f * m[112];
+    m[147] -= f * m[113];
+    r[8] -= f * pr;
+    let e = m[159];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[160] -= f * m[109];
+    m[161] -= f * m[110];
+    m[162] -= f * m[111];
+    m[163] -= f * m[112];
+    m[164] -= f * m[113];
+    r[9] -= f * pr;
+    let e = m[176];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[177] -= f * m[109];
+    m[178] -= f * m[110];
+    m[179] -= f * m[111];
+    m[180] -= f * m[112];
+    m[181] -= f * m[113];
+    r[10] -= f * pr;
+    m.swap(126, 160);
+    m.swap(127, 161);
+    m.swap(128, 162);
+    m.swap(129, 163);
+    m.swap(130, 164);
+    m.swap(131, 165);
+    m.swap(134, 168);
+    r.swap(7, 9);
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[143];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[144] -= f * m[127];
+    m[145] -= f * m[128];
+    m[146] -= f * m[129];
+    m[147] -= f * m[130];
+    r[8] -= f * pr;
+    let e = m[160];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[161] -= f * m[127];
+    m[162] -= f * m[128];
+    m[163] -= f * m[129];
+    m[164] -= f * m[130];
+    r[9] -= f * pr;
+    let e = m[177];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[178] -= f * m[127];
+    m[179] -= f * m[128];
+    m[180] -= f * m[129];
+    m[181] -= f * m[130];
+    r[10] -= f * pr;
+    let e = m[194];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[195] -= f * m[127];
+    m[196] -= f * m[128];
+    m[197] -= f * m[129];
+    m[198] -= f * m[130];
+    r[11] -= f * pr;
+    let e = m[211];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[212] -= f * m[127];
+    m[213] -= f * m[128];
+    m[214] -= f * m[129];
+    m[215] -= f * m[130];
+    r[12] -= f * pr;
+    let e = m[262];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[263] -= f * m[127];
+    m[264] -= f * m[128];
+    m[265] -= f * m[129];
+    m[266] -= f * m[130];
+    r[15] -= f * pr;
+    let d = m[144];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[144] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[161];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[145];
+    m[163] -= f * m[146];
+    m[164] -= f * m[147];
+    r[9] -= f * pr;
+    let e = m[178];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[145];
+    m[180] -= f * m[146];
+    m[181] -= f * m[147];
+    r[10] -= f * pr;
+    let e = m[195];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[196] -= f * m[145];
+    m[197] -= f * m[146];
+    m[198] -= f * m[147];
+    r[11] -= f * pr;
+    let e = m[212];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[213] -= f * m[145];
+    m[214] -= f * m[146];
+    m[215] -= f * m[147];
+    r[12] -= f * pr;
+    let e = m[263];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[264] -= f * m[145];
+    m[265] -= f * m[146];
+    m[266] -= f * m[147];
+    r[15] -= f * pr;
+    let d = m[162];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[162] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[179];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[180] -= f * m[163];
+    m[181] -= f * m[164];
+    m[182] -= f * m[165];
+    m[185] -= f * m[168];
+    r[10] -= f * pr;
+    let e = m[196];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[197] -= f * m[163];
+    m[198] -= f * m[164];
+    m[199] -= f * m[165];
+    m[202] -= f * m[168];
+    r[11] -= f * pr;
+    let e = m[213];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[214] -= f * m[163];
+    m[215] -= f * m[164];
+    m[216] -= f * m[165];
+    m[219] -= f * m[168];
+    r[12] -= f * pr;
+    let e = m[264];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[265] -= f * m[163];
+    m[266] -= f * m[164];
+    m[267] -= f * m[165];
+    m[270] -= f * m[168];
+    r[15] -= f * pr;
+    let d = m[180];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[180] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[197];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[198] -= f * m[181];
+    m[199] -= f * m[182];
+    m[202] -= f * m[185];
+    r[11] -= f * pr;
+    let e = m[214];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[215] -= f * m[181];
+    m[216] -= f * m[182];
+    m[219] -= f * m[185];
+    r[12] -= f * pr;
+    let e = m[265];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[266] -= f * m[181];
+    m[267] -= f * m[182];
+    m[270] -= f * m[185];
+    r[15] -= f * pr;
+    let d = m[198];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[198] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[215];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[216] -= f * m[199];
+    m[219] -= f * m[202];
+    r[12] -= f * pr;
+    let e = m[266];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[267] -= f * m[199];
+    m[270] -= f * m[202];
+    r[15] -= f * pr;
+    let d = m[216];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[216] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[250];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[251] -= f * m[217];
+    m[252] -= f * m[218];
+    m[253] -= f * m[219];
+    r[14] -= f * pr;
+    let e = m[267];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[268] -= f * m[217];
+    m[269] -= f * m[218];
+    m[270] -= f * m[219];
+    r[15] -= f * pr;
+    let d = m[234];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[234] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[251];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[252] -= f * m[235];
+    m[254] -= f * m[237];
+    r[14] -= f * pr;
+    let e = m[268];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[269] -= f * m[235];
+    m[271] -= f * m[237];
+    r[15] -= f * pr;
+    let e = m[285];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[286] -= f * m[235];
+    m[288] -= f * m[237];
+    r[16] -= f * pr;
+    let d = m[252];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[252] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[269];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[270] -= f * m[253];
+    m[271] -= f * m[254];
+    r[15] -= f * pr;
+    let e = m[286];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[287] -= f * m[253];
+    m[288] -= f * m[254];
+    r[16] -= f * pr;
+    let d = m[270];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[270] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[15];
+    let e = m[287];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[288] -= f * m[271];
+    r[16] -= f * pr;
+    let d = m[288];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
+    let inv = 1.0 / d;
+    m[288] = inv;
+    let v = r[16];
+    let d = m[288];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[16] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[15];
+    v -= m[271] * r[16];
+    let d = m[270];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[253] * r[15];
+    v -= m[254] * r[16];
+    let d = m[252];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[235] * r[14];
+    v -= m[237] * r[16];
+    let d = m[234];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[217] * r[13];
+    v -= m[218] * r[14];
+    v -= m[219] * r[15];
+    let d = m[216];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[199] * r[12];
+    v -= m[202] * r[15];
+    let d = m[198];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[181] * r[11];
+    v -= m[182] * r[12];
+    v -= m[185] * r[15];
+    let d = m[180];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[163] * r[10];
+    v -= m[164] * r[11];
+    v -= m[165] * r[12];
+    v -= m[168] * r[15];
+    let d = m[162];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[145] * r[9];
+    v -= m[146] * r[10];
+    v -= m[147] * r[11];
+    let d = m[144];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[127] * r[8];
+    v -= m[128] * r[9];
+    v -= m[129] * r[10];
+    v -= m[130] * r[11];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[109] * r[7];
+    v -= m[110] * r[8];
+    v -= m[111] * r[9];
+    v -= m[112] * r[10];
+    v -= m[113] * r[11];
+    let d = m[108];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[91] * r[6];
+    v -= m[93] * r[8];
+    v -= m[94] * r[9];
+    v -= m[95] * r[10];
+    v -= m[96] * r[11];
+    let d = m[90];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[73] * r[5];
+    v -= m[74] * r[6];
+    v -= m[76] * r[8];
+    v -= m[77] * r[9];
+    v -= m[78] * r[10];
+    v -= m[79] * r[11];
+    let d = m[72];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[55] * r[4];
+    v -= m[56] * r[5];
+    v -= m[57] * r[6];
+    v -= m[59] * r[8];
+    v -= m[61] * r[10];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[37] * r[3];
+    v -= m[38] * r[4];
+    v -= m[39] * r[5];
+    v -= m[40] * r[6];
+    v -= m[42] * r[8];
+    v -= m[44] * r[10];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[20] * r[3];
+    v -= m[21] * r[4];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
 fn kernel_51(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[16];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[18] -= f * m[2];
+    m[19] -= f * m[3];
+    r[2] -= f * pr;
+    let e = m[24];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[26] -= f * m[2];
+    m[27] -= f * m[3];
+    r[3] -= f * pr;
+    let d = m[9];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[9] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[17];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[18] -= f * m[10];
+    m[20] -= f * m[12];
+    r[2] -= f * pr;
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[10];
+    m[36] -= f * m[12];
+    r[4] -= f * pr;
+    m.swap(18, 34);
+    m.swap(19, 35);
+    m.swap(20, 36);
+    m.swap(21, 37);
+    m.swap(22, 38);
+    r.swap(2, 4);
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[26];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[28] -= f * m[20];
+    m[29] -= f * m[21];
+    m[30] -= f * m[22];
+    r[3] -= f * pr;
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[20];
+    m[37] -= f * m[21];
+    m[38] -= f * m[22];
+    r[4] -= f * pr;
+    m.swap(27, 35);
+    m.swap(28, 36);
+    m.swap(29, 37);
+    m.swap(30, 38);
+    r.swap(3, 4);
+    let d = m[27];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[27] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[28];
+    m[37] -= f * m[29];
+    m[38] -= f * m[30];
+    r[4] -= f * pr;
+    let e = m[43];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[44] -= f * m[28];
+    m[45] -= f * m[29];
+    m[46] -= f * m[30];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[44];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[45] -= f * m[37];
+    m[46] -= f * m[38];
+    r[5] -= f * pr;
+    let e = m[52];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[53] -= f * m[37];
+    m[54] -= f * m[38];
+    r[6] -= f * pr;
+    let d = m[45];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[45] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[46];
+    m[55] -= f * m[47];
+    r[6] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[62];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[63] -= f * m[55];
+    r[7] -= f * pr;
+    let d = m[63];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[63] = inv;
+    let v = r[7];
+    let d = m[63];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[55] * r[7];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[46] * r[6];
+    v -= m[47] * r[7];
+    let d = m[45];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[37] * r[5];
+    v -= m[38] * r[6];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[28] * r[4];
+    v -= m[29] * r[5];
+    v -= m[30] * r[6];
+    let d = m[27];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[20] * r[4];
+    v -= m[21] * r[5];
+    v -= m[22] * r[6];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[10] * r[2];
+    v -= m[12] * r[4];
+    let d = m[9];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    v -= m[3] * r[3];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_52(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -22112,7 +22313,668 @@ fn kernel_51(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_52(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_53(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[2];
+    r[2] -= f * pr;
+    m.swap(18, 52);
+    m.swap(19, 53);
+    m.swap(20, 54);
+    m.swap(21, 55);
+    m.swap(22, 56);
+    r.swap(1, 3);
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[37] -= f * m[20];
+    m[38] -= f * m[21];
+    r[2] -= f * pr;
+    let e = m[86];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[20];
+    m[89] -= f * m[21];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[37];
+    m[55] -= f * m[38];
+    m[56] -= f * m[39];
+    m[57] -= f * m[40];
+    m[59] -= f * m[42];
+    m[61] -= f * m[44];
+    r[3] -= f * pr;
+    let e = m[70];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[71] -= f * m[37];
+    m[72] -= f * m[38];
+    m[73] -= f * m[39];
+    m[74] -= f * m[40];
+    m[76] -= f * m[42];
+    m[78] -= f * m[44];
+    r[4] -= f * pr;
+    let e = m[87];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[37];
+    m[89] -= f * m[38];
+    m[90] -= f * m[39];
+    m[91] -= f * m[40];
+    m[93] -= f * m[42];
+    m[95] -= f * m[44];
+    r[5] -= f * pr;
+    let e = m[104];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[105] -= f * m[37];
+    m[106] -= f * m[38];
+    m[107] -= f * m[39];
+    m[108] -= f * m[40];
+    m[110] -= f * m[42];
+    m[112] -= f * m[44];
+    r[6] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[37];
+    m[140] -= f * m[38];
+    m[141] -= f * m[39];
+    m[142] -= f * m[40];
+    m[144] -= f * m[42];
+    m[146] -= f * m[44];
+    r[8] -= f * pr;
+    let e = m[172];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[173] -= f * m[37];
+    m[174] -= f * m[38];
+    m[175] -= f * m[39];
+    m[176] -= f * m[40];
+    m[178] -= f * m[42];
+    m[180] -= f * m[44];
+    r[10] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[71];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[72] -= f * m[55];
+    m[73] -= f * m[56];
+    m[74] -= f * m[57];
+    m[76] -= f * m[59];
+    m[78] -= f * m[61];
+    r[4] -= f * pr;
+    let e = m[88];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[89] -= f * m[55];
+    m[90] -= f * m[56];
+    m[91] -= f * m[57];
+    m[93] -= f * m[59];
+    m[95] -= f * m[61];
+    r[5] -= f * pr;
+    let e = m[105];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[106] -= f * m[55];
+    m[107] -= f * m[56];
+    m[108] -= f * m[57];
+    m[110] -= f * m[59];
+    m[112] -= f * m[61];
+    r[6] -= f * pr;
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[55];
+    m[141] -= f * m[56];
+    m[142] -= f * m[57];
+    m[144] -= f * m[59];
+    m[146] -= f * m[61];
+    r[8] -= f * pr;
+    let e = m[173];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[174] -= f * m[55];
+    m[175] -= f * m[56];
+    m[176] -= f * m[57];
+    m[178] -= f * m[59];
+    m[180] -= f * m[61];
+    r[10] -= f * pr;
+    let d = m[72];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[72] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[89];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[90] -= f * m[73];
+    m[91] -= f * m[74];
+    m[93] -= f * m[76];
+    m[95] -= f * m[78];
+    r[5] -= f * pr;
+    let e = m[106];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[107] -= f * m[73];
+    m[108] -= f * m[74];
+    m[110] -= f * m[76];
+    m[112] -= f * m[78];
+    r[6] -= f * pr;
+    let e = m[140];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[141] -= f * m[73];
+    m[142] -= f * m[74];
+    m[144] -= f * m[76];
+    m[146] -= f * m[78];
+    r[8] -= f * pr;
+    let e = m[174];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[175] -= f * m[73];
+    m[176] -= f * m[74];
+    m[178] -= f * m[76];
+    m[180] -= f * m[78];
+    r[10] -= f * pr;
+    let d = m[90];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[90] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[108] -= f * m[91];
+    m[109] -= f * m[92];
+    m[110] -= f * m[93];
+    m[111] -= f * m[94];
+    m[112] -= f * m[95];
+    r[6] -= f * pr;
+    let e = m[141];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[142] -= f * m[91];
+    m[143] -= f * m[92];
+    m[144] -= f * m[93];
+    m[145] -= f * m[94];
+    m[146] -= f * m[95];
+    r[8] -= f * pr;
+    let e = m[158];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[159] -= f * m[91];
+    m[160] -= f * m[92];
+    m[161] -= f * m[93];
+    m[162] -= f * m[94];
+    m[163] -= f * m[95];
+    r[9] -= f * pr;
+    let e = m[175];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[176] -= f * m[91];
+    m[177] -= f * m[92];
+    m[178] -= f * m[93];
+    m[179] -= f * m[94];
+    m[180] -= f * m[95];
+    r[10] -= f * pr;
+    let d = m[108];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[108] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[142];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[143] -= f * m[109];
+    m[144] -= f * m[110];
+    m[145] -= f * m[111];
+    m[146] -= f * m[112];
+    r[8] -= f * pr;
+    let e = m[159];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[160] -= f * m[109];
+    m[161] -= f * m[110];
+    m[162] -= f * m[111];
+    m[163] -= f * m[112];
+    r[9] -= f * pr;
+    let e = m[176];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[177] -= f * m[109];
+    m[178] -= f * m[110];
+    m[179] -= f * m[111];
+    m[180] -= f * m[112];
+    r[10] -= f * pr;
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[143];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[145] -= f * m[128];
+    m[147] -= f * m[130];
+    m[148] -= f * m[131];
+    m[151] -= f * m[134];
+    r[8] -= f * pr;
+    let e = m[160];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[128];
+    m[164] -= f * m[130];
+    m[165] -= f * m[131];
+    m[168] -= f * m[134];
+    r[9] -= f * pr;
+    let e = m[177];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[128];
+    m[181] -= f * m[130];
+    m[182] -= f * m[131];
+    m[185] -= f * m[134];
+    r[10] -= f * pr;
+    let e = m[194];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[196] -= f * m[128];
+    m[198] -= f * m[130];
+    m[199] -= f * m[131];
+    m[202] -= f * m[134];
+    r[11] -= f * pr;
+    let e = m[211];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[213] -= f * m[128];
+    m[215] -= f * m[130];
+    m[216] -= f * m[131];
+    m[219] -= f * m[134];
+    r[12] -= f * pr;
+    let e = m[262];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[264] -= f * m[128];
+    m[266] -= f * m[130];
+    m[267] -= f * m[131];
+    m[270] -= f * m[134];
+    r[15] -= f * pr;
+    let d = m[144];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[144] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[161];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[145];
+    m[163] -= f * m[146];
+    m[164] -= f * m[147];
+    m[165] -= f * m[148];
+    m[168] -= f * m[151];
+    r[9] -= f * pr;
+    let e = m[178];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[145];
+    m[180] -= f * m[146];
+    m[181] -= f * m[147];
+    m[182] -= f * m[148];
+    m[185] -= f * m[151];
+    r[10] -= f * pr;
+    let d = m[162];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[162] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[179];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[180] -= f * m[163];
+    m[181] -= f * m[164];
+    m[182] -= f * m[165];
+    m[185] -= f * m[168];
+    r[10] -= f * pr;
+    let e = m[196];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[197] -= f * m[163];
+    m[198] -= f * m[164];
+    m[199] -= f * m[165];
+    m[202] -= f * m[168];
+    r[11] -= f * pr;
+    let e = m[213];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[214] -= f * m[163];
+    m[215] -= f * m[164];
+    m[216] -= f * m[165];
+    m[219] -= f * m[168];
+    r[12] -= f * pr;
+    let e = m[264];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[265] -= f * m[163];
+    m[266] -= f * m[164];
+    m[267] -= f * m[165];
+    m[270] -= f * m[168];
+    r[15] -= f * pr;
+    let d = m[180];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[180] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[197];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[198] -= f * m[181];
+    m[199] -= f * m[182];
+    m[202] -= f * m[185];
+    r[11] -= f * pr;
+    let e = m[214];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[215] -= f * m[181];
+    m[216] -= f * m[182];
+    m[219] -= f * m[185];
+    r[12] -= f * pr;
+    let e = m[265];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[266] -= f * m[181];
+    m[267] -= f * m[182];
+    m[270] -= f * m[185];
+    r[15] -= f * pr;
+    let d = m[198];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[198] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[215];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[216] -= f * m[199];
+    m[219] -= f * m[202];
+    r[12] -= f * pr;
+    let e = m[266];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[267] -= f * m[199];
+    m[270] -= f * m[202];
+    r[15] -= f * pr;
+    let d = m[216];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[216] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[250];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[251] -= f * m[217];
+    m[252] -= f * m[218];
+    m[253] -= f * m[219];
+    r[14] -= f * pr;
+    let e = m[267];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[268] -= f * m[217];
+    m[269] -= f * m[218];
+    m[270] -= f * m[219];
+    r[15] -= f * pr;
+    let d = m[234];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[234] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[251];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[252] -= f * m[235];
+    m[254] -= f * m[237];
+    r[14] -= f * pr;
+    let e = m[268];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[269] -= f * m[235];
+    m[271] -= f * m[237];
+    r[15] -= f * pr;
+    let e = m[285];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[286] -= f * m[235];
+    m[288] -= f * m[237];
+    r[16] -= f * pr;
+    let d = m[252];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[252] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[269];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[270] -= f * m[253];
+    m[271] -= f * m[254];
+    r[15] -= f * pr;
+    let e = m[286];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[287] -= f * m[253];
+    m[288] -= f * m[254];
+    r[16] -= f * pr;
+    let d = m[270];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[270] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[15];
+    let e = m[287];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[288] -= f * m[271];
+    r[16] -= f * pr;
+    let d = m[288];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
+    let inv = 1.0 / d;
+    m[288] = inv;
+    let v = r[16];
+    let d = m[288];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[16] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[15];
+    v -= m[271] * r[16];
+    let d = m[270];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[253] * r[15];
+    v -= m[254] * r[16];
+    let d = m[252];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[235] * r[14];
+    v -= m[237] * r[16];
+    let d = m[234];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[217] * r[13];
+    v -= m[218] * r[14];
+    v -= m[219] * r[15];
+    let d = m[216];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[199] * r[12];
+    v -= m[202] * r[15];
+    let d = m[198];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[181] * r[11];
+    v -= m[182] * r[12];
+    v -= m[185] * r[15];
+    let d = m[180];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[163] * r[10];
+    v -= m[164] * r[11];
+    v -= m[165] * r[12];
+    v -= m[168] * r[15];
+    let d = m[162];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[145] * r[9];
+    v -= m[146] * r[10];
+    v -= m[147] * r[11];
+    v -= m[148] * r[12];
+    v -= m[151] * r[15];
+    let d = m[144];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[128] * r[9];
+    v -= m[130] * r[11];
+    v -= m[131] * r[12];
+    v -= m[134] * r[15];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[109] * r[7];
+    v -= m[110] * r[8];
+    v -= m[111] * r[9];
+    v -= m[112] * r[10];
+    let d = m[108];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[91] * r[6];
+    v -= m[92] * r[7];
+    v -= m[93] * r[8];
+    v -= m[94] * r[9];
+    v -= m[95] * r[10];
+    let d = m[90];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[73] * r[5];
+    v -= m[74] * r[6];
+    v -= m[76] * r[8];
+    v -= m[78] * r[10];
+    let d = m[72];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[55] * r[4];
+    v -= m[56] * r[5];
+    v -= m[57] * r[6];
+    v -= m[59] * r[8];
+    v -= m[61] * r[10];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[37] * r[3];
+    v -= m[38] * r[4];
+    v -= m[39] * r[5];
+    v -= m[40] * r[6];
+    v -= m[42] * r[8];
+    v -= m[44] * r[10];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[20] * r[3];
+    v -= m[21] * r[4];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_54(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -23081,7 +23943,7 @@ fn kernel_52(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_53(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_55(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -23882,7 +24744,7 @@ fn kernel_53(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_54(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_56(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 25]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..5).map(<&mut [f64; 5]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -24010,668 +24872,7 @@ fn kernel_54(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_55(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[2];
-    r[2] -= f * pr;
-    m.swap(18, 52);
-    m.swap(19, 53);
-    m.swap(20, 54);
-    m.swap(21, 55);
-    m.swap(22, 56);
-    r.swap(1, 3);
-    let d = m[18];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[18] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[35];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[37] -= f * m[20];
-    m[38] -= f * m[21];
-    r[2] -= f * pr;
-    let e = m[86];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[20];
-    m[89] -= f * m[21];
-    r[5] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[37];
-    m[55] -= f * m[38];
-    m[56] -= f * m[39];
-    m[57] -= f * m[40];
-    m[59] -= f * m[42];
-    m[61] -= f * m[44];
-    r[3] -= f * pr;
-    let e = m[70];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[71] -= f * m[37];
-    m[72] -= f * m[38];
-    m[73] -= f * m[39];
-    m[74] -= f * m[40];
-    m[76] -= f * m[42];
-    m[78] -= f * m[44];
-    r[4] -= f * pr;
-    let e = m[87];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[37];
-    m[89] -= f * m[38];
-    m[90] -= f * m[39];
-    m[91] -= f * m[40];
-    m[93] -= f * m[42];
-    m[95] -= f * m[44];
-    r[5] -= f * pr;
-    let e = m[104];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[105] -= f * m[37];
-    m[106] -= f * m[38];
-    m[107] -= f * m[39];
-    m[108] -= f * m[40];
-    m[110] -= f * m[42];
-    m[112] -= f * m[44];
-    r[6] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[37];
-    m[140] -= f * m[38];
-    m[141] -= f * m[39];
-    m[142] -= f * m[40];
-    m[144] -= f * m[42];
-    m[146] -= f * m[44];
-    r[8] -= f * pr;
-    let e = m[172];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[173] -= f * m[37];
-    m[174] -= f * m[38];
-    m[175] -= f * m[39];
-    m[176] -= f * m[40];
-    m[178] -= f * m[42];
-    m[180] -= f * m[44];
-    r[10] -= f * pr;
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[71];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[55];
-    m[73] -= f * m[56];
-    m[74] -= f * m[57];
-    m[76] -= f * m[59];
-    m[78] -= f * m[61];
-    r[4] -= f * pr;
-    let e = m[88];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[89] -= f * m[55];
-    m[90] -= f * m[56];
-    m[91] -= f * m[57];
-    m[93] -= f * m[59];
-    m[95] -= f * m[61];
-    r[5] -= f * pr;
-    let e = m[105];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[106] -= f * m[55];
-    m[107] -= f * m[56];
-    m[108] -= f * m[57];
-    m[110] -= f * m[59];
-    m[112] -= f * m[61];
-    r[6] -= f * pr;
-    let e = m[139];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[140] -= f * m[55];
-    m[141] -= f * m[56];
-    m[142] -= f * m[57];
-    m[144] -= f * m[59];
-    m[146] -= f * m[61];
-    r[8] -= f * pr;
-    let e = m[173];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[174] -= f * m[55];
-    m[175] -= f * m[56];
-    m[176] -= f * m[57];
-    m[178] -= f * m[59];
-    m[180] -= f * m[61];
-    r[10] -= f * pr;
-    let d = m[72];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[72] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[89];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[90] -= f * m[73];
-    m[91] -= f * m[74];
-    m[93] -= f * m[76];
-    m[95] -= f * m[78];
-    r[5] -= f * pr;
-    let e = m[106];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[107] -= f * m[73];
-    m[108] -= f * m[74];
-    m[110] -= f * m[76];
-    m[112] -= f * m[78];
-    r[6] -= f * pr;
-    let e = m[140];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[141] -= f * m[73];
-    m[142] -= f * m[74];
-    m[144] -= f * m[76];
-    m[146] -= f * m[78];
-    r[8] -= f * pr;
-    let e = m[174];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[175] -= f * m[73];
-    m[176] -= f * m[74];
-    m[178] -= f * m[76];
-    m[180] -= f * m[78];
-    r[10] -= f * pr;
-    let d = m[90];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[90] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[108] -= f * m[91];
-    m[109] -= f * m[92];
-    m[110] -= f * m[93];
-    m[111] -= f * m[94];
-    m[112] -= f * m[95];
-    r[6] -= f * pr;
-    let e = m[141];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[142] -= f * m[91];
-    m[143] -= f * m[92];
-    m[144] -= f * m[93];
-    m[145] -= f * m[94];
-    m[146] -= f * m[95];
-    r[8] -= f * pr;
-    let e = m[158];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[159] -= f * m[91];
-    m[160] -= f * m[92];
-    m[161] -= f * m[93];
-    m[162] -= f * m[94];
-    m[163] -= f * m[95];
-    r[9] -= f * pr;
-    let e = m[175];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[176] -= f * m[91];
-    m[177] -= f * m[92];
-    m[178] -= f * m[93];
-    m[179] -= f * m[94];
-    m[180] -= f * m[95];
-    r[10] -= f * pr;
-    let d = m[108];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[108] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[142];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[143] -= f * m[109];
-    m[144] -= f * m[110];
-    m[145] -= f * m[111];
-    m[146] -= f * m[112];
-    r[8] -= f * pr;
-    let e = m[159];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[160] -= f * m[109];
-    m[161] -= f * m[110];
-    m[162] -= f * m[111];
-    m[163] -= f * m[112];
-    r[9] -= f * pr;
-    let e = m[176];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[177] -= f * m[109];
-    m[178] -= f * m[110];
-    m[179] -= f * m[111];
-    m[180] -= f * m[112];
-    r[10] -= f * pr;
-    let d = m[126];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[126] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[143];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[145] -= f * m[128];
-    m[147] -= f * m[130];
-    m[148] -= f * m[131];
-    m[151] -= f * m[134];
-    r[8] -= f * pr;
-    let e = m[160];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[128];
-    m[164] -= f * m[130];
-    m[165] -= f * m[131];
-    m[168] -= f * m[134];
-    r[9] -= f * pr;
-    let e = m[177];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[128];
-    m[181] -= f * m[130];
-    m[182] -= f * m[131];
-    m[185] -= f * m[134];
-    r[10] -= f * pr;
-    let e = m[194];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[196] -= f * m[128];
-    m[198] -= f * m[130];
-    m[199] -= f * m[131];
-    m[202] -= f * m[134];
-    r[11] -= f * pr;
-    let e = m[211];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[213] -= f * m[128];
-    m[215] -= f * m[130];
-    m[216] -= f * m[131];
-    m[219] -= f * m[134];
-    r[12] -= f * pr;
-    let e = m[262];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[264] -= f * m[128];
-    m[266] -= f * m[130];
-    m[267] -= f * m[131];
-    m[270] -= f * m[134];
-    r[15] -= f * pr;
-    let d = m[144];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[144] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[161];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[145];
-    m[163] -= f * m[146];
-    m[164] -= f * m[147];
-    m[165] -= f * m[148];
-    m[168] -= f * m[151];
-    r[9] -= f * pr;
-    let e = m[178];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[145];
-    m[180] -= f * m[146];
-    m[181] -= f * m[147];
-    m[182] -= f * m[148];
-    m[185] -= f * m[151];
-    r[10] -= f * pr;
-    let d = m[162];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[162] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[179];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[180] -= f * m[163];
-    m[181] -= f * m[164];
-    m[182] -= f * m[165];
-    m[185] -= f * m[168];
-    r[10] -= f * pr;
-    let e = m[196];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[197] -= f * m[163];
-    m[198] -= f * m[164];
-    m[199] -= f * m[165];
-    m[202] -= f * m[168];
-    r[11] -= f * pr;
-    let e = m[213];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[214] -= f * m[163];
-    m[215] -= f * m[164];
-    m[216] -= f * m[165];
-    m[219] -= f * m[168];
-    r[12] -= f * pr;
-    let e = m[264];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[265] -= f * m[163];
-    m[266] -= f * m[164];
-    m[267] -= f * m[165];
-    m[270] -= f * m[168];
-    r[15] -= f * pr;
-    let d = m[180];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[180] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[197];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[198] -= f * m[181];
-    m[199] -= f * m[182];
-    m[202] -= f * m[185];
-    r[11] -= f * pr;
-    let e = m[214];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[215] -= f * m[181];
-    m[216] -= f * m[182];
-    m[219] -= f * m[185];
-    r[12] -= f * pr;
-    let e = m[265];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[266] -= f * m[181];
-    m[267] -= f * m[182];
-    m[270] -= f * m[185];
-    r[15] -= f * pr;
-    let d = m[198];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[198] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[215];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[216] -= f * m[199];
-    m[219] -= f * m[202];
-    r[12] -= f * pr;
-    let e = m[266];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[267] -= f * m[199];
-    m[270] -= f * m[202];
-    r[15] -= f * pr;
-    let d = m[216];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[216] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[250];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[251] -= f * m[217];
-    m[252] -= f * m[218];
-    m[253] -= f * m[219];
-    r[14] -= f * pr;
-    let e = m[267];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[268] -= f * m[217];
-    m[269] -= f * m[218];
-    m[270] -= f * m[219];
-    r[15] -= f * pr;
-    let d = m[234];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[234] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[251];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[252] -= f * m[235];
-    m[254] -= f * m[237];
-    r[14] -= f * pr;
-    let e = m[268];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[269] -= f * m[235];
-    m[271] -= f * m[237];
-    r[15] -= f * pr;
-    let e = m[285];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[286] -= f * m[235];
-    m[288] -= f * m[237];
-    r[16] -= f * pr;
-    let d = m[252];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[252] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[269];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[270] -= f * m[253];
-    m[271] -= f * m[254];
-    r[15] -= f * pr;
-    let e = m[286];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[287] -= f * m[253];
-    m[288] -= f * m[254];
-    r[16] -= f * pr;
-    let d = m[270];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[270] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[287];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[288] -= f * m[271];
-    r[16] -= f * pr;
-    let d = m[288];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[288] = inv;
-    let v = r[16];
-    let d = m[288];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[271] * r[16];
-    let d = m[270];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[253] * r[15];
-    v -= m[254] * r[16];
-    let d = m[252];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[235] * r[14];
-    v -= m[237] * r[16];
-    let d = m[234];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[217] * r[13];
-    v -= m[218] * r[14];
-    v -= m[219] * r[15];
-    let d = m[216];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[199] * r[12];
-    v -= m[202] * r[15];
-    let d = m[198];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[181] * r[11];
-    v -= m[182] * r[12];
-    v -= m[185] * r[15];
-    let d = m[180];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[163] * r[10];
-    v -= m[164] * r[11];
-    v -= m[165] * r[12];
-    v -= m[168] * r[15];
-    let d = m[162];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[145] * r[9];
-    v -= m[146] * r[10];
-    v -= m[147] * r[11];
-    v -= m[148] * r[12];
-    v -= m[151] * r[15];
-    let d = m[144];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[128] * r[9];
-    v -= m[130] * r[11];
-    v -= m[131] * r[12];
-    v -= m[134] * r[15];
-    let d = m[126];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[109] * r[7];
-    v -= m[110] * r[8];
-    v -= m[111] * r[9];
-    v -= m[112] * r[10];
-    let d = m[108];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[91] * r[6];
-    v -= m[92] * r[7];
-    v -= m[93] * r[8];
-    v -= m[94] * r[9];
-    v -= m[95] * r[10];
-    let d = m[90];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[73] * r[5];
-    v -= m[74] * r[6];
-    v -= m[76] * r[8];
-    v -= m[78] * r[10];
-    let d = m[72];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[55] * r[4];
-    v -= m[56] * r[5];
-    v -= m[57] * r[6];
-    v -= m[59] * r[8];
-    v -= m[61] * r[10];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[37] * r[3];
-    v -= m[38] * r[4];
-    v -= m[39] * r[5];
-    v -= m[40] * r[6];
-    v -= m[42] * r[8];
-    v -= m[44] * r[10];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[20] * r[3];
-    v -= m[21] * r[4];
-    let d = m[18];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[2] * r[2];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_56(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_57(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -25452,7 +25653,7 @@ fn kernel_56(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_57(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_58(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -26440,903 +26641,6 @@ fn kernel_57(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     v -= m[6] * r[6];
     v -= m[13] * r[13];
     v -= m[16] * r[16];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_58(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[48];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[51] -= f * m[3];
-    r[3] -= f * pr;
-    let d = m[17];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[17] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[49];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[51] -= f * m[19];
-    m[54] -= f * m[22];
-    m[57] -= f * m[25];
-    r[3] -= f * pr;
-    let e = m[65];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[67] -= f * m[19];
-    m[70] -= f * m[22];
-    m[73] -= f * m[25];
-    r[4] -= f * pr;
-    let e = m[145];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[147] -= f * m[19];
-    m[150] -= f * m[22];
-    m[153] -= f * m[25];
-    r[9] -= f * pr;
-    m.swap(34, 114);
-    m.swap(35, 115);
-    m.swap(36, 116);
-    m.swap(37, 117);
-    m.swap(39, 119);
-    m.swap(44, 124);
-    m.swap(45, 125);
-    m.swap(47, 127);
-    r.swap(2, 7);
-    let d = m[34];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[34] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[50];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[53] -= f * m[37];
-    m[55] -= f * m[39];
-    m[60] -= f * m[44];
-    m[61] -= f * m[45];
-    m[63] -= f * m[47];
-    r[3] -= f * pr;
-    let e = m[66];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[69] -= f * m[37];
-    m[71] -= f * m[39];
-    m[76] -= f * m[44];
-    m[77] -= f * m[45];
-    m[79] -= f * m[47];
-    r[4] -= f * pr;
-    let d = m[51];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[51] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[67];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[68] -= f * m[52];
-    m[69] -= f * m[53];
-    m[70] -= f * m[54];
-    m[71] -= f * m[55];
-    m[72] -= f * m[56];
-    m[73] -= f * m[57];
-    m[76] -= f * m[60];
-    m[77] -= f * m[61];
-    m[79] -= f * m[63];
-    r[4] -= f * pr;
-    let e = m[83];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[84] -= f * m[52];
-    m[85] -= f * m[53];
-    m[86] -= f * m[54];
-    m[87] -= f * m[55];
-    m[88] -= f * m[56];
-    m[89] -= f * m[57];
-    m[92] -= f * m[60];
-    m[93] -= f * m[61];
-    m[95] -= f * m[63];
-    r[5] -= f * pr;
-    let e = m[115];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[116] -= f * m[52];
-    m[117] -= f * m[53];
-    m[118] -= f * m[54];
-    m[119] -= f * m[55];
-    m[120] -= f * m[56];
-    m[121] -= f * m[57];
-    m[124] -= f * m[60];
-    m[125] -= f * m[61];
-    m[127] -= f * m[63];
-    r[7] -= f * pr;
-    let e = m[131];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[132] -= f * m[52];
-    m[133] -= f * m[53];
-    m[134] -= f * m[54];
-    m[135] -= f * m[55];
-    m[136] -= f * m[56];
-    m[137] -= f * m[57];
-    m[140] -= f * m[60];
-    m[141] -= f * m[61];
-    m[143] -= f * m[63];
-    r[8] -= f * pr;
-    let e = m[147];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[148] -= f * m[52];
-    m[149] -= f * m[53];
-    m[150] -= f * m[54];
-    m[151] -= f * m[55];
-    m[152] -= f * m[56];
-    m[153] -= f * m[57];
-    m[156] -= f * m[60];
-    m[157] -= f * m[61];
-    m[159] -= f * m[63];
-    r[9] -= f * pr;
-    m.swap(68, 116);
-    m.swap(69, 117);
-    m.swap(70, 118);
-    m.swap(71, 119);
-    m.swap(72, 120);
-    m.swap(73, 121);
-    m.swap(76, 124);
-    m.swap(77, 125);
-    m.swap(79, 127);
-    r.swap(4, 7);
-    let d = m[68];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[68] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[84];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[85] -= f * m[69];
-    m[86] -= f * m[70];
-    m[87] -= f * m[71];
-    m[88] -= f * m[72];
-    m[89] -= f * m[73];
-    m[92] -= f * m[76];
-    m[93] -= f * m[77];
-    m[95] -= f * m[79];
-    r[5] -= f * pr;
-    let e = m[116];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[117] -= f * m[69];
-    m[118] -= f * m[70];
-    m[119] -= f * m[71];
-    m[120] -= f * m[72];
-    m[121] -= f * m[73];
-    m[124] -= f * m[76];
-    m[125] -= f * m[77];
-    m[127] -= f * m[79];
-    r[7] -= f * pr;
-    let e = m[132];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[133] -= f * m[69];
-    m[134] -= f * m[70];
-    m[135] -= f * m[71];
-    m[136] -= f * m[72];
-    m[137] -= f * m[73];
-    m[140] -= f * m[76];
-    m[141] -= f * m[77];
-    m[143] -= f * m[79];
-    r[8] -= f * pr;
-    let e = m[148];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[149] -= f * m[69];
-    m[150] -= f * m[70];
-    m[151] -= f * m[71];
-    m[152] -= f * m[72];
-    m[153] -= f * m[73];
-    m[156] -= f * m[76];
-    m[157] -= f * m[77];
-    m[159] -= f * m[79];
-    r[9] -= f * pr;
-    let d = m[85];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[85] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[117];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[118] -= f * m[86];
-    m[119] -= f * m[87];
-    m[120] -= f * m[88];
-    m[121] -= f * m[89];
-    m[124] -= f * m[92];
-    m[125] -= f * m[93];
-    m[127] -= f * m[95];
-    r[7] -= f * pr;
-    let e = m[133];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[134] -= f * m[86];
-    m[135] -= f * m[87];
-    m[136] -= f * m[88];
-    m[137] -= f * m[89];
-    m[140] -= f * m[92];
-    m[141] -= f * m[93];
-    m[143] -= f * m[95];
-    r[8] -= f * pr;
-    let e = m[149];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[150] -= f * m[86];
-    m[151] -= f * m[87];
-    m[152] -= f * m[88];
-    m[153] -= f * m[89];
-    m[156] -= f * m[92];
-    m[157] -= f * m[93];
-    m[159] -= f * m[95];
-    r[9] -= f * pr;
-    m.swap(102, 118);
-    m.swap(103, 119);
-    m.swap(104, 120);
-    m.swap(105, 121);
-    m.swap(106, 122);
-    m.swap(107, 123);
-    m.swap(108, 124);
-    m.swap(109, 125);
-    m.swap(110, 126);
-    m.swap(111, 127);
-    r.swap(6, 7);
-    let d = m[102];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[102] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[118];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[119] -= f * m[103];
-    m[120] -= f * m[104];
-    m[121] -= f * m[105];
-    m[124] -= f * m[108];
-    m[125] -= f * m[109];
-    m[127] -= f * m[111];
-    r[7] -= f * pr;
-    let e = m[134];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[135] -= f * m[103];
-    m[136] -= f * m[104];
-    m[137] -= f * m[105];
-    m[140] -= f * m[108];
-    m[141] -= f * m[109];
-    m[143] -= f * m[111];
-    r[8] -= f * pr;
-    let e = m[150];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[151] -= f * m[103];
-    m[152] -= f * m[104];
-    m[153] -= f * m[105];
-    m[156] -= f * m[108];
-    m[157] -= f * m[109];
-    m[159] -= f * m[111];
-    r[9] -= f * pr;
-    let e = m[166];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[167] -= f * m[103];
-    m[168] -= f * m[104];
-    m[169] -= f * m[105];
-    m[172] -= f * m[108];
-    m[173] -= f * m[109];
-    m[175] -= f * m[111];
-    r[10] -= f * pr;
-    let e = m[182];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[183] -= f * m[103];
-    m[184] -= f * m[104];
-    m[185] -= f * m[105];
-    m[188] -= f * m[108];
-    m[189] -= f * m[109];
-    m[191] -= f * m[111];
-    r[11] -= f * pr;
-    let e = m[230];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[231] -= f * m[103];
-    m[232] -= f * m[104];
-    m[233] -= f * m[105];
-    m[236] -= f * m[108];
-    m[237] -= f * m[109];
-    m[239] -= f * m[111];
-    r[14] -= f * pr;
-    m.swap(119, 135);
-    m.swap(120, 136);
-    m.swap(121, 137);
-    m.swap(122, 138);
-    m.swap(123, 139);
-    m.swap(124, 140);
-    m.swap(125, 141);
-    m.swap(126, 142);
-    m.swap(127, 143);
-    r.swap(7, 8);
-    let d = m[119];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[119] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[135];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[136] -= f * m[120];
-    m[137] -= f * m[121];
-    m[138] -= f * m[122];
-    m[140] -= f * m[124];
-    m[141] -= f * m[125];
-    m[143] -= f * m[127];
-    r[8] -= f * pr;
-    let e = m[151];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[152] -= f * m[120];
-    m[153] -= f * m[121];
-    m[154] -= f * m[122];
-    m[156] -= f * m[124];
-    m[157] -= f * m[125];
-    m[159] -= f * m[127];
-    r[9] -= f * pr;
-    let e = m[167];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[168] -= f * m[120];
-    m[169] -= f * m[121];
-    m[170] -= f * m[122];
-    m[172] -= f * m[124];
-    m[173] -= f * m[125];
-    m[175] -= f * m[127];
-    r[10] -= f * pr;
-    let e = m[183];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[184] -= f * m[120];
-    m[185] -= f * m[121];
-    m[186] -= f * m[122];
-    m[188] -= f * m[124];
-    m[189] -= f * m[125];
-    m[191] -= f * m[127];
-    r[11] -= f * pr;
-    let e = m[199];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[200] -= f * m[120];
-    m[201] -= f * m[121];
-    m[202] -= f * m[122];
-    m[204] -= f * m[124];
-    m[205] -= f * m[125];
-    m[207] -= f * m[127];
-    r[12] -= f * pr;
-    let e = m[215];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[216] -= f * m[120];
-    m[217] -= f * m[121];
-    m[218] -= f * m[122];
-    m[220] -= f * m[124];
-    m[221] -= f * m[125];
-    m[223] -= f * m[127];
-    r[13] -= f * pr;
-    let e = m[231];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[232] -= f * m[120];
-    m[233] -= f * m[121];
-    m[234] -= f * m[122];
-    m[236] -= f * m[124];
-    m[237] -= f * m[125];
-    m[239] -= f * m[127];
-    r[14] -= f * pr;
-    let e = m[247];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[248] -= f * m[120];
-    m[249] -= f * m[121];
-    m[250] -= f * m[122];
-    m[252] -= f * m[124];
-    m[253] -= f * m[125];
-    m[255] -= f * m[127];
-    r[15] -= f * pr;
-    let d = m[136];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[136] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[152];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[153] -= f * m[137];
-    m[154] -= f * m[138];
-    m[155] -= f * m[139];
-    m[156] -= f * m[140];
-    m[157] -= f * m[141];
-    m[158] -= f * m[142];
-    m[159] -= f * m[143];
-    r[9] -= f * pr;
-    let e = m[168];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[169] -= f * m[137];
-    m[170] -= f * m[138];
-    m[171] -= f * m[139];
-    m[172] -= f * m[140];
-    m[173] -= f * m[141];
-    m[174] -= f * m[142];
-    m[175] -= f * m[143];
-    r[10] -= f * pr;
-    let e = m[184];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[185] -= f * m[137];
-    m[186] -= f * m[138];
-    m[187] -= f * m[139];
-    m[188] -= f * m[140];
-    m[189] -= f * m[141];
-    m[190] -= f * m[142];
-    m[191] -= f * m[143];
-    r[11] -= f * pr;
-    let e = m[200];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[201] -= f * m[137];
-    m[202] -= f * m[138];
-    m[203] -= f * m[139];
-    m[204] -= f * m[140];
-    m[205] -= f * m[141];
-    m[206] -= f * m[142];
-    m[207] -= f * m[143];
-    r[12] -= f * pr;
-    let e = m[216];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[217] -= f * m[137];
-    m[218] -= f * m[138];
-    m[219] -= f * m[139];
-    m[220] -= f * m[140];
-    m[221] -= f * m[141];
-    m[222] -= f * m[142];
-    m[223] -= f * m[143];
-    r[13] -= f * pr;
-    let e = m[232];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[233] -= f * m[137];
-    m[234] -= f * m[138];
-    m[235] -= f * m[139];
-    m[236] -= f * m[140];
-    m[237] -= f * m[141];
-    m[238] -= f * m[142];
-    m[239] -= f * m[143];
-    r[14] -= f * pr;
-    let e = m[248];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[249] -= f * m[137];
-    m[250] -= f * m[138];
-    m[251] -= f * m[139];
-    m[252] -= f * m[140];
-    m[253] -= f * m[141];
-    m[254] -= f * m[142];
-    m[255] -= f * m[143];
-    r[15] -= f * pr;
-    let d = m[153];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[153] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[169];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[170] -= f * m[154];
-    m[171] -= f * m[155];
-    m[172] -= f * m[156];
-    m[173] -= f * m[157];
-    m[174] -= f * m[158];
-    m[175] -= f * m[159];
-    r[10] -= f * pr;
-    let e = m[185];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[186] -= f * m[154];
-    m[187] -= f * m[155];
-    m[188] -= f * m[156];
-    m[189] -= f * m[157];
-    m[190] -= f * m[158];
-    m[191] -= f * m[159];
-    r[11] -= f * pr;
-    let e = m[201];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[202] -= f * m[154];
-    m[203] -= f * m[155];
-    m[204] -= f * m[156];
-    m[205] -= f * m[157];
-    m[206] -= f * m[158];
-    m[207] -= f * m[159];
-    r[12] -= f * pr;
-    let e = m[217];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[218] -= f * m[154];
-    m[219] -= f * m[155];
-    m[220] -= f * m[156];
-    m[221] -= f * m[157];
-    m[222] -= f * m[158];
-    m[223] -= f * m[159];
-    r[13] -= f * pr;
-    let e = m[233];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[234] -= f * m[154];
-    m[235] -= f * m[155];
-    m[236] -= f * m[156];
-    m[237] -= f * m[157];
-    m[238] -= f * m[158];
-    m[239] -= f * m[159];
-    r[14] -= f * pr;
-    let e = m[249];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[250] -= f * m[154];
-    m[251] -= f * m[155];
-    m[252] -= f * m[156];
-    m[253] -= f * m[157];
-    m[254] -= f * m[158];
-    m[255] -= f * m[159];
-    r[15] -= f * pr;
-    let d = m[170];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[170] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[186];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[187] -= f * m[171];
-    m[188] -= f * m[172];
-    m[189] -= f * m[173];
-    m[190] -= f * m[174];
-    m[191] -= f * m[175];
-    r[11] -= f * pr;
-    let e = m[202];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[203] -= f * m[171];
-    m[204] -= f * m[172];
-    m[205] -= f * m[173];
-    m[206] -= f * m[174];
-    m[207] -= f * m[175];
-    r[12] -= f * pr;
-    let e = m[218];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[219] -= f * m[171];
-    m[220] -= f * m[172];
-    m[221] -= f * m[173];
-    m[222] -= f * m[174];
-    m[223] -= f * m[175];
-    r[13] -= f * pr;
-    let e = m[234];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[235] -= f * m[171];
-    m[236] -= f * m[172];
-    m[237] -= f * m[173];
-    m[238] -= f * m[174];
-    m[239] -= f * m[175];
-    r[14] -= f * pr;
-    let e = m[250];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[251] -= f * m[171];
-    m[252] -= f * m[172];
-    m[253] -= f * m[173];
-    m[254] -= f * m[174];
-    m[255] -= f * m[175];
-    r[15] -= f * pr;
-    m.swap(187, 203);
-    m.swap(188, 204);
-    m.swap(189, 205);
-    m.swap(190, 206);
-    m.swap(191, 207);
-    r.swap(11, 12);
-    let d = m[187];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[187] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[203];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[204] -= f * m[188];
-    m[205] -= f * m[189];
-    m[206] -= f * m[190];
-    m[207] -= f * m[191];
-    r[12] -= f * pr;
-    let e = m[219];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[220] -= f * m[188];
-    m[221] -= f * m[189];
-    m[222] -= f * m[190];
-    m[223] -= f * m[191];
-    r[13] -= f * pr;
-    let e = m[235];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[236] -= f * m[188];
-    m[237] -= f * m[189];
-    m[238] -= f * m[190];
-    m[239] -= f * m[191];
-    r[14] -= f * pr;
-    let e = m[251];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[252] -= f * m[188];
-    m[253] -= f * m[189];
-    m[254] -= f * m[190];
-    m[255] -= f * m[191];
-    r[15] -= f * pr;
-    let d = m[204];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[204] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[220];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[221] -= f * m[205];
-    m[222] -= f * m[206];
-    m[223] -= f * m[207];
-    r[13] -= f * pr;
-    let e = m[236];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[237] -= f * m[205];
-    m[238] -= f * m[206];
-    m[239] -= f * m[207];
-    r[14] -= f * pr;
-    let e = m[252];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[253] -= f * m[205];
-    m[254] -= f * m[206];
-    m[255] -= f * m[207];
-    r[15] -= f * pr;
-    let d = m[221];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[221] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[237];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[238] -= f * m[222];
-    m[239] -= f * m[223];
-    r[14] -= f * pr;
-    let e = m[253];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[254] -= f * m[222];
-    m[255] -= f * m[223];
-    r[15] -= f * pr;
-    let d = m[238];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[238] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[254];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[255] -= f * m[239];
-    r[15] -= f * pr;
-    let d = m[255];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[255] = inv;
-    let v = r[15];
-    let d = m[255];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[239] * r[15];
-    let d = m[238];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[222] * r[14];
-    v -= m[223] * r[15];
-    let d = m[221];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[205] * r[13];
-    v -= m[206] * r[14];
-    v -= m[207] * r[15];
-    let d = m[204];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[188] * r[12];
-    v -= m[189] * r[13];
-    v -= m[190] * r[14];
-    v -= m[191] * r[15];
-    let d = m[187];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[171] * r[11];
-    v -= m[172] * r[12];
-    v -= m[173] * r[13];
-    v -= m[174] * r[14];
-    v -= m[175] * r[15];
-    let d = m[170];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[154] * r[10];
-    v -= m[155] * r[11];
-    v -= m[156] * r[12];
-    v -= m[157] * r[13];
-    v -= m[158] * r[14];
-    v -= m[159] * r[15];
-    let d = m[153];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[137] * r[9];
-    v -= m[138] * r[10];
-    v -= m[139] * r[11];
-    v -= m[140] * r[12];
-    v -= m[141] * r[13];
-    v -= m[142] * r[14];
-    v -= m[143] * r[15];
-    let d = m[136];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[120] * r[8];
-    v -= m[121] * r[9];
-    v -= m[122] * r[10];
-    v -= m[124] * r[12];
-    v -= m[125] * r[13];
-    v -= m[127] * r[15];
-    let d = m[119];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[103] * r[7];
-    v -= m[104] * r[8];
-    v -= m[105] * r[9];
-    v -= m[108] * r[12];
-    v -= m[109] * r[13];
-    v -= m[111] * r[15];
-    let d = m[102];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[86] * r[6];
-    v -= m[87] * r[7];
-    v -= m[88] * r[8];
-    v -= m[89] * r[9];
-    v -= m[92] * r[12];
-    v -= m[93] * r[13];
-    v -= m[95] * r[15];
-    let d = m[85];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[69] * r[5];
-    v -= m[70] * r[6];
-    v -= m[71] * r[7];
-    v -= m[72] * r[8];
-    v -= m[73] * r[9];
-    v -= m[76] * r[12];
-    v -= m[77] * r[13];
-    v -= m[79] * r[15];
-    let d = m[68];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[52] * r[4];
-    v -= m[53] * r[5];
-    v -= m[54] * r[6];
-    v -= m[55] * r[7];
-    v -= m[56] * r[8];
-    v -= m[57] * r[9];
-    v -= m[60] * r[12];
-    v -= m[61] * r[13];
-    v -= m[63] * r[15];
-    let d = m[51];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[37] * r[5];
-    v -= m[39] * r[7];
-    v -= m[44] * r[12];
-    v -= m[45] * r[13];
-    v -= m[47] * r[15];
-    let d = m[34];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[19] * r[3];
-    v -= m[22] * r[6];
-    v -= m[25] * r[9];
-    let d = m[17];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[3] * r[3];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -28438,681 +27742,894 @@ fn kernel_59(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_60(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
+    let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
     let inv = 1.0 / d;
     m[0] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[0];
-    let e = m[34];
+    let e = m[48];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[36] -= f * m[2];
-    r[2] -= f * pr;
-    m.swap(18, 52);
-    m.swap(19, 53);
-    m.swap(20, 54);
-    m.swap(21, 55);
-    m.swap(22, 56);
-    r.swap(1, 3);
-    let d = m[18];
+    m[51] -= f * m[3];
+    r[3] -= f * pr;
+    let d = m[17];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
     let inv = 1.0 / d;
-    m[18] = inv;
+    m[17] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[1];
-    let e = m[35];
+    let e = m[49];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[37] -= f * m[20];
-    m[38] -= f * m[21];
-    r[2] -= f * pr;
-    let e = m[86];
+    m[51] -= f * m[19];
+    m[54] -= f * m[22];
+    m[57] -= f * m[25];
+    r[3] -= f * pr;
+    let e = m[65];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[88] -= f * m[20];
-    m[89] -= f * m[21];
-    r[5] -= f * pr;
-    let d = m[36];
+    m[67] -= f * m[19];
+    m[70] -= f * m[22];
+    m[73] -= f * m[25];
+    r[4] -= f * pr;
+    let e = m[145];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[147] -= f * m[19];
+    m[150] -= f * m[22];
+    m[153] -= f * m[25];
+    r[9] -= f * pr;
+    m.swap(34, 114);
+    m.swap(35, 115);
+    m.swap(36, 116);
+    m.swap(37, 117);
+    m.swap(39, 119);
+    m.swap(44, 124);
+    m.swap(45, 125);
+    m.swap(47, 127);
+    r.swap(2, 7);
+    let d = m[34];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
     let inv = 1.0 / d;
-    m[36] = inv;
+    m[34] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[2];
-    let e = m[53];
+    let e = m[50];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[54] -= f * m[37];
-    m[55] -= f * m[38];
-    m[56] -= f * m[39];
-    m[57] -= f * m[40];
-    m[59] -= f * m[42];
-    m[61] -= f * m[44];
+    m[53] -= f * m[37];
+    m[55] -= f * m[39];
+    m[60] -= f * m[44];
+    m[61] -= f * m[45];
+    m[63] -= f * m[47];
     r[3] -= f * pr;
-    let e = m[70];
+    let e = m[66];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[71] -= f * m[37];
-    m[72] -= f * m[38];
-    m[73] -= f * m[39];
-    m[74] -= f * m[40];
-    m[76] -= f * m[42];
-    m[78] -= f * m[44];
+    m[69] -= f * m[37];
+    m[71] -= f * m[39];
+    m[76] -= f * m[44];
+    m[77] -= f * m[45];
+    m[79] -= f * m[47];
     r[4] -= f * pr;
-    let e = m[87];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[88] -= f * m[37];
-    m[89] -= f * m[38];
-    m[90] -= f * m[39];
-    m[91] -= f * m[40];
-    m[93] -= f * m[42];
-    m[95] -= f * m[44];
-    r[5] -= f * pr;
-    let e = m[104];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[105] -= f * m[37];
-    m[106] -= f * m[38];
-    m[107] -= f * m[39];
-    m[108] -= f * m[40];
-    m[110] -= f * m[42];
-    m[112] -= f * m[44];
-    r[6] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[37];
-    m[140] -= f * m[38];
-    m[141] -= f * m[39];
-    m[142] -= f * m[40];
-    m[144] -= f * m[42];
-    m[146] -= f * m[44];
-    r[8] -= f * pr;
-    let e = m[172];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[173] -= f * m[37];
-    m[174] -= f * m[38];
-    m[175] -= f * m[39];
-    m[176] -= f * m[40];
-    m[178] -= f * m[42];
-    m[180] -= f * m[44];
-    r[10] -= f * pr;
-    let d = m[54];
+    let d = m[51];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
     let inv = 1.0 / d;
-    m[54] = inv;
+    m[51] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[3];
-    let e = m[71];
+    let e = m[67];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[72] -= f * m[55];
-    m[73] -= f * m[56];
-    m[74] -= f * m[57];
-    m[76] -= f * m[59];
-    m[78] -= f * m[61];
+    m[68] -= f * m[52];
+    m[69] -= f * m[53];
+    m[70] -= f * m[54];
+    m[71] -= f * m[55];
+    m[72] -= f * m[56];
+    m[73] -= f * m[57];
+    m[76] -= f * m[60];
+    m[77] -= f * m[61];
+    m[79] -= f * m[63];
     r[4] -= f * pr;
-    let e = m[88];
+    let e = m[83];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[89] -= f * m[55];
-    m[90] -= f * m[56];
-    m[91] -= f * m[57];
-    m[93] -= f * m[59];
-    m[95] -= f * m[61];
+    m[84] -= f * m[52];
+    m[85] -= f * m[53];
+    m[86] -= f * m[54];
+    m[87] -= f * m[55];
+    m[88] -= f * m[56];
+    m[89] -= f * m[57];
+    m[92] -= f * m[60];
+    m[93] -= f * m[61];
+    m[95] -= f * m[63];
     r[5] -= f * pr;
-    let e = m[105];
+    let e = m[115];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[106] -= f * m[55];
-    m[107] -= f * m[56];
-    m[108] -= f * m[57];
-    m[110] -= f * m[59];
-    m[112] -= f * m[61];
-    r[6] -= f * pr;
-    let e = m[139];
+    m[116] -= f * m[52];
+    m[117] -= f * m[53];
+    m[118] -= f * m[54];
+    m[119] -= f * m[55];
+    m[120] -= f * m[56];
+    m[121] -= f * m[57];
+    m[124] -= f * m[60];
+    m[125] -= f * m[61];
+    m[127] -= f * m[63];
+    r[7] -= f * pr;
+    let e = m[131];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[140] -= f * m[55];
-    m[141] -= f * m[56];
-    m[142] -= f * m[57];
-    m[144] -= f * m[59];
-    m[146] -= f * m[61];
+    m[132] -= f * m[52];
+    m[133] -= f * m[53];
+    m[134] -= f * m[54];
+    m[135] -= f * m[55];
+    m[136] -= f * m[56];
+    m[137] -= f * m[57];
+    m[140] -= f * m[60];
+    m[141] -= f * m[61];
+    m[143] -= f * m[63];
     r[8] -= f * pr;
-    let e = m[173];
+    let e = m[147];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[174] -= f * m[55];
-    m[175] -= f * m[56];
-    m[176] -= f * m[57];
-    m[178] -= f * m[59];
-    m[180] -= f * m[61];
-    r[10] -= f * pr;
-    let d = m[72];
+    m[148] -= f * m[52];
+    m[149] -= f * m[53];
+    m[150] -= f * m[54];
+    m[151] -= f * m[55];
+    m[152] -= f * m[56];
+    m[153] -= f * m[57];
+    m[156] -= f * m[60];
+    m[157] -= f * m[61];
+    m[159] -= f * m[63];
+    r[9] -= f * pr;
+    m.swap(68, 116);
+    m.swap(69, 117);
+    m.swap(70, 118);
+    m.swap(71, 119);
+    m.swap(72, 120);
+    m.swap(73, 121);
+    m.swap(76, 124);
+    m.swap(77, 125);
+    m.swap(79, 127);
+    r.swap(4, 7);
+    let d = m[68];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
     let inv = 1.0 / d;
-    m[72] = inv;
+    m[68] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[4];
-    let e = m[89];
+    let e = m[84];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[90] -= f * m[73];
-    m[91] -= f * m[74];
-    m[93] -= f * m[76];
-    m[95] -= f * m[78];
+    m[85] -= f * m[69];
+    m[86] -= f * m[70];
+    m[87] -= f * m[71];
+    m[88] -= f * m[72];
+    m[89] -= f * m[73];
+    m[92] -= f * m[76];
+    m[93] -= f * m[77];
+    m[95] -= f * m[79];
     r[5] -= f * pr;
-    let e = m[106];
+    let e = m[116];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[107] -= f * m[73];
-    m[108] -= f * m[74];
-    m[110] -= f * m[76];
-    m[112] -= f * m[78];
-    r[6] -= f * pr;
-    let e = m[140];
+    m[117] -= f * m[69];
+    m[118] -= f * m[70];
+    m[119] -= f * m[71];
+    m[120] -= f * m[72];
+    m[121] -= f * m[73];
+    m[124] -= f * m[76];
+    m[125] -= f * m[77];
+    m[127] -= f * m[79];
+    r[7] -= f * pr;
+    let e = m[132];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[141] -= f * m[73];
-    m[142] -= f * m[74];
-    m[144] -= f * m[76];
-    m[146] -= f * m[78];
+    m[133] -= f * m[69];
+    m[134] -= f * m[70];
+    m[135] -= f * m[71];
+    m[136] -= f * m[72];
+    m[137] -= f * m[73];
+    m[140] -= f * m[76];
+    m[141] -= f * m[77];
+    m[143] -= f * m[79];
     r[8] -= f * pr;
-    let e = m[174];
+    let e = m[148];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[175] -= f * m[73];
-    m[176] -= f * m[74];
-    m[178] -= f * m[76];
-    m[180] -= f * m[78];
-    r[10] -= f * pr;
-    let d = m[90];
+    m[149] -= f * m[69];
+    m[150] -= f * m[70];
+    m[151] -= f * m[71];
+    m[152] -= f * m[72];
+    m[153] -= f * m[73];
+    m[156] -= f * m[76];
+    m[157] -= f * m[77];
+    m[159] -= f * m[79];
+    r[9] -= f * pr;
+    let d = m[85];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
     let inv = 1.0 / d;
-    m[90] = inv;
+    m[85] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[5];
-    let e = m[107];
+    let e = m[117];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[108] -= f * m[91];
-    m[109] -= f * m[92];
-    m[110] -= f * m[93];
-    m[111] -= f * m[94];
-    m[112] -= f * m[95];
-    r[6] -= f * pr;
-    let e = m[141];
+    m[118] -= f * m[86];
+    m[119] -= f * m[87];
+    m[120] -= f * m[88];
+    m[121] -= f * m[89];
+    m[124] -= f * m[92];
+    m[125] -= f * m[93];
+    m[127] -= f * m[95];
+    r[7] -= f * pr;
+    let e = m[133];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[142] -= f * m[91];
-    m[143] -= f * m[92];
-    m[144] -= f * m[93];
-    m[145] -= f * m[94];
-    m[146] -= f * m[95];
+    m[134] -= f * m[86];
+    m[135] -= f * m[87];
+    m[136] -= f * m[88];
+    m[137] -= f * m[89];
+    m[140] -= f * m[92];
+    m[141] -= f * m[93];
+    m[143] -= f * m[95];
     r[8] -= f * pr;
-    let e = m[158];
+    let e = m[149];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[159] -= f * m[91];
-    m[160] -= f * m[92];
-    m[161] -= f * m[93];
-    m[162] -= f * m[94];
-    m[163] -= f * m[95];
+    m[150] -= f * m[86];
+    m[151] -= f * m[87];
+    m[152] -= f * m[88];
+    m[153] -= f * m[89];
+    m[156] -= f * m[92];
+    m[157] -= f * m[93];
+    m[159] -= f * m[95];
     r[9] -= f * pr;
-    let e = m[175];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[176] -= f * m[91];
-    m[177] -= f * m[92];
-    m[178] -= f * m[93];
-    m[179] -= f * m[94];
-    m[180] -= f * m[95];
-    r[10] -= f * pr;
-    let d = m[108];
+    m.swap(102, 118);
+    m.swap(103, 119);
+    m.swap(104, 120);
+    m.swap(105, 121);
+    m.swap(106, 122);
+    m.swap(107, 123);
+    m.swap(108, 124);
+    m.swap(109, 125);
+    m.swap(110, 126);
+    m.swap(111, 127);
+    r.swap(6, 7);
+    let d = m[102];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
     let inv = 1.0 / d;
-    m[108] = inv;
+    m[102] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[6];
-    let e = m[142];
+    let e = m[118];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[143] -= f * m[109];
-    m[144] -= f * m[110];
-    m[145] -= f * m[111];
-    m[146] -= f * m[112];
+    m[119] -= f * m[103];
+    m[120] -= f * m[104];
+    m[121] -= f * m[105];
+    m[124] -= f * m[108];
+    m[125] -= f * m[109];
+    m[127] -= f * m[111];
+    r[7] -= f * pr;
+    let e = m[134];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[135] -= f * m[103];
+    m[136] -= f * m[104];
+    m[137] -= f * m[105];
+    m[140] -= f * m[108];
+    m[141] -= f * m[109];
+    m[143] -= f * m[111];
     r[8] -= f * pr;
-    let e = m[159];
+    let e = m[150];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[160] -= f * m[109];
-    m[161] -= f * m[110];
-    m[162] -= f * m[111];
-    m[163] -= f * m[112];
+    m[151] -= f * m[103];
+    m[152] -= f * m[104];
+    m[153] -= f * m[105];
+    m[156] -= f * m[108];
+    m[157] -= f * m[109];
+    m[159] -= f * m[111];
     r[9] -= f * pr;
-    let e = m[176];
+    let e = m[166];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[177] -= f * m[109];
-    m[178] -= f * m[110];
-    m[179] -= f * m[111];
-    m[180] -= f * m[112];
+    m[167] -= f * m[103];
+    m[168] -= f * m[104];
+    m[169] -= f * m[105];
+    m[172] -= f * m[108];
+    m[173] -= f * m[109];
+    m[175] -= f * m[111];
     r[10] -= f * pr;
-    m.swap(126, 160);
-    m.swap(127, 161);
-    m.swap(128, 162);
-    m.swap(129, 163);
-    m.swap(130, 164);
-    m.swap(131, 165);
-    m.swap(134, 168);
-    r.swap(7, 9);
-    let d = m[126];
+    let e = m[182];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[183] -= f * m[103];
+    m[184] -= f * m[104];
+    m[185] -= f * m[105];
+    m[188] -= f * m[108];
+    m[189] -= f * m[109];
+    m[191] -= f * m[111];
+    r[11] -= f * pr;
+    let e = m[230];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[231] -= f * m[103];
+    m[232] -= f * m[104];
+    m[233] -= f * m[105];
+    m[236] -= f * m[108];
+    m[237] -= f * m[109];
+    m[239] -= f * m[111];
+    r[14] -= f * pr;
+    m.swap(119, 135);
+    m.swap(120, 136);
+    m.swap(121, 137);
+    m.swap(122, 138);
+    m.swap(123, 139);
+    m.swap(124, 140);
+    m.swap(125, 141);
+    m.swap(126, 142);
+    m.swap(127, 143);
+    r.swap(7, 8);
+    let d = m[119];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
     let inv = 1.0 / d;
-    m[126] = inv;
+    m[119] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[7];
-    let e = m[143];
+    let e = m[135];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[144] -= f * m[127];
-    m[145] -= f * m[128];
-    m[146] -= f * m[129];
-    m[147] -= f * m[130];
+    m[136] -= f * m[120];
+    m[137] -= f * m[121];
+    m[138] -= f * m[122];
+    m[140] -= f * m[124];
+    m[141] -= f * m[125];
+    m[143] -= f * m[127];
     r[8] -= f * pr;
-    let e = m[160];
+    let e = m[151];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[161] -= f * m[127];
-    m[162] -= f * m[128];
-    m[163] -= f * m[129];
-    m[164] -= f * m[130];
+    m[152] -= f * m[120];
+    m[153] -= f * m[121];
+    m[154] -= f * m[122];
+    m[156] -= f * m[124];
+    m[157] -= f * m[125];
+    m[159] -= f * m[127];
     r[9] -= f * pr;
-    let e = m[177];
+    let e = m[167];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[178] -= f * m[127];
-    m[179] -= f * m[128];
-    m[180] -= f * m[129];
-    m[181] -= f * m[130];
+    m[168] -= f * m[120];
+    m[169] -= f * m[121];
+    m[170] -= f * m[122];
+    m[172] -= f * m[124];
+    m[173] -= f * m[125];
+    m[175] -= f * m[127];
     r[10] -= f * pr;
-    let e = m[194];
+    let e = m[183];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[195] -= f * m[127];
-    m[196] -= f * m[128];
-    m[197] -= f * m[129];
-    m[198] -= f * m[130];
+    m[184] -= f * m[120];
+    m[185] -= f * m[121];
+    m[186] -= f * m[122];
+    m[188] -= f * m[124];
+    m[189] -= f * m[125];
+    m[191] -= f * m[127];
     r[11] -= f * pr;
-    let e = m[211];
+    let e = m[199];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[212] -= f * m[127];
-    m[213] -= f * m[128];
-    m[214] -= f * m[129];
-    m[215] -= f * m[130];
+    m[200] -= f * m[120];
+    m[201] -= f * m[121];
+    m[202] -= f * m[122];
+    m[204] -= f * m[124];
+    m[205] -= f * m[125];
+    m[207] -= f * m[127];
     r[12] -= f * pr;
-    let e = m[262];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[263] -= f * m[127];
-    m[264] -= f * m[128];
-    m[265] -= f * m[129];
-    m[266] -= f * m[130];
-    r[15] -= f * pr;
-    let d = m[144];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[144] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[161];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[162] -= f * m[145];
-    m[163] -= f * m[146];
-    m[164] -= f * m[147];
-    r[9] -= f * pr;
-    let e = m[178];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[179] -= f * m[145];
-    m[180] -= f * m[146];
-    m[181] -= f * m[147];
-    r[10] -= f * pr;
-    let e = m[195];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[196] -= f * m[145];
-    m[197] -= f * m[146];
-    m[198] -= f * m[147];
-    r[11] -= f * pr;
-    let e = m[212];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[213] -= f * m[145];
-    m[214] -= f * m[146];
-    m[215] -= f * m[147];
-    r[12] -= f * pr;
-    let e = m[263];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[264] -= f * m[145];
-    m[265] -= f * m[146];
-    m[266] -= f * m[147];
-    r[15] -= f * pr;
-    let d = m[162];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[162] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[179];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[180] -= f * m[163];
-    m[181] -= f * m[164];
-    m[182] -= f * m[165];
-    m[185] -= f * m[168];
-    r[10] -= f * pr;
-    let e = m[196];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[197] -= f * m[163];
-    m[198] -= f * m[164];
-    m[199] -= f * m[165];
-    m[202] -= f * m[168];
-    r[11] -= f * pr;
-    let e = m[213];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[214] -= f * m[163];
-    m[215] -= f * m[164];
-    m[216] -= f * m[165];
-    m[219] -= f * m[168];
-    r[12] -= f * pr;
-    let e = m[264];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[265] -= f * m[163];
-    m[266] -= f * m[164];
-    m[267] -= f * m[165];
-    m[270] -= f * m[168];
-    r[15] -= f * pr;
-    let d = m[180];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[180] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[197];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[198] -= f * m[181];
-    m[199] -= f * m[182];
-    m[202] -= f * m[185];
-    r[11] -= f * pr;
-    let e = m[214];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[215] -= f * m[181];
-    m[216] -= f * m[182];
-    m[219] -= f * m[185];
-    r[12] -= f * pr;
-    let e = m[265];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[266] -= f * m[181];
-    m[267] -= f * m[182];
-    m[270] -= f * m[185];
-    r[15] -= f * pr;
-    let d = m[198];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[198] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
     let e = m[215];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[216] -= f * m[199];
-    m[219] -= f * m[202];
-    r[12] -= f * pr;
-    let e = m[266];
+    m[216] -= f * m[120];
+    m[217] -= f * m[121];
+    m[218] -= f * m[122];
+    m[220] -= f * m[124];
+    m[221] -= f * m[125];
+    m[223] -= f * m[127];
+    r[13] -= f * pr;
+    let e = m[231];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[267] -= f * m[199];
-    m[270] -= f * m[202];
+    m[232] -= f * m[120];
+    m[233] -= f * m[121];
+    m[234] -= f * m[122];
+    m[236] -= f * m[124];
+    m[237] -= f * m[125];
+    m[239] -= f * m[127];
+    r[14] -= f * pr;
+    let e = m[247];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[248] -= f * m[120];
+    m[249] -= f * m[121];
+    m[250] -= f * m[122];
+    m[252] -= f * m[124];
+    m[253] -= f * m[125];
+    m[255] -= f * m[127];
     r[15] -= f * pr;
-    let d = m[216];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let d = m[136];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
     let inv = 1.0 / d;
-    m[216] = inv;
+    m[136] = inv;
     let ceiling = d.abs() * 16.0;
-    let pr = r[12];
+    let pr = r[8];
+    let e = m[152];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[153] -= f * m[137];
+    m[154] -= f * m[138];
+    m[155] -= f * m[139];
+    m[156] -= f * m[140];
+    m[157] -= f * m[141];
+    m[158] -= f * m[142];
+    m[159] -= f * m[143];
+    r[9] -= f * pr;
+    let e = m[168];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[169] -= f * m[137];
+    m[170] -= f * m[138];
+    m[171] -= f * m[139];
+    m[172] -= f * m[140];
+    m[173] -= f * m[141];
+    m[174] -= f * m[142];
+    m[175] -= f * m[143];
+    r[10] -= f * pr;
+    let e = m[184];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[185] -= f * m[137];
+    m[186] -= f * m[138];
+    m[187] -= f * m[139];
+    m[188] -= f * m[140];
+    m[189] -= f * m[141];
+    m[190] -= f * m[142];
+    m[191] -= f * m[143];
+    r[11] -= f * pr;
+    let e = m[200];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[201] -= f * m[137];
+    m[202] -= f * m[138];
+    m[203] -= f * m[139];
+    m[204] -= f * m[140];
+    m[205] -= f * m[141];
+    m[206] -= f * m[142];
+    m[207] -= f * m[143];
+    r[12] -= f * pr;
+    let e = m[216];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[217] -= f * m[137];
+    m[218] -= f * m[138];
+    m[219] -= f * m[139];
+    m[220] -= f * m[140];
+    m[221] -= f * m[141];
+    m[222] -= f * m[142];
+    m[223] -= f * m[143];
+    r[13] -= f * pr;
+    let e = m[232];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[233] -= f * m[137];
+    m[234] -= f * m[138];
+    m[235] -= f * m[139];
+    m[236] -= f * m[140];
+    m[237] -= f * m[141];
+    m[238] -= f * m[142];
+    m[239] -= f * m[143];
+    r[14] -= f * pr;
+    let e = m[248];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[249] -= f * m[137];
+    m[250] -= f * m[138];
+    m[251] -= f * m[139];
+    m[252] -= f * m[140];
+    m[253] -= f * m[141];
+    m[254] -= f * m[142];
+    m[255] -= f * m[143];
+    r[15] -= f * pr;
+    let d = m[153];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[153] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[169];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[170] -= f * m[154];
+    m[171] -= f * m[155];
+    m[172] -= f * m[156];
+    m[173] -= f * m[157];
+    m[174] -= f * m[158];
+    m[175] -= f * m[159];
+    r[10] -= f * pr;
+    let e = m[185];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[186] -= f * m[154];
+    m[187] -= f * m[155];
+    m[188] -= f * m[156];
+    m[189] -= f * m[157];
+    m[190] -= f * m[158];
+    m[191] -= f * m[159];
+    r[11] -= f * pr;
+    let e = m[201];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[202] -= f * m[154];
+    m[203] -= f * m[155];
+    m[204] -= f * m[156];
+    m[205] -= f * m[157];
+    m[206] -= f * m[158];
+    m[207] -= f * m[159];
+    r[12] -= f * pr;
+    let e = m[217];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[218] -= f * m[154];
+    m[219] -= f * m[155];
+    m[220] -= f * m[156];
+    m[221] -= f * m[157];
+    m[222] -= f * m[158];
+    m[223] -= f * m[159];
+    r[13] -= f * pr;
+    let e = m[233];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[234] -= f * m[154];
+    m[235] -= f * m[155];
+    m[236] -= f * m[156];
+    m[237] -= f * m[157];
+    m[238] -= f * m[158];
+    m[239] -= f * m[159];
+    r[14] -= f * pr;
+    let e = m[249];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[250] -= f * m[154];
+    m[251] -= f * m[155];
+    m[252] -= f * m[156];
+    m[253] -= f * m[157];
+    m[254] -= f * m[158];
+    m[255] -= f * m[159];
+    r[15] -= f * pr;
+    let d = m[170];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[170] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[186];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[187] -= f * m[171];
+    m[188] -= f * m[172];
+    m[189] -= f * m[173];
+    m[190] -= f * m[174];
+    m[191] -= f * m[175];
+    r[11] -= f * pr;
+    let e = m[202];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[203] -= f * m[171];
+    m[204] -= f * m[172];
+    m[205] -= f * m[173];
+    m[206] -= f * m[174];
+    m[207] -= f * m[175];
+    r[12] -= f * pr;
+    let e = m[218];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[219] -= f * m[171];
+    m[220] -= f * m[172];
+    m[221] -= f * m[173];
+    m[222] -= f * m[174];
+    m[223] -= f * m[175];
+    r[13] -= f * pr;
+    let e = m[234];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[235] -= f * m[171];
+    m[236] -= f * m[172];
+    m[237] -= f * m[173];
+    m[238] -= f * m[174];
+    m[239] -= f * m[175];
+    r[14] -= f * pr;
     let e = m[250];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[251] -= f * m[217];
-    m[252] -= f * m[218];
-    m[253] -= f * m[219];
-    r[14] -= f * pr;
-    let e = m[267];
+    m[251] -= f * m[171];
+    m[252] -= f * m[172];
+    m[253] -= f * m[173];
+    m[254] -= f * m[174];
+    m[255] -= f * m[175];
+    r[15] -= f * pr;
+    m.swap(187, 203);
+    m.swap(188, 204);
+    m.swap(189, 205);
+    m.swap(190, 206);
+    m.swap(191, 207);
+    r.swap(11, 12);
+    let d = m[187];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[187] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[203];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[268] -= f * m[217];
-    m[269] -= f * m[218];
-    m[270] -= f * m[219];
-    r[15] -= f * pr;
-    let d = m[234];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[234] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
+    m[204] -= f * m[188];
+    m[205] -= f * m[189];
+    m[206] -= f * m[190];
+    m[207] -= f * m[191];
+    r[12] -= f * pr;
+    let e = m[219];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[220] -= f * m[188];
+    m[221] -= f * m[189];
+    m[222] -= f * m[190];
+    m[223] -= f * m[191];
+    r[13] -= f * pr;
+    let e = m[235];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[236] -= f * m[188];
+    m[237] -= f * m[189];
+    m[238] -= f * m[190];
+    m[239] -= f * m[191];
+    r[14] -= f * pr;
     let e = m[251];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[252] -= f * m[235];
-    m[254] -= f * m[237];
-    r[14] -= f * pr;
-    let e = m[268];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[269] -= f * m[235];
-    m[271] -= f * m[237];
+    m[252] -= f * m[188];
+    m[253] -= f * m[189];
+    m[254] -= f * m[190];
+    m[255] -= f * m[191];
     r[15] -= f * pr;
-    let e = m[285];
+    let d = m[204];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[204] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[220];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[286] -= f * m[235];
-    m[288] -= f * m[237];
-    r[16] -= f * pr;
-    let d = m[252];
+    m[221] -= f * m[205];
+    m[222] -= f * m[206];
+    m[223] -= f * m[207];
+    r[13] -= f * pr;
+    let e = m[236];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[237] -= f * m[205];
+    m[238] -= f * m[206];
+    m[239] -= f * m[207];
+    r[14] -= f * pr;
+    let e = m[252];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[253] -= f * m[205];
+    m[254] -= f * m[206];
+    m[255] -= f * m[207];
+    r[15] -= f * pr;
+    let d = m[221];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[221] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[237];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[238] -= f * m[222];
+    m[239] -= f * m[223];
+    r[14] -= f * pr;
+    let e = m[253];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[254] -= f * m[222];
+    m[255] -= f * m[223];
+    r[15] -= f * pr;
+    let d = m[238];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
     let inv = 1.0 / d;
-    m[252] = inv;
+    m[238] = inv;
     let ceiling = d.abs() * 16.0;
     let pr = r[14];
-    let e = m[269];
+    let e = m[254];
     if e.abs() > ceiling { *sound = false; }
     let f = e * inv;
-    m[270] -= f * m[253];
-    m[271] -= f * m[254];
+    m[255] -= f * m[239];
     r[15] -= f * pr;
-    let e = m[286];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[287] -= f * m[253];
-    m[288] -= f * m[254];
-    r[16] -= f * pr;
-    let d = m[270];
+    let d = m[255];
     if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
     let inv = 1.0 / d;
-    m[270] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[287];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[288] -= f * m[271];
-    r[16] -= f * pr;
-    let d = m[288];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[288] = inv;
-    let v = r[16];
-    let d = m[288];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[271] * r[16];
-    let d = m[270];
+    m[255] = inv;
+    let v = r[15];
+    let d = m[255];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[15] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[14];
-    v -= m[253] * r[15];
-    v -= m[254] * r[16];
-    let d = m[252];
+    v -= m[239] * r[15];
+    let d = m[238];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[14] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[13];
-    v -= m[235] * r[14];
-    v -= m[237] * r[16];
-    let d = m[234];
+    v -= m[222] * r[14];
+    v -= m[223] * r[15];
+    let d = m[221];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[13] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[12];
-    v -= m[217] * r[13];
-    v -= m[218] * r[14];
-    v -= m[219] * r[15];
-    let d = m[216];
+    v -= m[205] * r[13];
+    v -= m[206] * r[14];
+    v -= m[207] * r[15];
+    let d = m[204];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[12] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[11];
-    v -= m[199] * r[12];
-    v -= m[202] * r[15];
-    let d = m[198];
+    v -= m[188] * r[12];
+    v -= m[189] * r[13];
+    v -= m[190] * r[14];
+    v -= m[191] * r[15];
+    let d = m[187];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[11] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[10];
-    v -= m[181] * r[11];
-    v -= m[182] * r[12];
-    v -= m[185] * r[15];
-    let d = m[180];
+    v -= m[171] * r[11];
+    v -= m[172] * r[12];
+    v -= m[173] * r[13];
+    v -= m[174] * r[14];
+    v -= m[175] * r[15];
+    let d = m[170];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[10] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[9];
-    v -= m[163] * r[10];
-    v -= m[164] * r[11];
-    v -= m[165] * r[12];
-    v -= m[168] * r[15];
-    let d = m[162];
+    v -= m[154] * r[10];
+    v -= m[155] * r[11];
+    v -= m[156] * r[12];
+    v -= m[157] * r[13];
+    v -= m[158] * r[14];
+    v -= m[159] * r[15];
+    let d = m[153];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[9] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[8];
-    v -= m[145] * r[9];
-    v -= m[146] * r[10];
-    v -= m[147] * r[11];
-    let d = m[144];
+    v -= m[137] * r[9];
+    v -= m[138] * r[10];
+    v -= m[139] * r[11];
+    v -= m[140] * r[12];
+    v -= m[141] * r[13];
+    v -= m[142] * r[14];
+    v -= m[143] * r[15];
+    let d = m[136];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[8] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[7];
-    v -= m[127] * r[8];
-    v -= m[128] * r[9];
-    v -= m[129] * r[10];
-    v -= m[130] * r[11];
-    let d = m[126];
+    v -= m[120] * r[8];
+    v -= m[121] * r[9];
+    v -= m[122] * r[10];
+    v -= m[124] * r[12];
+    v -= m[125] * r[13];
+    v -= m[127] * r[15];
+    let d = m[119];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[7] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[6];
-    v -= m[109] * r[7];
-    v -= m[110] * r[8];
-    v -= m[111] * r[9];
-    v -= m[112] * r[10];
-    let d = m[108];
+    v -= m[103] * r[7];
+    v -= m[104] * r[8];
+    v -= m[105] * r[9];
+    v -= m[108] * r[12];
+    v -= m[109] * r[13];
+    v -= m[111] * r[15];
+    let d = m[102];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[6] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[5];
-    v -= m[91] * r[6];
-    v -= m[92] * r[7];
-    v -= m[93] * r[8];
-    v -= m[94] * r[9];
-    v -= m[95] * r[10];
-    let d = m[90];
+    v -= m[86] * r[6];
+    v -= m[87] * r[7];
+    v -= m[88] * r[8];
+    v -= m[89] * r[9];
+    v -= m[92] * r[12];
+    v -= m[93] * r[13];
+    v -= m[95] * r[15];
+    let d = m[85];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[5] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[4];
-    v -= m[73] * r[5];
-    v -= m[74] * r[6];
-    v -= m[76] * r[8];
-    v -= m[78] * r[10];
-    let d = m[72];
+    v -= m[69] * r[5];
+    v -= m[70] * r[6];
+    v -= m[71] * r[7];
+    v -= m[72] * r[8];
+    v -= m[73] * r[9];
+    v -= m[76] * r[12];
+    v -= m[77] * r[13];
+    v -= m[79] * r[15];
+    let d = m[68];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[4] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[3];
-    v -= m[55] * r[4];
-    v -= m[56] * r[5];
-    v -= m[57] * r[6];
-    v -= m[59] * r[8];
-    v -= m[61] * r[10];
-    let d = m[54];
+    v -= m[52] * r[4];
+    v -= m[53] * r[5];
+    v -= m[54] * r[6];
+    v -= m[55] * r[7];
+    v -= m[56] * r[8];
+    v -= m[57] * r[9];
+    v -= m[60] * r[12];
+    v -= m[61] * r[13];
+    v -= m[63] * r[15];
+    let d = m[51];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[3] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[2];
-    v -= m[37] * r[3];
-    v -= m[38] * r[4];
-    v -= m[39] * r[5];
-    v -= m[40] * r[6];
-    v -= m[42] * r[8];
-    v -= m[44] * r[10];
-    let d = m[36];
+    v -= m[37] * r[5];
+    v -= m[39] * r[7];
+    v -= m[44] * r[12];
+    v -= m[45] * r[13];
+    v -= m[47] * r[15];
+    let d = m[34];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[2] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[1];
-    v -= m[20] * r[3];
-    v -= m[21] * r[4];
-    let d = m[18];
+    v -= m[19] * r[3];
+    v -= m[22] * r[6];
+    v -= m[25] * r[9];
+    let d = m[17];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
     r[1] = x;
     if !x.is_finite() { return Err(Bail::Failed); }
     let mut v = r[0];
-    v -= m[2] * r[2];
+    v -= m[3] * r[3];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -29122,446 +28639,6 @@ fn kernel_60(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_61(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[13];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[16] -= f * m[3];
-    m[18] -= f * m[5];
-    r[1] -= f * pr;
-    let e = m[65];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[68] -= f * m[3];
-    m[70] -= f * m[5];
-    r[5] -= f * pr;
-    m.swap(14, 27);
-    m.swap(15, 28);
-    m.swap(16, 29);
-    m.swap(17, 30);
-    m.swap(18, 31);
-    m.swap(19, 32);
-    r.swap(1, 2);
-    let d = m[14];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[14] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[27];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[30] -= f * m[17];
-    m[32] -= f * m[19];
-    r[2] -= f * pr;
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[56] -= f * m[17];
-    m[58] -= f * m[19];
-    r[4] -= f * pr;
-    let e = m[79];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[82] -= f * m[17];
-    m[84] -= f * m[19];
-    r[6] -= f * pr;
-    m.swap(28, 80);
-    m.swap(29, 81);
-    m.swap(30, 82);
-    m.swap(31, 83);
-    m.swap(32, 84);
-    m.swap(35, 87);
-    m.swap(36, 88);
-    m.swap(38, 90);
-    r.swap(2, 6);
-    let d = m[28];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[28] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[54];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[56] -= f * m[30];
-    m[58] -= f * m[32];
-    m[61] -= f * m[35];
-    m[62] -= f * m[36];
-    m[64] -= f * m[38];
-    r[4] -= f * pr;
-    let e = m[80];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[82] -= f * m[30];
-    m[84] -= f * m[32];
-    m[87] -= f * m[35];
-    m[88] -= f * m[36];
-    m[90] -= f * m[38];
-    r[6] -= f * pr;
-    let d = m[42];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[42] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[68];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[46];
-    m[73] -= f * m[47];
-    m[76] -= f * m[50];
-    r[5] -= f * pr;
-    let e = m[81];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[85] -= f * m[46];
-    m[86] -= f * m[47];
-    m[89] -= f * m[50];
-    r[6] -= f * pr;
-    let e = m[94];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[98] -= f * m[46];
-    m[99] -= f * m[47];
-    m[102] -= f * m[50];
-    r[7] -= f * pr;
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[111] -= f * m[46];
-    m[112] -= f * m[47];
-    m[115] -= f * m[50];
-    r[8] -= f * pr;
-    let e = m[146];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[150] -= f * m[46];
-    m[151] -= f * m[47];
-    m[154] -= f * m[50];
-    r[11] -= f * pr;
-    let d = m[56];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[56] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[82];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[83] -= f * m[57];
-    m[84] -= f * m[58];
-    m[85] -= f * m[59];
-    m[87] -= f * m[61];
-    m[88] -= f * m[62];
-    m[90] -= f * m[64];
-    r[6] -= f * pr;
-    let d = m[70];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[70] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[83];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[85] -= f * m[72];
-    m[86] -= f * m[73];
-    m[89] -= f * m[76];
-    r[6] -= f * pr;
-    let d = m[84];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[84] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[123];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[124] -= f * m[85];
-    m[125] -= f * m[86];
-    m[126] -= f * m[87];
-    m[127] -= f * m[88];
-    m[128] -= f * m[89];
-    m[129] -= f * m[90];
-    r[9] -= f * pr;
-    let e = m[136];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[137] -= f * m[85];
-    m[138] -= f * m[86];
-    m[139] -= f * m[87];
-    m[140] -= f * m[88];
-    m[141] -= f * m[89];
-    m[142] -= f * m[90];
-    r[10] -= f * pr;
-    let e = m[162];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[163] -= f * m[85];
-    m[164] -= f * m[86];
-    m[165] -= f * m[87];
-    m[166] -= f * m[88];
-    m[167] -= f * m[89];
-    m[168] -= f * m[90];
-    r[12] -= f * pr;
-    let d = m[98];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[98] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[111];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[112] -= f * m[99];
-    m[115] -= f * m[102];
-    r[8] -= f * pr;
-    let e = m[124];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[125] -= f * m[99];
-    m[128] -= f * m[102];
-    r[9] -= f * pr;
-    let e = m[137];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[138] -= f * m[99];
-    m[141] -= f * m[102];
-    r[10] -= f * pr;
-    let e = m[150];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[151] -= f * m[99];
-    m[154] -= f * m[102];
-    r[11] -= f * pr;
-    let e = m[163];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[164] -= f * m[99];
-    m[167] -= f * m[102];
-    r[12] -= f * pr;
-    let d = m[112];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[112] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[125];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[126] -= f * m[113];
-    m[127] -= f * m[114];
-    m[128] -= f * m[115];
-    r[9] -= f * pr;
-    let e = m[138];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[139] -= f * m[113];
-    m[140] -= f * m[114];
-    m[141] -= f * m[115];
-    r[10] -= f * pr;
-    let e = m[151];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[152] -= f * m[113];
-    m[153] -= f * m[114];
-    m[154] -= f * m[115];
-    r[11] -= f * pr;
-    let e = m[164];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[165] -= f * m[113];
-    m[166] -= f * m[114];
-    m[167] -= f * m[115];
-    r[12] -= f * pr;
-    let d = m[126];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[126] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[139];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[140] -= f * m[127];
-    m[141] -= f * m[128];
-    m[142] -= f * m[129];
-    r[10] -= f * pr;
-    let e = m[152];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[153] -= f * m[127];
-    m[154] -= f * m[128];
-    m[155] -= f * m[129];
-    r[11] -= f * pr;
-    let e = m[165];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[166] -= f * m[127];
-    m[167] -= f * m[128];
-    m[168] -= f * m[129];
-    r[12] -= f * pr;
-    let d = m[140];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[140] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[153];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[154] -= f * m[141];
-    m[155] -= f * m[142];
-    r[11] -= f * pr;
-    let e = m[166];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[167] -= f * m[141];
-    m[168] -= f * m[142];
-    r[12] -= f * pr;
-    let d = m[154];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[154] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[167];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[168] -= f * m[155];
-    r[12] -= f * pr;
-    let d = m[168];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[168] = inv;
-    let v = r[12];
-    let d = m[168];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[155] * r[12];
-    let d = m[154];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[141] * r[11];
-    v -= m[142] * r[12];
-    let d = m[140];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[127] * r[10];
-    v -= m[128] * r[11];
-    v -= m[129] * r[12];
-    let d = m[126];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[113] * r[9];
-    v -= m[114] * r[10];
-    v -= m[115] * r[11];
-    let d = m[112];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[99] * r[8];
-    v -= m[102] * r[11];
-    let d = m[98];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[85] * r[7];
-    v -= m[86] * r[8];
-    v -= m[87] * r[9];
-    v -= m[88] * r[10];
-    v -= m[89] * r[11];
-    v -= m[90] * r[12];
-    let d = m[84];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[72] * r[7];
-    v -= m[73] * r[8];
-    v -= m[76] * r[11];
-    let d = m[70];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[57] * r[5];
-    v -= m[58] * r[6];
-    v -= m[59] * r[7];
-    v -= m[61] * r[9];
-    v -= m[62] * r[10];
-    v -= m[64] * r[12];
-    let d = m[56];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[46] * r[7];
-    v -= m[47] * r[8];
-    v -= m[50] * r[11];
-    let d = m[42];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[30] * r[4];
-    v -= m[32] * r[6];
-    v -= m[35] * r[9];
-    v -= m[36] * r[10];
-    v -= m[38] * r[12];
-    let d = m[28];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[17] * r[4];
-    v -= m[19] * r[6];
-    let d = m[14];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[3] * r[3];
-    v -= m[5] * r[5];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_62(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -30561,7 +29638,7 @@ fn kernel_62(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_63(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_62(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 121]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..11).map(<&mut [f64; 11]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 11);
@@ -30845,6 +29922,446 @@ fn kernel_63(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     let mut v = r[0];
     v -= m[1] * r[1];
     v -= m[4] * r[4];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_63(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[13];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[16] -= f * m[3];
+    m[18] -= f * m[5];
+    r[1] -= f * pr;
+    let e = m[65];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[68] -= f * m[3];
+    m[70] -= f * m[5];
+    r[5] -= f * pr;
+    m.swap(14, 27);
+    m.swap(15, 28);
+    m.swap(16, 29);
+    m.swap(17, 30);
+    m.swap(18, 31);
+    m.swap(19, 32);
+    r.swap(1, 2);
+    let d = m[14];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[14] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[27];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[30] -= f * m[17];
+    m[32] -= f * m[19];
+    r[2] -= f * pr;
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[56] -= f * m[17];
+    m[58] -= f * m[19];
+    r[4] -= f * pr;
+    let e = m[79];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[82] -= f * m[17];
+    m[84] -= f * m[19];
+    r[6] -= f * pr;
+    m.swap(28, 80);
+    m.swap(29, 81);
+    m.swap(30, 82);
+    m.swap(31, 83);
+    m.swap(32, 84);
+    m.swap(35, 87);
+    m.swap(36, 88);
+    m.swap(38, 90);
+    r.swap(2, 6);
+    let d = m[28];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[28] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[54];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[56] -= f * m[30];
+    m[58] -= f * m[32];
+    m[61] -= f * m[35];
+    m[62] -= f * m[36];
+    m[64] -= f * m[38];
+    r[4] -= f * pr;
+    let e = m[80];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[82] -= f * m[30];
+    m[84] -= f * m[32];
+    m[87] -= f * m[35];
+    m[88] -= f * m[36];
+    m[90] -= f * m[38];
+    r[6] -= f * pr;
+    let d = m[42];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[42] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[68];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[72] -= f * m[46];
+    m[73] -= f * m[47];
+    m[76] -= f * m[50];
+    r[5] -= f * pr;
+    let e = m[81];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[46];
+    m[86] -= f * m[47];
+    m[89] -= f * m[50];
+    r[6] -= f * pr;
+    let e = m[94];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[98] -= f * m[46];
+    m[99] -= f * m[47];
+    m[102] -= f * m[50];
+    r[7] -= f * pr;
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[111] -= f * m[46];
+    m[112] -= f * m[47];
+    m[115] -= f * m[50];
+    r[8] -= f * pr;
+    let e = m[146];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[150] -= f * m[46];
+    m[151] -= f * m[47];
+    m[154] -= f * m[50];
+    r[11] -= f * pr;
+    let d = m[56];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[56] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[82];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[83] -= f * m[57];
+    m[84] -= f * m[58];
+    m[85] -= f * m[59];
+    m[87] -= f * m[61];
+    m[88] -= f * m[62];
+    m[90] -= f * m[64];
+    r[6] -= f * pr;
+    let d = m[70];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[70] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[83];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[72];
+    m[86] -= f * m[73];
+    m[89] -= f * m[76];
+    r[6] -= f * pr;
+    let d = m[84];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[84] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[123];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[124] -= f * m[85];
+    m[125] -= f * m[86];
+    m[126] -= f * m[87];
+    m[127] -= f * m[88];
+    m[128] -= f * m[89];
+    m[129] -= f * m[90];
+    r[9] -= f * pr;
+    let e = m[136];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[137] -= f * m[85];
+    m[138] -= f * m[86];
+    m[139] -= f * m[87];
+    m[140] -= f * m[88];
+    m[141] -= f * m[89];
+    m[142] -= f * m[90];
+    r[10] -= f * pr;
+    let e = m[162];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[163] -= f * m[85];
+    m[164] -= f * m[86];
+    m[165] -= f * m[87];
+    m[166] -= f * m[88];
+    m[167] -= f * m[89];
+    m[168] -= f * m[90];
+    r[12] -= f * pr;
+    let d = m[98];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[98] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[111];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[112] -= f * m[99];
+    m[115] -= f * m[102];
+    r[8] -= f * pr;
+    let e = m[124];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[125] -= f * m[99];
+    m[128] -= f * m[102];
+    r[9] -= f * pr;
+    let e = m[137];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[138] -= f * m[99];
+    m[141] -= f * m[102];
+    r[10] -= f * pr;
+    let e = m[150];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[151] -= f * m[99];
+    m[154] -= f * m[102];
+    r[11] -= f * pr;
+    let e = m[163];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[164] -= f * m[99];
+    m[167] -= f * m[102];
+    r[12] -= f * pr;
+    let d = m[112];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[112] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[125];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[126] -= f * m[113];
+    m[127] -= f * m[114];
+    m[128] -= f * m[115];
+    r[9] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[113];
+    m[140] -= f * m[114];
+    m[141] -= f * m[115];
+    r[10] -= f * pr;
+    let e = m[151];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[152] -= f * m[113];
+    m[153] -= f * m[114];
+    m[154] -= f * m[115];
+    r[11] -= f * pr;
+    let e = m[164];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[165] -= f * m[113];
+    m[166] -= f * m[114];
+    m[167] -= f * m[115];
+    r[12] -= f * pr;
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[127];
+    m[141] -= f * m[128];
+    m[142] -= f * m[129];
+    r[10] -= f * pr;
+    let e = m[152];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[153] -= f * m[127];
+    m[154] -= f * m[128];
+    m[155] -= f * m[129];
+    r[11] -= f * pr;
+    let e = m[165];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[166] -= f * m[127];
+    m[167] -= f * m[128];
+    m[168] -= f * m[129];
+    r[12] -= f * pr;
+    let d = m[140];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[140] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[153];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[154] -= f * m[141];
+    m[155] -= f * m[142];
+    r[11] -= f * pr;
+    let e = m[166];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[167] -= f * m[141];
+    m[168] -= f * m[142];
+    r[12] -= f * pr;
+    let d = m[154];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[154] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[167];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[168] -= f * m[155];
+    r[12] -= f * pr;
+    let d = m[168];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[168] = inv;
+    let v = r[12];
+    let d = m[168];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[155] * r[12];
+    let d = m[154];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[141] * r[11];
+    v -= m[142] * r[12];
+    let d = m[140];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[127] * r[10];
+    v -= m[128] * r[11];
+    v -= m[129] * r[12];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[113] * r[9];
+    v -= m[114] * r[10];
+    v -= m[115] * r[11];
+    let d = m[112];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[99] * r[8];
+    v -= m[102] * r[11];
+    let d = m[98];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[85] * r[7];
+    v -= m[86] * r[8];
+    v -= m[87] * r[9];
+    v -= m[88] * r[10];
+    v -= m[89] * r[11];
+    v -= m[90] * r[12];
+    let d = m[84];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[72] * r[7];
+    v -= m[73] * r[8];
+    v -= m[76] * r[11];
+    let d = m[70];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[57] * r[5];
+    v -= m[58] * r[6];
+    v -= m[59] * r[7];
+    v -= m[61] * r[9];
+    v -= m[62] * r[10];
+    v -= m[64] * r[12];
+    let d = m[56];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[46] * r[7];
+    v -= m[47] * r[8];
+    v -= m[50] * r[11];
+    let d = m[42];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[30] * r[4];
+    v -= m[32] * r[6];
+    v -= m[35] * r[9];
+    v -= m[36] * r[10];
+    v -= m[38] * r[12];
+    let d = m[28];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[17] * r[4];
+    v -= m[19] * r[6];
+    let d = m[14];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[3] * r[3];
+    v -= m[5] * r[5];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -32193,6 +31710,690 @@ fn kernel_65(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_66(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[34];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[36] -= f * m[2];
+    r[2] -= f * pr;
+    m.swap(18, 52);
+    m.swap(19, 53);
+    m.swap(20, 54);
+    m.swap(21, 55);
+    m.swap(22, 56);
+    r.swap(1, 3);
+    let d = m[18];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[18] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[35];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[37] -= f * m[20];
+    m[38] -= f * m[21];
+    r[2] -= f * pr;
+    let e = m[86];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[20];
+    m[89] -= f * m[21];
+    r[5] -= f * pr;
+    let d = m[36];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[36] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[54] -= f * m[37];
+    m[55] -= f * m[38];
+    m[56] -= f * m[39];
+    m[57] -= f * m[40];
+    m[59] -= f * m[42];
+    m[61] -= f * m[44];
+    r[3] -= f * pr;
+    let e = m[70];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[71] -= f * m[37];
+    m[72] -= f * m[38];
+    m[73] -= f * m[39];
+    m[74] -= f * m[40];
+    m[76] -= f * m[42];
+    m[78] -= f * m[44];
+    r[4] -= f * pr;
+    let e = m[87];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[37];
+    m[89] -= f * m[38];
+    m[90] -= f * m[39];
+    m[91] -= f * m[40];
+    m[93] -= f * m[42];
+    m[95] -= f * m[44];
+    r[5] -= f * pr;
+    let e = m[104];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[105] -= f * m[37];
+    m[106] -= f * m[38];
+    m[107] -= f * m[39];
+    m[108] -= f * m[40];
+    m[110] -= f * m[42];
+    m[112] -= f * m[44];
+    r[6] -= f * pr;
+    let e = m[138];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[139] -= f * m[37];
+    m[140] -= f * m[38];
+    m[141] -= f * m[39];
+    m[142] -= f * m[40];
+    m[144] -= f * m[42];
+    m[146] -= f * m[44];
+    r[8] -= f * pr;
+    let e = m[172];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[173] -= f * m[37];
+    m[174] -= f * m[38];
+    m[175] -= f * m[39];
+    m[176] -= f * m[40];
+    m[178] -= f * m[42];
+    m[180] -= f * m[44];
+    r[10] -= f * pr;
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[71];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[72] -= f * m[55];
+    m[73] -= f * m[56];
+    m[74] -= f * m[57];
+    m[76] -= f * m[59];
+    m[78] -= f * m[61];
+    r[4] -= f * pr;
+    let e = m[88];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[89] -= f * m[55];
+    m[90] -= f * m[56];
+    m[91] -= f * m[57];
+    m[93] -= f * m[59];
+    m[95] -= f * m[61];
+    r[5] -= f * pr;
+    let e = m[105];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[106] -= f * m[55];
+    m[107] -= f * m[56];
+    m[108] -= f * m[57];
+    m[110] -= f * m[59];
+    m[112] -= f * m[61];
+    r[6] -= f * pr;
+    let e = m[139];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[140] -= f * m[55];
+    m[141] -= f * m[56];
+    m[142] -= f * m[57];
+    m[144] -= f * m[59];
+    m[146] -= f * m[61];
+    r[8] -= f * pr;
+    let e = m[173];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[174] -= f * m[55];
+    m[175] -= f * m[56];
+    m[176] -= f * m[57];
+    m[178] -= f * m[59];
+    m[180] -= f * m[61];
+    r[10] -= f * pr;
+    let d = m[72];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[72] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[89];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[90] -= f * m[73];
+    m[91] -= f * m[74];
+    m[93] -= f * m[76];
+    m[95] -= f * m[78];
+    r[5] -= f * pr;
+    let e = m[106];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[107] -= f * m[73];
+    m[108] -= f * m[74];
+    m[110] -= f * m[76];
+    m[112] -= f * m[78];
+    r[6] -= f * pr;
+    let e = m[140];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[141] -= f * m[73];
+    m[142] -= f * m[74];
+    m[144] -= f * m[76];
+    m[146] -= f * m[78];
+    r[8] -= f * pr;
+    let e = m[174];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[175] -= f * m[73];
+    m[176] -= f * m[74];
+    m[178] -= f * m[76];
+    m[180] -= f * m[78];
+    r[10] -= f * pr;
+    let d = m[90];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[90] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[107];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[108] -= f * m[91];
+    m[109] -= f * m[92];
+    m[110] -= f * m[93];
+    m[111] -= f * m[94];
+    m[112] -= f * m[95];
+    r[6] -= f * pr;
+    let e = m[141];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[142] -= f * m[91];
+    m[143] -= f * m[92];
+    m[144] -= f * m[93];
+    m[145] -= f * m[94];
+    m[146] -= f * m[95];
+    r[8] -= f * pr;
+    let e = m[158];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[159] -= f * m[91];
+    m[160] -= f * m[92];
+    m[161] -= f * m[93];
+    m[162] -= f * m[94];
+    m[163] -= f * m[95];
+    r[9] -= f * pr;
+    let e = m[175];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[176] -= f * m[91];
+    m[177] -= f * m[92];
+    m[178] -= f * m[93];
+    m[179] -= f * m[94];
+    m[180] -= f * m[95];
+    r[10] -= f * pr;
+    let d = m[108];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[108] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[142];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[143] -= f * m[109];
+    m[144] -= f * m[110];
+    m[145] -= f * m[111];
+    m[146] -= f * m[112];
+    r[8] -= f * pr;
+    let e = m[159];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[160] -= f * m[109];
+    m[161] -= f * m[110];
+    m[162] -= f * m[111];
+    m[163] -= f * m[112];
+    r[9] -= f * pr;
+    let e = m[176];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[177] -= f * m[109];
+    m[178] -= f * m[110];
+    m[179] -= f * m[111];
+    m[180] -= f * m[112];
+    r[10] -= f * pr;
+    m.swap(126, 160);
+    m.swap(127, 161);
+    m.swap(128, 162);
+    m.swap(129, 163);
+    m.swap(130, 164);
+    m.swap(131, 165);
+    m.swap(134, 168);
+    r.swap(7, 9);
+    let d = m[126];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[126] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[143];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[144] -= f * m[127];
+    m[145] -= f * m[128];
+    m[146] -= f * m[129];
+    m[147] -= f * m[130];
+    r[8] -= f * pr;
+    let e = m[160];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[161] -= f * m[127];
+    m[162] -= f * m[128];
+    m[163] -= f * m[129];
+    m[164] -= f * m[130];
+    r[9] -= f * pr;
+    let e = m[177];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[178] -= f * m[127];
+    m[179] -= f * m[128];
+    m[180] -= f * m[129];
+    m[181] -= f * m[130];
+    r[10] -= f * pr;
+    let e = m[194];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[195] -= f * m[127];
+    m[196] -= f * m[128];
+    m[197] -= f * m[129];
+    m[198] -= f * m[130];
+    r[11] -= f * pr;
+    let e = m[211];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[212] -= f * m[127];
+    m[213] -= f * m[128];
+    m[214] -= f * m[129];
+    m[215] -= f * m[130];
+    r[12] -= f * pr;
+    let e = m[262];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[263] -= f * m[127];
+    m[264] -= f * m[128];
+    m[265] -= f * m[129];
+    m[266] -= f * m[130];
+    r[15] -= f * pr;
+    let d = m[144];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[144] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[161];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[162] -= f * m[145];
+    m[163] -= f * m[146];
+    m[164] -= f * m[147];
+    r[9] -= f * pr;
+    let e = m[178];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[179] -= f * m[145];
+    m[180] -= f * m[146];
+    m[181] -= f * m[147];
+    r[10] -= f * pr;
+    let e = m[195];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[196] -= f * m[145];
+    m[197] -= f * m[146];
+    m[198] -= f * m[147];
+    r[11] -= f * pr;
+    let e = m[212];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[213] -= f * m[145];
+    m[214] -= f * m[146];
+    m[215] -= f * m[147];
+    r[12] -= f * pr;
+    let e = m[263];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[264] -= f * m[145];
+    m[265] -= f * m[146];
+    m[266] -= f * m[147];
+    r[15] -= f * pr;
+    let d = m[162];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[162] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[179];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[180] -= f * m[163];
+    m[181] -= f * m[164];
+    m[182] -= f * m[165];
+    m[185] -= f * m[168];
+    r[10] -= f * pr;
+    let e = m[196];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[197] -= f * m[163];
+    m[198] -= f * m[164];
+    m[199] -= f * m[165];
+    m[202] -= f * m[168];
+    r[11] -= f * pr;
+    let e = m[213];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[214] -= f * m[163];
+    m[215] -= f * m[164];
+    m[216] -= f * m[165];
+    m[219] -= f * m[168];
+    r[12] -= f * pr;
+    let e = m[264];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[265] -= f * m[163];
+    m[266] -= f * m[164];
+    m[267] -= f * m[165];
+    m[270] -= f * m[168];
+    r[15] -= f * pr;
+    let d = m[180];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[180] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[197];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[198] -= f * m[181];
+    m[199] -= f * m[182];
+    m[202] -= f * m[185];
+    r[11] -= f * pr;
+    let e = m[214];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[215] -= f * m[181];
+    m[216] -= f * m[182];
+    m[219] -= f * m[185];
+    r[12] -= f * pr;
+    let e = m[265];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[266] -= f * m[181];
+    m[267] -= f * m[182];
+    m[270] -= f * m[185];
+    r[15] -= f * pr;
+    let d = m[198];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[198] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[215];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[216] -= f * m[199];
+    m[219] -= f * m[202];
+    r[12] -= f * pr;
+    let e = m[266];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[267] -= f * m[199];
+    m[270] -= f * m[202];
+    r[15] -= f * pr;
+    let d = m[216];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[216] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[250];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[251] -= f * m[217];
+    m[252] -= f * m[218];
+    m[253] -= f * m[219];
+    r[14] -= f * pr;
+    let e = m[267];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[268] -= f * m[217];
+    m[269] -= f * m[218];
+    m[270] -= f * m[219];
+    r[15] -= f * pr;
+    let d = m[234];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[234] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[251];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[252] -= f * m[235];
+    m[254] -= f * m[237];
+    r[14] -= f * pr;
+    let e = m[268];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[269] -= f * m[235];
+    m[271] -= f * m[237];
+    r[15] -= f * pr;
+    let e = m[285];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[286] -= f * m[235];
+    m[288] -= f * m[237];
+    r[16] -= f * pr;
+    let d = m[252];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[252] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[269];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[270] -= f * m[253];
+    m[271] -= f * m[254];
+    r[15] -= f * pr;
+    let e = m[286];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[287] -= f * m[253];
+    m[288] -= f * m[254];
+    r[16] -= f * pr;
+    let d = m[270];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[270] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[15];
+    let e = m[287];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[288] -= f * m[271];
+    r[16] -= f * pr;
+    let d = m[288];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
+    let inv = 1.0 / d;
+    m[288] = inv;
+    let v = r[16];
+    let d = m[288];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[16] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[15];
+    v -= m[271] * r[16];
+    let d = m[270];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[253] * r[15];
+    v -= m[254] * r[16];
+    let d = m[252];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[235] * r[14];
+    v -= m[237] * r[16];
+    let d = m[234];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[217] * r[13];
+    v -= m[218] * r[14];
+    v -= m[219] * r[15];
+    let d = m[216];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[199] * r[12];
+    v -= m[202] * r[15];
+    let d = m[198];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[181] * r[11];
+    v -= m[182] * r[12];
+    v -= m[185] * r[15];
+    let d = m[180];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[163] * r[10];
+    v -= m[164] * r[11];
+    v -= m[165] * r[12];
+    v -= m[168] * r[15];
+    let d = m[162];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[145] * r[9];
+    v -= m[146] * r[10];
+    v -= m[147] * r[11];
+    let d = m[144];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[127] * r[8];
+    v -= m[128] * r[9];
+    v -= m[129] * r[10];
+    v -= m[130] * r[11];
+    let d = m[126];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[109] * r[7];
+    v -= m[110] * r[8];
+    v -= m[111] * r[9];
+    v -= m[112] * r[10];
+    let d = m[108];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[91] * r[6];
+    v -= m[92] * r[7];
+    v -= m[93] * r[8];
+    v -= m[94] * r[9];
+    v -= m[95] * r[10];
+    let d = m[90];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[73] * r[5];
+    v -= m[74] * r[6];
+    v -= m[76] * r[8];
+    v -= m[78] * r[10];
+    let d = m[72];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[55] * r[4];
+    v -= m[56] * r[5];
+    v -= m[57] * r[6];
+    v -= m[59] * r[8];
+    v -= m[61] * r[10];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[37] * r[3];
+    v -= m[38] * r[4];
+    v -= m[39] * r[5];
+    v -= m[40] * r[6];
+    v -= m[42] * r[8];
+    v -= m[44] * r[10];
+    let d = m[36];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[20] * r[3];
+    v -= m[21] * r[4];
+    let d = m[18];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_67(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -33165,1089 +33366,7 @@ fn kernel_66(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_67(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[16];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[18] -= f * m[2];
-    m[19] -= f * m[3];
-    r[2] -= f * pr;
-    let e = m[24];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[26] -= f * m[2];
-    m[27] -= f * m[3];
-    r[3] -= f * pr;
-    let d = m[9];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[9] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[17];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[18] -= f * m[10];
-    m[20] -= f * m[12];
-    r[2] -= f * pr;
-    let e = m[33];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[34] -= f * m[10];
-    m[36] -= f * m[12];
-    r[4] -= f * pr;
-    m.swap(18, 34);
-    m.swap(19, 35);
-    m.swap(20, 36);
-    m.swap(21, 37);
-    m.swap(22, 38);
-    r.swap(2, 4);
-    let d = m[18];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[18] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[26];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[28] -= f * m[20];
-    m[29] -= f * m[21];
-    m[30] -= f * m[22];
-    r[3] -= f * pr;
-    let e = m[34];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[20];
-    m[37] -= f * m[21];
-    m[38] -= f * m[22];
-    r[4] -= f * pr;
-    m.swap(27, 35);
-    m.swap(28, 36);
-    m.swap(29, 37);
-    m.swap(30, 38);
-    r.swap(3, 4);
-    let d = m[27];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[27] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[35];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[36] -= f * m[28];
-    m[37] -= f * m[29];
-    m[38] -= f * m[30];
-    r[4] -= f * pr;
-    let e = m[43];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[44] -= f * m[28];
-    m[45] -= f * m[29];
-    m[46] -= f * m[30];
-    r[5] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[44];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[37];
-    m[46] -= f * m[38];
-    r[5] -= f * pr;
-    let e = m[52];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[53] -= f * m[37];
-    m[54] -= f * m[38];
-    r[6] -= f * pr;
-    let d = m[45];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[45] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[54] -= f * m[46];
-    m[55] -= f * m[47];
-    r[6] -= f * pr;
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[62];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[63] -= f * m[55];
-    r[7] -= f * pr;
-    let d = m[63];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[63] = inv;
-    let v = r[7];
-    let d = m[63];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[55] * r[7];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[46] * r[6];
-    v -= m[47] * r[7];
-    let d = m[45];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[37] * r[5];
-    v -= m[38] * r[6];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[28] * r[4];
-    v -= m[29] * r[5];
-    v -= m[30] * r[6];
-    let d = m[27];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[20] * r[4];
-    v -= m[21] * r[5];
-    v -= m[22] * r[6];
-    let d = m[18];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[10] * r[2];
-    v -= m[12] * r[4];
-    let d = m[9];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[2] * r[2];
-    v -= m[3] * r[3];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
 fn kernel_68(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
-    m.swap(0, 52);
-    m.swap(1, 53);
-    m.swap(3, 55);
-    m.swap(17, 69);
-    r.swap(0, 2);
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[26];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[27] -= f * m[1];
-    m[29] -= f * m[3];
-    r[1] -= f * pr;
-    let e = m[52];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[53] -= f * m[1];
-    m[55] -= f * m[3];
-    r[2] -= f * pr;
-    let d = m[27];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[27] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[53];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[55] -= f * m[29];
-    r[2] -= f * pr;
-    let e = m[79];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[81] -= f * m[29];
-    r[3] -= f * pr;
-    m.swap(54, 80);
-    m.swap(55, 81);
-    m.swap(69, 95);
-    m.swap(72, 98);
-    m.swap(74, 100);
-    r.swap(2, 3);
-    let d = m[54];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[54] = inv;
-    let d = m[81];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[81] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[523];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[537] -= f * m[95];
-    r[20] -= f * pr;
-    let e = m[575];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[589] -= f * m[95];
-    r[22] -= f * pr;
-    let d = m[108];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[108] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[134];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[135] -= f * m[109];
-    m[143] -= f * m[117];
-    r[5] -= f * pr;
-    let e = m[342];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[343] -= f * m[109];
-    m[351] -= f * m[117];
-    r[13] -= f * pr;
-    let d = m[135];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[135] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[213];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[216] -= f * m[138];
-    m[221] -= f * m[143];
-    r[8] -= f * pr;
-    let e = m[343];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[346] -= f * m[138];
-    m[351] -= f * m[143];
-    r[13] -= f * pr;
-    let d = m[162];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[162] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[240];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[243] -= f * m[165];
-    m[246] -= f * m[168];
-    r[9] -= f * pr;
-    let e = m[318];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[321] -= f * m[165];
-    m[324] -= f * m[168];
-    r[12] -= f * pr;
-    let d = m[189];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[189] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[345];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[351] -= f * m[195];
-    m[352] -= f * m[196];
-    r[13] -= f * pr;
-    let e = m[371];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[377] -= f * m[195];
-    m[378] -= f * m[196];
-    r[14] -= f * pr;
-    let d = m[216];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[216] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[346];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[351] -= f * m[221];
-    m[356] -= f * m[226];
-    r[13] -= f * pr;
-    let e = m[476];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[481] -= f * m[221];
-    m[486] -= f * m[226];
-    r[18] -= f * pr;
-    let d = m[243];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[243] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[269];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[270] -= f * m[244];
-    m[271] -= f * m[245];
-    m[272] -= f * m[246];
-    m[283] -= f * m[257];
-    r[10] -= f * pr;
-    let e = m[295];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[296] -= f * m[244];
-    m[297] -= f * m[245];
-    m[298] -= f * m[246];
-    m[309] -= f * m[257];
-    r[11] -= f * pr;
-    let e = m[321];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[322] -= f * m[244];
-    m[323] -= f * m[245];
-    m[324] -= f * m[246];
-    m[335] -= f * m[257];
-    r[12] -= f * pr;
-    let e = m[607];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[608] -= f * m[244];
-    m[609] -= f * m[245];
-    m[610] -= f * m[246];
-    m[621] -= f * m[257];
-    r[23] -= f * pr;
-    m.swap(270, 296);
-    m.swap(271, 297);
-    m.swap(272, 298);
-    m.swap(275, 301);
-    m.swap(283, 309);
-    r.swap(10, 11);
-    let d = m[270];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[270] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[296];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[297] -= f * m[271];
-    m[298] -= f * m[272];
-    m[301] -= f * m[275];
-    m[309] -= f * m[283];
-    r[11] -= f * pr;
-    let e = m[322];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[323] -= f * m[271];
-    m[324] -= f * m[272];
-    m[327] -= f * m[275];
-    m[335] -= f * m[283];
-    r[12] -= f * pr;
-    let e = m[400];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[401] -= f * m[271];
-    m[402] -= f * m[272];
-    m[405] -= f * m[275];
-    m[413] -= f * m[283];
-    r[15] -= f * pr;
-    let e = m[608];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[609] -= f * m[271];
-    m[610] -= f * m[272];
-    m[613] -= f * m[275];
-    m[621] -= f * m[283];
-    r[23] -= f * pr;
-    m.swap(297, 401);
-    m.swap(298, 402);
-    m.swap(301, 405);
-    m.swap(308, 412);
-    m.swap(309, 413);
-    r.swap(11, 15);
-    let d = m[297];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[297] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[323];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[324] -= f * m[298];
-    m[327] -= f * m[301];
-    m[334] -= f * m[308];
-    m[335] -= f * m[309];
-    r[12] -= f * pr;
-    let e = m[401];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[402] -= f * m[298];
-    m[405] -= f * m[301];
-    m[412] -= f * m[308];
-    m[413] -= f * m[309];
-    r[15] -= f * pr;
-    let e = m[609];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[610] -= f * m[298];
-    m[613] -= f * m[301];
-    m[620] -= f * m[308];
-    m[621] -= f * m[309];
-    r[23] -= f * pr;
-    m.swap(324, 402);
-    m.swap(327, 405);
-    m.swap(334, 412);
-    m.swap(335, 413);
-    m.swap(336, 414);
-    r.swap(12, 15);
-    let d = m[324];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[324] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[402];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[405] -= f * m[327];
-    m[412] -= f * m[334];
-    m[413] -= f * m[335];
-    r[15] -= f * pr;
-    let e = m[610];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[613] -= f * m[327];
-    m[620] -= f * m[334];
-    m[621] -= f * m[335];
-    r[23] -= f * pr;
-    let e = m[636];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[639] -= f * m[327];
-    m[646] -= f * m[334];
-    m[647] -= f * m[335];
-    r[24] -= f * pr;
-    let d = m[351];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[351] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[377];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[378] -= f * m[352];
-    m[380] -= f * m[354];
-    m[382] -= f * m[356];
-    r[14] -= f * pr;
-    let e = m[429];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[430] -= f * m[352];
-    m[432] -= f * m[354];
-    m[434] -= f * m[356];
-    r[16] -= f * pr;
-    let e = m[481];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[482] -= f * m[352];
-    m[484] -= f * m[354];
-    m[486] -= f * m[356];
-    r[18] -= f * pr;
-    m.swap(378, 430);
-    m.swap(379, 431);
-    m.swap(380, 432);
-    m.swap(382, 434);
-    m.swap(386, 438);
-    r.swap(14, 16);
-    let d = m[378];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[378] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[430];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[431] -= f * m[379];
-    m[432] -= f * m[380];
-    m[434] -= f * m[382];
-    m[438] -= f * m[386];
-    r[16] -= f * pr;
-    let e = m[482];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[483] -= f * m[379];
-    m[484] -= f * m[380];
-    m[486] -= f * m[382];
-    m[490] -= f * m[386];
-    r[18] -= f * pr;
-    m.swap(405, 431);
-    m.swap(406, 432);
-    m.swap(408, 434);
-    m.swap(412, 438);
-    m.swap(413, 439);
-    m.swap(414, 440);
-    r.swap(15, 16);
-    let d = m[405];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[405] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[431];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[432] -= f * m[406];
-    m[434] -= f * m[408];
-    m[438] -= f * m[412];
-    r[16] -= f * pr;
-    let e = m[483];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[484] -= f * m[406];
-    m[486] -= f * m[408];
-    m[490] -= f * m[412];
-    r[18] -= f * pr;
-    let e = m[587];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[588] -= f * m[406];
-    m[590] -= f * m[408];
-    m[594] -= f * m[412];
-    r[22] -= f * pr;
-    let e = m[613];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[614] -= f * m[406];
-    m[616] -= f * m[408];
-    m[620] -= f * m[412];
-    r[23] -= f * pr;
-    let e = m[639];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[640] -= f * m[406];
-    m[642] -= f * m[408];
-    m[646] -= f * m[412];
-    r[24] -= f * pr;
-    m.swap(432, 484);
-    m.swap(434, 486);
-    m.swap(438, 490);
-    m.swap(439, 491);
-    m.swap(440, 492);
-    r.swap(16, 18);
-    let d = m[432];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[432] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[16];
-    let e = m[484];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[486] -= f * m[434];
-    m[490] -= f * m[438];
-    r[18] -= f * pr;
-    let e = m[588];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[590] -= f * m[434];
-    m[594] -= f * m[438];
-    r[22] -= f * pr;
-    let e = m[614];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[616] -= f * m[434];
-    m[620] -= f * m[438];
-    r[23] -= f * pr;
-    let e = m[640];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[642] -= f * m[434];
-    m[646] -= f * m[438];
-    r[24] -= f * pr;
-    m.swap(459, 511);
-    m.swap(460, 512);
-    m.swap(461, 513);
-    m.swap(464, 516);
-    r.swap(17, 19);
-    let d = m[459];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(17)); }
-    let inv = 1.0 / d;
-    m[459] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[17];
-    let e = m[511];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[512] -= f * m[460];
-    m[516] -= f * m[464];
-    r[19] -= f * pr;
-    let e = m[537];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[538] -= f * m[460];
-    m[542] -= f * m[464];
-    r[20] -= f * pr;
-    let e = m[589];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[590] -= f * m[460];
-    m[594] -= f * m[464];
-    r[22] -= f * pr;
-    m.swap(486, 590);
-    m.swap(488, 592);
-    m.swap(490, 594);
-    m.swap(491, 595);
-    m.swap(492, 596);
-    m.swap(493, 597);
-    r.swap(18, 22);
-    let d = m[486];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(18)); }
-    let inv = 1.0 / d;
-    m[486] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[18];
-    let e = m[512];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[514] -= f * m[488];
-    m[516] -= f * m[490];
-    m[517] -= f * m[491];
-    m[519] -= f * m[493];
-    r[19] -= f * pr;
-    let e = m[538];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[540] -= f * m[488];
-    m[542] -= f * m[490];
-    m[543] -= f * m[491];
-    m[545] -= f * m[493];
-    r[20] -= f * pr;
-    let e = m[590];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[592] -= f * m[488];
-    m[594] -= f * m[490];
-    m[595] -= f * m[491];
-    m[597] -= f * m[493];
-    r[22] -= f * pr;
-    let e = m[616];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[618] -= f * m[488];
-    m[620] -= f * m[490];
-    m[621] -= f * m[491];
-    m[623] -= f * m[493];
-    r[23] -= f * pr;
-    let e = m[642];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[644] -= f * m[488];
-    m[646] -= f * m[490];
-    m[647] -= f * m[491];
-    m[649] -= f * m[493];
-    r[24] -= f * pr;
-    let d = m[513];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(19)); }
-    let inv = 1.0 / d;
-    m[513] = inv;
-    m.swap(540, 566);
-    m.swap(541, 567);
-    m.swap(542, 568);
-    m.swap(543, 569);
-    m.swap(545, 571);
-    r.swap(20, 21);
-    let d = m[540];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(20)); }
-    let inv = 1.0 / d;
-    m[540] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[20];
-    let e = m[566];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[567] -= f * m[541];
-    m[569] -= f * m[543];
-    r[21] -= f * pr;
-    let e = m[592];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[593] -= f * m[541];
-    m[595] -= f * m[543];
-    r[22] -= f * pr;
-    let e = m[618];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[619] -= f * m[541];
-    m[621] -= f * m[543];
-    r[23] -= f * pr;
-    let e = m[644];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[645] -= f * m[541];
-    m[647] -= f * m[543];
-    r[24] -= f * pr;
-    let d = m[567];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(21)); }
-    let inv = 1.0 / d;
-    m[567] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[21];
-    let e = m[593];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[594] -= f * m[568];
-    m[595] -= f * m[569];
-    m[597] -= f * m[571];
-    r[22] -= f * pr;
-    let e = m[619];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[620] -= f * m[568];
-    m[621] -= f * m[569];
-    m[623] -= f * m[571];
-    r[23] -= f * pr;
-    let e = m[645];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[646] -= f * m[568];
-    m[647] -= f * m[569];
-    m[649] -= f * m[571];
-    r[24] -= f * pr;
-    let d = m[594];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(22)); }
-    let inv = 1.0 / d;
-    m[594] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[22];
-    let e = m[620];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[621] -= f * m[595];
-    m[622] -= f * m[596];
-    m[623] -= f * m[597];
-    r[23] -= f * pr;
-    let e = m[646];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[647] -= f * m[595];
-    m[648] -= f * m[596];
-    m[649] -= f * m[597];
-    r[24] -= f * pr;
-    let e = m[672];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[673] -= f * m[595];
-    m[674] -= f * m[596];
-    m[675] -= f * m[597];
-    r[25] -= f * pr;
-    let d = m[621];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(23)); }
-    let inv = 1.0 / d;
-    m[621] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[23];
-    let e = m[647];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[648] -= f * m[622];
-    m[649] -= f * m[623];
-    r[24] -= f * pr;
-    let e = m[673];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[674] -= f * m[622];
-    m[675] -= f * m[623];
-    r[25] -= f * pr;
-    let d = m[648];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(24)); }
-    let inv = 1.0 / d;
-    m[648] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[24];
-    let e = m[674];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[675] -= f * m[649];
-    r[25] -= f * pr;
-    let d = m[675];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(25)); }
-    let inv = 1.0 / d;
-    m[675] = inv;
-    let v = r[25];
-    let d = m[675];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[25] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[24];
-    v -= m[649] * r[25];
-    let d = m[648];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[24] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[23];
-    v -= m[622] * r[24];
-    v -= m[623] * r[25];
-    let d = m[621];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[23] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[22];
-    v -= m[595] * r[23];
-    v -= m[596] * r[24];
-    v -= m[597] * r[25];
-    let d = m[594];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[22] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[21];
-    v -= m[568] * r[22];
-    v -= m[569] * r[23];
-    v -= m[571] * r[25];
-    let d = m[567];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[21] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[20];
-    v -= m[541] * r[21];
-    v -= m[543] * r[23];
-    let d = m[540];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[20] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[19];
-    v -= m[514] * r[20];
-    v -= m[516] * r[22];
-    v -= m[517] * r[23];
-    v -= m[519] * r[25];
-    let d = m[513];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[19] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[18];
-    v -= m[488] * r[20];
-    v -= m[490] * r[22];
-    v -= m[491] * r[23];
-    v -= m[493] * r[25];
-    let d = m[486];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[18] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[17];
-    v -= m[460] * r[18];
-    v -= m[464] * r[22];
-    let d = m[459];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[17] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[16];
-    v -= m[434] * r[18];
-    v -= m[438] * r[22];
-    let d = m[432];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[406] * r[16];
-    v -= m[408] * r[18];
-    v -= m[412] * r[22];
-    let d = m[405];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[379] * r[15];
-    v -= m[380] * r[16];
-    v -= m[382] * r[18];
-    v -= m[386] * r[22];
-    let d = m[378];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[352] * r[14];
-    v -= m[354] * r[16];
-    v -= m[356] * r[18];
-    let d = m[351];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[327] * r[15];
-    v -= m[334] * r[22];
-    v -= m[335] * r[23];
-    let d = m[324];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[298] * r[12];
-    v -= m[301] * r[15];
-    v -= m[308] * r[22];
-    v -= m[309] * r[23];
-    let d = m[297];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[271] * r[11];
-    v -= m[272] * r[12];
-    v -= m[275] * r[15];
-    v -= m[283] * r[23];
-    let d = m[270];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[244] * r[10];
-    v -= m[245] * r[11];
-    v -= m[246] * r[12];
-    v -= m[257] * r[23];
-    let d = m[243];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[221] * r[13];
-    v -= m[226] * r[18];
-    let d = m[216];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[195] * r[13];
-    v -= m[196] * r[14];
-    let d = m[189];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[165] * r[9];
-    v -= m[168] * r[12];
-    let d = m[162];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[138] * r[8];
-    v -= m[143] * r[13];
-    let d = m[135];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[109] * r[5];
-    v -= m[117] * r[13];
-    let d = m[108];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[95] * r[17];
-    let d = m[81];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[55] * r[3];
-    v -= m[72] * r[20];
-    v -= m[74] * r[22];
-    let d = m[54];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[29] * r[3];
-    let d = m[27];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[3] * r[3];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_69(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -35335,6 +34454,887 @@ fn kernel_69(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     v -= m[1] * r[1];
     v -= m[2] * r[2];
     v -= m[5] * r[5];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_69(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
+    m.swap(0, 52);
+    m.swap(1, 53);
+    m.swap(3, 55);
+    m.swap(17, 69);
+    r.swap(0, 2);
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[26];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[27] -= f * m[1];
+    m[29] -= f * m[3];
+    r[1] -= f * pr;
+    let e = m[52];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[53] -= f * m[1];
+    m[55] -= f * m[3];
+    r[2] -= f * pr;
+    let d = m[27];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[27] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[53];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[55] -= f * m[29];
+    r[2] -= f * pr;
+    let e = m[79];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[81] -= f * m[29];
+    r[3] -= f * pr;
+    m.swap(54, 80);
+    m.swap(55, 81);
+    m.swap(69, 95);
+    m.swap(72, 98);
+    m.swap(74, 100);
+    r.swap(2, 3);
+    let d = m[54];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[54] = inv;
+    let d = m[81];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[81] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[523];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[537] -= f * m[95];
+    r[20] -= f * pr;
+    let e = m[575];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[589] -= f * m[95];
+    r[22] -= f * pr;
+    let d = m[108];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[108] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[134];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[135] -= f * m[109];
+    m[143] -= f * m[117];
+    r[5] -= f * pr;
+    let e = m[342];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[343] -= f * m[109];
+    m[351] -= f * m[117];
+    r[13] -= f * pr;
+    let d = m[135];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[135] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[213];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[216] -= f * m[138];
+    m[221] -= f * m[143];
+    r[8] -= f * pr;
+    let e = m[343];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[346] -= f * m[138];
+    m[351] -= f * m[143];
+    r[13] -= f * pr;
+    let d = m[162];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[162] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[240];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[243] -= f * m[165];
+    m[246] -= f * m[168];
+    r[9] -= f * pr;
+    let e = m[318];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[321] -= f * m[165];
+    m[324] -= f * m[168];
+    r[12] -= f * pr;
+    let d = m[189];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[189] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[345];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[351] -= f * m[195];
+    m[352] -= f * m[196];
+    r[13] -= f * pr;
+    let e = m[371];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[377] -= f * m[195];
+    m[378] -= f * m[196];
+    r[14] -= f * pr;
+    let d = m[216];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[216] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[346];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[351] -= f * m[221];
+    m[356] -= f * m[226];
+    r[13] -= f * pr;
+    let e = m[476];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[481] -= f * m[221];
+    m[486] -= f * m[226];
+    r[18] -= f * pr;
+    let d = m[243];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[243] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[269];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[270] -= f * m[244];
+    m[271] -= f * m[245];
+    m[272] -= f * m[246];
+    m[283] -= f * m[257];
+    r[10] -= f * pr;
+    let e = m[295];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[296] -= f * m[244];
+    m[297] -= f * m[245];
+    m[298] -= f * m[246];
+    m[309] -= f * m[257];
+    r[11] -= f * pr;
+    let e = m[321];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[322] -= f * m[244];
+    m[323] -= f * m[245];
+    m[324] -= f * m[246];
+    m[335] -= f * m[257];
+    r[12] -= f * pr;
+    let e = m[607];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[608] -= f * m[244];
+    m[609] -= f * m[245];
+    m[610] -= f * m[246];
+    m[621] -= f * m[257];
+    r[23] -= f * pr;
+    m.swap(270, 296);
+    m.swap(271, 297);
+    m.swap(272, 298);
+    m.swap(275, 301);
+    m.swap(283, 309);
+    r.swap(10, 11);
+    let d = m[270];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[270] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[296];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[297] -= f * m[271];
+    m[298] -= f * m[272];
+    m[301] -= f * m[275];
+    m[309] -= f * m[283];
+    r[11] -= f * pr;
+    let e = m[322];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[323] -= f * m[271];
+    m[324] -= f * m[272];
+    m[327] -= f * m[275];
+    m[335] -= f * m[283];
+    r[12] -= f * pr;
+    let e = m[400];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[401] -= f * m[271];
+    m[402] -= f * m[272];
+    m[405] -= f * m[275];
+    m[413] -= f * m[283];
+    r[15] -= f * pr;
+    let e = m[608];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[609] -= f * m[271];
+    m[610] -= f * m[272];
+    m[613] -= f * m[275];
+    m[621] -= f * m[283];
+    r[23] -= f * pr;
+    m.swap(297, 401);
+    m.swap(298, 402);
+    m.swap(301, 405);
+    m.swap(308, 412);
+    m.swap(309, 413);
+    r.swap(11, 15);
+    let d = m[297];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[297] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[323];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[324] -= f * m[298];
+    m[327] -= f * m[301];
+    m[334] -= f * m[308];
+    m[335] -= f * m[309];
+    r[12] -= f * pr;
+    let e = m[401];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[402] -= f * m[298];
+    m[405] -= f * m[301];
+    m[412] -= f * m[308];
+    m[413] -= f * m[309];
+    r[15] -= f * pr;
+    let e = m[609];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[610] -= f * m[298];
+    m[613] -= f * m[301];
+    m[620] -= f * m[308];
+    m[621] -= f * m[309];
+    r[23] -= f * pr;
+    m.swap(324, 402);
+    m.swap(327, 405);
+    m.swap(334, 412);
+    m.swap(335, 413);
+    m.swap(336, 414);
+    r.swap(12, 15);
+    let d = m[324];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[324] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[402];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[405] -= f * m[327];
+    m[412] -= f * m[334];
+    m[413] -= f * m[335];
+    r[15] -= f * pr;
+    let e = m[610];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[613] -= f * m[327];
+    m[620] -= f * m[334];
+    m[621] -= f * m[335];
+    r[23] -= f * pr;
+    let e = m[636];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[639] -= f * m[327];
+    m[646] -= f * m[334];
+    m[647] -= f * m[335];
+    r[24] -= f * pr;
+    let d = m[351];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[351] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[377];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[378] -= f * m[352];
+    m[380] -= f * m[354];
+    m[382] -= f * m[356];
+    r[14] -= f * pr;
+    let e = m[429];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[430] -= f * m[352];
+    m[432] -= f * m[354];
+    m[434] -= f * m[356];
+    r[16] -= f * pr;
+    let e = m[481];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[482] -= f * m[352];
+    m[484] -= f * m[354];
+    m[486] -= f * m[356];
+    r[18] -= f * pr;
+    m.swap(378, 430);
+    m.swap(379, 431);
+    m.swap(380, 432);
+    m.swap(382, 434);
+    m.swap(386, 438);
+    r.swap(14, 16);
+    let d = m[378];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[378] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[430];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[431] -= f * m[379];
+    m[432] -= f * m[380];
+    m[434] -= f * m[382];
+    m[438] -= f * m[386];
+    r[16] -= f * pr;
+    let e = m[482];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[483] -= f * m[379];
+    m[484] -= f * m[380];
+    m[486] -= f * m[382];
+    m[490] -= f * m[386];
+    r[18] -= f * pr;
+    m.swap(405, 431);
+    m.swap(406, 432);
+    m.swap(408, 434);
+    m.swap(412, 438);
+    m.swap(413, 439);
+    m.swap(414, 440);
+    r.swap(15, 16);
+    let d = m[405];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[405] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[15];
+    let e = m[431];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[432] -= f * m[406];
+    m[434] -= f * m[408];
+    m[438] -= f * m[412];
+    r[16] -= f * pr;
+    let e = m[483];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[484] -= f * m[406];
+    m[486] -= f * m[408];
+    m[490] -= f * m[412];
+    r[18] -= f * pr;
+    let e = m[587];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[588] -= f * m[406];
+    m[590] -= f * m[408];
+    m[594] -= f * m[412];
+    r[22] -= f * pr;
+    let e = m[613];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[614] -= f * m[406];
+    m[616] -= f * m[408];
+    m[620] -= f * m[412];
+    r[23] -= f * pr;
+    let e = m[639];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[640] -= f * m[406];
+    m[642] -= f * m[408];
+    m[646] -= f * m[412];
+    r[24] -= f * pr;
+    m.swap(432, 484);
+    m.swap(434, 486);
+    m.swap(438, 490);
+    m.swap(439, 491);
+    m.swap(440, 492);
+    r.swap(16, 18);
+    let d = m[432];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
+    let inv = 1.0 / d;
+    m[432] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[16];
+    let e = m[484];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[486] -= f * m[434];
+    m[490] -= f * m[438];
+    r[18] -= f * pr;
+    let e = m[588];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[590] -= f * m[434];
+    m[594] -= f * m[438];
+    r[22] -= f * pr;
+    let e = m[614];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[616] -= f * m[434];
+    m[620] -= f * m[438];
+    r[23] -= f * pr;
+    let e = m[640];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[642] -= f * m[434];
+    m[646] -= f * m[438];
+    r[24] -= f * pr;
+    m.swap(459, 511);
+    m.swap(460, 512);
+    m.swap(461, 513);
+    m.swap(464, 516);
+    r.swap(17, 19);
+    let d = m[459];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(17)); }
+    let inv = 1.0 / d;
+    m[459] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[17];
+    let e = m[511];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[512] -= f * m[460];
+    m[516] -= f * m[464];
+    r[19] -= f * pr;
+    let e = m[537];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[538] -= f * m[460];
+    m[542] -= f * m[464];
+    r[20] -= f * pr;
+    let e = m[589];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[590] -= f * m[460];
+    m[594] -= f * m[464];
+    r[22] -= f * pr;
+    m.swap(486, 590);
+    m.swap(488, 592);
+    m.swap(490, 594);
+    m.swap(491, 595);
+    m.swap(492, 596);
+    m.swap(493, 597);
+    r.swap(18, 22);
+    let d = m[486];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(18)); }
+    let inv = 1.0 / d;
+    m[486] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[18];
+    let e = m[512];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[514] -= f * m[488];
+    m[516] -= f * m[490];
+    m[517] -= f * m[491];
+    m[519] -= f * m[493];
+    r[19] -= f * pr;
+    let e = m[538];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[540] -= f * m[488];
+    m[542] -= f * m[490];
+    m[543] -= f * m[491];
+    m[545] -= f * m[493];
+    r[20] -= f * pr;
+    let e = m[590];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[592] -= f * m[488];
+    m[594] -= f * m[490];
+    m[595] -= f * m[491];
+    m[597] -= f * m[493];
+    r[22] -= f * pr;
+    let e = m[616];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[618] -= f * m[488];
+    m[620] -= f * m[490];
+    m[621] -= f * m[491];
+    m[623] -= f * m[493];
+    r[23] -= f * pr;
+    let e = m[642];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[644] -= f * m[488];
+    m[646] -= f * m[490];
+    m[647] -= f * m[491];
+    m[649] -= f * m[493];
+    r[24] -= f * pr;
+    let d = m[513];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(19)); }
+    let inv = 1.0 / d;
+    m[513] = inv;
+    m.swap(540, 566);
+    m.swap(541, 567);
+    m.swap(542, 568);
+    m.swap(543, 569);
+    m.swap(545, 571);
+    r.swap(20, 21);
+    let d = m[540];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(20)); }
+    let inv = 1.0 / d;
+    m[540] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[20];
+    let e = m[566];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[567] -= f * m[541];
+    m[569] -= f * m[543];
+    r[21] -= f * pr;
+    let e = m[592];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[593] -= f * m[541];
+    m[595] -= f * m[543];
+    r[22] -= f * pr;
+    let e = m[618];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[619] -= f * m[541];
+    m[621] -= f * m[543];
+    r[23] -= f * pr;
+    let e = m[644];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[645] -= f * m[541];
+    m[647] -= f * m[543];
+    r[24] -= f * pr;
+    let d = m[567];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(21)); }
+    let inv = 1.0 / d;
+    m[567] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[21];
+    let e = m[593];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[594] -= f * m[568];
+    m[595] -= f * m[569];
+    m[597] -= f * m[571];
+    r[22] -= f * pr;
+    let e = m[619];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[620] -= f * m[568];
+    m[621] -= f * m[569];
+    m[623] -= f * m[571];
+    r[23] -= f * pr;
+    let e = m[645];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[646] -= f * m[568];
+    m[647] -= f * m[569];
+    m[649] -= f * m[571];
+    r[24] -= f * pr;
+    let d = m[594];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(22)); }
+    let inv = 1.0 / d;
+    m[594] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[22];
+    let e = m[620];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[621] -= f * m[595];
+    m[622] -= f * m[596];
+    m[623] -= f * m[597];
+    r[23] -= f * pr;
+    let e = m[646];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[647] -= f * m[595];
+    m[648] -= f * m[596];
+    m[649] -= f * m[597];
+    r[24] -= f * pr;
+    let e = m[672];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[673] -= f * m[595];
+    m[674] -= f * m[596];
+    m[675] -= f * m[597];
+    r[25] -= f * pr;
+    let d = m[621];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(23)); }
+    let inv = 1.0 / d;
+    m[621] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[23];
+    let e = m[647];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[648] -= f * m[622];
+    m[649] -= f * m[623];
+    r[24] -= f * pr;
+    let e = m[673];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[674] -= f * m[622];
+    m[675] -= f * m[623];
+    r[25] -= f * pr;
+    let d = m[648];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(24)); }
+    let inv = 1.0 / d;
+    m[648] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[24];
+    let e = m[674];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[675] -= f * m[649];
+    r[25] -= f * pr;
+    let d = m[675];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(25)); }
+    let inv = 1.0 / d;
+    m[675] = inv;
+    let v = r[25];
+    let d = m[675];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[25] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[24];
+    v -= m[649] * r[25];
+    let d = m[648];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[24] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[23];
+    v -= m[622] * r[24];
+    v -= m[623] * r[25];
+    let d = m[621];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[23] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[22];
+    v -= m[595] * r[23];
+    v -= m[596] * r[24];
+    v -= m[597] * r[25];
+    let d = m[594];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[22] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[21];
+    v -= m[568] * r[22];
+    v -= m[569] * r[23];
+    v -= m[571] * r[25];
+    let d = m[567];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[21] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[20];
+    v -= m[541] * r[21];
+    v -= m[543] * r[23];
+    let d = m[540];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[20] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[19];
+    v -= m[514] * r[20];
+    v -= m[516] * r[22];
+    v -= m[517] * r[23];
+    v -= m[519] * r[25];
+    let d = m[513];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[19] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[18];
+    v -= m[488] * r[20];
+    v -= m[490] * r[22];
+    v -= m[491] * r[23];
+    v -= m[493] * r[25];
+    let d = m[486];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[18] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[17];
+    v -= m[460] * r[18];
+    v -= m[464] * r[22];
+    let d = m[459];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[17] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[16];
+    v -= m[434] * r[18];
+    v -= m[438] * r[22];
+    let d = m[432];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[16] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[15];
+    v -= m[406] * r[16];
+    v -= m[408] * r[18];
+    v -= m[412] * r[22];
+    let d = m[405];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[379] * r[15];
+    v -= m[380] * r[16];
+    v -= m[382] * r[18];
+    v -= m[386] * r[22];
+    let d = m[378];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[352] * r[14];
+    v -= m[354] * r[16];
+    v -= m[356] * r[18];
+    let d = m[351];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[327] * r[15];
+    v -= m[334] * r[22];
+    v -= m[335] * r[23];
+    let d = m[324];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[298] * r[12];
+    v -= m[301] * r[15];
+    v -= m[308] * r[22];
+    v -= m[309] * r[23];
+    let d = m[297];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[271] * r[11];
+    v -= m[272] * r[12];
+    v -= m[275] * r[15];
+    v -= m[283] * r[23];
+    let d = m[270];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[244] * r[10];
+    v -= m[245] * r[11];
+    v -= m[246] * r[12];
+    v -= m[257] * r[23];
+    let d = m[243];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[221] * r[13];
+    v -= m[226] * r[18];
+    let d = m[216];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[195] * r[13];
+    v -= m[196] * r[14];
+    let d = m[189];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[165] * r[9];
+    v -= m[168] * r[12];
+    let d = m[162];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[138] * r[8];
+    v -= m[143] * r[13];
+    let d = m[135];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[109] * r[5];
+    v -= m[117] * r[13];
+    let d = m[108];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[95] * r[17];
+    let d = m[81];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[55] * r[3];
+    v -= m[72] * r[20];
+    v -= m[74] * r[22];
+    let d = m[54];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[29] * r[3];
+    let d = m[27];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[3] * r[3];
     let d = m[0];
     if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
     let x = v * d;
@@ -39469,302 +39469,6 @@ fn kernel_75(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_76(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 121]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..11).map(<&mut [f64; 11]>::try_from) else { return Err(Bail::Tail(0)); };
-    m.swap(0, 11);
-    m.swap(1, 12);
-    m.swap(4, 15);
-    m.swap(6, 17);
-    r.swap(0, 1);
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[11];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[12] -= f * m[1];
-    m[15] -= f * m[4];
-    r[1] -= f * pr;
-    let e = m[44];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[45] -= f * m[1];
-    m[48] -= f * m[4];
-    r[4] -= f * pr;
-    let e = m[66];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[67] -= f * m[1];
-    m[70] -= f * m[4];
-    r[6] -= f * pr;
-    m.swap(12, 45);
-    m.swap(14, 47);
-    m.swap(15, 48);
-    m.swap(17, 50);
-    m.swap(18, 51);
-    r.swap(1, 4);
-    let d = m[12];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[12] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[45];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[47] -= f * m[14];
-    m[48] -= f * m[15];
-    m[51] -= f * m[18];
-    r[4] -= f * pr;
-    let e = m[67];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[69] -= f * m[14];
-    m[70] -= f * m[15];
-    m[73] -= f * m[18];
-    r[6] -= f * pr;
-    let d = m[24];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[24] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[57];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[60] -= f * m[27];
-    m[61] -= f * m[28];
-    r[5] -= f * pr;
-    let e = m[68];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[71] -= f * m[27];
-    m[72] -= f * m[28];
-    r[6] -= f * pr;
-    let d = m[36];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[36] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[47];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[48] -= f * m[37];
-    m[51] -= f * m[40];
-    r[4] -= f * pr;
-    let e = m[69];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[70] -= f * m[37];
-    m[73] -= f * m[40];
-    r[6] -= f * pr;
-    let e = m[80];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[81] -= f * m[37];
-    m[84] -= f * m[40];
-    r[7] -= f * pr;
-    m.swap(48, 81);
-    m.swap(50, 83);
-    m.swap(51, 84);
-    m.swap(52, 85);
-    r.swap(4, 7);
-    let d = m[48];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[48] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[70];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[50];
-    m[73] -= f * m[51];
-    m[74] -= f * m[52];
-    r[6] -= f * pr;
-    let e = m[81];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[83] -= f * m[50];
-    m[84] -= f * m[51];
-    m[85] -= f * m[52];
-    r[7] -= f * pr;
-    m.swap(60, 71);
-    m.swap(61, 72);
-    m.swap(62, 73);
-    m.swap(63, 74);
-    r.swap(5, 6);
-    let d = m[60];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[60] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[71];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[72] -= f * m[61];
-    m[73] -= f * m[62];
-    m[74] -= f * m[63];
-    r[6] -= f * pr;
-    let e = m[93];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[94] -= f * m[61];
-    m[95] -= f * m[62];
-    m[96] -= f * m[63];
-    r[8] -= f * pr;
-    let d = m[72];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[72] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[83];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[84] -= f * m[73];
-    m[85] -= f * m[74];
-    r[7] -= f * pr;
-    let e = m[94];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[95] -= f * m[73];
-    m[96] -= f * m[74];
-    r[8] -= f * pr;
-    let d = m[84];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[84] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[95];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[96] -= f * m[85];
-    r[8] -= f * pr;
-    let d = m[96];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[96] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[107];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[108] -= f * m[97];
-    m[109] -= f * m[98];
-    r[9] -= f * pr;
-    let d = m[108];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[108] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[119];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[120] -= f * m[109];
-    r[10] -= f * pr;
-    let d = m[120];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[120] = inv;
-    let v = r[10];
-    let d = m[120];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[109] * r[10];
-    let d = m[108];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[97] * r[9];
-    v -= m[98] * r[10];
-    let d = m[96];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[85] * r[8];
-    let d = m[84];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[73] * r[7];
-    v -= m[74] * r[8];
-    let d = m[72];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[61] * r[6];
-    v -= m[62] * r[7];
-    v -= m[63] * r[8];
-    let d = m[60];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[50] * r[6];
-    v -= m[51] * r[7];
-    v -= m[52] * r[8];
-    let d = m[48];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[37] * r[4];
-    v -= m[40] * r[7];
-    let d = m[36];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[27] * r[5];
-    v -= m[28] * r[6];
-    let d = m[24];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[14] * r[3];
-    v -= m[15] * r[4];
-    v -= m[18] * r[7];
-    let d = m[12];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[4] * r[4];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_77(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -40203,7 +39907,7 @@ fn kernel_77(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_78(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_77(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -40844,7 +40548,7 @@ fn kernel_78(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_79(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_78(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -41723,1042 +41427,7 @@ fn kernel_79(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_80(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
-    let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
-    let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
-    let d = m[0];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
-    let inv = 1.0 / d;
-    m[0] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[0];
-    let e = m[18];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[19] -= f * m[1];
-    m[20] -= f * m[2];
-    m[23] -= f * m[5];
-    r[1] -= f * pr;
-    let e = m[36];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[37] -= f * m[1];
-    m[38] -= f * m[2];
-    m[41] -= f * m[5];
-    r[2] -= f * pr;
-    let e = m[90];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[91] -= f * m[1];
-    m[92] -= f * m[2];
-    m[95] -= f * m[5];
-    r[5] -= f * pr;
-    let d = m[19];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
-    let inv = 1.0 / d;
-    m[19] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[1];
-    let e = m[37];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[38] -= f * m[20];
-    m[41] -= f * m[23];
-    m[42] -= f * m[24];
-    r[2] -= f * pr;
-    let e = m[91];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[92] -= f * m[20];
-    m[95] -= f * m[23];
-    m[96] -= f * m[24];
-    r[5] -= f * pr;
-    let e = m[109];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[110] -= f * m[20];
-    m[113] -= f * m[23];
-    m[114] -= f * m[24];
-    r[6] -= f * pr;
-    let d = m[38];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
-    let inv = 1.0 / d;
-    m[38] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[2];
-    let e = m[92];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[95] -= f * m[41];
-    m[96] -= f * m[42];
-    m[97] -= f * m[43];
-    r[5] -= f * pr;
-    let e = m[110];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[113] -= f * m[41];
-    m[114] -= f * m[42];
-    m[115] -= f * m[43];
-    r[6] -= f * pr;
-    let e = m[128];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[131] -= f * m[41];
-    m[132] -= f * m[42];
-    m[133] -= f * m[43];
-    r[7] -= f * pr;
-    m.swap(57, 75);
-    m.swap(58, 76);
-    m.swap(59, 77);
-    m.swap(60, 78);
-    m.swap(61, 79);
-    m.swap(64, 82);
-    m.swap(67, 85);
-    m.swap(70, 88);
-    r.swap(3, 4);
-    let d = m[57];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
-    let inv = 1.0 / d;
-    m[57] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[3];
-    let e = m[75];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[76] -= f * m[58];
-    m[77] -= f * m[59];
-    m[78] -= f * m[60];
-    m[82] -= f * m[64];
-    m[85] -= f * m[67];
-    m[88] -= f * m[70];
-    r[4] -= f * pr;
-    let e = m[129];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[130] -= f * m[58];
-    m[131] -= f * m[59];
-    m[132] -= f * m[60];
-    m[136] -= f * m[64];
-    m[139] -= f * m[67];
-    m[142] -= f * m[70];
-    r[7] -= f * pr;
-    let e = m[183];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[184] -= f * m[58];
-    m[185] -= f * m[59];
-    m[186] -= f * m[60];
-    m[190] -= f * m[64];
-    m[193] -= f * m[67];
-    m[196] -= f * m[70];
-    r[10] -= f * pr;
-    m.swap(76, 184);
-    m.swap(77, 185);
-    m.swap(78, 186);
-    m.swap(79, 187);
-    m.swap(82, 190);
-    m.swap(83, 191);
-    m.swap(84, 192);
-    m.swap(85, 193);
-    m.swap(86, 194);
-    m.swap(87, 195);
-    m.swap(88, 196);
-    r.swap(4, 10);
-    let d = m[76];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
-    let inv = 1.0 / d;
-    m[76] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[4];
-    let e = m[94];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[95] -= f * m[77];
-    m[96] -= f * m[78];
-    m[97] -= f * m[79];
-    m[100] -= f * m[82];
-    m[101] -= f * m[83];
-    m[102] -= f * m[84];
-    m[103] -= f * m[85];
-    m[104] -= f * m[86];
-    m[105] -= f * m[87];
-    m[106] -= f * m[88];
-    r[5] -= f * pr;
-    let e = m[112];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[113] -= f * m[77];
-    m[114] -= f * m[78];
-    m[115] -= f * m[79];
-    m[118] -= f * m[82];
-    m[119] -= f * m[83];
-    m[120] -= f * m[84];
-    m[121] -= f * m[85];
-    m[122] -= f * m[86];
-    m[123] -= f * m[87];
-    m[124] -= f * m[88];
-    r[6] -= f * pr;
-    let e = m[130];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[131] -= f * m[77];
-    m[132] -= f * m[78];
-    m[133] -= f * m[79];
-    m[136] -= f * m[82];
-    m[137] -= f * m[83];
-    m[138] -= f * m[84];
-    m[139] -= f * m[85];
-    m[140] -= f * m[86];
-    m[141] -= f * m[87];
-    m[142] -= f * m[88];
-    r[7] -= f * pr;
-    let e = m[184];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[185] -= f * m[77];
-    m[186] -= f * m[78];
-    m[187] -= f * m[79];
-    m[190] -= f * m[82];
-    m[191] -= f * m[83];
-    m[192] -= f * m[84];
-    m[193] -= f * m[85];
-    m[194] -= f * m[86];
-    m[195] -= f * m[87];
-    m[196] -= f * m[88];
-    r[10] -= f * pr;
-    let e = m[238];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[239] -= f * m[77];
-    m[240] -= f * m[78];
-    m[241] -= f * m[79];
-    m[244] -= f * m[82];
-    m[245] -= f * m[83];
-    m[246] -= f * m[84];
-    m[247] -= f * m[85];
-    m[248] -= f * m[86];
-    m[249] -= f * m[87];
-    m[250] -= f * m[88];
-    r[13] -= f * pr;
-    let e = m[292];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[293] -= f * m[77];
-    m[294] -= f * m[78];
-    m[295] -= f * m[79];
-    m[298] -= f * m[82];
-    m[299] -= f * m[83];
-    m[300] -= f * m[84];
-    m[301] -= f * m[85];
-    m[302] -= f * m[86];
-    m[303] -= f * m[87];
-    m[304] -= f * m[88];
-    r[16] -= f * pr;
-    m.swap(95, 131);
-    m.swap(96, 132);
-    m.swap(97, 133);
-    m.swap(100, 136);
-    m.swap(101, 137);
-    m.swap(102, 138);
-    m.swap(103, 139);
-    m.swap(104, 140);
-    m.swap(105, 141);
-    m.swap(106, 142);
-    r.swap(5, 7);
-    let d = m[95];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
-    let inv = 1.0 / d;
-    m[95] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[5];
-    let e = m[113];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[114] -= f * m[96];
-    m[115] -= f * m[97];
-    m[118] -= f * m[100];
-    m[119] -= f * m[101];
-    m[120] -= f * m[102];
-    m[121] -= f * m[103];
-    m[122] -= f * m[104];
-    m[123] -= f * m[105];
-    m[124] -= f * m[106];
-    r[6] -= f * pr;
-    let e = m[131];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[132] -= f * m[96];
-    m[133] -= f * m[97];
-    m[136] -= f * m[100];
-    m[137] -= f * m[101];
-    m[138] -= f * m[102];
-    m[139] -= f * m[103];
-    m[140] -= f * m[104];
-    m[141] -= f * m[105];
-    m[142] -= f * m[106];
-    r[7] -= f * pr;
-    let e = m[185];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[186] -= f * m[96];
-    m[187] -= f * m[97];
-    m[190] -= f * m[100];
-    m[191] -= f * m[101];
-    m[192] -= f * m[102];
-    m[193] -= f * m[103];
-    m[194] -= f * m[104];
-    m[195] -= f * m[105];
-    m[196] -= f * m[106];
-    r[10] -= f * pr;
-    let e = m[239];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[240] -= f * m[96];
-    m[241] -= f * m[97];
-    m[244] -= f * m[100];
-    m[245] -= f * m[101];
-    m[246] -= f * m[102];
-    m[247] -= f * m[103];
-    m[248] -= f * m[104];
-    m[249] -= f * m[105];
-    m[250] -= f * m[106];
-    r[13] -= f * pr;
-    let e = m[293];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[294] -= f * m[96];
-    m[295] -= f * m[97];
-    m[298] -= f * m[100];
-    m[299] -= f * m[101];
-    m[300] -= f * m[102];
-    m[301] -= f * m[103];
-    m[302] -= f * m[104];
-    m[303] -= f * m[105];
-    m[304] -= f * m[106];
-    r[16] -= f * pr;
-    m.swap(114, 132);
-    m.swap(115, 133);
-    m.swap(116, 134);
-    m.swap(117, 135);
-    m.swap(118, 136);
-    m.swap(119, 137);
-    m.swap(120, 138);
-    m.swap(121, 139);
-    m.swap(122, 140);
-    m.swap(123, 141);
-    m.swap(124, 142);
-    r.swap(6, 7);
-    let d = m[114];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
-    let inv = 1.0 / d;
-    m[114] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[6];
-    let e = m[132];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[133] -= f * m[115];
-    m[136] -= f * m[118];
-    m[137] -= f * m[119];
-    m[138] -= f * m[120];
-    m[139] -= f * m[121];
-    m[140] -= f * m[122];
-    m[141] -= f * m[123];
-    m[142] -= f * m[124];
-    r[7] -= f * pr;
-    let e = m[150];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[151] -= f * m[115];
-    m[154] -= f * m[118];
-    m[155] -= f * m[119];
-    m[156] -= f * m[120];
-    m[157] -= f * m[121];
-    m[158] -= f * m[122];
-    m[159] -= f * m[123];
-    m[160] -= f * m[124];
-    r[8] -= f * pr;
-    let e = m[168];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[169] -= f * m[115];
-    m[172] -= f * m[118];
-    m[173] -= f * m[119];
-    m[174] -= f * m[120];
-    m[175] -= f * m[121];
-    m[176] -= f * m[122];
-    m[177] -= f * m[123];
-    m[178] -= f * m[124];
-    r[9] -= f * pr;
-    let e = m[186];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[187] -= f * m[115];
-    m[190] -= f * m[118];
-    m[191] -= f * m[119];
-    m[192] -= f * m[120];
-    m[193] -= f * m[121];
-    m[194] -= f * m[122];
-    m[195] -= f * m[123];
-    m[196] -= f * m[124];
-    r[10] -= f * pr;
-    let e = m[204];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[205] -= f * m[115];
-    m[208] -= f * m[118];
-    m[209] -= f * m[119];
-    m[210] -= f * m[120];
-    m[211] -= f * m[121];
-    m[212] -= f * m[122];
-    m[213] -= f * m[123];
-    m[214] -= f * m[124];
-    r[11] -= f * pr;
-    let e = m[240];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[241] -= f * m[115];
-    m[244] -= f * m[118];
-    m[245] -= f * m[119];
-    m[246] -= f * m[120];
-    m[247] -= f * m[121];
-    m[248] -= f * m[122];
-    m[249] -= f * m[123];
-    m[250] -= f * m[124];
-    r[13] -= f * pr;
-    let e = m[294];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[295] -= f * m[115];
-    m[298] -= f * m[118];
-    m[299] -= f * m[119];
-    m[300] -= f * m[120];
-    m[301] -= f * m[121];
-    m[302] -= f * m[122];
-    m[303] -= f * m[123];
-    m[304] -= f * m[124];
-    r[16] -= f * pr;
-    m.swap(133, 187);
-    m.swap(134, 188);
-    m.swap(135, 189);
-    m.swap(136, 190);
-    m.swap(137, 191);
-    m.swap(138, 192);
-    m.swap(139, 193);
-    m.swap(140, 194);
-    m.swap(141, 195);
-    m.swap(142, 196);
-    r.swap(7, 10);
-    let d = m[133];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
-    let inv = 1.0 / d;
-    m[133] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[7];
-    let e = m[151];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[154] -= f * m[136];
-    m[155] -= f * m[137];
-    m[156] -= f * m[138];
-    m[157] -= f * m[139];
-    m[158] -= f * m[140];
-    m[159] -= f * m[141];
-    m[160] -= f * m[142];
-    r[8] -= f * pr;
-    let e = m[169];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[172] -= f * m[136];
-    m[173] -= f * m[137];
-    m[174] -= f * m[138];
-    m[175] -= f * m[139];
-    m[176] -= f * m[140];
-    m[177] -= f * m[141];
-    m[178] -= f * m[142];
-    r[9] -= f * pr;
-    let e = m[187];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[190] -= f * m[136];
-    m[191] -= f * m[137];
-    m[192] -= f * m[138];
-    m[193] -= f * m[139];
-    m[194] -= f * m[140];
-    m[195] -= f * m[141];
-    m[196] -= f * m[142];
-    r[10] -= f * pr;
-    let e = m[205];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[208] -= f * m[136];
-    m[209] -= f * m[137];
-    m[210] -= f * m[138];
-    m[211] -= f * m[139];
-    m[212] -= f * m[140];
-    m[213] -= f * m[141];
-    m[214] -= f * m[142];
-    r[11] -= f * pr;
-    let e = m[241];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[244] -= f * m[136];
-    m[245] -= f * m[137];
-    m[246] -= f * m[138];
-    m[247] -= f * m[139];
-    m[248] -= f * m[140];
-    m[249] -= f * m[141];
-    m[250] -= f * m[142];
-    r[13] -= f * pr;
-    let e = m[295];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[298] -= f * m[136];
-    m[299] -= f * m[137];
-    m[300] -= f * m[138];
-    m[301] -= f * m[139];
-    m[302] -= f * m[140];
-    m[303] -= f * m[141];
-    m[304] -= f * m[142];
-    r[16] -= f * pr;
-    m.swap(152, 206);
-    m.swap(153, 207);
-    m.swap(154, 208);
-    m.swap(155, 209);
-    m.swap(156, 210);
-    m.swap(157, 211);
-    m.swap(158, 212);
-    m.swap(159, 213);
-    m.swap(160, 214);
-    r.swap(8, 11);
-    let d = m[152];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
-    let inv = 1.0 / d;
-    m[152] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[8];
-    let e = m[170];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[171] -= f * m[153];
-    m[172] -= f * m[154];
-    m[173] -= f * m[155];
-    m[174] -= f * m[156];
-    m[175] -= f * m[157];
-    m[176] -= f * m[158];
-    m[177] -= f * m[159];
-    m[178] -= f * m[160];
-    r[9] -= f * pr;
-    let e = m[188];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[189] -= f * m[153];
-    m[190] -= f * m[154];
-    m[191] -= f * m[155];
-    m[192] -= f * m[156];
-    m[193] -= f * m[157];
-    m[194] -= f * m[158];
-    m[195] -= f * m[159];
-    m[196] -= f * m[160];
-    r[10] -= f * pr;
-    let e = m[206];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[207] -= f * m[153];
-    m[208] -= f * m[154];
-    m[209] -= f * m[155];
-    m[210] -= f * m[156];
-    m[211] -= f * m[157];
-    m[212] -= f * m[158];
-    m[213] -= f * m[159];
-    m[214] -= f * m[160];
-    r[11] -= f * pr;
-    m.swap(171, 189);
-    m.swap(172, 190);
-    m.swap(173, 191);
-    m.swap(174, 192);
-    m.swap(175, 193);
-    m.swap(176, 194);
-    m.swap(177, 195);
-    m.swap(178, 196);
-    r.swap(9, 10);
-    let d = m[171];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
-    let inv = 1.0 / d;
-    m[171] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[9];
-    let e = m[189];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[190] -= f * m[172];
-    m[191] -= f * m[173];
-    m[192] -= f * m[174];
-    m[193] -= f * m[175];
-    m[194] -= f * m[176];
-    m[195] -= f * m[177];
-    m[196] -= f * m[178];
-    r[10] -= f * pr;
-    let e = m[207];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[208] -= f * m[172];
-    m[209] -= f * m[173];
-    m[210] -= f * m[174];
-    m[211] -= f * m[175];
-    m[212] -= f * m[176];
-    m[213] -= f * m[177];
-    m[214] -= f * m[178];
-    r[11] -= f * pr;
-    let d = m[190];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
-    let inv = 1.0 / d;
-    m[190] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[10];
-    let e = m[208];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[209] -= f * m[191];
-    m[210] -= f * m[192];
-    m[211] -= f * m[193];
-    m[212] -= f * m[194];
-    m[213] -= f * m[195];
-    m[214] -= f * m[196];
-    r[11] -= f * pr;
-    let e = m[226];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[227] -= f * m[191];
-    m[228] -= f * m[192];
-    m[229] -= f * m[193];
-    m[230] -= f * m[194];
-    m[231] -= f * m[195];
-    m[232] -= f * m[196];
-    r[12] -= f * pr;
-    let e = m[244];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[245] -= f * m[191];
-    m[246] -= f * m[192];
-    m[247] -= f * m[193];
-    m[248] -= f * m[194];
-    m[249] -= f * m[195];
-    m[250] -= f * m[196];
-    r[13] -= f * pr;
-    let e = m[262];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[263] -= f * m[191];
-    m[264] -= f * m[192];
-    m[265] -= f * m[193];
-    m[266] -= f * m[194];
-    m[267] -= f * m[195];
-    m[268] -= f * m[196];
-    r[14] -= f * pr;
-    let e = m[280];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[281] -= f * m[191];
-    m[282] -= f * m[192];
-    m[283] -= f * m[193];
-    m[284] -= f * m[194];
-    m[285] -= f * m[195];
-    m[286] -= f * m[196];
-    r[15] -= f * pr;
-    let e = m[298];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[299] -= f * m[191];
-    m[300] -= f * m[192];
-    m[301] -= f * m[193];
-    m[302] -= f * m[194];
-    m[303] -= f * m[195];
-    m[304] -= f * m[196];
-    r[16] -= f * pr;
-    let d = m[209];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
-    let inv = 1.0 / d;
-    m[209] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[11];
-    let e = m[227];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[228] -= f * m[210];
-    m[229] -= f * m[211];
-    m[230] -= f * m[212];
-    m[231] -= f * m[213];
-    m[232] -= f * m[214];
-    r[12] -= f * pr;
-    let e = m[245];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[246] -= f * m[210];
-    m[247] -= f * m[211];
-    m[248] -= f * m[212];
-    m[249] -= f * m[213];
-    m[250] -= f * m[214];
-    r[13] -= f * pr;
-    let e = m[263];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[264] -= f * m[210];
-    m[265] -= f * m[211];
-    m[266] -= f * m[212];
-    m[267] -= f * m[213];
-    m[268] -= f * m[214];
-    r[14] -= f * pr;
-    let e = m[281];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[282] -= f * m[210];
-    m[283] -= f * m[211];
-    m[284] -= f * m[212];
-    m[285] -= f * m[213];
-    m[286] -= f * m[214];
-    r[15] -= f * pr;
-    let e = m[299];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[300] -= f * m[210];
-    m[301] -= f * m[211];
-    m[302] -= f * m[212];
-    m[303] -= f * m[213];
-    m[304] -= f * m[214];
-    r[16] -= f * pr;
-    let d = m[228];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
-    let inv = 1.0 / d;
-    m[228] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[12];
-    let e = m[246];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[247] -= f * m[229];
-    m[248] -= f * m[230];
-    m[249] -= f * m[231];
-    m[250] -= f * m[232];
-    r[13] -= f * pr;
-    let e = m[264];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[265] -= f * m[229];
-    m[266] -= f * m[230];
-    m[267] -= f * m[231];
-    m[268] -= f * m[232];
-    r[14] -= f * pr;
-    let e = m[282];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[283] -= f * m[229];
-    m[284] -= f * m[230];
-    m[285] -= f * m[231];
-    m[286] -= f * m[232];
-    r[15] -= f * pr;
-    let e = m[300];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[301] -= f * m[229];
-    m[302] -= f * m[230];
-    m[303] -= f * m[231];
-    m[304] -= f * m[232];
-    r[16] -= f * pr;
-    m.swap(247, 301);
-    m.swap(248, 302);
-    m.swap(249, 303);
-    m.swap(250, 304);
-    m.swap(251, 305);
-    r.swap(13, 16);
-    let d = m[247];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
-    let inv = 1.0 / d;
-    m[247] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[13];
-    let e = m[265];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[266] -= f * m[248];
-    m[267] -= f * m[249];
-    m[268] -= f * m[250];
-    m[269] -= f * m[251];
-    r[14] -= f * pr;
-    let e = m[283];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[284] -= f * m[248];
-    m[285] -= f * m[249];
-    m[286] -= f * m[250];
-    m[287] -= f * m[251];
-    r[15] -= f * pr;
-    let e = m[301];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[302] -= f * m[248];
-    m[303] -= f * m[249];
-    m[304] -= f * m[250];
-    m[305] -= f * m[251];
-    r[16] -= f * pr;
-    let d = m[266];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
-    let inv = 1.0 / d;
-    m[266] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[14];
-    let e = m[284];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[285] -= f * m[267];
-    m[286] -= f * m[268];
-    m[287] -= f * m[269];
-    r[15] -= f * pr;
-    let e = m[302];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[303] -= f * m[267];
-    m[304] -= f * m[268];
-    m[305] -= f * m[269];
-    r[16] -= f * pr;
-    m.swap(285, 303);
-    m.swap(286, 304);
-    m.swap(287, 305);
-    r.swap(15, 16);
-    let d = m[285];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
-    let inv = 1.0 / d;
-    m[285] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[15];
-    let e = m[303];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[304] -= f * m[286];
-    m[305] -= f * m[287];
-    r[16] -= f * pr;
-    let e = m[321];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[322] -= f * m[286];
-    m[323] -= f * m[287];
-    r[17] -= f * pr;
-    let d = m[304];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(16)); }
-    let inv = 1.0 / d;
-    m[304] = inv;
-    let ceiling = d.abs() * 16.0;
-    let pr = r[16];
-    let e = m[322];
-    if e.abs() > ceiling { *sound = false; }
-    let f = e * inv;
-    m[323] -= f * m[305];
-    r[17] -= f * pr;
-    let d = m[323];
-    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(17)); }
-    let inv = 1.0 / d;
-    m[323] = inv;
-    let v = r[17];
-    let d = m[323];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[17] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[16];
-    v -= m[305] * r[17];
-    let d = m[304];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[16] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[15];
-    v -= m[286] * r[16];
-    v -= m[287] * r[17];
-    let d = m[285];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[15] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[14];
-    v -= m[267] * r[15];
-    v -= m[268] * r[16];
-    v -= m[269] * r[17];
-    let d = m[266];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[14] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[13];
-    v -= m[248] * r[14];
-    v -= m[249] * r[15];
-    v -= m[250] * r[16];
-    v -= m[251] * r[17];
-    let d = m[247];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[13] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[12];
-    v -= m[229] * r[13];
-    v -= m[230] * r[14];
-    v -= m[231] * r[15];
-    v -= m[232] * r[16];
-    let d = m[228];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[12] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[11];
-    v -= m[210] * r[12];
-    v -= m[211] * r[13];
-    v -= m[212] * r[14];
-    v -= m[213] * r[15];
-    v -= m[214] * r[16];
-    let d = m[209];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[11] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[10];
-    v -= m[191] * r[11];
-    v -= m[192] * r[12];
-    v -= m[193] * r[13];
-    v -= m[194] * r[14];
-    v -= m[195] * r[15];
-    v -= m[196] * r[16];
-    let d = m[190];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[10] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[9];
-    v -= m[172] * r[10];
-    v -= m[173] * r[11];
-    v -= m[174] * r[12];
-    v -= m[175] * r[13];
-    v -= m[176] * r[14];
-    v -= m[177] * r[15];
-    v -= m[178] * r[16];
-    let d = m[171];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[9] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[8];
-    v -= m[153] * r[9];
-    v -= m[154] * r[10];
-    v -= m[155] * r[11];
-    v -= m[156] * r[12];
-    v -= m[157] * r[13];
-    v -= m[158] * r[14];
-    v -= m[159] * r[15];
-    v -= m[160] * r[16];
-    let d = m[152];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[8] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[7];
-    v -= m[136] * r[10];
-    v -= m[137] * r[11];
-    v -= m[138] * r[12];
-    v -= m[139] * r[13];
-    v -= m[140] * r[14];
-    v -= m[141] * r[15];
-    v -= m[142] * r[16];
-    let d = m[133];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[7] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[6];
-    v -= m[115] * r[7];
-    v -= m[118] * r[10];
-    v -= m[119] * r[11];
-    v -= m[120] * r[12];
-    v -= m[121] * r[13];
-    v -= m[122] * r[14];
-    v -= m[123] * r[15];
-    v -= m[124] * r[16];
-    let d = m[114];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[6] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[5];
-    v -= m[96] * r[6];
-    v -= m[97] * r[7];
-    v -= m[100] * r[10];
-    v -= m[101] * r[11];
-    v -= m[102] * r[12];
-    v -= m[103] * r[13];
-    v -= m[104] * r[14];
-    v -= m[105] * r[15];
-    v -= m[106] * r[16];
-    let d = m[95];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[5] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[4];
-    v -= m[77] * r[5];
-    v -= m[78] * r[6];
-    v -= m[79] * r[7];
-    v -= m[82] * r[10];
-    v -= m[83] * r[11];
-    v -= m[84] * r[12];
-    v -= m[85] * r[13];
-    v -= m[86] * r[14];
-    v -= m[87] * r[15];
-    v -= m[88] * r[16];
-    let d = m[76];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[4] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[3];
-    v -= m[58] * r[4];
-    v -= m[59] * r[5];
-    v -= m[60] * r[6];
-    v -= m[64] * r[10];
-    v -= m[67] * r[13];
-    v -= m[70] * r[16];
-    let d = m[57];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[3] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[2];
-    v -= m[41] * r[5];
-    v -= m[42] * r[6];
-    v -= m[43] * r[7];
-    let d = m[38];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[2] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[1];
-    v -= m[20] * r[2];
-    v -= m[23] * r[5];
-    v -= m[24] * r[6];
-    let d = m[19];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[1] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    let mut v = r[0];
-    v -= m[1] * r[1];
-    v -= m[2] * r[2];
-    v -= m[5] * r[5];
-    let d = m[0];
-    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
-    let x = v * d;
-    r[0] = x;
-    if !x.is_finite() { return Err(Bail::Failed); }
-    Ok(())
-}
-
-fn kernel_81(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_79(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -43782,7 +42451,7 @@ fn kernel_81(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_82(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_80(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -44200,7 +42869,7 @@ fn kernel_82(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_83(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_81(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -45115,7 +43784,7 @@ fn kernel_83(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_84(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_82(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 29);
@@ -45806,7 +44475,7 @@ fn kernel_84(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_85(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_83(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -46686,7 +45355,7 @@ fn kernel_85(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_86(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_84(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -47462,7 +46131,7 @@ fn kernel_86(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_87(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_85(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -48355,92 +47024,90 @@ fn kernel_87(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 pub(super) static KERNELS: &[Kernel] = &[
-    Kernel { plan: &[1, 4, 3, 6, 6, 5, 7, 7], pattern: &[3, 19, 28, 76, 151, 224, 236, 240], run: kernel_0 },
-    Kernel { plan: &[0, 1, 2, 5, 5, 5], pattern: &[3, 7, 46, 52, 16, 36], run: kernel_1 },
+    Kernel { plan: &[0, 1, 2, 5, 5, 5], pattern: &[3, 7, 46, 52, 16, 36], run: kernel_0 },
+    Kernel { plan: &[1, 4, 3, 6, 6, 5, 7, 7], pattern: &[3, 19, 28, 76, 151, 224, 236, 240], run: kernel_1 },
     Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_2 },
     Kernel { plan: &[0, 4, 4, 3, 4], pattern: &[27, 21, 4, 25, 25], run: kernel_3 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8], pattern: &[7, 7, 21, 56, 60, 168, 448, 480, 320], run: kernel_4 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_4 },
     Kernel { plan: &[0, 1, 2, 3, 4, 5], pattern: &[7, 7, 21, 56, 60, 40], run: kernel_5 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_6 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8], pattern: &[7, 7, 21, 56, 60, 168, 448, 480, 320], run: kernel_6 },
     Kernel { plan: &[0, 1, 2, 3, 4, 6, 12, 13, 8, 14, 11, 12, 12, 13, 14, 15, 16, 17], pattern: &[63491, 63511, 22, 20488, 2068, 10336, 12512, 192, 20224, 768, 36096, 64819, 63595, 63715, 64267, 261123, 229376, 196608], run: kernel_7 },
     Kernel { plan: &[1, 4, 2, 3, 7, 6, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_8 },
     Kernel { plan: &[5, 6, 2, 3, 5, 5, 6, 8, 11, 9, 10, 11, 12, 13], pattern: &[1045, 6, 71, 184, 25, 1049, 1542, 3464, 2432, 5632, 9857, 14720, 14848, 15360], run: kernel_9 },
-    Kernel { plan: &[0, 2, 2], pattern: &[7, 6, 7], run: kernel_10 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_11 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_10 },
+    Kernel { plan: &[0, 2, 2], pattern: &[7, 6, 7], run: kernel_11 },
     Kernel { plan: &[0, 2, 4, 4, 4, 5], pattern: &[31, 15, 39, 59, 57, 60], run: kernel_12 },
     Kernel { plan: &[1, 3, 3, 3], pattern: &[9, 13, 4, 11], run: kernel_13 },
     Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], pattern: &[7, 7, 15, 124, 88, 104, 248, 1984, 1408, 1664, 3968, 15360, 14336, 14336], run: kernel_14 },
     Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 17], pattern: &[7, 7, 518, 152, 56, 368, 352, 2200, 6464, 3588, 3584, 7552, 30976, 28672, 57344, 245760, 196608, 229376], run: kernel_15 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], pattern: &[7, 7, 15, 60, 56, 112, 480, 448, 896, 3840, 3584, 7168, 30720, 28672, 57344, 245760, 229376, 196608], run: kernel_16 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_17 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_16 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], pattern: &[7, 7, 15, 60, 56, 112, 480, 448, 896, 3840, 3584, 7168, 30720, 28672, 57344, 245760, 229376, 196608], run: kernel_17 },
     Kernel { plan: &[0, 1, 2, 3, 4, 6, 14, 8, 15, 16, 10, 11, 13, 15, 17, 17, 16, 17, 18, 19, 20], pattern: &[516099, 516119, 22, 163848, 8212, 96, 16480, 74112, 99200, 768, 146432, 19456, 275456, 521363, 518243, 516491, 516995, 519179, 2093059, 1835008, 1572864], run: kernel_18 },
     Kernel { plan: &[2, 1, 2, 3, 5, 5, 6], pattern: &[11, 7, 11, 25, 56, 80, 64], run: kernel_19 },
     Kernel { plan: &[1, 6, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_20 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_21 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 7, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_22 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 7, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_21 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_22 },
     Kernel { plan: &[0, 2, 3, 4, 4, 5, 6, 7], pattern: &[7, 50, 31, 28, 190, 242, 224, 176], run: kernel_23 },
-    Kernel { plan: &[0, 1, 2, 4, 4, 5, 6, 7], pattern: &[13, 22, 31, 41, 118, 248, 240, 192], run: kernel_24 },
-    Kernel { plan: &[0, 1, 2, 3, 6, 6, 6, 7, 8, 9, 11, 11, 13, 13], pattern: &[13, 1174, 1247, 25, 1278, 2272, 372, 4022, 960, 1792, 7830, 7328, 14336, 12288], run: kernel_25 },
-    Kernel { plan: &[0, 1, 3, 3], pattern: &[7, 7, 13, 12], run: kernel_26 },
-    Kernel { plan: &[0, 1, 5, 3, 4, 6, 6, 7, 10, 11, 10, 11, 13, 13], pattern: &[29, 174, 111, 143, 113, 118, 1012, 1482, 3008, 8000, 5760, 15104, 15872, 14336], run: kernel_27 },
-    Kernel { plan: &[0, 1, 3, 3], pattern: &[7, 7, 12, 12], run: kernel_28 },
+    Kernel { plan: &[0, 1, 3, 3], pattern: &[7, 7, 13, 12], run: kernel_24 },
+    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 10, 12, 12, 13, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_25 },
+    Kernel { plan: &[0, 1, 2, 3, 6, 6, 6, 7, 8, 9, 11, 11, 13, 13], pattern: &[13, 1174, 1247, 25, 1278, 2272, 372, 4022, 960, 1792, 7830, 7328, 14336, 12288], run: kernel_26 },
+    Kernel { plan: &[0, 1, 3, 3], pattern: &[7, 7, 12, 12], run: kernel_27 },
+    Kernel { plan: &[0, 1, 5, 3, 4, 6, 6, 7, 10, 11, 10, 11, 13, 13], pattern: &[29, 174, 111, 143, 113, 118, 1012, 1482, 3008, 8000, 5760, 15104, 15872, 14336], run: kernel_28 },
     Kernel { plan: &[1, 4, 6, 3, 7, 5, 6, 7], pattern: &[35, 19, 68, 152, 155, 229, 228, 248], run: kernel_29 },
     Kernel { plan: &[0, 3, 2, 3, 5, 5], pattern: &[5, 6, 15, 22, 48, 48], run: kernel_30 },
-    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 10, 12, 12, 13, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_31 },
-    Kernel { plan: &[0, 2, 2], pattern: &[7, 2, 7], run: kernel_32 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 9, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_33 },
-    Kernel { plan: &[1, 4, 6, 3, 7, 5, 7, 7], pattern: &[35, 19, 68, 152, 155, 229, 228, 248], run: kernel_34 },
-    Kernel { plan: &[0, 2, 7, 4, 8, 6, 9, 7, 8, 9, 10, 11, 12], pattern: &[521, 1926, 134, 25, 280, 1120, 608, 1926, 1946, 2019, 8098, 7168, 6144], run: kernel_35 },
-    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_36 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_37 },
-    Kernel { plan: &[0, 4, 2, 3, 4, 5, 6, 7], pattern: &[17, 48, 36, 40, 83, 236, 80, 128], run: kernel_38 },
-    Kernel { plan: &[0, 1, 2, 3], pattern: &[7, 15, 15, 14], run: kernel_39 },
-    Kernel { plan: &[1, 6, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_40 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 9, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_31 },
+    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_32 },
+    Kernel { plan: &[1, 4, 6, 3, 7, 5, 7, 7], pattern: &[35, 19, 68, 152, 155, 229, 228, 248], run: kernel_33 },
+    Kernel { plan: &[0, 2, 7, 4, 8, 6, 9, 7, 8, 9, 10, 11, 12], pattern: &[521, 1926, 134, 25, 280, 1120, 608, 1926, 1946, 2019, 8098, 7168, 6144], run: kernel_34 },
+    Kernel { plan: &[0, 1, 2, 4, 4, 5, 6, 7], pattern: &[13, 22, 31, 41, 118, 248, 240, 192], run: kernel_35 },
+    Kernel { plan: &[0, 2, 2], pattern: &[7, 2, 7], run: kernel_36 },
+    Kernel { plan: &[0, 4, 2, 3, 4, 5, 6, 7], pattern: &[17, 48, 36, 40, 83, 236, 80, 128], run: kernel_37 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_38 },
+    Kernel { plan: &[1, 6, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_39 },
+    Kernel { plan: &[0, 1, 2, 3], pattern: &[7, 15, 15, 14], run: kernel_40 },
     Kernel { plan: &[0, 1, 2, 3, 7, 5, 6, 7, 11, 9, 10, 11, 12, 13, 14, 15, 17, 17], pattern: &[7, 7, 518, 152, 56, 368, 352, 2200, 6464, 3588, 3584, 7552, 30976, 28672, 57344, 245760, 196608, 229376], run: kernel_41 },
     Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_42 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 7, 14, 9, 15, 16, 11, 17, 13, 14, 15, 16, 17, 18, 19, 20], pattern: &[516099, 516119, 22, 163848, 8212, 26656, 192, 16576, 74496, 100096, 1536, 145440, 268288, 518451, 516323, 516875, 517891, 522251, 2093059, 1835008, 1572864], run: kernel_43 },
-    Kernel { plan: &[0, 3, 3, 5, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_44 },
-    Kernel { plan: &[0, 3, 3, 3, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_45 },
-    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_46 },
+    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_43 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 7, 14, 9, 15, 16, 11, 17, 13, 14, 15, 16, 17, 18, 19, 20], pattern: &[516099, 516119, 22, 163848, 8212, 26656, 192, 16576, 74496, 100096, 1536, 145440, 268288, 518451, 516323, 516875, 517891, 522251, 2093059, 1835008, 1572864], run: kernel_44 },
+    Kernel { plan: &[0, 3, 3, 5, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_45 },
+    Kernel { plan: &[0, 3, 3, 3, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_46 },
     Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_47 },
-    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_48 },
-    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_49 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 7, 8, 7, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_50 },
-    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_51 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_52 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 12, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_53 },
-    Kernel { plan: &[0, 3, 3, 4, 4], pattern: &[27, 21, 4, 25, 25], run: kernel_54 },
-    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_55 },
-    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_56 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_57 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 5, 7, 8, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_58 },
+    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_48 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 7, 8, 7, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_49 },
+    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_50 },
+    Kernel { plan: &[0, 1, 4, 4, 4, 5, 6, 7], pattern: &[13, 22, 31, 41, 118, 248, 240, 192], run: kernel_51 },
+    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_52 },
+    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_53 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_54 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 12, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_55 },
+    Kernel { plan: &[0, 3, 3, 4, 4], pattern: &[27, 21, 4, 25, 25], run: kernel_56 },
+    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_57 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_58 },
     Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_59 },
-    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_60 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_61 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_62 },
-    Kernel { plan: &[1, 4, 2, 3, 4, 6, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_63 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 5, 7, 8, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_60 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_61 },
+    Kernel { plan: &[1, 4, 2, 3, 4, 6, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_62 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_63 },
     Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_64 },
     Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 10, 12, 12, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_65 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_66 },
-    Kernel { plan: &[0, 1, 4, 4, 4, 5, 6, 7], pattern: &[13, 22, 31, 41, 118, 248, 240, 192], run: kernel_67 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_68 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_69 },
+    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_66 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_67 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_68 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_69 },
     Kernel { plan: &[0, 1, 2, 3, 4, 6, 6, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_70 },
     Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 20, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_71 },
     Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_72 },
     Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 12, 14, 14, 15, 18, 18, 19, 25, 22, 21, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_73 },
     Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 22, 21, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_74 },
     Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_75 },
-    Kernel { plan: &[1, 4, 2, 3, 7, 6, 6, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_76 },
-    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 9, 10, 11, 13, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_77 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_78 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_79 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 7, 7, 10, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_80 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_81 },
-    Kernel { plan: &[0, 6, 2, 3, 5, 8, 6, 7, 11, 10, 12, 11, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_82 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_83 },
-    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 20, 22, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_84 },
-    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_85 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_86 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 20, 19, 21, 22, 23, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_87 },
+    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 9, 10, 11, 13, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_76 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_77 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_78 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_79 },
+    Kernel { plan: &[0, 6, 2, 3, 5, 8, 6, 7, 11, 10, 12, 11, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_80 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_81 },
+    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 20, 22, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_82 },
+    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_83 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_84 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 20, 19, 21, 22, 23, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_85 },
 ];
