@@ -139,6 +139,27 @@ Then two more exact speedups, both hash-identical on all 78 presets:
   addition: research log, registration, calibration → power trim → kernels,
   levels, baselines, tests, docs.
 
+Then the 20:23 REAPER capture, and the JC-120's hard samples:
+
+- **Capture.** 34 distinct dropouts in 258 s (`tools/rt_gaps.py`); 26 follow a
+  callback over 900 µs, about 20 of them Jazz Chorus callbacks of 950–1,750 µs
+  in 35 s of hard playing. That is the JC-120 power stage's hard samples.
+- **Anatomy** (`src/dsp/time/hard_samples.rs`). The stage is handed up to ±5 V
+  at ~10 kHz, three times its rated input. Its hard solves spend over half their
+  stamps with a junction limiter walking a transistor into conduction.
+- **A: the source-scaled predictor for every circuit.** It was Twin-only.
+  Passes −2.9 %, fallbacks −8 %, rescues 36 → 18; outputs at tolerance level
+  (76 of 78 presets below −120 dB, worst −101 dB); both frozen baselines pass.
+- **B: the cabinet leaves the power stage's thread.** The pipeline now hands
+  the cabinet to the calling thread once its first half is done, if more than
+  a quantum is left (`PipelineUse::Shared`). Exact, including on a test worker
+  that always lags. Jazz Chorus pipelined mean 313 → 264 µs, p99 486 → 433 µs,
+  p99.9 831 → 768 µs; Brown '78 p99 −15 %.
+- **Rejected:** junction limiting from the critical voltage (hard solves
+  doubled), the Twin's continuation policy everywhere (same tail, +1–5 % mean),
+  no predictor. Details in `docs/SOLVER_EXPERIMENTS.md`.
+- The kernel table is regenerated for the new trajectories: 86 kernels, 99.4 %.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):

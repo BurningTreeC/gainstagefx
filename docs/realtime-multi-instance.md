@@ -335,6 +335,49 @@ all three.
 So the remaining dropouts are mostly one thing: the JC-120 power stage's hard
 samples under hard playing.
 
+## The JC-120's hard samples, and two fixes
+
+`src/dsp/time/hard_samples.rs` (an ignored test) plays a preset over the take
+and dissects every power-stage solve. For the Jazz Chorus:
+
+- **What the hard solves are.** 0.18 % of solves take 10 or more passes and
+  cluster (one follows another 39 % of the time). The power stage is handed
+  0.8 V a sample at their median and 2.2 V at p90, up to ±5 V, which is three
+  times its rated input with ~10 kHz in it. 54 % of their stamps have a
+  junction limiter holding a transistor back (2 % otherwise), 95 % of those
+  walks start below the critical voltage, and they average 4.8 line-search
+  trials. The model is solving exactly what it is given; the solver's strategy
+  can make these cheaper, not cheap.
+- **Fix A: the source-scaled predictor for every circuit.** See
+  `docs/SOLVER_EXPERIMENTS.md`. The Jazz Chorus's pipelined p99.9 goes from
+  ~900 to ~830 us and its max from ~1,200 to ~1,030 us; outputs change at
+  tolerance level (worst preset -101 dB).
+- **Fix B: the cabinet leaves the power stage's thread.** In a long Jazz
+  callback the worker ran the power stage (~600 us) and then the cabinet
+  (~110 us) while the calling thread, done with its preamp in ~70 us, waited.
+  Now the calling thread, once its first half is done, asks for the cabinet;
+  the worker hands it over from the next sample and runs the power half alone,
+  and the calling thread runs the cabinet trailing it (`pipelined` in
+  `voice.rs`). Only if more than a quantum is left, so the lightest presets are
+  not made to move the cabinet's state between cores for nothing. Exact:
+  `tests/pipeline.rs` runs every voice at every factor on a lagging worker
+  that always hands over.
+
+Pipelined, over the take, before and after both:
+
+| preset | mean | p99 | p99.9 |
+| --- | ---: | ---: | ---: |
+| Jazz Chorus | 313 → 264 µs | 486 → 433 µs | 831 → 768 µs |
+| Brown '78 | 314 → 258 µs | 597 → 510 µs | 767 → 677 µs |
+| Chime Edge | 294 → 249 µs | 414 → 364 µs | 480 → 457 µs |
+| The Great Wall '79 | 303 → 272 µs | 377 → 334 µs | 456 → 412 µs |
+| Puppet Master '86 | 352 → 339 µs | 477 → 460 µs | 585 → 535 µs |
+
+(the "before" column here already includes A; B's share is the difference)
+
+Across all 78 presets B moves the median mean -3.4 %, p99 -3.3 %, p99.9
+-4.4 % and max -5.9 %.
+
 ## Earlier notes on the Mark power stage
 
 The Newton pass count on the real take is 2–3 for 73 % of samples. 13 % leave

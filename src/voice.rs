@@ -40,6 +40,7 @@ use crate::dsp::spring::Tank;
 use crate::dsp::time::Simulation;
 use crate::dsp::tremolo::Tremolo;
 use crate::stage_worker::StageWorker;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Instant;
 
 /// The level a plugin should be set up around: hot enough to be well clear of
@@ -2511,6 +2512,9 @@ pub enum PipelineUse {
     /// Offered to the worker, which had not woken by the time the first half
     /// was done, so the calling thread ran it after all.
     Reclaimed,
+    /// On the worker, until the calling thread finished the first half and
+    /// took the cabinet over for the rest of the block. See `pipelined`.
+    Shared,
 }
 
 /// Everything in `Chain::process` before the power stage: the oversampler's
@@ -2550,6 +2554,14 @@ struct Front<'a> {
 /// section, the cabinet and microphones, the Jazz Chorus's bucket brigade and
 /// the switching fade.
 struct Back<'a> {
+    power: BackPower<'a>,
+    cabinet: BackCabinet<'a>,
+}
+
+/// The oversampled end of the second half: the iron, the power stage (or the
+/// speaker it drives), the make-up and the decimators. It hands the cabinet
+/// one value a host sample and the make-up that value was taken at.
+struct BackPower<'a> {
     down: Downsampler<'a>,
     iron: Option<&'a mut Simulation>,
     iron_scale: f64,
@@ -2563,18 +2575,27 @@ struct Back<'a> {
     inner_rate: f64,
     out_of: &'a mut f64,
     out_of_target: f64,
+    timing: bool,
+    iron_ns: u64,
+    power_ns: u64,
+}
+
+/// The host-rate end: the latency pad, the tone section, the cabinet and
+/// microphones, the Jazz Chorus's bucket brigade and the switching fade.
+/// Separate from `BackPower` so the two can run on two threads; see
+/// `pipelined`.
+struct BackCabinet<'a> {
     pad: &'a mut Delay,
     tone: Option<(&'a mut Simulation, f64)>,
     acoustic: &'a mut AcousticStage,
     stereo: bool,
+    radiating: bool,
     legacy_cabinet: Option<(&'a mut Simulation, f64)>,
     chorus: Option<(&'a mut Bbd, f64)>,
     fade_remaining: &'a mut usize,
     prev_output: &'a mut f64,
     prev_output_right: &'a mut f64,
     timing: bool,
-    iron_ns: u64,
-    power_ns: u64,
     tone_ns: u64,
     cabinet_ns: u64,
 }
@@ -2701,11 +2722,26 @@ impl Front<'_> {
 
 impl Back<'_> {
     fn timings(&self) -> (u64, u64, u64, u64) {
-        (self.iron_ns, self.power_ns, self.tone_ns, self.cabinet_ns)
+        (
+            self.power.iron_ns,
+            self.power.power_ns,
+            self.cabinet.tone_ns,
+            self.cabinet.cabinet_ns,
+        )
     }
 
     /// The oversampled values `Front::sample` produced for one host sample
     /// in; the chain's left and right output for it out.
+    #[inline]
+    fn sample(&mut self, mid: &[f64]) -> (f64, f64) {
+        let (y, out_of) = self.power.sample(mid);
+        self.cabinet.sample(y, out_of)
+    }
+}
+
+impl BackPower<'_> {
+    /// The oversampled values for one host sample in; the decimated value
+    /// out, with the make-up it was taken at.
     #[inline]
     fn sample(&mut self, mid: &[f64]) -> (f64, f64) {
         // One pole toward the target: about a millisecond at any sample rate
@@ -2716,8 +2752,78 @@ impl Back<'_> {
         for (&v, slot) in mid.iter().zip(processed.iter_mut()) {
             *slot = self.oversampled(v, out_of);
         }
-        let mut y = self.down.pull(&processed[..mid.len()]);
+        (self.down.pull(&processed[..mid.len()]), out_of)
+    }
 
+    /// One oversampled value through the power stage and the iron.
+    #[inline]
+    fn oversampled(&mut self, amplified: f64, out_of: f64) -> f64 {
+        let mut amplified = amplified;
+        if self.radiating {
+            // A transformer after a loudspeaker has no meaning, so on the
+            // physical path the Iron control sits where an interstage
+            // transformer would: in front of the output stage. Level neutral,
+            // exactly as below.
+            if let Some(sim) = self.iron.as_mut() {
+                let started = self.timing.then(Instant::now);
+                amplified =
+                    sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
+                self.iron_ns += lap(started);
+            }
+            let started = self.timing.then(Instant::now);
+            let cone = match (self.power.as_mut(), self.driven.as_mut()) {
+                (Some(sim), _) => {
+                    sim.process(amplified);
+                    sim.voltage_at(self.motional)
+                }
+                (None, Some(sim)) => sim.process(amplified),
+                (None, None) => 0.0,
+            };
+            self.power_ns += lap(started);
+            // Physical cone acceleration. Keep the amplifier's output
+            // calibration outside the acoustic pressure calculation.
+            let pressure = self.pressure_scale * (cone - *self.motional_previous) * self.inner_rate;
+            *self.motional_previous = cone;
+            return pressure;
+        }
+        if let Some(sim) = self.power.as_mut() {
+            let started = self.timing.then(Instant::now);
+            amplified = sim.process(amplified);
+            self.power_ns += lap(started);
+        }
+        // The iron goes here, in front of the make-up, for the same
+        // reason the power stage does and by the same argument.
+        //
+        // Handed volts rather than a number near one, because what a core
+        // does depends on the flux and flux is in volt seconds. Scaled by
+        // `iron_drive`, which is how far the Drive control has moved from
+        // the position this voice's transformer is matched at -- so
+        // turning up drives the iron harder, which is the one thing a
+        // transformer in this position is for. See `IRON_VOLTS`.
+        //
+        // Normalised by the make-up **at the reference drive** rather than at
+        // the current one. At that position this is exactly what the iron
+        // used to be handed; above it the circuit is putting out more and the
+        // transformer gets it, and below it less. The scale factor divides
+        // back out, so what survives is the core's nonlinearity and nothing
+        // else -- handing the raw pre-make-up volts instead put a valve
+        // stage's tens of volts through a ninety-six times multiplier and
+        // measured 132 per cent distortion at the bottom of the Drive control.
+        if let Some(sim) = self.iron.as_mut() {
+            let started = self.timing.then(Instant::now);
+            amplified = sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
+            self.iron_ns += lap(started);
+        }
+        amplified * out_of
+    }
+}
+
+impl BackCabinet<'_> {
+    /// One decimated value and the make-up it was taken at in; the chain's
+    /// left and right output for it out.
+    #[inline]
+    fn sample(&mut self, y: f64, out_of: f64) -> (f64, f64) {
+        let mut y = y;
         // Reverb and tremolo have both already been applied at their AB763
         // nodes ahead of the phase inverter / power stage.
         // Every setting delays by the same reported amount.
@@ -2789,94 +2895,69 @@ impl Back<'_> {
         *self.prev_output_right = right;
         (y, right)
     }
-
-    /// One oversampled value through the power stage and the iron.
-    #[inline]
-    fn oversampled(&mut self, amplified: f64, out_of: f64) -> f64 {
-        let mut amplified = amplified;
-        if self.radiating {
-            // A transformer after a loudspeaker has no meaning, so on the
-            // physical path the Iron control sits where an interstage
-            // transformer would: in front of the output stage. Level neutral,
-            // exactly as below.
-            if let Some(sim) = self.iron.as_mut() {
-                let started = self.timing.then(Instant::now);
-                amplified =
-                    sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
-                self.iron_ns += lap(started);
-            }
-            let started = self.timing.then(Instant::now);
-            let cone = match (self.power.as_mut(), self.driven.as_mut()) {
-                (Some(sim), _) => {
-                    sim.process(amplified);
-                    sim.voltage_at(self.motional)
-                }
-                (None, Some(sim)) => sim.process(amplified),
-                (None, None) => 0.0,
-            };
-            self.power_ns += lap(started);
-            // Physical cone acceleration. Keep the amplifier's output
-            // calibration outside the acoustic pressure calculation.
-            let pressure = self.pressure_scale * (cone - *self.motional_previous) * self.inner_rate;
-            *self.motional_previous = cone;
-            return pressure;
-        }
-        if let Some(sim) = self.power.as_mut() {
-            let started = self.timing.then(Instant::now);
-            amplified = sim.process(amplified);
-            self.power_ns += lap(started);
-        }
-        // The iron goes here, in front of the make-up, for the same
-        // reason the power stage does and by the same argument.
-        //
-        // Handed volts rather than a number near one, because what a core
-        // does depends on the flux and flux is in volt seconds. Scaled by
-        // `iron_drive`, which is how far the Drive control has moved from
-        // the position this voice's transformer is matched at -- so
-        // turning up drives the iron harder, which is the one thing a
-        // transformer in this position is for. See `IRON_VOLTS`.
-        //
-        // Normalised by the make-up **at the reference drive** rather than at
-        // the current one. At that position this is exactly what the iron
-        // used to be handed; above it the circuit is putting out more and the
-        // transformer gets it, and below it less. The scale factor divides
-        // back out, so what survives is the core's nonlinearity and nothing
-        // else -- handing the raw pre-make-up volts instead put a valve
-        // stage's tens of volts through a ninety-six times multiplier and
-        // measured 132 per cent distortion at the bottom of the Drive control.
-        if let Some(sim) = self.iron.as_mut() {
-            let started = self.timing.then(Instant::now);
-            amplified = sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
-            self.iron_ns += lap(started);
-        }
-        amplified * out_of
-    }
 }
 
-/// What the stage worker needs to run the second half of a block.
-struct BackJob<'a, 'b> {
-    back: &'b mut Back<'a>,
+/// What the stage worker needs to run the second half of a block, and what
+/// the calling thread and the worker hand the cabinet between them with.
+///
+/// Both threads only ever hold a shared reference to this. The two halves of
+/// `Back` are reached through raw pointers, each dereferenced by one thread at
+/// a time: the power half only by whoever runs the job, the cabinet half by
+/// the worker until `handover` is published and by the calling thread after.
+struct BackJob<'a> {
+    power: *mut BackPower<'a>,
+    cabinet: *mut BackCabinet<'a>,
     mid: *const f64,
     factor: usize,
     left: *mut f64,
     right: *mut f64,
+    handoff: *mut [f64; 2],
+    /// Set by the calling thread once its first half is done and it is free
+    /// to run the cabinet.
+    wanted: AtomicBool,
+    /// Worker-only: whether the worker still runs the cabinet.
+    cabinet_here: AtomicBool,
+    /// The first sample whose cabinet the calling thread runs, published by
+    /// the worker when it stops running it; `usize::MAX` until then.
+    handover: AtomicUsize,
+    /// Samples whose power half is done and in `handoff`, past `handover`.
+    powered: AtomicUsize,
+    /// How far the worker has got, for the calling thread to judge whether
+    /// taking the cabinet over is worth moving its state between cores.
+    reached: AtomicUsize,
 }
 
 /// Run the second half for host samples `from..to` of the block `ctx` names.
 ///
+/// Until the calling thread asks for it, the cabinet runs here too. From the
+/// first sample after it asks, this thread runs the power half alone and
+/// leaves each sample's value in `handoff` for the calling thread.
+///
 /// # Safety
 /// `ctx` is a live `BackJob`; the first half has finished writing `mid` for
 /// every sample below `to` (the worker's Acquire of the published count
-/// orders those writes before this read), and no other thread touches the
-/// `Back` or the outputs until the job is finished.
+/// orders those writes before this read); the power half is this thread's for
+/// the job, and so is the cabinet half until `handover` is published.
 unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
-    let job = unsafe { &mut *(ctx as *mut BackJob<'_, '_>) };
+    let job = unsafe { &*(ctx as *const BackJob<'_>) };
     for i in from..to {
         let mid = unsafe { std::slice::from_raw_parts(job.mid.add(i * job.factor), job.factor) };
-        let (l, r) = job.back.sample(mid);
-        unsafe {
-            job.left.add(i).write(l);
-            job.right.add(i).write(r);
+        job.reached.store(i, Ordering::Relaxed);
+        let (y, out_of) = unsafe { &mut *job.power }.sample(mid);
+        if job.cabinet_here.load(Ordering::Relaxed) && job.wanted.load(Ordering::Acquire) {
+            job.cabinet_here.store(false, Ordering::Relaxed);
+            // Every cabinet sample below `i` is done: Release them with it.
+            job.handover.store(i, Ordering::Release);
+        }
+        if job.cabinet_here.load(Ordering::Relaxed) {
+            let (l, r) = unsafe { &mut *job.cabinet }.sample(y, out_of);
+            unsafe {
+                job.left.add(i).write(l);
+                job.right.add(i).write(r);
+            }
+        } else {
+            unsafe { job.handoff.add(i).write([y, out_of]) };
+            job.powered.store(i + 1, Ordering::Release);
         }
     }
 }
@@ -2885,11 +2966,25 @@ unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
 /// samples apart. The worker is only ever *offered* the second half: if it
 /// has not claimed it by the time the first half is done, this thread takes
 /// it back and runs it here.
+///
+/// If the worker has it and is still going when this thread's first half is
+/// done, this thread takes the cabinet over from the next sample the worker
+/// reaches and runs it trailing the worker's power half. The worker's share of
+/// the block then ends with the power stage rather than with the cabinet
+/// after it. Measured on the REAPER capture, a Jazz Chorus callback that ran
+/// long spent ~600 us in the power stage and ~110 us in the cabinet behind it
+/// on the worker while this thread, done with its preamp in ~70 us, waited. The
+/// cabinet still sees every sample once and in order, on one thread at a
+/// time, so the output is the serial chain's to the bit (`tests/pipeline.rs`).
+/// When the first half is the heavier one, the worker has finished the whole
+/// block before this thread asks, and nothing changes.
+#[allow(clippy::too_many_arguments)]
 fn pipelined(
     front: &mut Front<'_>,
     back: &mut Back<'_>,
     input: &[f64],
     mid: &mut [f64],
+    handoff: &mut [[f64; 2]],
     left: &mut [f64],
     right: &mut [f64],
     worker: &StageWorker,
@@ -2900,26 +2995,34 @@ fn pipelined(
     // while this thread still writes later stretches of `mid`, so no `&mut`
     // to either may be live across the hand-off.
     let mid_ptr = mid.as_mut_ptr();
+    let handoff_ptr = handoff.as_mut_ptr();
     let (left_ptr, right_ptr) = (left.as_mut_ptr(), right.as_mut_ptr());
+    let (power_ptr, cabinet_ptr) = (
+        &mut back.power as *mut BackPower<'_>,
+        &mut back.cabinet as *mut BackCabinet<'_>,
+    );
     for chunk_start in (0..input.len()).step_by(PIPELINE_CHUNK) {
         let chunk = &input[chunk_start..input.len().min(chunk_start + PIPELINE_CHUNK)];
-        let mut job = BackJob {
-            back: &mut *back,
+        let len = chunk.len();
+        let job = BackJob {
+            power: power_ptr,
+            cabinet: cabinet_ptr,
             mid: mid_ptr,
             factor,
             left: unsafe { left_ptr.add(chunk_start) },
             right: unsafe { right_ptr.add(chunk_start) },
+            handoff: handoff_ptr,
+            wanted: AtomicBool::new(false),
+            cabinet_here: AtomicBool::new(true),
+            handover: AtomicUsize::new(usize::MAX),
+            powered: AtomicUsize::new(0),
+            reached: AtomicUsize::new(0),
         };
-        // SAFETY: `job`, `mid` and the outputs outlive the offer, because
-        // `finish` below does not return until the worker is done with them
-        // or has been refused them.
-        unsafe {
-            worker.offer(
-                run_back,
-                &mut job as *mut BackJob<'_, '_> as *mut (),
-                chunk.len(),
-            )
-        };
+        let ctx = &job as *const BackJob<'_> as *mut ();
+        // SAFETY: `job`, `mid`, `handoff` and the outputs outlive the offer:
+        // this iteration does not end until the worker is done with them or
+        // has been refused them.
+        unsafe { worker.offer(run_back, ctx, len) };
         let mut buf = [0.0; MAX_OVERSAMPLING];
         for (i, &x) in chunk.iter().enumerate() {
             let n = front.sample(x, &mut buf);
@@ -2931,12 +3034,64 @@ fn pipelined(
                 worker.publish(i + 1);
             }
         }
-        // SAFETY: as above; `finish` returns only once samples 0..len of the
-        // job have been run, by the worker or by this thread.
-        used = match unsafe { worker.finish() } {
-            true => PipelineUse::Worker,
-            false => PipelineUse::Reclaimed,
+        worker.publish(len);
+        // SAFETY: the whole chunk is published.
+        if unsafe { worker.try_reclaim() } {
+            // The worker never started: the whole second half runs here.
+            // SAFETY: nobody else holds the job.
+            unsafe { run_back(ctx, 0, len) };
+            worker.release();
+            used = PipelineUse::Reclaimed;
+            continue;
+        }
+        // The worker has it. If it still has more than a quantum to go, offer
+        // to take the cabinet over; handing over the last few samples would
+        // move the cabinet's state between cores for less than it saves.
+        // Measured without this, the lightest presets lost up to a few tens of
+        // microseconds of p99 to exactly that. Then wait for the worker to
+        // hand the cabinet over or to finish without having needed to.
+        if job.reached.load(Ordering::Relaxed) + PIPELINE_QUANTUM < len {
+            job.wanted.store(true, Ordering::Release);
+        }
+        let handover = loop {
+            let at = job.handover.load(Ordering::Acquire);
+            if at != usize::MAX {
+                break Some(at);
+            }
+            if worker.is_done() {
+                let at = job.handover.load(Ordering::Acquire);
+                break (at != usize::MAX).then_some(at);
+            }
+            std::hint::spin_loop();
         };
+        used = PipelineUse::Worker;
+        if let Some(from) = handover {
+            used = PipelineUse::Shared;
+            // SAFETY: the worker published `handover` after its last cabinet
+            // sample and never touches the cabinet again this job.
+            let cabinet = unsafe { &mut *cabinet_ptr };
+            let mut next = from;
+            while next < len {
+                let powered = job.powered.load(Ordering::Acquire);
+                while next < powered {
+                    // SAFETY: written before `powered` was Released past it.
+                    let [y, out_of] = unsafe { handoff_ptr.add(next).read() };
+                    let (l, r) = cabinet.sample(y, out_of);
+                    unsafe {
+                        left_ptr.add(chunk_start + next).write(l);
+                        right_ptr.add(chunk_start + next).write(r);
+                    }
+                    next += 1;
+                }
+                if next < len {
+                    std::hint::spin_loop();
+                }
+            }
+        }
+        while !worker.is_done() {
+            std::hint::spin_loop();
+        }
+        worker.release();
     }
     used
 }
@@ -3120,6 +3275,9 @@ pub struct Chain {
     /// The first half's output for a block, handed to the second half; see
     /// `process_block`. Allocated here so the audio thread never does.
     mid: Box<[f64]>,
+    /// The power half's output, per host sample, for the samples whose
+    /// cabinet the calling thread runs; see `pipelined`.
+    handoff: Box<[[f64; 2]]>,
 }
 
 impl Chain {
@@ -3438,6 +3596,7 @@ impl Chain {
             realtime_stage_timing_enabled: false,
             realtime_stage_timings: RealtimeStageTimings::default(),
             mid: vec![0.0; PIPELINE_CHUNK * MAX_OVERSAMPLING].into_boxed_slice(),
+            handoff: vec![[0.0; 2]; PIPELINE_CHUNK].into_boxed_slice(),
         };
         chain.set_oversampling(4);
         chain.set_drive(0.5);
@@ -4552,7 +4711,7 @@ impl Chain {
             #[cfg(test)]
             power_traced,
         };
-        let back = Back {
+        let power = BackPower {
             down,
             iron: self.iron.map(|i| &mut self.irons[i]),
             iron_scale: self.iron_reference * IRON_VOLTS,
@@ -4569,6 +4728,11 @@ impl Chain {
             inner_rate,
             out_of: &mut self.out_of,
             out_of_target: self.out_of_target,
+            timing,
+            iron_ns: 0,
+            power_ns: 0,
+        };
+        let cabinet = BackCabinet {
             pad: &mut self.pad,
             tone: self.tone.map(|i| {
                 let (sim, trim) = &mut self.tones[i];
@@ -4576,6 +4740,7 @@ impl Chain {
             }),
             acoustic: self.acoustic.as_mut(),
             stereo: stereo && radiating && !self.has_chorus,
+            radiating,
             legacy_cabinet: if !radiating
                 && matches!(self.acoustic_settings.cabinet, CabinetChoice::Legacy)
             {
@@ -4591,12 +4756,10 @@ impl Chain {
             prev_output: &mut self.prev_output,
             prev_output_right: &mut self.prev_output_right,
             timing,
-            iron_ns: 0,
-            power_ns: 0,
             tone_ns: 0,
             cabinet_ns: 0,
         };
-        (front, back)
+        (front, Back { power, cabinet })
     }
 
     fn add_stage_timings(&mut self, front: (u64, u64), back: (u64, u64, u64, u64)) {
@@ -4646,6 +4809,7 @@ impl Chain {
         let len = input.len().min(left.len()).min(right.len());
         self.install_deferred_oversampling();
         let mut mid = std::mem::take(&mut self.mid);
+        let mut handoff = std::mem::take(&mut self.handoff);
         let (mut front, mut back) = self.split(stereo);
         let factor = front.factor();
         let mut used = PipelineUse::Serial;
@@ -4656,6 +4820,7 @@ impl Chain {
                     &mut back,
                     &input[..len],
                     &mut mid,
+                    &mut handoff,
                     &mut left[..len],
                     &mut right[..len],
                     worker,
@@ -4675,6 +4840,7 @@ impl Chain {
         }
         let timings = (front.timings(), back.timings());
         self.mid = mid;
+        self.handoff = handoff;
         self.add_stage_timings(timings.0, timings.1);
         if len > 0 {
             self.stereo_right = right[len - 1];

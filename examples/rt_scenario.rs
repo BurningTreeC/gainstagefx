@@ -286,7 +286,7 @@ fn main() {
         let mut samples = Vec::with_capacity(o.block_len());
         let worker = o.pipeline.then(StageWorker::new);
         let (mut inputs, mut right) = (vec![0.0; o.block_len()], vec![0.0; o.block_len()]);
-        let mut uses = [0usize; 3];
+        let mut uses = [0usize; 4];
         let (mut callback_health, mut callback_stages) = (before, stages_before);
         let mut next = Instant::now();
         for b in 0..blocks {
@@ -314,6 +314,7 @@ fn main() {
                     PipelineUse::Serial => 0,
                     PipelineUse::Worker => 1,
                     PipelineUse::Reclaimed => 2,
+                    PipelineUse::Shared => 3,
                 };
                 uses[last_use] += 1;
             } else {
@@ -415,8 +416,8 @@ fn main() {
         println!("  output hash {hash:016x}");
         if o.pipeline {
             println!(
-                "  second half on the worker in {} blocks, reclaimed by the caller in {}",
-                uses[1], uses[2]
+                "  second half on the worker in {} blocks, shared with the caller in {}, reclaimed by the caller in {}",
+                uses[1], uses[3], uses[2]
             );
         }
         if o.stages {

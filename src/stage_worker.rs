@@ -51,6 +51,9 @@ struct Shared {
     /// The audio thread's scheduling, for the worker to adopt; -1 until known.
     policy: AtomicI32,
     priority: AtomicI32,
+    /// Test-only behaviour: claim each block, then wait until the whole of it
+    /// has been published before running any of it. See `lagging`.
+    lag: bool,
 }
 
 // SAFETY: `job` is written by the audio thread only while the state is IDLE
@@ -85,6 +88,7 @@ impl StageWorker {
                 job: UnsafeCell::new(None),
                 policy: AtomicI32::new(-1),
                 priority: AtomicI32::new(0),
+                lag: false,
             }),
             thread: None,
             scheduling_read: AtomicBool::new(false),
@@ -92,12 +96,27 @@ impl StageWorker {
     }
 
     pub fn new() -> Self {
+        Self::spawn(false)
+    }
+
+    /// A worker that claims every block and then waits for all of it to be
+    /// published before running any: the calling thread always finishes its
+    /// own half first, which is the case where it takes work back from a
+    /// worker already running. Made deterministic in *that* it happens, for
+    /// tests; where in the block it happens still varies, and must not matter.
+    #[doc(hidden)]
+    pub fn lagging() -> Self {
+        Self::spawn(true)
+    }
+
+    fn spawn(lag: bool) -> Self {
         let shared = Arc::new(Shared {
             state: AtomicU32::new(IDLE),
             produced: AtomicUsize::new(0),
             job: UnsafeCell::new(None),
             policy: AtomicI32::new(-1),
             priority: AtomicI32::new(0),
+            lag,
         });
         let worker_shared = shared.clone();
         let thread = thread::Builder::new()
@@ -137,6 +156,32 @@ impl StageWorker {
     #[inline]
     pub fn publish(&self, produced: usize) {
         self.shared.produced.store(produced, Ordering::Release);
+    }
+
+    /// The first half is done and published. If the worker has not claimed
+    /// the block, take it back and return `true`: the caller then runs the
+    /// whole job itself and calls `release`. `false` means the worker has it;
+    /// the caller waits for `is_done` and then calls `release`.
+    ///
+    /// # Safety
+    /// Must follow `offer`, after `publish` of the whole block.
+    pub unsafe fn try_reclaim(&self) -> bool {
+        self.shared
+            .state
+            .compare_exchange(OFFERED, RECLAIMED, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Whether the worker has run all of the block it claimed.
+    #[inline]
+    pub fn is_done(&self) -> bool {
+        self.shared.state.load(Ordering::Acquire) == DONE
+    }
+
+    /// End the block, after `try_reclaim` and, if the worker had it, once
+    /// `is_done`.
+    pub fn release(&self) {
+        self.shared.state.store(IDLE, Ordering::Release);
     }
 
     /// The first half is done. Returns once the whole block's second half
@@ -211,6 +256,11 @@ fn worker_loop(shared: &Shared) {
         }
         // SAFETY: the claim is ours, and the offer's Release made the job visible.
         let job = unsafe { (*shared.job.get()).expect("an offered job") };
+        if shared.lag {
+            while shared.produced.load(Ordering::Acquire) < job.total {
+                spin_loop();
+            }
+        }
         let mut done = 0;
         while done < job.total {
             let produced = shared.produced.load(Ordering::Acquire);

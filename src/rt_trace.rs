@@ -352,6 +352,7 @@ fn write_row(
         PipelineUse::Serial => "serial",
         PipelineUse::Worker => "worker",
         PipelineUse::Reclaimed => "reclaimed",
+        PipelineUse::Shared => "shared",
     };
     write!(
         out,

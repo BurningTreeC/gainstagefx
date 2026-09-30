@@ -4,9 +4,10 @@
 //! make-up, decimators, tone, cabinet) on a `StageWorker` while the calling
 //! thread runs the first half of later samples. It is only worth having if it
 //! changes nothing, so every voice is played sample by sample, as a serial
-//! block, pipelined on a live worker, and pipelined on one that never wakes
-//! (so the caller reclaims the second half), and all four must agree exactly,
-//! at every oversampling factor the chain supports.
+//! block, pipelined on a live worker, pipelined on one that never wakes (so the
+//! caller reclaims the second half), and pipelined on one that always lags (so
+//! the caller takes the cabinet over part-way through every block), and all
+//! five must agree exactly, at every oversampling factor the chain supports.
 use gainstagefx::stage_worker::StageWorker;
 use gainstagefx::voice::{voice_at, Chain, PipelineUse, Settings, VOICES};
 
@@ -74,6 +75,7 @@ fn every_voice_pipelined_is_the_serial_chain_to_the_bit() {
     gainstagefx::dsp::time::enable_ftz_daz();
     let live = StageWorker::new();
     let inert = StageWorker::inert();
+    let lagging = StageWorker::lagging();
     for index in 0..VOICES {
         let (gain, diode, amplifier) = voice_at(index);
         for oversampling in [1, 2, 4, 8] {
@@ -91,10 +93,20 @@ fn every_voice_pipelined_is_the_serial_chain_to_the_bit() {
             let (pipelined, _) = blocks(&settings, stereo, Some(&live));
             let (reclaimed, uses) = blocks(&settings, stereo, Some(&inert));
             assert!(uses.iter().all(|u| *u == PipelineUse::Reclaimed));
+            // A lagging worker hands the cabinet over whenever it has claimed
+            // the block; when it has not woken in time the caller reclaims.
+            let (shared, uses) = blocks(&settings, stereo, Some(&lagging));
+            assert!(
+                uses.iter()
+                    .all(|u| matches!(u, PipelineUse::Shared | PipelineUse::Reclaimed))
+                    && uses.contains(&PipelineUse::Shared),
+                "a lagging worker should hand the cabinet over: {uses:?}"
+            );
             for (name, run) in [
                 ("serial", &serial),
                 ("pipelined", &pipelined),
                 ("reclaimed", &reclaimed),
+                ("shared", &shared),
             ] {
                 if let Some(k) = run.iter().zip(&reference).position(|(a, b)| a != b) {
                     panic!("{gain:?}/{diode:?}/{amplifier:?} at {oversampling}x, {name} block path differs at sample {k}");
@@ -110,6 +122,7 @@ fn every_voice_pipelined_is_the_serial_chain_to_the_bit() {
 fn the_acoustic_path_pipelined_is_the_serial_chain_to_the_bit() {
     gainstagefx::dsp::time::enable_ftz_daz();
     let live = StageWorker::new();
+    let lagging = StageWorker::lagging();
     for preset in gainstagefx::presets::PRESETS.iter().step_by(5) {
         let settings = preset.settings();
         let reference = per_sample(&settings, true);
@@ -117,6 +130,12 @@ fn the_acoustic_path_pipelined_is_the_serial_chain_to_the_bit() {
         assert!(
             pipelined == reference,
             "{} pipelined differs from the per-sample chain",
+            preset.name
+        );
+        let (shared, _) = blocks(&settings, true, Some(&lagging));
+        assert!(
+            shared == reference,
+            "{} with the cabinet handed over differs from the per-sample chain",
             preset.name
         );
     }
