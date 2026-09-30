@@ -16,6 +16,11 @@ its Modern setting, into four 6L6s.
    - "MESA-BOOGIE DUAL RECTIFIER POWER AMP".
    Both in the Dual Rectifier schematic set at
    [schematicheaven](https://schematicheaven.net/boogieamps/boogie_dualrectifier.pdf).
+   The same six-sheet set is at
+   [el34world](https://el34world.com/charts/Schematics/Files/Mesa_boogie/Boogie_dualrectifier.pdf)
+   (read 2026-09-30, kept in the git-ignored `docs/schematics/Boogie_dualrectifier.pdf`):
+   preamp, power amp, effects loop, power supplies, and the two switching-matrix
+   sheets, the second of which carries Mesa's **LDR mode table**.
 3. **Best source.** Those two sheets, which carry their own node voltages.
 4. **Cross-check.**
    - [The Rectifier Guide](https://www.rectifierguide.com/) for what each revision is:
@@ -43,19 +48,61 @@ V2B: R202 100k plate (384 V), **R103 39k cathode with nothing across it** -- the
   plate -- C27 .02 -- V3A grid: R225 220k stopper, R106 330k to ground
 V3A: R224 220k plate (213 V), R293 1k8 cathode with C33 1 uF
 V3B: cathode follower, R207 100k cathode load (216 V), plate on the 415 V rail
-RED tone stack: C4 680 pF to TRBL 250k, R273 47k, C23 .02 to BASS 1M, C24 .02 to MID 25k,
-     R215 1M between the two channels' stacks; RED MSTR 1M
+RED tone stack: C4 680 pF to TRBL 250k, R273 47k, C23 .02 to BASS 1M, C24 .02 to MID 25k;
+     fed from the follower through LDR8. R215 1M joins its input to the ORANGE stack's
+     input, whose LDR9 is off. RED PRSNC: R254 22k and C8 .003 from the treble wiper
+     into a 25k rheostat to ground. RED MSTR 1M from the same wiper.
 power amp: V5A/V5B 12AX7 long-tailed pair, R104 90k and R281 82k plates with 120 pF each,
-     R213/R214 1M grid leaks, R341 470 cathode, R353 10k tail, C40 .1 cross, C3 75 pF
-     C31/C32 .047 to 1.5k grid stoppers, R222/R223 220k leaks to a -51 V bias (-39 V with
-     EL34s), 1k 2 W screen stoppers, four 6L6, transformer #562105, 4 and 8-16 ohm taps
-     feedback from the 8-16 ohm tap through the presence network (25k pot, .1 uF, 47k/82k)
+     R213/R214 1M grid leaks, R341 470 cathode, R353 10k tail, R372 4.7k below it,
+     C40 .1 from there to V5A's grid, C3 75 pF, C31/C32 .047 to 1.5k grid stoppers,
+     R222/R223 220k leaks to a -51 V bias (-39 V with EL34s), 1k 2 W screen stoppers,
+     four 6L6, transformer #562105, 4 and 8-16 ohm taps
+feedback: 8-16 ohm tap -- C51 .1 -- R276 47k (a second 47k in parallel through LDR20,
+     "MORE FEEDBACK") -- LDR19 ("FEEDBACK") -- the tail node (R353/R372/C40).
+     ORANGE PRSNC: C52 .1 into a 25k rheostat, from the same node to ground, on the
+     amplifier's side of LDR19.
 ```
+
+   **Mode table (switching matrix, sheet 2), for the loop:**
+
+   | LDR | OR NORM | OR CLN | OR MOD | RD NORM | RD VINT |
+   |---|---|---|---|---|---|
+   | 19 FEEDBACK | ON | ON | OFF | **OFF** | ON |
+   | 20 MORE FEEDBACK | OFF | ON | OFF | **OFF** | OFF |
+   | 7 TREBLE ROLLOFF | ON | ON | OFF | OFF | ON |
+   | 8 RD TONE CAPS | OFF | OFF | OFF | ON | ON |
+   | 14 RD MSTR POT | OFF | OFF | OFF | ON | ON |
+
+   The red channel's toggle is NORM/VINT; RD NORM is its Modern setting, which is what
+   this model is. In it **the power amplifier has no loop** (DOCUMENTED): LDR19 lifts it.
+   Both modes with a loop use 47 k (23.5 k in OR CLN). The presence the red channel's
+   player turns is RED PRSNC in the preamplifier; ORANGE PRSNC, still hanging on the
+   tail, is the other channel's knob.
+
+   **Resolved 2026-09-30.** The audit of that day found the log's "presence network (25k
+   pot, .1 uF, 47k/82k)" and the model's one 100 k loop with the 25 k / .1 uF shunted off
+   it -- the JCM800 arrangement -- and could not re-read the sheet. Read again: the 47 k
+   are R276, the 82 k was never in the loop (the nearest are R281, the inverter's plate,
+   and R263 in the orange channel's master), and in the mode modelled the loop is not
+   there at all. Changed, all from the sheet:
+   - `RECTO_6L6` and `RECTO_6L6_TUBE` have no feedback. ORANGE PRSNC stays on the tail
+     node, resting at half (ESTIMATED; linear, ESTIMATED -- the sheet prints no law).
+   - The panel's Presence knob turns RED PRSNC (`rectifier::PRESENCE`, through
+     `Gain::own_presence`): topology and values DOCUMENTED; up is more resistance and
+     less treble shunted (PLAUSIBLE, from the name); linear (ESTIMATED). In a custom
+     chain the knob still turns it, and the power stage's own presence rests.
+   - R215 hung from the treble wiper to ground, loading the stack's output with 1 M. It
+     is now on the follower, where the sheet has it (the orange stack behind it left out:
+     APPROXIMATED, a few hundredths of a decibel through 1 M).
+   - Calibration, power trim and kernels regenerated. Recto Lead and Recto Rhythm put
+     back to their levels by `output_trim` (+1.47 and +0.82 dB); neither sets its own
+     Presence.
 
 6. **To be modeled exactly.** The RED channel from the jack to the master, with the
    interstage network in its Modern setting, the cold 39 k stage, the cathode follower and
-   the RED stack; and in the power stage the inverter, the couplings, the leaks, the
-   stoppers, the screens, the four 6L6s and the feedback with its presence control.
+   the RED stack with its presence; and in the power stage the inverter, the couplings,
+   the leaks, the stoppers, the screens and the four 6L6s, with the loop as the mode
+   table has it in that mode: lifted.
 7. **Approximated and estimated.**
    - **Both rectifier settings are modelled** (2026-09-16). SILICON DIODE is the supply
      as a voltage behind a resistance; VALVE is two 5U4GB as a `Part::Rectifier`, which
@@ -92,6 +139,22 @@ Against the sheets' own marked voltages:
   a stage biased that close to cutoff does.
 - The output valves idle at 16.7 mA and 8 W each on the sheet's -51 V, which is the cold
   bias these amplifiers are known for.
-- At the calibration point the whole amplifier makes 42 % distortion, third-harmonic led.
-- Tone stack: treble 11.9 dB of range at 4 kHz, bass 9.4 dB at 80 Hz, middle 6.5 dB at
-  600 Hz.
+- At the calibration point (gain full, 0.122 V) the whole amplifier makes **22.5 %**
+  distortion, fifth-harmonic led. It made 42 %, third-harmonic led, before 2026-09-30,
+  and both corrections are in the difference (`examples/recto_op.rs`, whole voice, the
+  old 100 k loop put back for comparison):
+  - RED PRSNC's fixed parts, R254 and C8, shunt the stack's output at every setting of
+    the rheostat. At the preamplifier's output they take the third harmonic from 24 %
+    to 16 % and the fifth from 16 % to 8 %: 42.9 % to 23.6 % in all, 2.6 dB of level.
+    Moving R215 alone changed the level by +1.3 dB and the distortion by under two
+    points.
+  - Opening the loop then moves the voice from 25.6 % to 22.3 %, the third falling
+    from 15.6 % to 5.2 %: the preamplifier hands the power stage 3.7 V, which without
+    the loop is its clipping knee, and there its own third passes through a null and
+    turns over against the preamplifier's.
+  - The power stage alone without its loop is 3 dB louder and distorts more at every
+    level (10.5 % against 6.2 % at 3 V in); the old loop was that shallow.
+- Tone stack: treble 6.9 dB of range at 4 kHz, bass 8.6 dB at 80 Hz, middle 6.2 dB at
+  600 Hz, with the presence at half. The treble had 11.9 dB before 2026-09-30: RED
+  PRSNC shunts the same node the treble wiper drives, so it takes the top the treble
+  control would otherwise hand on.

@@ -291,12 +291,15 @@ fn every_power_stage_responds_to_the_speaker_impedance() {
             spec.name, spec.feedback
         );
         // How far the speaker's impedance moves the output is how much feedback
-        // the amplifier has around it, and the seven stages come out in an order
-        // that says so. Measured, resonance against midband:
+        // the amplifier has around it, and the stages come out in an order that
+        // says so. Measured 2026-09-30, at the resonance:
         //
-        // | Mark IIC+ | Twin | 2203 | AC30 | 5150 | Plexi | DR103 |
-        // |---|---|---|---|---|---|---|
-        // | x2.81 | x2.76 | x2.58 | x1.76 | x1.61 | x1.36 | x1.16 |
+        // | Recto | Mark IIC+ | 5150 | Twin | 2203 | AC30 | Plexi | DR103 |
+        // |---|---|---|---|---|---|---|---|
+        // | x7.15 | x3.42 | x3.11 | x2.69 | x2.54 | x1.80 | x1.34 | x1.14 |
+        //
+        // The Rectifier leads because it has no loop at all in the mode modelled
+        // (the sheet's LDR19), and the Mark IIC+'s drawn loop is a light one.
         //
         // The DR103 is last because it is the one built for headroom: a tight
         // loop, a low output impedance, and a speaker that barely moves it. What

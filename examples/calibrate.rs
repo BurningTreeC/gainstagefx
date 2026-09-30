@@ -534,16 +534,39 @@ fn main() {
     // table moves by more than that rounding. If this voice is ever changed,
     // move the anchor again the same way: to an untouched voice, at its
     // current value.
-    const ABSOLUTE_REFERENCE_VOICE: Gain = Gain::Brit800;
+    //
+    // On 2026-09-30 the 2203 did change -- its presence pot is linear, as the
+    // 1981 sheet prints it, not audio -- so the anchor moved again, to the
+    // Twin Reverb: untouched that day and one of the frozen baseline's voices,
+    // which must not move. Its value came from the unanchored curves
+    // (`GAINSTAGEFX_CALIBRATE_RAW`): the offsets that reproduce every
+    // untouched voice's committed entry to the last printed digit span only
+    // 0.00004 dB, and -51.44624 is inside them.
+    const ABSOLUTE_REFERENCE_VOICE: Gain = Gain::Twin;
     const ABSOLUTE_REFERENCE_KNOT: usize = 29;
-    const ABSOLUTE_REFERENCE_MAKE_UP_DB: f64 = -48.001;
+    const ABSOLUTE_REFERENCE_MAKE_UP_DB: f64 = -51.44624;
     let reference = (0..VOICES)
         .find(|i| voice::voice_at(*i).0 == ABSOLUTE_REFERENCE_VOICE)
         .expect("the anchor voice exists");
     let anchor = ABSOLUTE_REFERENCE_MAKE_UP_DB - rows[reference].2[ABSOLUTE_REFERENCE_KNOT];
+    // The unanchored curves, for moving the anchor: set this to a path and
+    // each voice's raw make-up is written there, one line a voice, so the
+    // value that leaves every untouched voice where it was can be searched for
+    // without re-measuring the catalogue.
+    if let Some(path) = std::env::var_os("GAINSTAGEFX_CALIBRATE_RAW") {
+        let lines: Vec<String> = rows
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, make_up))| {
+                let values: Vec<String> = make_up.iter().map(|m| format!("{m:.17e}")).collect();
+                format!("{i} {}", values.join(" "))
+            })
+            .collect();
+        std::fs::write(path, lines.join("\n")).expect("the raw curves");
+    }
     println!(
         "// Absolute level anchored to {} knot {ABSOLUTE_REFERENCE_KNOT} at \
-         {ABSOLUTE_REFERENCE_MAKE_UP_DB:.2} dB; see `calibrate.rs`.",
+         {ABSOLUTE_REFERENCE_MAKE_UP_DB:.5} dB; see `calibrate.rs`.",
         ABSOLUTE_REFERENCE_VOICE.name()
     );
     println!("// Catalogue additions/recalibrations do not move existing voices globally.");

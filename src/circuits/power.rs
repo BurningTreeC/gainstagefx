@@ -203,6 +203,14 @@ pub struct PowerSpec {
     /// turning it up takes treble *out of the loop* rather than boosting it.
     pub presence_pot: f64,
     pub presence_cap: f64,
+    /// The presence pot's track: the drawing's, where it prints one.
+    pub presence_taper: Taper,
+    /// Where the presence capacitor hangs. `false` is the JCM800's: the
+    /// capacitor off the tail node, the pot a rheostat under it to ground.
+    /// `true` is the 1959's: the pot's track *is* the bottom of the tail, from
+    /// the tail node to ground, and the capacitor hangs off its wiper -- so
+    /// `pi_tail_lower` is the track and there is no separate resistor.
+    pub presence_on_tail: bool,
     /// A cut control: a rheostat in series with a capacitor, straight across
     /// the inverter's two outputs. Nothing to do with feedback -- it shorts the
     /// top of the band between the two sides before the output valves see it,
@@ -225,6 +233,82 @@ pub struct PowerSpec {
     /// control shunts the loop before it gets there. `None` is the Marshall
     /// kind above (`feedback` straight to the tail, `presence_pot` across it).
     pub feedback_network: Option<&'static FeedbackNetwork>,
+    /// A loop of the Mesa Mark kind, where the presence is a rheostat *in
+    /// series with* the feedback rather than a shunt across it, and the tail
+    /// below the loop is split. `None` everywhere but the Mark IIC+. See
+    /// `SeriesLoop`.
+    pub series_loop: Option<&'static SeriesLoop>,
+}
+
+/// The Mark IIC+'s inverter and loop as both redraws have them (RP10 and
+/// FINAL, which agree part for part; no factory sheet exists). See
+/// `docs/models/cali_iic_plus.md`.
+///
+/// ```text
+/// 8 ohm -- PRESENCE 250k -- R60 1k5 -- (R61 56k || C61 .0047) -- J
+/// joined cathodes -- R67 470 -- M;  R65 100k and R66 150k from M to the grids
+/// M -- R64 22k -- J -- R63 1k5 -- K -- (R62 3k3 || C64 .047) -- ground
+/// K -- C65 .1 -- V5B's grid;  V5A in through C66 .1 from the EQ's output
+/// V5A plate R68 82.5k, V5B plate R69 90.9k with C68 120 pF across it
+/// ```
+///
+/// `feedback` is R61, `pi_tail` R64, `pi_tail_lower` R62, `pi_cross` C65.
+///
+/// **The presence is in series with the loop.** Turned up, the rheostat puts
+/// resistance in front of R61 || C61; since C61 is what carries the top of the
+/// band round the loop, that takes the treble's feedback away first and all
+/// of it eventually, so the top comes up and the amplifier loosens. At zero
+/// the top is fed back through R60's 1k5 alone and the amplifier is dark.
+/// The wiper is drawn tied to nothing, so which end is "up" is PLAUSIBLE, from
+/// the control's name; the 250 k is DOCUMENTED, the audio track PLAUSIBLE (the
+/// Mesa 250 k pots Tube Amp Doctor sells for the Mark II and III are A250K).
+///
+/// **The redraws put V5B upside down.** Both draw V5B's plate on V5A's
+/// cathode and its cathode on R69 to C, the B+ node R68 also returns to.
+/// Wired as drawn, V5B would sit with its plate a volt above its grid and
+/// could not conduct; with its plate on R69 and its cathode joined to V5A's it
+/// is the long-tailed pair Mesa's own Dual Rectifier sheet draws with the same
+/// 82 k / 90 k plates, 120 pF and 470 ohm cathode resistor. PLAUSIBLE, and the
+/// only reading that runs.
+///
+/// **The buffer.** The MASTER this stage's master pot stands in for is ahead
+/// of the graphic, and what actually drives C66 is the graphic's output
+/// follower (Q4), with R50 100 k to ground beside it. The model's graphic comes
+/// before this stage, so the follower is built here, behind the stand-in: without
+/// it the stand-in's wiper would be loaded by R65's 100 k, which the real
+/// MASTER never sees. R50 across an ideal follower changes nothing and is not
+/// built. APPROXIMATED.
+#[derive(Clone, Copy, Debug)]
+pub struct SeriesLoop {
+    /// The PRESENCE rheostat's track and its law, as a rheostat: the reverse
+    /// of the forward law, so the resistance in circuit follows the knob. See
+    /// `Taper::ReverseLinear`.
+    pub presence_pot: f64,
+    pub presence_taper: Taper,
+    /// R60, between the rheostat and the shelf.
+    pub series: f64,
+    /// C61, across `feedback` (R61).
+    pub shelf_cap: f64,
+    /// R63, from the loop's node down to the node the undriven grid is
+    /// coupled to; `pi_tail_lower` (R62) goes on from there with this across
+    /// it (C64).
+    pub tail_tap: f64,
+    pub tail_bypass: f64,
+    /// C68, across the undriven side's plate load.
+    pub other_plate_cap: f64,
+}
+
+impl SeriesLoop {
+    /// All DOCUMENTED by the two redraws, but the taper (above).
+    pub const MARK_IIC_PLUS: SeriesLoop = SeriesLoop {
+        presence_pot: 250_000.0,
+        presence_taper: Taper::ReverseAudio,
+        series: 1_500.0,          // R60
+        shelf_cap: 0.0047e-6,     // C61
+        tail_tap: 1_500.0,        // R63
+        tail_bypass: 0.047e-6,    // C64
+        other_plate_cap: 120e-12, // C68
+    };
 }
 
 /// The Peavey 5150's feedback path, from the original's preamp and tube-board
@@ -426,11 +510,15 @@ impl PowerSpec {
         feedback: 100_000.0,
         presence_pot: 22_000.0,
         presence_cap: 0.1e-6,
+        // "22K LIN" on the 1981 preamp sheet's phase splitter. DOCUMENTED.
+        presence_taper: Taper::Linear,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The 1959 Super Lead's, as Unicord drew it in July 1970 (70-6-11 issue B):
@@ -445,8 +533,9 @@ impl PowerSpec {
     /// - **More feedback.** 47 k from the 16 ohm tap where the 2203 has 100 k from
     ///   4 ohm: built from the 4 ohm secondary as 23.5 k, which passes the same
     ///   current, about four times the 2203's feedback.
-    /// - **A 5 k presence control** at the bottom of the tail instead of 22 k
-    ///   across a 4.7 k resistor.
+    /// - **A 5 k presence control** whose track is the bottom of the tail, with
+    ///   the capacitor on its wiper, instead of 22 k under a capacitor beside a
+    ///   4.7 k resistor.
     pub const PLEXI_EL34: PowerSpec = PowerSpec {
         name: "Brit Plexi EL34 (1959, 1970)",
         master: 1_000_000.0,
@@ -458,7 +547,8 @@ impl PowerSpec {
         pi_leak_lower: 1_000_000.0,
         pi_cathode: 470.0,
         pi_tail: 10_000.0,
-        // The presence pot's 5 k track is what the tail returns through.
+        // The presence pot's 5 k track is what the tail returns through; see
+        // `presence_on_tail`.
         pi_tail_lower: 5_000.0,
         pi_cross: 0.1e-6,
         pi_plate_driven: 82_000.0,
@@ -499,13 +589,20 @@ impl PowerSpec {
         core_sharpness: 6.0,
         speaker: 4.0,
         feedback: 23_500.0,
+        // The drawing's 5 K: its track from the tail node to ground, the .1 on
+        // its wiper (Unicord 70-13-11, the 1992's sheet of the same month and
+        // inverter). No taper is printed; linear, as the JCM800's presence is.
+        // PLAUSIBLE.
         presence_pot: 5_000.0,
         presence_cap: 0.1e-6,
+        presence_taper: Taper::Linear,
+        presence_on_tail: true,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The JCM800 2205's, from Marshall's "2205 STD Output Stage & PSU", issue 2
@@ -591,11 +688,16 @@ impl PowerSpec {
         feedback: 100_000.0,    // R47, from the 4 ohm tap
         presence_pot: 22_000.0, // VR11
         presence_cap: 0.1e-6,   // C31
+        // The 2205 sheet prints no taper for VR11; the 2203's same 22 k presence
+        // is "22K LIN". PLAUSIBLE.
+        presence_taper: Taper::Linear,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The AC30/6 Top Boost's, from the 1974 Dallas drawing Sc/V/1313, checked
@@ -676,6 +778,8 @@ impl PowerSpec {
         feedback: 0.0,
         presence_pot: 0.0,
         presence_cap: 0.0,
+        presence_taper: Taper::Audio,
+        presence_on_tail: false,
         cut_pot: 250_000.0, // VR4
         cut_cap: 0.0047e-6, // C10
         // A little cut, which is where an AC30 usually sits. The panel has no
@@ -683,6 +787,7 @@ impl PowerSpec {
         cut_rest: 0.2,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The DR103's, from Hiwatt's own output-stage (Issue 1, 1994) and power
@@ -761,11 +866,14 @@ impl PowerSpec {
         // The presence control is the driver's, not this Marshall-style one.
         presence_pot: 0.0,
         presence_cap: 0.0,
+        presence_taper: Taper::Audio,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: Some(&DriverSpec::HIWATT_DR103),
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The DR103's power stage as another preamplifier meets it: the Hiwatt's
@@ -789,10 +897,10 @@ impl PowerSpec {
     /// The matched power stage of the Cali Rectifier preamplifier
     /// (`circuits::rectifier`). See `docs/models/cali_rectifier.md`.
     ///
-    /// Four 6L6 on a -51 V fixed bias, the drawing's own inverter with its 120 pF
-    /// plate capacitors, and the presence control in the feedback loop. The
-    /// amplifier's switchable valve rectifier is **not** modelled: this supply is
-    /// a voltage behind a resistance, which is its silicon setting.
+    /// Four 6L6 on a -51 V fixed bias and the drawing's own inverter with its
+    /// 120 pF plate capacitors, **open loop**: in the red channel's Modern mode
+    /// the sheet's LDR19 lifts the feedback (2026-09-30; see `feedback`). This
+    /// is the stage's silicon setting; `RECTO_6L6_TUBE` is the valve one.
     pub const RECTO_6L6: PowerSpec = PowerSpec {
         name: "Recto 6L6 (Dual Rectifier, Rev F)",
         // The red channel's master is in the preamplifier, where the sheet has it.
@@ -844,15 +952,26 @@ impl PowerSpec {
         saturation_hz: 60.0,
         core_sharpness: 6.0,
         speaker: 8.0,
-        // From the 8-16 ohm tap, through the presence network.
-        feedback: 100_000.0,
-        presence_pot: 25_000.0, // the sheet's 25 k
-        presence_cap: 0.1e-6,   // C52
+        // No loop. The sheet's feedback -- C51 .1 into R276 47 k, a second
+        // 47 k through LDR20 -- reaches the tail only through LDR19, and the
+        // sheet's own mode table has LDR19 OFF in RD NORM, the red channel's
+        // Modern mode this models (ON in Vintage and on the orange channel).
+        feedback: 0.0,
+        // What stays: ORANGE PRSNC, C52 .1 into a 25 k rheostat, hangs on the
+        // tail node (R372's top) on the amplifier's side of LDR19, so it is in
+        // circuit in every mode. It is the orange channel's knob and nobody
+        // turns it here: it rests at half, ESTIMATED, law ESTIMATED linear. The
+        // red channel's presence is in its preamplifier (`rectifier::PRESENCE`).
+        presence_pot: 25_000.0,
+        presence_cap: 0.1e-6, // C52
+        presence_taper: Taper::Linear,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The same amplifier with its rectifier switch on VALVE rather than SILICON
@@ -918,15 +1037,26 @@ impl PowerSpec {
         saturation_hz: 60.0,
         core_sharpness: 6.0,
         speaker: 8.0,
-        // From the 8-16 ohm tap, through the presence network.
-        feedback: 100_000.0,
-        presence_pot: 25_000.0, // the sheet's 25 k
-        presence_cap: 0.1e-6,   // C52
+        // No loop. The sheet's feedback -- C51 .1 into R276 47 k, a second
+        // 47 k through LDR20 -- reaches the tail only through LDR19, and the
+        // sheet's own mode table has LDR19 OFF in RD NORM, the red channel's
+        // Modern mode this models (ON in Vintage and on the orange channel).
+        feedback: 0.0,
+        // What stays: ORANGE PRSNC, C52 .1 into a 25 k rheostat, hangs on the
+        // tail node (R372's top) on the amplifier's side of LDR19, so it is in
+        // circuit in every mode. It is the orange channel's knob and nobody
+        // turns it here: it rests at half, ESTIMATED, law ESTIMATED linear. The
+        // red channel's presence is in its preamplifier (`rectifier::PRESENCE`).
+        presence_pot: 25_000.0,
+        presence_cap: 0.1e-6, // C52
+        presence_taper: Taper::Linear,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     /// The Peavey EVH 5150's, read off page 5 of Peavey's drawing at 200 dpi.
@@ -985,11 +1115,14 @@ impl PowerSpec {
         // The presence is the feedback network's (`FeedbackNetwork`).
         presence_pot: 0.0,
         presence_cap: 0.0,
+        presence_taper: Taper::Audio,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: Some(&FeedbackNetwork::PEAVEY_5150),
+        series_loop: None,
     };
 
     /// The Mesa Boogie Mark IIC+'s.
@@ -1003,6 +1136,12 @@ impl PowerSpec {
     /// the tube's own data sheet gives for two of them at 450 V, so the ratio
     /// is `sqrt(3600 / 8)`. Mesa's drawing gives the phase inverter and the
     /// output stage but, as with the preamplifier, prints no rail voltage.
+    ///
+    /// The inverter, its loop and the presence are the redraws' since
+    /// 2026-09-30 (`SeriesLoop`): until then this was a Marshall inverter --
+    /// 1 M leaks, a 10 k / 4.7 k tail, 100 k of feedback and a 5 k presence
+    /// shunted off it -- with a 100 k grid stopper the drawings do not have,
+    /// and its Presence knob turned a control the amplifier does not have.
     pub const MARKIIC: PowerSpec = PowerSpec {
         name: "Mark IIC+ power amp",
         // Stands in for the amplifier's MASTER, which on the drawing is a 1 M
@@ -1012,28 +1151,30 @@ impl PowerSpec {
         // preamplifier, level at the master.
         master: 1_000_000.0,
         master_rest: 0.30,
-        pi_couple: 0.1e-6,
+        pi_couple: 0.1e-6, // C66
         driver_volts: 0.0,
-        pi_stopper: 100_000.0,
-        pi_leak_upper: 1_000_000.0,
-        pi_leak_lower: 1_000_000.0,
-        pi_cathode: 470.0,
-        pi_tail: 10_000.0,
-        pi_tail_lower: 4_700.0,
-        pi_cross: 0.047e-6,
-        pi_plate_driven: 82_000.0,
-        pi_plate_other: 100_000.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 100_000.0,  // R65
+        pi_leak_lower: 150_000.0,  // R66
+        pi_cathode: 470.0,         // R67
+        pi_tail: 22_000.0,         // R64
+        pi_tail_lower: 3_300.0,    // R62, below R63 (`SeriesLoop`)
+        pi_cross: 0.1e-6,          // C65
+        pi_plate_driven: 82_500.0, // R68
+        pi_plate_other: 90_900.0,  // R69
         pi_supply: 410.0,
         pi_tube: TriodeSpec::ECC83,
+        // C68 is across R69 alone; `SeriesLoop` builds it.
         pi_plate_cap: 0.0,
 
-        couple: 0.1e-6,
-        grid_leak: 220_000.0,
-        stopper: 1_500.0,
-        screen_resistor: 470.0,
-        tubes_per_side: 1.0, // a pair, not two pairs -- the 60 W C+
+        couple: 0.1e-6,         // C70, C71
+        grid_leak: 220_000.0,   // R70, R71
+        stopper: 2_200.0,       // R74, R75
+        screen_resistor: 470.0, // R79, R80
+        tubes_per_side: 1.0,    // a pair, not two pairs -- the 60 W C+
         tube: PentodeSpec::T6L6GC,
-        bias: -44.0,
+        // The RP10's table: "60W: -47", and the same for the 60 W export.
+        bias: -47.0,
         cathode_bias: 0.0,
         cathode_bypass: 0.0,
 
@@ -1059,14 +1200,18 @@ impl PowerSpec {
         core_sharpness: 6.0,
         speaker: 8.0,
 
-        feedback: 100_000.0,
-        presence_pot: 5_000.0,
-        presence_cap: 0.1e-6,
+        // From the 8 ohm tap. R61; the presence is the loop's (`SeriesLoop`).
+        feedback: 56_000.0,
+        presence_pot: 0.0,
+        presence_cap: 0.0,
+        presence_taper: Taper::Audio,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: Some(&SeriesLoop::MARK_IIC_PLUS),
     };
 
     /// The Fender Twin Reverb AB763's, off the manufacturer's schematic.
@@ -1203,11 +1348,14 @@ impl PowerSpec {
         // No presence control. One femtofarad is an open circuit.
         presence_pot: 5_000.0,
         presence_cap: 1e-15,
+        presence_taper: Taper::Audio,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 
     pub const TWIN: PowerSpec = PowerSpec {
@@ -1286,11 +1434,14 @@ impl PowerSpec {
         // No presence control. One femtofarad is an open circuit.
         presence_pot: 5_000.0,
         presence_cap: 1e-15,
+        presence_taper: Taper::Audio,
+        presence_on_tail: false,
         cut_pot: 0.0,
         cut_cap: 0.0,
         cut_rest: 0.0,
         driver: None,
         feedback_network: None,
+        series_loop: None,
     };
 }
 
@@ -1307,6 +1458,7 @@ impl PowerSpec {
     pub fn presence_name(&self) -> Option<&'static str> {
         if self.driver.is_some_and(|d| d.presence_pot > 0.0)
             || self.feedback_network.is_some_and(|f| f.presence_pot > 0.0)
+            || (self.feedback > 0.0 && self.series_loop.is_some())
         {
             Some("PRESENCE")
         } else if self.cut_pot > 0.0 {
@@ -1431,6 +1583,14 @@ fn assemble(
         );
         "master"
     };
+    // The Mark IIC+'s graphic output follower, which is what drives its
+    // inverter; see `SeriesLoop`.
+    let master_node = if spec.series_loop.is_some() {
+        net.linear_opamp("pi_drive", master_node, "pi_drive");
+        "pi_drive"
+    } else {
+        master_node
+    };
     // How the inverter's grids get their direct voltage, which is most of what
     // decides whether an amplifier stays clean when it is driven hard.
     //
@@ -1517,7 +1677,25 @@ fn assemble(
     if spec.pi_tail > 0.0 {
         net.resistor(cathode_top, tail, spec.pi_tail);
     }
-    if spec.pi_tail_lower > 0.0 {
+    if spec.pi_tail_lower > 0.0 && spec.presence_on_tail {
+        // The 1959's: the presence pot's track is the tail's return, and its
+        // wiper carries the capacitor (below). `pot(a, wiper, b)` puts `R f(p)`
+        // between wiper and `b`, so turned up the wiper is at the tail node.
+        net.pot(
+            tail,
+            "pres",
+            "gnd",
+            spec.pi_tail_lower,
+            spec.presence_taper,
+            PRESENCE,
+        );
+    } else if let (true, Some(l)) = (spec.pi_tail_lower > 0.0, spec.series_loop) {
+        // The Mark's: R63 down to K, then R62 with C64 across it. The
+        // undriven grid is coupled to K, not to the loop's node.
+        net.resistor(tail, "tail_k", l.tail_tap)
+            .resistor("tail_k", "gnd", spec.pi_tail_lower)
+            .capacitor("tail_k", "gnd", l.tail_bypass);
+    } else if spec.pi_tail_lower > 0.0 {
         net.resistor(tail, "gnd", spec.pi_tail_lower);
     }
     // And what the undriven grid is tied to, which is that node when there is a
@@ -1529,7 +1707,12 @@ fn assemble(
     };
     let cathode = "pi_k";
     if spec.pi_cross > 0.0 {
-        net.capacitor(tail, "pi_g2", spec.pi_cross);
+        let cross = if spec.series_loop.is_some() && spec.pi_tail_lower > 0.0 {
+            "tail_k"
+        } else {
+            tail
+        };
+        net.capacitor(cross, "pi_g2", spec.pi_cross);
     }
     if twin_supply {
         // AB763: both PI plate loads return to the shared +450 V C node, not
@@ -1545,6 +1728,11 @@ fn assemble(
         .triode("pi_p2", "pi_g2", cathode, spec.pi_tube);
     if spec.pi_plate_cap > 0.0 {
         net.capacitor("pi_p1", "pi_p2", spec.pi_plate_cap);
+    }
+    // C68, across R69: the plate load returns to a stiff supply, so across it
+    // is to ground.
+    if let Some(l) = spec.series_loop {
+        net.capacitor("pi_p2", "gnd", l.other_plate_cap);
     }
 
     // --- the supplies ------------------------------------------------------
@@ -1795,17 +1983,36 @@ fn assemble(
                 Taper::Audio,
                 PRESENCE,
             ); // VR9
+    } else if let (true, Some(l)) = (spec.feedback > 0.0, spec.series_loop) {
+        // The Mark's: the presence rheostat in series, R60, then R61 with C61
+        // across it into the loop's node. `pot(a, wiper, b)` with the wiper
+        // tied to `b` leaves `R (1 - f(p))` in circuit, and the reverse law
+        // makes that the forward law in the knob's position: up is more
+        // resistance, less feedback, more top. See `SeriesLoop`.
+        net.pot(
+            "spk",
+            "fb_w",
+            "fb_w",
+            l.presence_pot,
+            l.presence_taper,
+            PRESENCE,
+        )
+        .resistor("fb_w", "fb_r", l.series) // R60
+        .resistor("fb_r", tail, spec.feedback) // R61
+        .capacitor("fb_r", tail, l.shelf_cap); // C61
     } else if spec.feedback > 0.0 {
         net.resistor("spk", tail, spec.feedback);
         // Not every amplifier with a loop puts a presence control in it. The
         // Hiwatt's is in its preamplifier and is not built; see `circuits::dr103`.
-        if spec.presence_pot > 0.0 {
+        if spec.presence_pot > 0.0 && spec.presence_on_tail {
+            net.capacitor("pres", "gnd", spec.presence_cap);
+        } else if spec.presence_pot > 0.0 {
             net.capacitor(tail, "pres", spec.presence_cap).pot(
                 "pres",
                 "gnd",
                 "gnd",
                 spec.presence_pot,
-                Taper::Audio,
+                spec.presence_taper,
                 PRESENCE,
             );
         }
@@ -1828,6 +2035,20 @@ fn assemble(
                 .resistor("pres_w", "gnd", d.presence_wiper)
                 .capacitor("pres_plate", "v3a_p", d.presence_plate_cap);
         }
+    } else if spec.presence_pot > 0.0 && spec.pi_tail_lower > 0.0 {
+        // No loop, but a presence network still on the tail node: the Dual
+        // Rectifier's in the red channel's Modern mode, where LDR19 lifts the
+        // loop and leaves the orange channel's presence where it hangs. Its
+        // pot is nobody's knob here (`presence_name` is `None`) and rests at
+        // half.
+        net.capacitor(tail, "pres", spec.presence_cap).pot(
+            "pres",
+            "gnd",
+            "gnd",
+            spec.presence_pot,
+            spec.presence_taper,
+            PRESENCE,
+        );
     }
 
     Ok((net.build(at)?, slots))

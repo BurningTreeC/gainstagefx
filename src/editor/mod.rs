@@ -1148,7 +1148,8 @@ fn drive(cx: &mut Context) {
     // The power stage's presence -- the AC30's cut -- named after what the
     // stage in the path has in that slot, and greyed where it has nothing:
     // the AB763s, the transistor stages and Bypass. The DR103's is its
-    // driver's (`power::DriverSpec`). See `Chain::set_presence`.
+    // driver's (`power::DriverSpec`); the Cali Rectifier's is in its
+    // preamplifier (`Gain::own_presence`). See `Chain::set_presence`.
     {
         let name = parameter_signal.map(|p| p.presence_name());
         Binding::new(cx, name, move |cx| {

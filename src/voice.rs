@@ -453,6 +453,22 @@ impl Gain {
         }
     }
 
+    /// A presence control this circuit carries in its own netlist, which the
+    /// panel's Presence knob turns instead of the power stage's.
+    ///
+    /// Only the Cali Rectifier's. In the red channel's Modern mode the Dual
+    /// Rectifier's power amplifier runs with no loop, so there is nothing for
+    /// a presence to work on there, and the channel's PRSNC is a treble shunt
+    /// in the preamplifier (`rectifier::PRESENCE`). Where a circuit has one,
+    /// the power stage's own presence -- in a custom chain behind it -- rests
+    /// where it was voiced: one knob, one control, as the amplifier has.
+    pub fn own_presence(self) -> Option<usize> {
+        match self {
+            Gain::Recto => Some(rectifier::PRESENCE),
+            _ => None,
+        }
+    }
+
     /// Whether this circuit's own tone control runs the other way from the
     /// knob. Only the Rodent's, whose FILTER darkens as it turns up -- the same
     /// inversion the pedal slot carries for it.
@@ -4671,18 +4687,30 @@ impl Chain {
     /// A stage with nothing in that slot -- the AB763s, the transistor stages,
     /// Bypass -- is left alone, and the panel greys the knob for it. The
     /// DR103's presence is its driver's and rests at half, like the rest.
+    ///
+    /// A circuit with a presence of its own (`Gain::own_presence`, the Cali
+    /// Rectifier's) takes the knob, mapped the same way, and the power stage's
+    /// presence then rests where it was voiced.
     pub fn set_presence(&mut self, knob: f64) {
         self.presence = knob.clamp(0.0, 1.0);
+        let own = voice_at(self.gain).0.own_presence();
+        if let Some(which) = own {
+            let sim = &mut self.gains[self.gain];
+            let rest = sim.resting_position(which).unwrap_or(0.5);
+            sim.set_control(which, Self::master_position(rest, self.presence));
+        }
         let Some(model) = self.power_selection.resolved(self.voice) else {
             return;
         };
         if model.presence_name().is_none() {
             return;
         }
+        // Half is the rest, exactly (`master_position`).
+        let knob = if own.is_some() { 0.5 } else { self.presence };
         let loaded = &mut self.loaded[model.slot()].sim;
         for sim in self.powers[self.power].as_mut().into_iter().chain([loaded]) {
             let rest = sim.resting_position(power::PRESENCE).unwrap_or(0.5);
-            sim.set_control(power::PRESENCE, Self::master_position(rest, self.presence));
+            sim.set_control(power::PRESENCE, Self::master_position(rest, knob));
         }
     }
 

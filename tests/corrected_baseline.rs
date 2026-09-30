@@ -21,6 +21,17 @@
 //! change one of these voices, record the exception in this header, by date and
 //! by reason, and stop comparing that voice -- do not recapture to make the test
 //! pass. A new capture is a new, deliberate decision, taken by the owner.
+//!
+//! **First exception, 2026-09-30: the Mark IIC+ is no longer compared.** On
+//! the owner's decision its power stage was rebuilt from the two redraws (RP10
+//! and FINAL, which agree part for part): the inverter's 100 k / 150 k leaks,
+//! 22 k tail and 1k5 + 3k3 || .047 below it, 82.5 k / 90.9 k plates with 120
+//! pF, no grid stopper, 2k2 output stoppers and a -47 V bias; and the loop as
+//! drawn, with the 250 k PRESENCE rheostat in series with it rather than a
+//! Marshall presence shunted off it. It sounds different at every setting, so
+//! its runs are rendered -- they still count against `FALLBACK_BUDGET` -- and
+//! not compared. The 5150, Twin and 73P still are, sample for sample. See
+//! `power::SeriesLoop` and `docs/models/cali_iic_plus.md`.
 use gainstagefx::voice::{Chain, Gain, Settings, Tone};
 use std::f64::consts::TAU;
 
@@ -155,11 +166,15 @@ fn corrected_output_is_preserved() {
         if !settled[index / RUN] || captured_settled[index / RUN] == 0 {
             continue;
         }
+        let voice = VOICES[(index / BLOCK) % VOICES.len()];
+        // Rebuilt on 2026-09-30; see the header.
+        if voice == Gain::Boogie {
+            continue;
+        }
         compared += 1;
         let expected = f32::from_le_bytes(*bytes);
         error += f64::from(actual - expected).powi(2);
         energy += f64::from(expected).powi(2);
-        let voice = VOICES[(index / BLOCK) % VOICES.len()];
         let run_in_voice = (index % BLOCK) / RUN;
         let (amplitude, signal) = (AMPLITUDES[run_in_voice / 5], run_in_voice % 5);
         let sample = index % RUN;
@@ -176,10 +191,12 @@ fn corrected_output_is_preserved() {
         (error / energy.max(1e-30)).sqrt(),
         settled.len(),
     );
+    // Three of the four voices are compared; more than three quarters of
+    // their samples have to be, as of all four's before the first exception.
+    let still_compared = actual.len() / VOICES.len() * (VOICES.len() - 1);
     assert!(
-        compared > actual.len() * 3 / 4,
-        "only {compared} of {} samples were comparable; too few for a regression guard",
-        actual.len()
+        compared > still_compared * 3 / 4,
+        "only {compared} of {still_compared} samples were comparable; too few for a regression guard",
     );
 }
 

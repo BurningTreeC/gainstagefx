@@ -310,6 +310,11 @@ fn every_control_is_either_reachable_or_given_a_resting_position() {
         if let Some((which, _)) = gain.own_sweep() {
             reachable.push(which);
         }
+        // The Presence knob, where the circuit carries its own (the Cali
+        // Rectifier's).
+        if let Some(which) = gain.own_presence() {
+            reachable.push(which);
+        }
         if let Some(((lo, _), (hi, _))) = gain.own_colour_mix() {
             reachable.extend([lo, hi]);
         }

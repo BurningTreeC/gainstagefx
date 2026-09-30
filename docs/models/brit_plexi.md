@@ -78,13 +78,18 @@ power: ECC83 LTP 82k/100k, 470 cathode, 10k tail, 1M leaks, .1uF second grid, 47
      its volume is at 0, so it passes no signal.
    - The output transformer uses the Brit EL34 (1.7 k CT) data, APPROXIMATED: no 1969
      Drake winding data was found.
-   - Presence: the 5 k track as the tail's shunt to ground plus a 5 k rheostat and .1 uF,
-     the builder's topology rather than the wiper-to-capacitor drawing, APPROXIMATED.
+   - Presence: **built as drawn since 2026-09-30** -- the 5 k track is the tail's
+     return from the feedback node to ground and the .1 uF hangs off its wiper
+     (`PowerSpec::presence_on_tail`; confirmed on Unicord's 70-13-11 sheet for the
+     1992, the same month and inverter). Until then it was the builder's JCM800
+     topology beside a fixed 5 k, APPROXIMATED, which still shunted treble at zero:
+     now zero is off (`tests/presence.rs`). The taper is not printed; linear, as the
+     JCM800's presence is, PLAUSIBLE.
    - Feedback from 16 ohm through 47 k is built as 23.5 k from the 4 ohm secondary
      (the same current).
    - Tapers from the 1988 sheet (PLAUSIBLE for 1970: same pots and parts supplier
      practice).
    - Not modeled: channel jumpering, the LOW inputs, the variac/low-mains operation some
      records used.
-8. **Why.** The builder's single tap and single presence topology; missing transformer
-   data; one channel keeps the cost at the Brit 800's.
+8. **Why.** The builder's single tap; missing transformer data; one channel keeps the
+   cost at the Brit 800's.

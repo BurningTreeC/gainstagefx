@@ -1165,7 +1165,8 @@ pub struct GainStageParams {
     pub master: FloatParam,
 
     /// The power stage's presence control -- the AC30's cut -- where it has
-    /// one. **Half is where the stage was voiced**, exactly as for the
+    /// one, or the circuit's own (the Cali Rectifier's, in its preamplifier).
+    /// **Half is where the stage was voiced**, exactly as for the
     /// Master: nothing set it before 2026-09-25, and every level in the
     /// plugin was measured with it resting there. See `Chain::set_presence`.
     /// Greyed for a stage with nothing in that slot.
@@ -1297,9 +1298,14 @@ impl GainStageParams {
         self.cab_model.value() != CabModel::Legacy && self.speaker.value() != SpeakerModel::Bypass
     }
 
-    /// What the Presence knob turns on the power stage in the path, or `None`
-    /// where there is nothing for it to turn. See `PowerSpec::presence_name`.
+    /// What the Presence knob turns -- the circuit's own presence where it has
+    /// one (`Gain::own_presence`), else the power stage's in the path -- or
+    /// `None` where there is nothing for it to turn. See
+    /// `PowerSpec::presence_name`.
     pub fn presence_name(&self) -> Option<&'static str> {
+        if self.circuit.value().voice().own_presence().is_some() {
+            return Some("PRESENCE");
+        }
         self.power_amp
             .value()
             .voice()

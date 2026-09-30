@@ -21,7 +21,8 @@ RP10 power drawing shows 82.5k/90.9k PI plates, 100k/150k grid leaks, 22k tail,
 250k presence network and -47V 60W bias. Current PowerSpec uses 82k/100k plates,
 1M/1M leaks, 10k tail, 5k presence and -44V bias. Its master is 1M resting .30.
 The RCA data does not justify code's claim that 3.6k is its stated 450V pair load.
-Do NOT claim the existing power spec exactly reproduces this drawing.
+Do NOT claim the existing power spec exactly reproduces this drawing. (Since
+2026-09-30 its inverter, loop, presence, stoppers and bias do: see the last section.)
 
 Preamp modeled values include 150k/100k/82k/274k plate loads, 1.5k/1.5k/1.5k/
 3.3k cathodes, early 250pF/.1uF/.047uF stack, 680k lead resistor, 270k/68k divider,
@@ -200,3 +201,92 @@ Lead Master, V2A and the graphic.
 - V1B does not. With 100 k and 1.5 k, a 12AX7 at 1.3 V of bias would draw about 2 mA and
   leave its plate near 190 V. It cannot sit at 1.3 V on a 392 V rail with the values that
   every drawing gives, so the figure is not adopted (unexplained; recorded).
+
+## Presence: the drawn network is not the modelled one (audit 2026-09-30)
+
+Both redraws (RP10 and FINAL, which agree part for part) show the IIC+'s presence as
+a **250 k PRESENCE rheostat in series with the feedback**, from the 8 ohm secondary.
+`power.rs::MARKIIC` modelled a Marshall inverter with 100 k of feedback into its tail
+and a 5 k / 0.1 uF shunt, so its Presence knob turned a control the amplifier does not
+have. The owner decided the same day to rebuild it from the redraws; below.
+
+## Correction 2026-09-30: the inverter, the loop and the presence as drawn
+
+Checkpoint, before the code:
+
+1. **Revision.** The stock 60 W RP10A C+, as this log has always targeted.
+2. **Original schematic found?** No factory power drawing (Mesa publishes none). Two
+   community redraws, `RP10 IIC+ Schematic.pdf` and `Mark IIC+ Schematic FINAL.pdf`,
+   page 2 of each, read at 300 dpi. FINAL marks its junctions with dots; RP10 does not.
+3. **Best source.** Those two, which agree in every value below.
+4. **Cross-check.** Mesa's own Dual Rectifier power amp sheet (6-93, see
+   `cali_rectifier.md`) draws the same inverter: 82 k and 90 k plates with 120 pF, a
+   470 ohm cathode resistor to the leak junction, a tail below it and the loop at its
+   bottom. And the 8 ohm tap, the 2k2 stoppers and the bias table agree between the
+   redraws.
+5. **Signal path and values** (redraw designators; DOCUMENTED by both):
+
+```text
+FROM 2VB OR EQ OUTPUT -- R50 100k to ground ("10K on non EQ models") -- C66 0.1 -- V5A grid
+V5A grid -- R65 100k -- M;  V5B grid -- R66 150k -- M;  joined cathodes -- R67 470 -- M
+M -- R64 22k -- J -- R63 1.5k -- K -- (R62 3.3k || C64 0.047) -- ground
+K -- C65 0.1 -- V5B grid
+V5A plate -- R68 82.5k -- C;  V5B plate -- R69 90.9k || C68 120 pF -- C
+outputs: C70 / C71 0.1 -- R70 / R71 220k to bias -- R74 / R75 2.2k -- 6L6 grids
+screens: R79 / R80 470 2 W;  bias: "60W: -47" (and "60W EXPORT: -47")
+loop: 8 ohm -- PRESENCE 250k (rheostat) -- R60 1.5k -- (R61 56k || C61 0.0047) -- J
+```
+
+6. **Modelled exactly.** Every part above but R50 and the rheostat's direction and law,
+   with the stage's other values (supply, transformer) as they were.
+7. **Approximated and estimated.**
+   - **V5B's orientation: PLAUSIBLE.** Both redraws draw V5B's plate on V5A's cathode and
+     its cathode on R69 to C, the B+ node R68 returns to. Wired that way V5B's plate would
+     sit about a volt above its own cathode and it could not conduct; its grid and
+     cathode would follow each other. Turned the other way up -- plate on R69, cathode
+     joined to V5A's -- it is the long-tailed pair of point 4, and it runs where such a
+     pair should (below). The audit note above called it a stacked pair; that was this
+     reading error, corrected here.
+   - **The buffer: APPROXIMATED.** The amplifier's MASTER is ahead of the graphic, and
+     C66 is driven by the graphic's output follower Q4. The model's graphic comes before
+     the power stage and its master pot stands in for MASTER, so an ideal follower is
+     built behind that pot (`linear_opamp`, which stays out of Newton). Without it R65's
+     100 k would load the stand-in, which the real MASTER never sees. R50 across an ideal
+     follower does nothing and is not built.
+   - **The presence's direction: PLAUSIBLE**, from its name. The redraws draw the wiper
+     tied to nothing. Up is more resistance: the treble's feedback (through C61) goes
+     first, then the rest, so the top comes up and the amplifier loosens.
+   - **Its law: PLAUSIBLE**, audio. Tube Amp Doctor's Mesa 250 k part for the Mark II and
+     III is A250K; the SLOCLONE sheet marks no law for PRESENCE.
+   - The panel's Presence at half is the rheostat at half its rotation, as for every
+     other stage (`Chain::set_presence`).
+8. **Why.** No factory drawing; the redraws do not say which way the pot turns; the
+   graphic sits in the model where the amplifier's master does.
+
+What the old stage had that the drawings do not: a 100 k grid stopper on V5A, 1 M leaks,
+a 10 k / 4.7 k tail with the loop's 100 k straight into it, a 5 k presence shunt, 82 k /
+100 k plates, 1.5 k output stoppers and -44 V. All replaced (`PowerSpec::MARKIIC`,
+`power::SeriesLoop`).
+
+**Measured** (`examples/mark_power.rs`, 96 kHz, resistive 8 ohm):
+- Operating point: both grids 1.33 V below the cathodes (76.6 V); 2.84 mA in the tail;
+  plates 289 / 285 V (the Rectifier sheet, same pair: 280 V).
+- The two phases, 1 kHz: within 0.4 dB of each other.
+- The loop is light. Against the stage with R61 and C61 both cut: 2.4 to 3.9 dB of
+  feedback across the band with the presence at zero; at half, 1.8 to 2.3 dB below
+  1 kHz and 0.9 dB at 4 kHz, where the presence has already taken the top out of it.
+- The Presence, small signal at the speaker: from 0 to 1, +3.8 dB at 4 kHz and +1.9 dB
+  at 100 Hz. Through the whole voice (`tests/presence.rs`), 4 kHz over 200 Hz goes from
+  +4.7 to +6.8 dB and the level at 200 Hz rises 2 dB: a series presence moves the whole
+  band a little, which a shunt one does not.
+- Calibration point (drive full, 0.122 V): 61.2 % distortion, 43.7 % third before;
+  **57.4 %, 38.5 %** now.
+
+**Consequences.**
+- `tests/corrected_baseline.rs` stops comparing the Mark IIC+ (its first exception,
+  recorded in its header; not recaptured). Its runs still count against the fallback
+  budget.
+- Calibration, power trim and kernels regenerated; only the IIC+ and Rectifier rows and
+  the Cali 6L6 and Recto columns moved.
+- Presets put back to their levels by `output_trim`: Boutique Lead +0.45 dB, Boutique
+  Rhythm +0.25, Puppet Master '86 +0.34. None of the three sets its own Presence.

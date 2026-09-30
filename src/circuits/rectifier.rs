@@ -15,7 +15,9 @@
 //! The rest is a high-gain chain of the usual kind: a 220 k first stage, an
 //! interstage network of two capacitors and two 2.2 M resistors that sets how
 //! much low end survives into the gain control, a 1 M gain pot, two more stages,
-//! a cathode follower and a Fender stack.
+//! a cathode follower and a Fender stack -- with the red channel's presence
+//! across its output, because in this mode the power amplifier has no loop for
+//! a presence to work on (the sheet's LDR19; see `power::PowerSpec::RECTO_6L6`).
 //!
 //! What the name promises and this does not do: the amplifier switches between
 //! silicon and valve rectifiers, and the supply here is a voltage behind a
@@ -33,6 +35,10 @@ pub const BASS: usize = 2;
 pub const MIDDLE: usize = 3;
 /// RED MASTER, 1 M.
 pub const MASTER: usize = 4;
+/// The red channel's PRSNC, a 25 k rheostat. The panel's Presence knob turns
+/// it: in this mode the power amplifier has no loop for a presence to work on
+/// (`power::PowerSpec::RECTO_6L6`), and this is the red channel's own.
+pub const PRESENCE: usize = 5;
 
 /// Where the master rests when the panel's Master knob is not turning it.
 pub const MASTER_REST: f64 = 0.5;
@@ -122,10 +128,16 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
 
     // --- the red channel's tone stack and master --------------------------------------------
     // C4 680 pF to the top of Treble, R273 47 k as the slope, C23 .02 to the
-    // bottom of Treble and the top of Bass, C24 .02 to the Middle wiper. R215 1 M
-    // joins this stack to the other channel's, which is what that resistor does
-    // here: a load that is always present.
-    net.capacitor("cf", "t_top", 680e-12) // C4
+    // bottom of Treble and the top of Bass, C24 .02 to the Middle wiper.
+    //
+    // R215 1 M joins this stack's input to the orange channel's, whose own
+    // LDR9 is off: the orange stack hangs on the follower through it, which
+    // is what that resistor does here. It is built to ground, the orange
+    // stack behind it left out -- through a megohm, on a follower, it is a
+    // few hundredths of a decibel. APPROXIMATED. (Until 2026-09-30 it hung on
+    // the treble wiper, where it loaded the stack's output.)
+    net.resistor("cf", "gnd", 1_000_000.0) // R215, the other channel's stack
+        .capacitor("cf", "t_top", 680e-12) // C4
         .resistor("cf", "slope", 47_000.0) // R273
         .pot("t_top", "t_w", "t_bot", 250_000.0, Taper::Linear, TREBLE)
         .capacitor("slope", "t_bot", 0.02e-6) // C23
@@ -139,7 +151,23 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         )
         .pot("b_bot", "m_w", "gnd", 25_000.0, Taper::Linear, MIDDLE)
         .capacitor("slope", "m_w", 0.02e-6) // C24
-        .resistor("t_w", "gnd", 1_000_000.0) // R215, the other channel's stack
+        // PRSNC: R254 22 k and C8 .003 from the treble wiper into a 25 k
+        // rheostat to ground, a treble shunt across the stack's output. Up is
+        // more resistance and less of the top taken away. `pot(a, wiper, b)`
+        // with the wiper tied to `b` leaves `R (1 - f(p))`, which the reverse
+        // law turns into the forward law in the knob's position. Values and
+        // topology DOCUMENTED; the direction PLAUSIBLE, from the name; the
+        // law ESTIMATED linear -- the sheet prints none.
+        .resistor("t_w", "prs_r", 22_000.0) // R254
+        .capacitor("prs_r", "prs_c", 0.003e-6) // C8
+        .pot(
+            "prs_c",
+            "gnd",
+            "gnd",
+            25_000.0,
+            Taper::ReverseLinear,
+            PRESENCE,
+        )
         .rest(MASTER, MASTER_REST)
         .pot("t_w", "out", "gnd", 1_000_000.0, Taper::Audio, MASTER)
         .resistor("out", "gnd", load);

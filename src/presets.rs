@@ -487,7 +487,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_angle: 10.0,
         oversampling: Oversampling::Off,
-        output_trim: 3.1,
+        output_trim: 2.89,
         ..base("Overdrive", "Screamer Boost")
     },
     Preset {
@@ -635,6 +635,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.3,
         mic_a_distance: 0.03,
         oversampling: Oversampling::Off,
+        output_trim: 0.45,
         ..base("Amplifier", "Boutique Lead")
     },
     // And the V everybody sets: 750 on the floor, the ends up. On this
@@ -654,7 +655,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.25,
         mic_a_angle: 10.0,
         oversampling: Oversampling::Off,
-        output_trim: -2.7,
+        output_trim: -2.45,
         ..base("Amplifier", "Boutique Rhythm")
     },
     // --- American Twin ------------------------------------------------------
@@ -973,7 +974,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.35,
         mic_a_distance: 0.025,
         oversampling: Oversampling::Off,
-        output_trim: 2.7,
+        output_trim: 2.77,
         ..base("Amplifier", "Plexi Crunch")
     },
     Preset {
@@ -989,7 +990,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.3,
         mic_blend: 0.3,
         oversampling: Oversampling::Off,
-        output_trim: 2.7,
+        output_trim: 2.51,
         ..base("Amplifier", "Plexi Cranked")
     },
     // --- Brit AC30 -------------------------------------------------------------
@@ -1088,7 +1089,7 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.3,
         mic_a_distance: 0.02,
         oversampling: Oversampling::Off,
-        output_trim: 2.0,
+        output_trim: 2.82,
         ..base("Amplifier", "Recto Rhythm")
     },
     Preset {
@@ -1106,7 +1107,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.03,
         mic_blend: 0.4,
         oversampling: Oversampling::Off,
-        output_trim: 1.9,
+        output_trim: 3.37,
         ..base("Amplifier", "Recto Lead")
     },
     // The console microphone preamplifier: two cascaded transistor stages with
@@ -1240,7 +1241,7 @@ pub const PRESETS: &[Preset] = &[
         pedal_tone: 0.5,
         pedal_level: 0.85,
         oversampling: Oversampling::Off,
-        output_trim: 2.3,
+        output_trim: 2.64,
         ..base("Metal / Heavy", "Puppet Master '86")
     },
     // Two guitars in B standard through a Boss HM-2 with **every knob at ten**,
@@ -1378,7 +1379,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_angle: 0.0,
         mic_blend: 0.35,
         oversampling: Oversampling::Off,
-        output_trim: 2.0,
+        output_trim: 0.92,
         ..base("Psychedelic / Lead", "Experienced '67")
     },
     // A four-transistor fuzz with its sustain well down, into a 100 W head with
@@ -1442,7 +1443,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_angle: 30.0,
         mic_blend: 0.3,
         // A variac takes the whole amplifier down, so this one is quiet.
-        output_trim: 5.1,
+        output_trim: 4.87,
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Brown '78")
     },
@@ -1467,7 +1468,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.4,
         mic_blend: 0.35,
         // A variac takes the whole amplifier down, so this one is quiet.
-        output_trim: 5.4,
+        output_trim: 5.12,
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Brown '84")
     },
@@ -1496,7 +1497,7 @@ pub const PRESETS: &[Preset] = &[
         mic_b_distance: 0.6,
         mic_blend: 0.3,
         // A variac again, so this one is quiet.
-        output_trim: 5.9,
+        output_trim: 5.43,
         oversampling: Oversampling::Off,
         ..base("Classic Rock", "Blizzard '80")
     },
@@ -1572,7 +1573,7 @@ pub const PRESETS: &[Preset] = &[
         mic_blend: 0.35,
         // A fuzz into a master-volume head with the master wide open is the
         // loudest thing here by a distance; this is what levels it.
-        output_trim: -22.0,
+        output_trim: -21.81,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Pumpkin Dream '93")
     },

@@ -1,5 +1,49 @@
 # Implementation progress
 
+## 2026-09-30 — The Mark IIC+'s inverter and the Rectifier's loop, from the drawings
+
+The owner approved both follow-ups of the presence audit.
+
+**Mark IIC+** (`power::SeriesLoop`, `PowerSpec::MARKIIC`). Rebuilt from the RP10
+and FINAL redraws, which agree part for part: 100 k / 150 k leaks, the 22 k tail
+over R63 1k5 and R62 3k3 || C64 .047 with V5B's grid coupled to that node, 82.5 k /
+90.9 k plates with 120 pF across the second, no grid stopper, 2k2 output
+stoppers, -47 V; and the loop from 8 ohm through the 250 k PRESENCE rheostat in
+series, R60 1k5 and R61 56 k || C61 .0047. The redraws draw V5B upside down
+(wired as drawn it could not conduct); right way up it is the long-tailed pair
+Mesa's own Rectifier sheet draws with the same values. An ideal follower
+(`linear_opamp`, outside Newton) stands behind the master stand-in for the
+graphic's output follower, so R65's 100 k does not load it. Measured
+(`examples/mark_power.rs`): -1.33 V bias on both halves, 2.84 mA tail, plates
+289 / 285 V, phases within 0.4 dB, a light loop (2 to 4 dB); the Presence lifts
+4 kHz by 3.8 dB and the whole band by about 2.
+
+**Dual Rectifier** (`PowerSpec::RECTO_6L6`/`_TUBE`, `rectifier::PRESENCE`,
+`Gain::own_presence`). Found the six-sheet Rev F set (6-93) on el34world; it is
+the one the log cites, and its switching-matrix sheet has Mesa's LDR mode table.
+In RD NORM -- the red channel's Modern mode, which is what is modelled -- LDR19,
+the loop, is **off**. So the stage has no feedback now; ORANGE PRSNC, still
+hanging on the tail, rests at half. The red channel's presence is in the
+preamplifier (R254 22 k and C8 .003 into a 25 k rheostat across the stack's
+output) and the panel's knob turns it; in a custom chain the power stage's own
+presence rests. R215 moved from the treble wiper to the follower, where the
+sheet has it. The log's "47k/82k" were R276 and a misattribution. At the
+calibration point the voice went from 42 % to 22.5 % distortion: the fixed
+parts of the new presence shunt take the upper harmonics off the stack's
+output, and without the loop the power stage's third cancels part of the
+preamplifier's (`examples/recto_op.rs`).
+
+Checklist: calibration regenerated (only the IIC+ and Rectifier rows moved;
+anchor untouched on the Twin), power trim (only the Cali 6L6 / Recto columns and
+those two rows), kernels (130, 99.9 %). Five presets restored to their measured
+levels by `output_trim` -- Recto Lead +1.47 dB, Recto Rhythm +0.82, Boutique Lead
++0.45, Puppet Master '86 +0.34, Boutique Rhythm +0.25 -- and every other preset
+is within 0.005 dB of before. `tests/corrected_baseline.rs` records its first
+exception and stops comparing the IIC+; not recaptured. `tests/presence.rs`
+pins both networks, checks the Rectifier knob against a detour through another
+stage's presence, and turns the knob while playing at all five rates under
+`assert_no_heap`.
+
 ## 2026-09-30 — the panel's sections open and close
 
 Each of the six sections now opens and closes from its header row (chevron,
@@ -55,6 +99,38 @@ switch in `time.rs` and `partition.rs`, asking what a release build does:
   Jacobians and latency, 47bdd0e's predictor); updated to `fb4f55063fe2e350`.
 - `tests/pipeline.rs` retries its lagging-worker run until the worker takes a
   block, rather than failing when a busy machine wakes it too late.
+
+## 2026-09-30 — Presence as the drawings have it
+
+Audited every power stage's presence against its schematic. Where the original
+has no presence (AB763 Twin and Deluxe, JC-120, the consoles, the generic
+circuits, the pedals) there is still no knob. Of the rest:
+
+- **JCM800 2203:** "22K LIN" on the 1981 sheet; it was an audio track, which
+  left the bottom half of the knob inert. Linear now (DOCUMENTED).
+- **JCM800 2205:** the same part, taper not printed; linear (PLAUSIBLE).
+- **1959 Super Lead:** built as drawn -- the 5 k track is the tail's return and
+  the .1 uF hangs off its wiper (`PowerSpec::presence_on_tail`) -- where it was
+  the JCM800 arrangement beside a fixed 5 k. Zero is now off.
+- **AC30 (Cut), DR103, 5150:** already as drawn.
+- **Mark IIC+:** not its presence. Both redraws show a 250 k series rheostat in
+  the feedback; the model has a 5 k shunt. Rebuilding it moves the frozen
+  baseline: recorded in `docs/models/cali_iic_plus.md`, the owner's decision --
+  taken the same day; see the entry above. (The "stacked inverter" here was a
+  misreading, corrected there.)
+- **Dual Rectifier:** its log lists 47 k / 82 k in the loop that the model does
+  not have, and the sheet is not archived; recorded, not changed -- until the
+  sheet was found the same day; see the entry above.
+
+Following INSTRUCTIONS.md: calibration regenerated with its anchor moved from
+the (changed) 2203 to the Twin at -51.44624 dB, found from the unanchored curves
+(`GAINSTAGEFX_CALIBRATE_RAW`), so the other 37 voices are unchanged to the last
+digit; power trim regenerated (only the three stages' columns and rows moved);
+eight presets' `output_trim` moved by their measured change (Experienced '67
+-1.08 dB, Blizzard '80 -0.47, the rest under 0.3), every preset now within
+0.03 dB of before; kernels regenerated (127, 99.9 %). Both frozen baselines pass.
+`tests/presence.rs` pins the parts and checks the 1959's zero against the stage
+with no capacitor at all.
 
 ## 2026-09-29 — REAPER with several instances: the real deadline, and two exact speedups
 

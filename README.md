@@ -217,15 +217,15 @@ records says the amplifier ran at 80 to 85 volts.
 |---|---|
 | Matched | The selected amplifier's own power stage; none for pedals, topologies and the studio preamplifiers |
 | Bypass | No power stage: phase inverter, output valves, feedback and output transformer all skipped |
-| Cali 6L6 | Two 6L6s, long-tailed-pair inverter, feedback and presence |
+| Cali 6L6 | Two 6L6s, long-tailed-pair inverter, a light loop with the presence in series with it |
 | American 6L6 Clean | Four 6L6s with a 12AT7 inverter and light feedback — the clean one |
 | American 6L6 High-Gain | Four 6L6s, with the feedback through a resonance network and the presence off it |
 | Brit EL34 | Four EL34s from a 1981 British 100 W master-volume drawing; the Brit 800's own |
-| Brit Plexi EL34 | Four EL34s from a 1970 drawing of the non-master head: no master, four times the 2203's feedback, a 5 k presence; the Brit Plexi's own |
+| Brit Plexi EL34 | Four EL34s from a 1970 drawing of the non-master head: no master, four times the 2203's feedback, a 5 k presence whose track is the bottom of the inverter's tail; the Brit Plexi's own |
 | Brit 2205 EL34 | Two EL34s from a 1988 drawing of the 50 W two-channel head: its own low-leak inverter, feedback from the 4 Ω tap; the Brit 2205's own |
 | AC30 EL84 | Four EL84s sharing a 50 ohm cathode resistor, no feedback loop, and a cut control across the inverter; the Brit AC30's own |
 | DR103 EL34 | Four EL34s on 22 k grid stoppers and a tight loop; the inverter's grids held by a follower on its own divider, and the Hiwatt's presence loop back to the last preamp valve, which behind the Brit DR103 is built into this stage; the Brit DR103's own |
-| Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing; the Cali Rectifier's own |
+| Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing, with no feedback loop, as in the red channel's Modern mode; the Cali Rectifier's own |
 | Recto 6L6 Tube | The same stage with its rectifier switch on valve: two 5U4GB, so the rail sits lower and sags under a chord |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
@@ -242,7 +242,13 @@ pot's own half, so a player's "presence 7" is 70 %. It is greyed where the stage
 has nothing there: the American 6L6 Clean and Deluxe 6V6 (an AB763 has no
 presence), the transistor stages, and Bypass. The DR103 EL34's is the Hiwatt's
 own, a loop from the feedback node back to the last preamp valve, which is why
-that power stage now begins at that valve.
+that power stage now begins at that valve. The Cali 6L6's is a rheostat *in
+series with* its loop, as the Mark IIC+'s is: turned up it takes treble out of the
+feedback first and some of everything else after, so the whole stage loosens a
+little as the top comes up. The Recto stages have no loop -- in the red channel's
+Modern mode the Dual Rectifier lifts it -- so there the knob turns the **Cali
+Rectifier's** own presence, a treble shunt in its preamplifier, whatever power
+stage is behind it; behind any other circuit the Recto stages grey it.
 
 ## Speaker, cabinet and microphones
 
@@ -344,7 +350,7 @@ hardware behind them at all.
 
 | Panel | Modelled from | Log |
 |---|---|---|
-| Cali 6L6 | Mark IIC+ 60 W: ECC83 inverter, two 6L6GC, feedback and presence | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
+| Cali 6L6 | Mark IIC+ 60 W: ECC83 inverter, two 6L6GC, the loop and series presence as the RP10/FINAL redraws draw them | [cali_iic_plus.md](docs/models/cali_iic_plus.md) |
 | American 6L6 Clean | Twin Reverb AB763: ECC81 inverter, four 6L6GC, 820 Ω feedback | [american_twin.md](docs/models/american_twin.md) |
 | American 6L6 High-Gain | 5150: ECC83 inverter, four 6L6GC, 39 k feedback through the resonance network (it rests at noon; no knob) | [american_5150.md](docs/models/american_5150.md) |
 | Brit EL34 | JCM800 2203: four EL34 at −42 V, feedback from the 4 Ω tap | [brit_el34.md](docs/models/brit_el34.md) |
@@ -354,7 +360,7 @@ hardware behind them at all.
 | DR103 EL34 | Hiwatt DR103: four EL34, inverter direct-coupled to its driver | [brit_dr103.md](docs/models/brit_dr103.md) |
 | *(matched to Jazz 120)* | Roland JC-120: 60 W complementary transistor amplifier, 2SC4386/2SA1671, bootstrapped VAS | [jazz_120.md](docs/models/jazz_120.md) |
 | American Deluxe 6V6 | Deluxe Reverb AB763: 12AT7 inverter, two 6V6GT, GZ34 rectifier | [american_deluxe.md](docs/models/american_deluxe.md) |
-| Recto 6L6 / Recto 6L6 Tube | Dual Rectifier: four 6L6 on the silicon setting, or two 5U4GB valve rectifiers | [cali_rectifier.md](docs/models/cali_rectifier.md) |
+| Recto 6L6 / Recto 6L6 Tube | Dual Rectifier: four 6L6 on the silicon setting, or two 5U4GB valve rectifiers; the loop lifted, as in RD NORM | [cali_rectifier.md](docs/models/cali_rectifier.md) |
 
 **Cabinets, speakers and microphones** — dimensions from the manufacturers,
 Thiele–Small parameters and response curves from data sheets where they are

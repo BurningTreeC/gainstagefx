@@ -18,6 +18,11 @@
    between plates, .022uF input and output coupling. Four EL34 fixed bias -42V.
    Drawing nominal plate 470V, screen 468V, inverter 330V. Master 1M log.
    Presence 22k/.1uF; NFB 100k fed from 4 ohms. No resonance/depth control.
+   The presence pot is printed **"22K LIN"** on the 1981 preamp sheet's phase
+   splitter, wired as a rheostat (wiper tied to its top) under the .1uF from the
+   feedback node. DOCUMENTED. Built with an audio track until 2026-09-30, which
+   left the bottom half of the knob doing almost nothing (4 kHz over 200 Hz moved
+   0.3 dB from 0 to 0.75); linear since.
 6. **Circuit-derived:** explicit inverter, grid coupling/bias, pentodes, feedback
    and presence in one existing MNA solve, with a complete transformer network.
 7. **Approximations:** use existing PentodeSpec::EL34 (Koren parameter fit, not a
