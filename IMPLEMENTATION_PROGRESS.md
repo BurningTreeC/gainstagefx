@@ -160,6 +160,25 @@ Then the 20:23 REAPER capture, and the JC-120's hard samples:
   no predictor. Details in `docs/SOLVER_EXPERIMENTS.md`.
 - The kernel table is regenerated for the new trajectories: 86 kernels, 99.4 %.
 
+Then the 06:39 REAPER capture and two more exact speedups:
+
+- **Capture.** 23 dropouts in 299 s against 34 in 258 s; about 12 are still
+  Jazz Chorus callbacks of 980–1,300 µs under hard playing. Details in
+  `docs/realtime-multi-instance.md`.
+- **Device stamps map their nodes once** (`Stamper::locate` and the `_at`
+  forms), and **the reduced RHS accumulates four wide**
+  (`accumulate_rhs_responses`). Both bit-identical on all 78 presets. Pipelined
+  Jazz Chorus mean 264 → 249 µs, p99.9 738 → 697 µs; Puppet 340 → 327 µs.
+- **Rejected:** subtracting the coupling only over the device footprint (slower)
+  and an AVX coupling subtraction (memory-bound, no gain). See
+  `docs/SOLVER_EXPERIMENTS.md`.
+- **Hard samples' LU.** Their line-search trials turned out cheap; what they
+  pay for is re-learned pivot plans and masked replays of plans without a
+  kernel. The kernel generator now keeps 16 plans a pattern and counts every
+  preset 6 dB hot as well: 123 kernels, 99.9 %. Masked replays per hard solve
+  6.6 → 3.7; Jazz Chorus 6 dB hot, serial p99.9 −5 %. `uncovered_plans` in
+  `hard_samples.rs` shows what remains uncovered.
+
 ## 2026-09-25 — a fresh frozen capture of the corrected circuits
 
 On the owner's instruction, after the corrections below were committed (19e2d6f):

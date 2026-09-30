@@ -41,6 +41,40 @@ claim below roughly 1 % needs repeated runs.
 
 ## Accepted
 
+### Device stamps map their nodes once; the reduced RHS accumulates four wide
+
+Two exact changes to the per-pass pipeline of a transistor power stage,
+bit-identical on all 78 presets:
+
+- Every `Stamper` term mapped its nodes through the reduced boundary map again
+  (a ground test, a lookup, a failure flag), so a transistor's six terms on
+  three nodes made twenty lookups a pass. Devices now `locate` their nodes once
+  and stamp through the `_at` forms; the terms, their order and their
+  arithmetic are unchanged. Jazz Chorus: instructions -4.7 %, cycles -2.4 %.
+- `ReducedNonlinear::prepare_rhs` spent two thirds of its time in
+  column-by-column vector updates that ran two lanes wide. They now have an AVX
+  build (`accumulate_rhs_responses`), elementwise within a column and in the
+  same column order, so the bits are the scalar loop's. A further -6 %
+  instructions, -2.3 % cycles.
+
+Pipelined over the take: Jazz Chorus mean 264 -> 249 us, p99.9 738 -> 697 us;
+Puppet Master '86 mean 340 -> 327 us.
+
+### Kernels for the plans hard samples use
+
+Counted on the JC-120's hard solves (10+ passes; `hard_samples.rs`), the
+line-search trials are cheap -- 4.2 a hard solve and under 0.3 % of the
+profile even 12 dB hot. What a hard solve pays for is its reduced LU: its plan
+turns unsound (1.9 invalidations and re-learns a hard solve) and half its
+replays (6.6 of 11.4) ran on plans with no kernel, through the masked replay.
+Those plans are concentrated (`uncovered_plans`: the top 10 of 386 carry 87 %)
+but the generator stopped at eight plans a pattern and counted them only at the
+take's level. It now keeps up to sixteen, down to 0.2 % of a pattern's replays
+or 5,000, and also counts every preset 6 dB hot: 123 kernels, 99.9 % of 580 M
+replayed solves. Masked replays per hard solve 6.6 -> 3.7. Serially, Jazz
+Chorus 6 dB hot: p99 782 -> 756 us, p99.9 1,242 -> 1,182 us; at the take's level
+the tail moves ~1 %. Exact, as every kernel is.
+
 ### The source-scaled predictor, for every circuit
 
 The Twin's predictor policy, which scales the extrapolation of the last state
@@ -218,6 +252,20 @@ Not an optimization; a correction to the instrument. See
 `docs/SOLVER_OPTIMIZATION.md`. Test-only, hash preserved.
 
 ## Rejected (do not reintroduce without new evidence)
+
+### Coupling subtracted only over the device footprint -- rejected
+
+Precomputing `boundary_base - coupling` outside the device footprint (exact:
+the same subtraction of the same two numbers) and subtracting only at the
+footprint slots each pass left the instruction count flat and cost 3-4 % of
+cycles on the JC-120: its footprint covers much of the 18 x 18 matrix, and
+scalar updates through a slot list are slower than the contiguous loop they
+replace.
+
+### AVX coupling subtraction -- rejected
+
+Exact and 2.4 % fewer instructions, but no change in cycles: the loop is bound
+by memory traffic, not arithmetic.
 
 ### Junction limiting from the critical voltage -- rejected
 

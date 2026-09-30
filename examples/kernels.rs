@@ -28,12 +28,22 @@ const OUTPUT: &str = "src/dsp/partition/kernels.rs";
 
 /// A plan is compiled when it carries at least this share of its pattern's
 /// replayed solves...
-const MIN_SHARE: f64 = 0.01;
+const MIN_SHARE: f64 = 0.002;
 /// ...and at least this many of them in the census run.
-const MIN_SOLVES: u64 = 20_000;
+const MIN_SOLVES: u64 = 5_000;
 /// At most this many plans for one pattern. `KERNEL_CANDIDATES` in
 /// `partition.rs` must not be smaller.
-const MAX_PLANS: usize = 8;
+///
+/// This was eight, and the JC-120's power stage had reached it: on its hard
+/// samples, the ones a live callback overruns on, half the reduced solves were
+/// masked replays of plans with no kernel, the busiest of them with 147,000
+/// replays over the take. Its uncovered plans are concentrated -- ten carry
+/// 87 % of them -- so a longer list per pattern is what reaches them.
+const MAX_PLANS: usize = 16;
+/// The census also plays every preset this much hotter, at its own factor:
+/// the plans a hard sample learns are the ones a deadline depends on, and at
+/// the take's own level they are too rare to be counted.
+const HOT_DB: f64 = 6.0;
 
 fn read_take() -> Vec<f64> {
     let bytes = std::fs::read(TAKE).unwrap_or_else(|e| panic!("{TAKE}: {e}"));
@@ -181,10 +191,12 @@ fn main() {
     // Each preset at its own factor and at the other one a player can switch
     // it to: the plans a partition learns depend on the step, so a table built
     // from the shipped factors alone leaves the other rate on the masked path.
+    // Then once more at its own factor, `HOT_DB` hotter.
     for preset in PRESETS {
-        let scale = 10f64.powf(preset.input_trim as f64 / 20.0);
         let mut shipped = None;
-        for other in [false, true] {
+        for (other, hot) in [(false, false), (true, false), (false, true)] {
+            let gain_db = if hot { HOT_DB } else { 0.0 };
+            let scale = 10f64.powf((preset.input_trim as f64 + gain_db) / 20.0);
             let mut chain = Chain::new(RATE);
             chain.apply(&preset.settings());
             if other {
@@ -200,7 +212,9 @@ fn main() {
                 // This voice runs at one factor only.
                 continue;
             }
-            shipped = Some(factor);
+            if !other && !hot {
+                shipped = Some(factor);
+            }
             for &x in &take[..length] {
                 chain.process_stereo(x * scale);
             }

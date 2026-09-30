@@ -74,7 +74,7 @@ presets as they then play.
    ```
 3. **Compiled solver kernels**, last, once the circuit is final:
    ```
-   cargo run --release --example kernels            # writes the file itself, ~6 min
+   cargo run --release --example kernels            # writes the file itself, ~8 min
    cargo run --release --example kernels -- --check # preview only
    ```
    A stale kernel table is never wrong, only slower: a kernel that no longer

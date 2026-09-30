@@ -49,10 +49,23 @@ struct Solve {
     held_trials: u64,
     backtracks: u64,
     fallbacks: u64,
+    replays: u64,
+    kernel_replays: u64,
+    learns: u64,
+    invalidations: u64,
 }
 
 fn snapshot(sim: &Simulation) -> Solve {
+    let pivots = sim
+        .nonlinear_partition
+        .as_ref()
+        .map(|p| p.test_pivot_profile())
+        .unwrap_or_default();
     Solve {
+        replays: pivots.replays,
+        kernel_replays: pivots.kernel_replays,
+        learns: pivots.learns,
+        invalidations: pivots.invalidations,
         input: sim.previous_input,
         passes: sim.newton_passes,
         stamps: sim.test_stamps[0],
@@ -74,6 +87,10 @@ fn delta(now: Solve, was: Solve) -> Solve {
         held_trials: now.held_trials - was.held_trials,
         backtracks: now.backtracks - was.backtracks,
         fallbacks: now.fallbacks - was.fallbacks,
+        replays: now.replays - was.replays,
+        kernel_replays: now.kernel_replays - was.kernel_replays,
+        learns: now.learns - was.learns,
+        invalidations: now.invalidations - was.invalidations,
     }
 }
 
@@ -98,6 +115,14 @@ fn hard_samples() {
     TALLY.with(|t| t.borrow_mut().enabled = true);
     let mut tallies = Vec::with_capacity(take.len());
     let mut solves = Vec::with_capacity(take.len());
+    if let Some(partition) = chain
+        .test_active_power_mut()
+        .expect("a power stage")
+        .nonlinear_partition
+        .as_mut()
+    {
+        partition.set_test_pivot_profile(true);
+    }
     let mut was = snapshot(chain.test_active_power_mut().expect("a power stage"));
     for &x in &take {
         chain.process_stereo(x * scale);
@@ -147,6 +172,13 @@ fn hard_samples() {
             .collect();
         let n = g.len().max(1) as f64;
         let sum = |f: &dyn Fn(&Solve) -> u64| g.iter().map(|s| f(s)).sum::<u64>() as f64;
+        println!(
+            "  {label:13}  reduced solves per solve: kernel replays {:.2}, masked replays {:.2}, plan learns {:.2}, invalidations {:.2}",
+            sum(&|s| s.kernel_replays) / n,
+            sum(&|s| s.replays - s.kernel_replays) / n,
+            sum(&|s| s.learns) / n,
+            sum(&|s| s.invalidations) / n,
+        );
         println!(
             "  {label:13}: {:7} solves, {:5.1} % of all passes; per solve: passes {:.2}, stamps {:.2} ({:.0} % limiter-held), trials {:.2} ({:.0} % held), backtracks {:.2}, fallbacks {:.3}",
             g.len(),
@@ -249,4 +281,61 @@ fn hard_samples() {
         *seconds.entry(i as u64 / 48_000).or_default() += 1;
     }
     println!("  hard solves per second of the take: {seconds:?}");
+}
+
+/// Which pivot plans the power stage replays that no compiled kernel covers,
+/// and how concentrated they are.
+///
+/// `cargo test --release --lib uncovered_plans -- --ignored --nocapture`
+#[test]
+#[ignore = "diagnostic: prints the plans replayed without a kernel"]
+fn uncovered_plans() {
+    use crate::dsp::partition::kernel_census;
+    let name = std::env::var("GSFX_PRESET").unwrap_or_else(|_| "Jazz Chorus".into());
+    let preset = PRESETS.iter().find(|p| p.name == name).expect("preset");
+    let take = take();
+    kernel_census::enable();
+    for gain_db in [0.0, 6.0] {
+        let scale = 10f64.powf((preset.input_trim as f64 + gain_db) / 20.0);
+        let mut chain = Chain::new(RATE);
+        chain.apply(&preset.settings());
+        chain.settle();
+        chain.find_operating_point();
+        for &x in &take {
+            chain.process_stereo(x * scale);
+        }
+    }
+    let census = kernel_census::take();
+    let covered =
+        |pattern: &[u64], plan: &[u8]| crate::dsp::partition::test_kernel_covers(pattern, plan);
+    // The largest pattern by traffic is the power stage's.
+    let mut by_pattern = std::collections::HashMap::<Vec<u64>, Vec<(Vec<u8>, u64)>>::new();
+    for (pattern, plan, count) in census {
+        by_pattern.entry(pattern).or_default().push((plan, count));
+    }
+    let mut patterns: Vec<_> = by_pattern.into_iter().collect();
+    patterns.sort_by_key(|(_, plans)| std::cmp::Reverse(plans.iter().map(|p| p.1).sum::<u64>()));
+    for (pattern, mut plans) in patterns.into_iter().take(3) {
+        let total: u64 = plans.iter().map(|p| p.1).sum();
+        plans.retain(|(plan, _)| !covered(&pattern, plan));
+        plans.sort_by_key(|p| std::cmp::Reverse(p.1));
+        let uncovered: u64 = plans.iter().map(|p| p.1).sum();
+        println!(
+            "{} unknowns: {total} replays, {uncovered} ({:.2} %) without a kernel, in {} plans",
+            pattern.len(),
+            100.0 * uncovered as f64 / total as f64,
+            plans.len()
+        );
+        let mut running = 0;
+        for (k, (_, count)) in plans.iter().enumerate().take(40) {
+            running += count;
+            if k < 10 || k % 5 == 4 {
+                println!(
+                    "   top {:2}: {count:7} replays, cumulative {:.1} % of the uncovered",
+                    k + 1,
+                    100.0 * running as f64 / uncovered.max(1) as f64
+                );
+            }
+        }
+    }
 }

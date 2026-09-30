@@ -43,9 +43,22 @@ pub(crate) enum Bail {
     Failed,
 }
 
+/// Test-only: whether some compiled kernel covers this pattern and plan.
+#[cfg(test)]
+pub(crate) fn test_kernel_covers(pattern: &[u64], plan: &[u8]) -> bool {
+    kernels::KERNELS.iter().any(|k| {
+        k.plan == plan
+            && k.pattern.len() == pattern.len()
+            && k.pattern
+                .iter()
+                .zip(pattern)
+                .all(|(&compiled, &needed)| needed & !compiled == 0)
+    })
+}
+
 /// Kernels a single partition may choose between: the plans compiled for its
 /// pattern.
-const KERNEL_CANDIDATES: usize = 16;
+const KERNEL_CANDIDATES: usize = 32;
 
 /// Records which reduced systems are solved and how often, for
 /// `examples/kernels.rs` to choose what to compile. Off unless that example
@@ -110,6 +123,8 @@ pub struct ReducedPivotProfile {
     pub replays: u64,
     pub learns: u64,
     pub invalidations: u64,
+    /// Replays that ran a compiled kernel rather than the masked replay.
+    pub kernel_replays: u64,
 }
 
 /// Structural summary of a `ReducedNonlinear` partition. Offline reporting
@@ -837,6 +852,96 @@ unsafe fn recover_boundary_major_avx(
     recover_boundary_major_body(work, base, response_by_boundary, boundary_solution);
 }
 
+/// `internal += response * rhs[node]` and `correction += response * rhs[node]`
+/// for every active RHS node, in the order `prepare_rhs` has always taken
+/// them. Each target sums its nodes in that order and the arithmetic within a
+/// node is elementwise, so any vector width gives the same bits; the wide
+/// build is `accumulate_rhs_responses_avx`. Measured on the JC-120's power
+/// stage, this was two thirds of `prepare_rhs` and ran two lanes wide.
+#[inline(always)]
+fn accumulate_rhs_responses_body(
+    active: &[usize],
+    rhs: &[f64],
+    internal_responses: &[f64],
+    boundary_responses: &[f64],
+    internal: &mut [f64],
+    correction: &mut [f64],
+) {
+    let (i, b) = (internal.len(), correction.len());
+    for (column, &global) in active.iter().enumerate() {
+        let scalar = rhs[global];
+        if scalar == 0.0 {
+            continue;
+        }
+        let responses = &internal_responses[column * i..(column + 1) * i];
+        for (target, &response) in internal.iter_mut().zip(responses) {
+            *target += response * scalar;
+        }
+        let responses = &boundary_responses[column * b..(column + 1) * b];
+        for (target, &response) in correction.iter_mut().zip(responses) {
+            *target += response * scalar;
+        }
+    }
+}
+
+/// # Safety
+/// The caller must have established that the CPU supports AVX.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx")]
+unsafe fn accumulate_rhs_responses_avx(
+    active: &[usize],
+    rhs: &[f64],
+    internal_responses: &[f64],
+    boundary_responses: &[f64],
+    internal: &mut [f64],
+    correction: &mut [f64],
+) {
+    accumulate_rhs_responses_body(
+        active,
+        rhs,
+        internal_responses,
+        boundary_responses,
+        internal,
+        correction,
+    );
+}
+
+#[inline(always)]
+fn accumulate_rhs_responses(
+    active: &[usize],
+    rhs: &[f64],
+    internal_responses: &[f64],
+    boundary_responses: &[f64],
+    internal: &mut [f64],
+    correction: &mut [f64],
+    avx: bool,
+) {
+    #[cfg(target_arch = "x86_64")]
+    if avx {
+        // SAFETY: `avx` is only ever set from `avx_available()`.
+        unsafe {
+            accumulate_rhs_responses_avx(
+                active,
+                rhs,
+                internal_responses,
+                boundary_responses,
+                internal,
+                correction,
+            );
+        }
+        return;
+    }
+    let _ = avx;
+    accumulate_rhs_responses_body(
+        active,
+        rhs,
+        internal_responses,
+        boundary_responses,
+        internal,
+        correction,
+    );
+}
+
 #[inline(always)]
 fn recover_boundary_major_in_place(
     work: &mut [f64],
@@ -1521,22 +1626,15 @@ impl ReducedNonlinear {
         }
         self.internal_rhs_base.fill(0.0);
         self.rhs_internal_correction.fill(0.0);
-        let i = self.condensed.internal.len();
-        let b = self.condensed.boundary.len();
-        for (column, &global) in self.active_rhs_nodes.iter().enumerate() {
-            let scalar = rhs[global];
-            if scalar == 0.0 {
-                continue;
-            }
-            let internal = &self.internal_rhs_responses[column * i..(column + 1) * i];
-            for (target, &response) in self.internal_rhs_base.iter_mut().zip(internal) {
-                *target += response * scalar;
-            }
-            let boundary = &self.boundary_rhs_responses[column * b..(column + 1) * b];
-            for (target, &response) in self.rhs_internal_correction.iter_mut().zip(boundary) {
-                *target += response * scalar;
-            }
-        }
+        accumulate_rhs_responses(
+            &self.active_rhs_nodes,
+            rhs,
+            &self.internal_rhs_responses,
+            &self.boundary_rhs_responses,
+            &mut self.internal_rhs_base,
+            &mut self.rhs_internal_correction,
+            self.avx,
+        );
         for ((value, &global), &correction) in self
             .merit_rhs_base
             .iter_mut()
@@ -2292,6 +2390,8 @@ impl ReducedNonlinear {
             None
         };
         let fixed_13 = b == 13 && self.use_fixed_13_dense_solve();
+        #[cfg(test)]
+        let used_kernel = kernel.is_some();
         let solved = if let Some(kernel) = kernel {
             solve_compiled(
                 kernel,
@@ -2365,6 +2465,7 @@ impl ReducedNonlinear {
         if self.test_pivot_profile_enabled {
             if pivot_was_planned {
                 self.test_pivot_profile.replays = self.test_pivot_profile.replays.saturating_add(1);
+                self.test_pivot_profile.kernel_replays += u64::from(used_kernel);
                 if !self.pivot_planned {
                     self.test_pivot_profile.invalidations =
                         self.test_pivot_profile.invalidations.saturating_add(1);

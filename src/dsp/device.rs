@@ -91,6 +91,12 @@ impl Stamper<'_> {
     pub fn conductance(&mut self, a: usize, b: usize, g: f64) {
         let a = self.local(a);
         let b = self.local(b);
+        self.conductance_at(a, b, g);
+    }
+
+    /// `conductance` on nodes already `locate`d.
+    #[inline]
+    pub fn conductance_at(&mut self, a: Option<usize>, b: Option<usize>, g: f64) {
         let n = self.n;
         if let Some(a) = a {
             self.matrix[a * n + a] += g;
@@ -104,6 +110,20 @@ impl Stamper<'_> {
         }
     }
 
+    /// Where `node` sits in the matrix being stamped, `None` for ground: the
+    /// mapping every stamp below starts with.
+    ///
+    /// A device that stamps several terms on the same few nodes maps them once
+    /// with this and passes the result to the `_at` forms, instead of mapping
+    /// every node again on every term. A transistor's stamp is six terms on
+    /// three nodes, and mapped term by term it looked twenty nodes up in the
+    /// reduced boundary map on every Newton pass. The terms, their order and
+    /// their arithmetic are the same either way.
+    #[inline]
+    pub fn locate(&mut self, node: usize) -> Option<usize> {
+        self.local(node)
+    }
+
     /// A transconductance: current between `a` and `b` controlled by the
     /// voltage between `c` and `d`. Asymmetric, which is why the matrix cannot
     /// be factored as if it were symmetric.
@@ -112,6 +132,19 @@ impl Stamper<'_> {
         let b = self.local(b);
         let c = self.local(c);
         let d = self.local(d);
+        self.transconductance_at(a, b, c, d, gm);
+    }
+
+    /// `transconductance` on nodes already `locate`d.
+    #[inline]
+    pub fn transconductance_at(
+        &mut self,
+        a: Option<usize>,
+        b: Option<usize>,
+        c: Option<usize>,
+        d: Option<usize>,
+        gm: f64,
+    ) {
         let n = self.n;
         for (row, sign) in [(a, 1.0), (b, -1.0)] {
             let Some(row) = row else { continue };
@@ -155,6 +188,12 @@ impl Stamper<'_> {
     pub fn current(&mut self, a: usize, b: usize, amps: f64) {
         let a = self.local(a);
         let b = self.local(b);
+        self.current_at(a, b, amps);
+    }
+
+    /// `current` on nodes already `locate`d.
+    #[inline]
+    pub fn current_at(&mut self, a: Option<usize>, b: Option<usize>, amps: f64) {
         if let Some(a) = a {
             self.rhs[a] -= amps;
         }
@@ -554,8 +593,9 @@ impl Device for Diode {
                 (self.spec.saturation * e * self.inv_scale).max(1e-12),
             )
         };
-        s.conductance(self.a, self.k, g);
-        s.current(self.a, self.k, i - g * guess);
+        let (a, k) = (s.locate(self.a), s.locate(self.k));
+        s.conductance_at(a, k, g);
+        s.current_at(a, k, i - g * guess);
     }
 
     fn moved(&self) -> f64 {
@@ -643,8 +683,9 @@ impl Device for Rectifier {
         } else {
             (0.0, Self::OFF)
         };
-        s.conductance(self.a, self.k, g);
-        s.current(self.a, self.k, i - g * guess);
+        let (a, k) = (s.locate(self.a), s.locate(self.k));
+        s.conductance_at(a, k, g);
+        s.current_at(a, k, i - g * guess);
     }
 
     fn moved(&self) -> f64 {
@@ -918,16 +959,18 @@ impl Device for Triode {
         };
         let rp = slope_p.max(1e-12);
 
-        s.conductance(self.p, self.k, rp);
-        s.transconductance(self.p, self.k, self.g, self.k, gm);
-        s.current(self.p, self.k, ip - rp * vpk - gm * vgk);
+        // Mapped once; see `Stamper::locate`.
+        let (p, g, k) = (s.locate(self.p), s.locate(self.g), s.locate(self.k));
+        s.conductance_at(p, k, rp);
+        s.transconductance_at(p, k, g, k, gm);
+        s.current_at(p, k, ip - rp * vpk - gm * vgk);
 
         // The grid is a straight line once it conducts, so its slope is the
         // line's and needs no difference at all.
         let ig = self.grid(vgk);
         let gg = if vgk < 0.0 { 1e-12 } else { 1.0 / 1_500.0 };
-        s.conductance(self.g, self.k, gg);
-        s.current(self.g, self.k, ig - gg * vgk);
+        s.conductance_at(g, k, gg);
+        s.current_at(g, k, ig - gg * vgk);
     }
 
     fn moved(&self) -> f64 {
@@ -1324,21 +1367,28 @@ impl Device for Pentode {
         // Plate branch: its own conductance, plus the two transconductances
         // that say how the grid and the screen move it.
         let rp = gp.max(1e-12);
-        st.conductance(self.p, self.k, rp);
-        st.transconductance(self.p, self.k, self.g, self.k, gm);
-        st.transconductance(self.p, self.k, self.s, self.k, gs);
-        st.current(self.p, self.k, ip - rp * vpk - gm * vgk - gs * vsk);
+        // Mapped once; see `Stamper::locate`.
+        let (p, g, screen, k) = (
+            st.locate(self.p),
+            st.locate(self.g),
+            st.locate(self.s),
+            st.locate(self.k),
+        );
+        st.conductance_at(p, k, rp);
+        st.transconductance_at(p, k, g, k, gm);
+        st.transconductance_at(p, k, screen, k, gs);
+        st.current_at(p, k, ip - rp * vpk - gm * vgk - gs * vsk);
 
         // Screen branch. No knee, so nothing here depends on the plate.
         let rs = gs2.max(1e-12);
-        st.conductance(self.s, self.k, rs);
-        st.transconductance(self.s, self.k, self.g, self.k, gm2);
-        st.current(self.s, self.k, ig2 - rs * vsk - gm2 * vgk);
+        st.conductance_at(screen, k, rs);
+        st.transconductance_at(screen, k, g, k, gm2);
+        st.current_at(screen, k, ig2 - rs * vsk - gm2 * vgk);
 
         let ig = self.grid(vgk);
         let gg = if vgk < 0.0 { 1e-12 } else { self.count / 600.0 };
-        st.conductance(self.g, self.k, gg);
-        st.current(self.g, self.k, ig - gg * vgk);
+        st.conductance_at(g, k, gg);
+        st.current_at(g, k, ig - gg * vgk);
     }
 
     fn moved(&self) -> f64 {
@@ -1646,9 +1696,10 @@ impl Device for Jfet {
             ((self.drain(vgs, vds + step) - self.drain(vgs, vds - step)) / (2.0 * step)).max(1e-9);
 
         // Drain to source conductance, and the gate's control of it.
-        s.conductance(self.d, self.s, gds);
-        s.transconductance(self.d, self.s, self.g, self.s, gm);
-        s.current(self.d, self.s, id - gds * vds - gm * vgs);
+        let (d, g, source) = (s.locate(self.d), s.locate(self.g), s.locate(self.s));
+        s.conductance_at(d, source, gds);
+        s.transconductance_at(d, source, g, source, gm);
+        s.current_at(d, source, id - gds * vds - gm * vgs);
     }
 
     fn moved(&self) -> f64 {
@@ -1957,8 +2008,9 @@ impl Device for Core {
         // precision and evaluates the power curve three times per stamp.
         let g = (slope * self.half_step).max(1e-12);
 
-        s.conductance(self.a, self.b, g);
-        s.current(self.a, self.b, i - g * volts);
+        let (a, b) = (s.locate(self.a), s.locate(self.b));
+        s.conductance_at(a, b, g);
+        s.current_at(a, b, i - g * volts);
     }
 
     fn moved(&self) -> f64 {
@@ -2133,26 +2185,27 @@ impl Device for Bipolar {
         let dib_dvbe = gf * self.inv_forward_beta;
         let dib_dvbc = gr * self.inv_reverse_beta;
 
-        let (c, b, e) = (self.c, self.b, self.e);
+        // Mapped once; see `Stamper::locate`.
+        let (c, b, e) = (s.locate(self.c), s.locate(self.b), s.locate(self.e));
         if self.pnp {
             // Emitter to collector and emitter to base, controlled by the
             // emitter-base and collector-base junctions.
-            s.transconductance(e, c, e, b, dic_dvbe);
-            s.transconductance(e, c, c, b, dic_dvbc);
-            s.current(e, c, ic - dic_dvbe * vbe - dic_dvbc * vbc);
-            s.transconductance(e, b, e, b, dib_dvbe);
-            s.transconductance(e, b, c, b, dib_dvbc);
-            s.current(e, b, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+            s.transconductance_at(e, c, e, b, dic_dvbe);
+            s.transconductance_at(e, c, c, b, dic_dvbc);
+            s.current_at(e, c, ic - dic_dvbe * vbe - dic_dvbc * vbc);
+            s.transconductance_at(e, b, e, b, dib_dvbe);
+            s.transconductance_at(e, b, c, b, dib_dvbc);
+            s.current_at(e, b, ib - dib_dvbe * vbe - dib_dvbc * vbc);
         } else {
             // Collector current, controlled by both junctions.
-            s.transconductance(c, e, b, e, dic_dvbe);
-            s.transconductance(c, e, b, c, dic_dvbc);
-            s.current(c, e, ic - dic_dvbe * vbe - dic_dvbc * vbc);
+            s.transconductance_at(c, e, b, e, dic_dvbe);
+            s.transconductance_at(c, e, b, c, dic_dvbc);
+            s.current_at(c, e, ic - dic_dvbe * vbe - dic_dvbc * vbc);
 
             // And the base current it takes to get it.
-            s.transconductance(b, e, b, e, dib_dvbe);
-            s.transconductance(b, e, b, c, dib_dvbc);
-            s.current(b, e, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+            s.transconductance_at(b, e, b, e, dib_dvbe);
+            s.transconductance_at(b, e, b, c, dib_dvbc);
+            s.current_at(b, e, ib - dib_dvbe * vbe - dib_dvbc * vbc);
         }
     }
 
@@ -2249,8 +2302,10 @@ impl Device for Transconductor {
             i / difference
         };
         // Out of `reference` and into `out`.
-        s.transconductance(self.reference, self.out, self.plus, self.minus, g);
-        s.current(self.reference, self.out, i - g * difference);
+        let (reference, out) = (s.locate(self.reference), s.locate(self.out));
+        let (plus, minus) = (s.locate(self.plus), s.locate(self.minus));
+        s.transconductance_at(reference, out, plus, minus, g);
+        s.current_at(reference, out, i - g * difference);
     }
 
     fn moved(&self) -> f64 {

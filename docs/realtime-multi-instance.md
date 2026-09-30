@@ -378,6 +378,31 @@ Pipelined, over the take, before and after both:
 Across all 78 presets B moves the median mean -3.4 %, p99 -3.3 %, p99.9
 -4.4 % and max -5.9 %.
 
+## The 06:39 REAPER capture (predictor and cabinet handover)
+
+Same set-up as 20:23 (Jazz Chorus 299 s, Puppet Master '86 171 s, Chime Edge
+85 s, live, 48 kHz / 64 samples, live FX multiprocessing on), with the
+source-scaled predictor and the cabinet handover. `shared` in the trace's
+pipeline column confirms the build.
+
+| | 20:23 | 06:39 |
+| --- | ---: | ---: |
+| distinct dropouts | 34 in 258 s | 23 in 299 s |
+| dropouts after a callback over 900 µs | 26 | 14 |
+| Jazz callbacks over 930 µs | 96 | 39 |
+| Jazz p99 / p99.9 / max | 650 / 860 / 1,745 µs | 565 / 774 / 1,298 µs |
+| Chime Edge p99 / max | 571 / 1,202 µs | 467 / 1,088 µs |
+| Puppet p99 / p99.9 | 565 / 689 µs | 560 / 650 µs |
+
+The dropout rate falls by about 40 %. About twelve dropouts are still Jazz
+Chorus callbacks of 980–1,300 µs under hard playing, carrying 225–450
+power-stage passes; 55 of its 56 callbacks over 900 µs ran pipelined with the
+cabinet handed over, so what is left is the power stage itself. Its cost per
+pass rises from ~1.25 µs to ~1.96 µs in the slowest 1 %, which is the
+line-search trials of the hard samples rather than scheduling. The pipeline
+switching itself off in quiet passages accounts for 1–3 long callbacks per
+capture, no more.
+
 ## Earlier notes on the Mark power stage
 
 The Newton pass count on the real take is 2–3 for 73 % of samples. 13 % leave
