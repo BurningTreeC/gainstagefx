@@ -41,6 +41,27 @@ claim below roughly 1 % needs repeated runs.
 
 ## Accepted
 
+### The source-scaled predictor, for every circuit
+
+The Twin's predictor policy, which scales the extrapolation of the last state
+step by the source's own secant and drops it through reversals and jumps, was
+gated on the Twin's continuation policy. It now holds for every circuit.
+
+Why: on the real take, the JC-120's power stage is handed source steps of
+0.8 V a sample (median over its hard samples; p90 2.2 V), three times its
+rated input with ~10 kHz in it. Its hard solves (10 or more passes, 0.18 % of
+solves, clustered) spend 54 % of their stamps with a junction limiter holding a
+transistor back. Extending the last state step through such a reversal starts
+Newton on the wrong side of the edge.
+
+Measured over the catalogue: passes -2.9 %, fallbacks -8 %, backtracks -10 %,
+half-step rescues 36 -> 18. The per-callback pass tail is shorter on 41
+presets and longer on 5 (the lightest: Console and Valve Mic Pre, +7-10 % on
+~350 passes a block). Outputs change as two converged answers to the same
+equations do: 76 of 78 presets below -120 dB re peak, the worst -117 and -101
+dB. Both frozen baselines pass. Jazz Chorus pipelined: p99 ~500 -> ~475 us,
+p99.9 ~900 -> ~830 us, max ~1,200 -> ~1,030 us.
+
 ### Compiled reduced LU kernels
 
 Annotated on the JC-120's power stage, the replayed reduced LU
@@ -197,6 +218,29 @@ Not an optimization; a correction to the instrument. See
 `docs/SOLVER_OPTIMIZATION.md`. Test-only, hash preserved.
 
 ## Rejected (do not reintroduce without new evidence)
+
+### Junction limiting from the critical voltage -- rejected
+
+`pnjlim` log-compresses a forward step from the old junction voltage, and on
+the JC-120's hard samples 95 % of the compressed steps start below the
+critical voltage, asking for 1-3 V and more, so a junction walks ~0.1 V a pass.
+Taking the step up to the critical voltage whole (which `pnjlim` already allows
+for a target below it) and compressing only the rest halved the limiter-held
+stamps but doubled the hard solves (1,662 -> 3,007) and multiplied their
+fallbacks by six: the larger steps overshoot in the feedback loop, and the line
+search pays for them. The slow walk was protecting convergence.
+
+### The Twin's continuation policy for every circuit -- rejected
+
+Across the catalogue it matches the source-scaled predictor's tail (it
+includes it), removes the half-step rescues entirely and cuts backtracks by
+two thirds, but its bookkeeping costs 1-5 % of the mean (5 % on the Puppet
+Master '86) for no further gain in the tail.
+
+### No predictor -- rejected
+
+Starting every sample from the last settled state removes some rescues but
+costs 1.4 % more passes and 18 % more fallbacks across the catalogue.
 
 ### Symbolic (structurally bounded) reduced LU -- rejected
 

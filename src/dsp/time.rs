@@ -2276,6 +2276,10 @@ impl Simulation {
         // The state this sample started from, re-expressed at the twin's step.
         twin.voltage.copy_from_slice(&self.earlier);
         twin.earlier.copy_from_slice(&self.earlier);
+        // The source history the twin's predictor reads: the last sample's
+        // input, so its second half step extrapolates along the first.
+        twin.last_input = self.previous_input;
+        twin.earlier_input = self.previous_input;
         for (t, &m) in twin.recent_move.iter_mut().zip(&self.recent_move) {
             *t = 0.5 * m;
         }
@@ -4481,11 +4485,24 @@ impl Simulation {
         }
     }
 
+    /// Whether the predictor looks at the source before extrapolating. See
+    /// `predictor_input_slope_is_consistent` and `predictor_source_scale`.
+    ///
+    /// This began as Twin policy and now holds for every circuit. Played over
+    /// the real take, a transistor power stage driven hard is handed source
+    /// steps of 0.8 V a sample and more, three times its rated input with
+    /// ~10 kHz in it; extending the last state step straight through such a
+    /// reversal starts Newton on the wrong side of a clipping edge. Measured
+    /// across the catalogue, scaling the extrapolation by the source's own
+    /// secant takes 2.9 % of all Newton passes, 8 % of the fallbacks and half
+    /// the half-step rescues away, shortens the per-callback tail on 41 of
+    /// the 78 presets (5 get longer, the lightest ones), and moves the output
+    /// by -195 dB at the median and -101 dB at worst: two converged answers to
+    /// the same equations. The Jazz Chorus's pipelined p99.9 goes from ~900 to
+    /// ~830 us. It is a starting point, so it cannot change which equations
+    /// are solved, only how quickly Newton gets there.
     #[inline(always)]
     fn input_curvature_predictor_gate_enabled(&self) -> bool {
-        if !self.late_continuation {
-            return false;
-        }
         #[cfg(test)]
         {
             !self.test_disable_input_curvature_predictor_gate
@@ -7781,9 +7798,10 @@ impl Simulation {
         #[cfg(test)]
         self.full_trace_end();
 
-        // Keep the continuation source synchronized with the dynamic state
-        // committed above. An unsettled sample advances neither.
-        if self.late_continuation && !failed {
+        // Keep the source history the predictor and continuation read in
+        // step with the dynamic state committed above. An unsettled sample
+        // advances neither.
+        if !failed {
             self.earlier_input = self.last_input;
             self.last_input = input;
         }

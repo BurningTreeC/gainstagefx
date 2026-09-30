@@ -9,8 +9,9 @@
 //! of them was a pulse as tall as the signal's own peak.
 //!
 //! The JC-120's transistor power stage is where most of them were: 22 in the
-//! 19 s take, where run at twice the rate the same stage has none. So the take
-//! is played through the Jazz Chorus, on the audio thread's terms.
+//! 19 s take (16 since the source-scaled predictor), where run at twice the
+//! rate the same stage has none. So the take is played through the Jazz
+//! Chorus, on the audio thread's terms.
 #[path = "support/allocations.rs"]
 mod allocations;
 use allocations::assert_no_heap;
@@ -67,9 +68,10 @@ fn the_jazz_chorus_take_settles_every_sample_without_allocating() {
     chain.apply(&preset.settings());
     chain.settle();
     chain.find_operating_point();
-    // The first 2.6 s hold the take's first two failed power-stage solves.
+    // The whole take: with the source-scaled predictor the first failed
+    // power-stage solves come later than they did, and fewer (16 in 19 s).
     let take = take();
-    let samples = &take[..(2.6 * RATE) as usize];
+    let samples = &take[..];
 
     let before = chain.solver_breakdown();
     let mut output = vec![0.0; samples.len()];
@@ -85,10 +87,10 @@ fn the_jazz_chorus_take_settles_every_sample_without_allocating() {
 
     assert!(output.iter().all(|y| y.is_finite()));
     assert!(
-        power.half_step_attempts >= 2,
-        "the take should still drive the JC-120's power stage into failing \
-         solves here; the rescue ran {} times",
-        power.half_step_attempts
+        power.half_step_attempts >= 1,
+        "the take no longer drives the JC-120's power stage into a failing \
+         solve, so this test no longer exercises the rescue: give it a harder \
+         input (a hotter trim) rather than deleting the check"
     );
     assert_eq!(
         power.half_step_bridged, power.half_step_attempts,
