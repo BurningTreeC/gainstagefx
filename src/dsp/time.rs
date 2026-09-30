@@ -1962,8 +1962,13 @@ pub struct Simulation {
     /// DC makes the chosen internal block singular); DC then uses the original
     /// full MNA solve while realtime audio still gets the reduced path.
     nonlinear_partition_dc: Option<ReducedNonlinear>,
+    /// Boxed, allocated once here and only written in place: the two traces
+    /// are 155 kB, seven times the rest of a `Simulation`, and inline they
+    /// made every simulation in a test build 175 kB wherever it was moved by
+    /// value. A test that builds two whole plugins on one test thread
+    /// overflowed its 2 MiB stack in `Chain::new` (the CI profile, 2026-09-30).
     #[cfg(test)]
-    solver_trace: [SolverTrace; SOLVER_TRACE_CAPACITY],
+    solver_trace: Box<[SolverTrace]>,
     #[cfg(test)]
     solver_trace_len: usize,
     /// Dedicated failure-only trace storage. The general trace also records
@@ -1971,7 +1976,7 @@ pub struct Simulation {
     /// keeping unsettled solves separate guarantees that a traced realtime pass
     /// retains every rare failure without changing production state or work.
     #[cfg(test)]
-    unsettled_solver_trace: [SolverTrace; UNSETTLED_TRACE_CAPACITY],
+    unsettled_solver_trace: Box<[SolverTrace]>,
     #[cfg(test)]
     unsettled_solver_trace_len: usize,
     #[cfg(test)]
@@ -2889,11 +2894,12 @@ impl Simulation {
             nonlinear_partition: None,
             nonlinear_partition_dc: None,
             #[cfg(test)]
-            solver_trace: [SolverTrace::EMPTY; SOLVER_TRACE_CAPACITY],
+            solver_trace: vec![SolverTrace::EMPTY; SOLVER_TRACE_CAPACITY].into_boxed_slice(),
             #[cfg(test)]
             solver_trace_len: 0,
             #[cfg(test)]
-            unsettled_solver_trace: [SolverTrace::EMPTY; UNSETTLED_TRACE_CAPACITY],
+            unsettled_solver_trace: vec![SolverTrace::EMPTY; UNSETTLED_TRACE_CAPACITY]
+                .into_boxed_slice(),
             #[cfg(test)]
             unsettled_solver_trace_len: 0,
             #[cfg(test)]

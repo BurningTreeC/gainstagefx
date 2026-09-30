@@ -219,7 +219,10 @@ def main():
         for _ in range(2):
             assert fn(gui.scale, B, P, C.c_double)(plugin_ptr, 2.0)
         if cycle == 0:
-            assert dimensions() == (1170, 1452), f"Default zoom: {dimensions()}"
+            # 780 x 306 at the fixed 1.5: a fresh panel opens with only the input
+            # section open (`editor::FIRST_OPEN`), the other five as 30 px strips.
+            # All six open would be 780 x 968.
+            assert dimensions() == (1170, 459), f"Default zoom: {dimensions()}"
         resize_window(display, parent, *dimensions())
         sync(display, 0)
         assert fn(gui.parent, B, P, C.POINTER(Window))(plugin_ptr, C.byref(Window(b"x11", parent))), "gui.set_parent failed"

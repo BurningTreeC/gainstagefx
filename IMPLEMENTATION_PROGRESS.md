@@ -1,5 +1,22 @@
 # Implementation progress
 
+## 2026-09-30 — CI: a test build's stack, and the smoke test's window size
+
+The push of 3570ffe (main and v0.40.0) failed two jobs.
+
+- **Test:** `plugin::channel_layout_tests::a_pipelined_callback_is_the_serial_callback_and_does_not_allocate`
+  overflowed its 2 MiB test-thread stack under the CI profile (opt-level 2, no
+  LTO), which aborted the whole lib test binary; `--release` runs had passed.
+  The test-only solver traces sat inline in `Simulation`: 155 kB of its 175 kB
+  in a test build (the plugin's is about 21 kB), and `Chain::new` holds several
+  by value while it builds the loaded power stages -- seven frames of 175 to
+  527 kB. The two traces are now boxed once at construction and written in
+  place. The test now needs under 512 kB; the lib suite passes under the CI
+  profile (146 tests).
+- **Package (linux):** `tools/linux_gui_smoke.py` still expected the editor at
+  1170 x 1452 (all six sections open at 1.5); a fresh panel opens with the
+  input alone, 1170 x 459, which is what CI measured.
+
 ## 2026-09-30 — The Mark IIC+'s inverter and the Rectifier's loop, from the drawings
 
 The owner approved both follow-ups of the presence audit.
