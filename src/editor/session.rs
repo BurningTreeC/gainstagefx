@@ -48,10 +48,25 @@ pub const BUTTON_W: f32 = 152.0;
 ///
 /// A plugin that opens at one fixed size is a plugin that is too big on a
 /// laptop and too small on a large display, and the panel is drawn rather than
-/// pictured so it is sharp at any of them.
-pub const SCALES: [f64; 7] = [0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0];
+/// pictured so it is sharp at any of them. 100% is drawn at `BASE_DPI`, so 50%
+/// is three quarters of a physical pixel per point -- for a small screen, or a
+/// panel kept open beside the arrangement.
+pub const SCALES: [f64; 9] = [0.5, 0.65, 0.75, 0.9, 1.0, 1.25, 1.5, 1.75, 2.0];
+/// Where 100% is in `SCALES`: what the wheel steps from when the current size
+/// is not one of them.
+const UNITY: usize = {
+    let mut i = 0;
+    while SCALES[i] != 1.0 {
+        i += 1;
+    }
+    i
+};
 pub const SIZE_X: f32 = 386.0;
 pub const SIZE_W: f32 = 46.0;
+/// The size list's rows: shorter than the preset menu's, so that all nine fit
+/// under the header of the smallest window, every section closed.
+const SIZE_ROW_H: f32 = 19.0;
+const SIZES_H: f32 = SIZE_ROW_H * SCALES.len() as f32 + 8.0;
 
 /// Which question, if any, is on screen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -556,7 +571,7 @@ impl View for SizeButton {
                 let at = SCALES
                     .iter()
                     .position(|s| (*s - cx.data::<Session>().scale).abs() < 1e-6)
-                    .unwrap_or(2) as i64;
+                    .unwrap_or(UNITY) as i64;
                 let next = (at + y.signum() as i64).clamp(0, SCALES.len() as i64 - 1);
                 cx.emit(SessionEvent::SetScale(SCALES[next as usize]));
                 meta.consume();
@@ -590,7 +605,7 @@ pub fn sizes(cx: &mut Context) {
             .left(Pixels(SIZE_X - 8.0))
             .top(Pixels(HEADER_H - 2.0))
             .width(Pixels(72.0))
-            .height(Pixels(ROW_H * SCALES.len() as f32 + 8.0))
+            .height(Pixels(SIZES_H))
             .padding_top(Pixels(4.0))
             .background_color(Color::rgb(0x1c, 0x20, 0x23))
             .border_color(Color::rgba(0xff, 0xff, 0xff, 0x22))
@@ -625,7 +640,7 @@ impl SizeRow {
                     .hoverable(false);
             })
             .width(Stretch(1.0))
-            .height(Pixels(ROW_H))
+            .height(Pixels(SIZE_ROW_H))
     }
 }
 
@@ -1044,8 +1059,21 @@ impl View for Backdrop {
 
 #[cfg(test)]
 mod tests {
-    use super::{offered_name, SCROLLBAR};
+    use super::{offered_name, SCALES, SCROLLBAR, SIZES_H, UNITY};
+    use crate::editor::style::{window_height, HEADER_H};
     use crate::presets;
+
+    /// The size list hangs from the header and has to fit the window at its
+    /// shortest -- every section closed -- or the largest sizes are cut off
+    /// below its edge, where they cannot be clicked. And the wheel's fallback
+    /// is 100%, wherever the list puts it.
+    #[test]
+    fn every_size_fits_the_smallest_window() {
+        assert!(HEADER_H - 2.0 + SIZES_H <= window_height(0));
+        assert_eq!(SCALES[UNITY], 1.0);
+        assert!(SCALES.contains(&0.5) && SCALES.contains(&0.65));
+        assert!(SCALES.windows(2).all(|w| w[0] < w[1]));
+    }
 
     /// Reported as "a little * or - in the input": saving from scratch offered
     /// the strip's dash as the name.
