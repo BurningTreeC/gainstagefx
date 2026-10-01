@@ -1,5 +1,248 @@
 # Implementation progress
 
+## 2026-10-01 (night) — The German 76, from the IRT's own drawing
+
+The owner: "go on and trace the V76 to build it."
+
+- **The source.** The first pass had stopped on a redraw. The IRT's own
+  Braunbuch-Beschreibung V 76 (Ausgabe 1, 16.1.1959, 11 sheets, via the Wayback Machine;
+  a copy in the git-ignored `docs/schematics/`) has the drawing S 1176 at 300 ppi, the
+  designers' description and an acceptance sheet with a figure for every control. Traced
+  part by part, including all four decks of the twelve-position gain switch: two pads
+  (one each leg), a 200 ohm termination in the first four positions, and the loop's tap
+  on a 30 k string. Positions 3 and 4 share a pad and differ only in the loop, exactly
+  as the Braunbuch says ("the loop keeping the value of the 34 dB or 40 dB position").
+  The redraw had the 40 Hz network between the input transformer's primary halves as a
+  hum filter and V2's screen bypass on its cathode.
+- **The circuit** (`circuits::german_76`, `Gain::German76`, id `pre_telefunken_v76`,
+  display "German 76", a microphone amplifier): the V76/80 -- both amplifiers and both
+  loops, the low cut (80 Hz, 300 Hz, both) and "3 kHz" as adjustable contacts, the 15 kHz
+  LC low-pass, both chokes, both transformers, the supply chain. `PentodeSpec::EF804S` and
+  `E83F` moved into `netlist.rs`.
+- **Measured against the sheet** (`examples/german_76_op.rs`, `tests/german_76.rs`, 12
+  tests): all twelve gains within 0.36 dB (with the first pass's lossless transformer,
+  within 0.25 dB untrimmed, 75 at its drawn value); the response, every filter figure,
+  both impedances and every distortion figure met. Not met: 40 kHz at -15.9 dB against
+  20 (what is not modelled above the band: V3's Miller capacitance and the windings'
+  leakage). The padded positions show the IRT referred gain to the generator.
+- **Estimated, each bounded by a figure on the sheet**: the input transformer's 2.5 H with
+  3 k of core loss (the Braunbuch's "no resonant rise" cannot be met by any lossless
+  transformer with that network -- searched), its 15 pF and its knee (1 % k3 at the
+  sheet's worst case); the output transformer's 150 H (50 H cut the E83F off at 40 Hz);
+  75 selected at 88.75 k against the drawn 80 k "abgegl.", as the Braunbuch trims it.
+  APPROXIMATED: V1's and V3's plates, below their screens, run low (43 against 67 V,
+  70 against 80) -- the Koren pentode's screen current ignores the plate voltage.
+- **Generic changes.** `Taper::Switch3` became `Taper::Steps` (up to twelve positions,
+  `netlist::steps`), the British 47's S1 with it. The panel's switch parameter gained a
+  fourth position, appended (`far`, "Far Right"); `voice::Throw3` became
+  `CircuitSwitch` with two to four positions and `voice::Throw` four, a position past a
+  switch's last being its last, and `presets::migrate` now gives an old preset the second
+  of four (1/3) where it gave the centre of three (1/2) -- the same position, Centre. The
+  selector shows each circuit's own positions. And `Calibration::make_up_db_on` with
+  `Circuit::control_steps`: a gain switch's make-up is now its position's own rather than
+  a straight line across a step, which had the 46 dB position 3.5 dB loud at the knob's
+  middle; every position of the V76 now plays within 0.07 dB of the others, the
+  British 47's within 0.05, and no continuous control is affected.
+- **Presets**: *German 76 Pre* (46 dB) and *German 76, Speech* (80 Hz and "3 kHz", the
+  Braunbuch's own use for a speaker close on a condenser microphone).
+- **Tables**: calibration and power trim gained the V76's row (every other row
+  identical); kernels 155 to 158, the 155 unchanged.
+- **Left behind in the evening**: `tests/scaling.rs` still expected the 968 px window from
+  before the circuit section grew its switch row; it is 996 now, and the test's scaled
+  sizes with it. The selector rows light a short switch's last position when the
+  parameter is past it, as the circuit plays it.
+
+## 2026-10-01 (evening) — The American SVT's switches, and its 8x10
+
+The owner: "Go ahead with the svt switches and cabinet. Cost is OK."
+
+- **The switches.** Two new parameters, `low_switch` and `mid_switch` (ids `left, centre,
+  right`; `presets::migrate` gives an old preset the centre), are a circuit's own
+  three-position switches, named on the panel as the circuit names its positions and
+  grey for every circuit without one (`Gain::low_switch`, `Gain::mid_switch`,
+  `voice::Throw3`). The SVT's are built as the contacts they close -- adjustable
+  resistors, 1 ohm closed and 1 G open -- so the whole drawn network is in the netlist:
+  BASS SELECT's four contacts (OFF, the twin-T ULTRA LO, BASS CUT through C4 and C5
+  alone) and MIDRANGE SELECT's three, one in front of each toroid section. Measured:
+  the midrange's boost peaks at 220 Hz, 800 Hz and 3 kHz (+21 dB each); BASS CUT
+  -17 dB at 40 Hz; ULTRA LO -18 dB at 500 Hz, deeper than the later SVT-CL's published
+  -10 and without its +2 dB at 40 Hz (a different network; recorded, not tuned).
+  Thrown through `apply`, nothing allocates. The circuit section grew a row (212 px).
+- **The cabinet.** The **American 8x10** (`cab_ampeg_svt_810e`): Ampeg's SVT-810E at its
+  manual's 660 x 1219 x 406 mm, eight tens in four sealed chambers of two -- WIDELY
+  REPORTED, and it agrees with the SVT drawing's "32 ohm speakers (8) all in parallel".
+  Two generic extensions made it possible: cabinets hold eight driver positions (and
+  the acoustic stage eight breakup paths), and `CabinetProfile::compartments` --
+  identical sealed chambers whose modes and panels are one chamber's while the sealed
+  compliance is the whole box's. Every other cabinet is one compartment and computes
+  exactly as before (the acoustic, Jazz and Peavey tests hold their numbers). The 8x10's
+  first cavity mode is 523 Hz where one undivided box would have 145; the closed-box
+  resonance is 95 Hz from 28.7 L a driver, the loaded impedance peak 82 Hz.
+- **The speaker.** The **American Bass 10** (`spk_eminence_legend_b810`): the Eminence
+  Legend B810, the 32 ohm ten Eminence built after the 70s SVT's, every T/S value
+  from its sheet, referred to 8 ohm. Its coil and breakup voicing were fitted to
+  Eminence's plot read by colour (`tools/speaker_fit/fit_b810.py`; voicing 1.19 dB rms).
+  A stand-in for Ampeg's unpublished custom driver, PLAUSIBLE.
+- The American SVT Grind preset plays through its 8x10 (trim 0: -12.2 dB untrimmed
+  against the catalogue's -12.8).
+
+Verification: calibration regenerated and **byte-identical** (at OFF and 800 Hz the
+switch contacts change nothing measurable to 0.01 dB), so the power trim stands, and its
+consistency test passes; kernels regenerated (155, 99.9 %). 169 and then 118 targeted
+tests pass across the SVT, cabinet, acoustic, Jazz, Peavey, speaker-load, settings,
+preset, store, power-trim and voice targets and both frozen baselines; `cargo fmt` and
+`clippy --all-targets -D warnings` clean. `rt_scenario`, 20 s, load 3.9: American SVT
+Grind through its 8x10 -- eight cones' breakup paths -- 0 unsettled, 0 backtracks,
+mean 532 us (497 with the 4x12), p99 655, max 1113: one of 15,000 callbacks past the
+930 us short USB cycle, none past the 1333 us period. The owner has said the cost is
+acceptable.
+
+## 2026-10-01 (later) — Three pedals, the American SVT and its 6550 stage, the British 47
+
+The second batch the owner asked for -- "build what you can build based on schematics.
+Also the Bass amplifiers. The pedals too." -- each from a research log written first:
+
+- **Gold Drive** (Klon Centaur), **Brit Drive** (Marshall Guv'nor, the original) and
+  **Clean Boost** (MXR MicroAmp), from ElectroSmash's analyses, pedal slot and circuit
+  list (`circuits::gold_drive`, `brit_drive`, `clean_boost`). Against the analyses: the
+  Klon's gain stage 39.9 dB against 40, its treble shelf +17.1 / -7.4 against +18.2 /
+  -8; the Guv'nor's first stage 0 to 32.6 dB against 33.3 (32.6 with C2), the one GAIN
+  track raising both stages; the MicroAmp 0.5 to 26.2 dB against 0 to 26.2, 5.9 dB at
+  half rotation (its reverse-log track). The Guv'nor's bass pot was first wired so that
+  it cut as it turned up; measured, and reversed. The MicroAmp's one knob is its gain,
+  so the slot's **level** knob is greyed now (`Pedal::has_level`;
+  `PedalControls::level` is an `Option`, as `drive` became for the Treble Boost).
+  Level rests from `examples/drive_pedals_level.rs`: 0.116 and 0.714.
+- **American SVT** (Ampeg SVT, 6550; "SVT PREAMP" D 591719 rev D, 1975; ids
+  `amp_ampeg_svt`, `power_svt_6550` as the roadmap reserved them) and **American 6550**
+  (D 591720 rev H). Channel 1 from the NORMAL jack: the James stack, and a MIDRANGE
+  whose toroid resonance sits inside the V3b-V4 feedback loop -- +21.5 / -19.1 dB at
+  800 Hz against Ampeg's published +/-20 at the centre position's 800 Hz. The toroid's
+  three sections are ESTIMATED from the three published frequencies (220 / 800 /
+  3000 Hz). ULTRA HI rides the panel's Bright switch; BASS SELECT and MIDRANGE SELECT
+  are fixed (OFF, 800 Hz). The sheet's V3a and power-amp V1 voltages are the 1969 build's
+  (drawing 669-0580 has 12DW7s there); the 1975 parts are built and the solver finds
+  their point.
+  The power stage is a new front end, `power::FollowerFront`, in place of the long-tailed
+  pair: a gain stage with the loop on its cathode, a 12AX7 **cathodyne**, and a **12BH7**
+  gain stage and **direct-coupled cathode follower** a side (`TriodeSpec::T12BH7`,
+  fitted to RCA's 1955 sheet within 3 %), six 6550s with 5.1 ohm plate, 22 ohm screen
+  and 47 k grid resistors, the drivers on the screens' rail. Fitted to the drawing's
+  idle -- A 660, E 350, D -150 V and the calibration procedure's 24 mA a valve
+  (`examples/svt_op.rs`) -- it then makes 31.8 V into 4 ohm for the drawing's 0.257 V
+  (34.6; -0.7 dB), with the drivers and followers on their boxed AC voltages.
+  `long_tailed_pair` was moved out of `assemble` verbatim, so every other stage is built
+  part for part as before: the corrected and legacy baselines pass unchanged.
+  **One claim corrected by measurement**: the followers hold the output grids (driven to
+  three times full output their grids stay ten volts below their cathodes while the
+  6550s' grids reach +1.25 V, class AB2), but the 12BH7 gain stages ahead of them are
+  capacitor-coupled and do block, and their 47 ms recovery reaches the output grids
+  through C5 (`examples/svt_lf.rs`). The code and README say that, not that nothing
+  charges.
+- **British 47** (EMI REDD.47, REDD.47/C1 of 1959 and REDD.M47; `pre_emi_redd47`). EF86
+  and E88CC fitted to Philips's sheets (`PentodeSpec::EF86`, `TriodeSpec::E88CC`). The
+  inner loop read from EMI's prose and confirmed on R. Gorbutt's redraw; the gain switch
+  S1 built as a new `Taper::Steps` rheostat on the Drive knob's thirds, so calibration
+  and every sweep turn the control the hardware has. **33.9 / 40.0 / 45.9 dB into
+  200 ohm against EMI's 34 / 40 / 46**, only the middle fitted (the fine gain, inside
+  EMI's 77-120 ohm). Built at terminal 2/6, where EMI measures; R23's build-out goes to
+  the other output. The rumble filter is strapped out, as EMI's own note describes.
+- **German 76**: EF804S and E83F fitted (`tools/tube_fit/fit_ef804s.py`,
+  `fit_e83f.py`); the feedback string, the pads and the second amplifier read. Not
+  built: the gain switch's fourth deck and V4's screen network still need tracing
+  (`docs/models/german_76.md`).
+
+Registration: five `Gain`/`Circuit` entries (`pedal_klon_centaur_circuit`,
+`pedal_marshall_guvnor_circuit`, `pedal_mxr_microamp_circuit`, `amp_ampeg_svt`,
+`pre_emi_redd47`), three pedals (`pedal_klon_centaur`, `pedal_marshall_guvnor`,
+`pedal_mxr_microamp`) and one power stage (`power_svt_6550`), all appended. Calibration
+(five new rows, every existing entry unchanged; the REDD.47's make-up is stepped, as its
+switch is), power trim (five rows and one column, every existing cell unchanged to the
+last digit) and the kernels (154, 99.9 % of replayed solves) regenerated.
+
+Presets: American SVT Grind (+2 dB trim; -14.6 dB untrimmed against the catalogue's
+-12.8) and British 47 Pre (with the other microphone preamplifiers at -6.7).
+
+Verification: 210 targeted tests across 31 targets pass (the new ones, both frozen
+baselines unchanged, and every target that iterates the catalogue, the power stages or
+the presets, including the calibration and power-trim consistency checks); `cargo fmt`
+and `clippy --all-targets -D warnings` clean. `rt_scenario`, 20 s of the fixture take,
+machine idle: **American SVT Grind** 0 unsettled, 0 backtracks, 0 fallbacks in either
+stage, callbacks mean 497 us, p99 612, max 942 -- one of 15,000 over the 930 us short
+USB cycle, so it is the heaviest of the new presets and the one to watch; **British 47
+Pre** 0 unsettled, mean 80 us.
+
+## 2026-10-01 — Four cleared circuits built: Treble Boost, Brit Plexi Bass, Brum 100, Oregon T
+
+The four the research logs had cleared and nobody had built, each re-read from its
+drawing before code -- which corrected three of the logs:
+
+- **Treble Boost** (Dallas Rangemaster, stock OC44; `circuits::treble_boost`), pedal and
+  circuit. OC44 from the Holmes/Holters/van Walstijn (DAFx-17) Gummel-Poon extraction,
+  beta 97 derived at its 0.2 mA -- the log's "about 2 mA" was ElectroSmash's slip, and is
+  corrected. Stage gain 37.8 dB against ElectroSmash's 38, input high-pass ~2.3 kHz
+  against 2.6. Its one pot is a volume after a fixed gain: the slot's level knob (unity
+  at 0.589, `examples/treble_boost_level.rs`), the slot's drive greyed
+  (`Pedal::has_drive`, so `PedalControls::drive` is an `Option` now), and as the circuit
+  the Drive knob with `drive_is_channel_volume`.
+- **Brit Plexi Bass** (Marshall 1992 Super Bass, Unicord 70-13-11; `circuits::plexi_bass`,
+  `PowerSpec::PLEXI_BASS_EL34`). Both V1 halves built on the shared cathode, no bright
+  cap, V2a unbypassed, 250 pF / 56 k stack. The power sections, compared line by line
+  against the 1959's sheet, are identical **but for .1 uF output couplings against
+  .022** -- the log had them as identical -- so the stage is its own spec.
+- **Brum 100** (Laney Supergroup 100 Mk I, the 1969 trace; `circuits::brum100`,
+  `PowerSpec::BRUM_EL34`). The trace's supply sheet prints **HT1 600 V and Vbias -54 V**,
+  which the log had as missing. HT4 has no reservoir on the trace; built as drawn.
+  Presence on the tail, the 1959's way, with a 3.3 k pot.
+- **Oregon T** (Sunn Model T, D-1029 A; `circuits::oregon_t`, `PowerSpec::OREGON_6550`).
+  New: **ultra-linear** screens (`PowerSpec::screen_tap`, two more windings on the
+  secondary), **plate resistors** (`plate_resistor`), a **6550** (`PentodeSpec::T6550`,
+  `tools/tube_fit/fit_6550.py`, GE's 6550-A sheet of 4-72; mu 8.18 unasked against
+  the sheet's 8), and a **C-taper** track (`Taper::AntiAudio`) for the "REV LOG" presence.
+  Against the drawing's voltage chart: preamp within 4 %; power stage on both columns
+  (A 519.0 / 481.0 V fitted, plates 514 / 475 against 507 / 472, screens 507 / 463
+  against 504 / 459, inverter cathodes 37.4 against 38); the whole amplifier reaches
+  the rated 150 W from BOTH IN. Building R20 as 11 k from 4 ohm read 32.8 V on the
+  inverter's cathodes -- at DC that halves the tail's resistance -- so the stage is
+  built at its 16 ohm tap with the drawn 22 k. GE's bogey 6550 on the chart's bias idles
+  hot, ~94 mA and 48 W against GE's 42; recorded, not tuned.
+
+**A solver finding, scoped.** Driven far past its rating the ultra-linear stage went
+unsettled on every sample (from 300 mV at 96 kHz) and froze at a DC level. The pentode
+returned no *screen* current with its plate at its edge, an artefact that a screen on a
+capacitor never notices and a screen on a winding turns into a Newton two-cycle. Fixed
+in `device::Pentode::on_winding` (built by `Netlist::pentode_on_winding` when
+`screen_tap > 0`). Not the default: as a blanket change it moved the frozen Twin fixture
+by 7e-4, so every existing stage is untouched and the corrected and legacy baselines
+pass unchanged. `tests/oregon_t.rs` drives it past its rating at both rates and every
+presence and asserts no unsettled sample.
+
+Registration: four `Gain`/`Circuit` entries (`pedal_dallas_rangemaster_circuit`,
+`amp_marshall_1992`, `amp_laney_supergroup`, `amp_sunn_model_t`), one pedal
+(`pedal_dallas_rangemaster`), three power stages (`power_1992_el34`,
+`power_supergroup_el34`, `power_sunn_model_t_6550`), all appended. Calibration (four new
+rows, every existing entry unchanged), power trim (four rows and three columns, every
+existing cell unchanged to the last digit) and the kernels (147, 99.9 % of replayed
+solves) regenerated.
+
+Presets: **Paranoia '70** (Treble Boost into the Brum 100, "presence, middle and treble
+on 10 with no bass whatsoever"; PRESETS.md has the rig table), and Bass Head Crunch, Brum
+Crunch and Oregon Drive, each within 0.6 dB of the catalogue mean. Unknown Garden '94 is
+left for the owner: the Model T exists now, its settings and cabinet are not documented.
+
+Researched, not built: **German 76** (V76, cleared on a redraw with voltages), **British
+47** (REDD.47, cleared on EMI's own drawing), **British TG** and **British 69** (not
+cleared; see their logs). The two cleared ones need small-signal valve fits; the E88CC's
+and EF86's are begun (`tools/tube_fit/fit_e88cc.py`, `fit_ef86.py`). And the bass sources:
+Ampeg's own factory schematics (SVT, B-15, V-4B, VT-40), the GK 800RB and Acoustic 360
+service manuals (ROADMAP section B).
+
+Tests: `tests/treble_boost.rs`, `plexi_bass.rs`, `brum100.rs`, `oregon_t.rs`; the
+targeted suite (`--lib`, voice, pipeline, knobs, devices, runtime_state, power_trim,
+pedal_slot, presets, both baselines, tone_knobs, settings, album_presets, modular_state,
+modular_power, presence and the circuits') 313 tests, all passing after one description
+was shortened to fit its row.
+
 ## 2026-09-30 — A pedal selected as the circuit keeps its knobs
 
 Reported: the TS808 has a Tone knob in the pedal slot, and none anywhere when it

@@ -53,7 +53,12 @@ pub struct CabinetProfile {
     pub lining_absorption: f64,
     pub drivers: usize,
     /// Driver centres on the baffle, m, from its centre: +x right, +y up.
-    pub positions: [(f64, f64); 4],
+    /// Room for eight; the entries past `drivers` are unused.
+    pub positions: [(f64, f64); MAX_DRIVERS],
+    /// Identical sealed chambers stacked up the box, each with an equal share
+    /// of the drivers and the air. One everywhere but the American 8x10, whose
+    /// eight drivers sit two to a chamber. See `acoustics::enclosure`.
+    pub compartments: usize,
     /// Fraction of the back that is open. Zero is sealed.
     pub open_fraction: f64,
     /// Volume lost to an angled top, as a fraction of the straight box.
@@ -64,12 +69,29 @@ pub struct CabinetProfile {
     pub default_speaker: &'static SpeakerProfile,
 }
 
-const FOUR: [(f64, f64); 4] = [
+/// The most drivers a cabinet here holds: the American 8x10's.
+pub const MAX_DRIVERS: usize = 8;
+
+/// Four positions, and the rest unused.
+const fn four(p: [(f64, f64); 4]) -> [(f64, f64); MAX_DRIVERS] {
+    [
+        p[0],
+        p[1],
+        p[2],
+        p[3],
+        (0.0, 0.0),
+        (0.0, 0.0),
+        (0.0, 0.0),
+        (0.0, 0.0),
+    ]
+}
+
+const FOUR: [(f64, f64); MAX_DRIVERS] = four([
     (-0.170, 0.168),
     (0.170, 0.168),
     (-0.170, -0.168),
     (0.170, -0.168),
-];
+]);
 
 impl CabinetProfile {
     pub const BRIT_1960: CabinetProfile = CabinetProfile {
@@ -83,6 +105,7 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 4,
+        compartments: 1,
         positions: FOUR,
         open_fraction: 0.0,
         slant: 0.08,
@@ -101,12 +124,13 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 4,
-        positions: [
+        compartments: 1,
+        positions: four([
             (-0.168, 0.180),
             (0.168, 0.180),
             (-0.168, -0.180),
             (0.168, -0.180),
-        ],
+        ]),
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
@@ -148,12 +172,13 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 4,
-        positions: [
+        compartments: 1,
+        positions: four([
             (-0.172, 0.185),
             (0.172, 0.185),
             (-0.172, -0.185),
             (0.172, -0.185),
-        ],
+        ]),
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
@@ -171,7 +196,8 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 2,
-        positions: [(-0.151, -0.030), (0.151, -0.030), (0.0, 0.0), (0.0, 0.0)],
+        compartments: 1,
+        positions: four([(-0.151, -0.030), (0.151, -0.030), (0.0, 0.0), (0.0, 0.0)]),
         open_fraction: 0.40,
         slant: 0.0,
         leakage_q: 7.0,
@@ -195,7 +221,8 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 1,
-        positions: [(0.0, -0.020), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)],
+        compartments: 1,
+        positions: four([(0.0, -0.020), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0)]),
         open_fraction: 0.45,
         slant: 0.0,
         leakage_q: 7.0,
@@ -213,7 +240,8 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 1,
-        positions: [(0.0, 0.0); 4],
+        compartments: 1,
+        positions: [(0.0, 0.0); MAX_DRIVERS],
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
@@ -231,7 +259,8 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 2,
-        positions: [(-0.167, 0.0), (0.167, 0.0), (0.0, 0.0), (0.0, 0.0)],
+        compartments: 1,
+        positions: four([(-0.167, 0.0), (0.167, 0.0), (0.0, 0.0), (0.0, 0.0)]),
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
@@ -262,7 +291,8 @@ impl CabinetProfile {
         material: PanelMaterial::MDF,
         lining_absorption: 0.08,
         drivers: 2,
-        positions: [(-0.166, -0.040), (0.166, -0.040), (0.0, 0.0), (0.0, 0.0)],
+        compartments: 1,
+        positions: four([(-0.166, -0.040), (0.166, -0.040), (0.0, 0.0), (0.0, 0.0)]),
         open_fraction: 0.40,
         slant: 0.0,
         leakage_q: 7.0,
@@ -292,19 +322,57 @@ impl CabinetProfile {
         material: PanelMaterial::PLYWOOD,
         lining_absorption: 0.08,
         drivers: 4,
-        positions: [
+        compartments: 1,
+        positions: four([
             (-0.168, 0.177),
             (0.168, 0.177),
             (-0.168, -0.177),
             (0.168, -0.177),
-        ],
+        ]),
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
         default_speaker: &SpeakerProfile::BRIT_K85,
     };
 
-    pub const ALL: [&'static CabinetProfile; 12] = [
+    /// The Ampeg SVT-810E: eight tens in four sealed chambers of two, the SVT's
+    /// own cabinet. 660.4 W x 1219 H x 406.4 D mm, DOCUMENTED (Ampeg's owner's
+    /// manual). The chambers are WIDELY REPORTED -- "4 sealed 16 ohm 2x10 cabs
+    /// stuck together" -- and agree with the drawing's "32 ohm speakers (8) all
+    /// in parallel" (Ampeg D 591719): two 32 ohm drivers to a chamber are
+    /// 16 ohm, all eight 4 ohm. Panels and dividers 19 mm, ESTIMATED. Driver
+    /// centres DERIVED: equal gaps across the 622 mm inside round the B810's
+    /// 232 mm cutout, and the four 281 mm chambers' centres up the box. See
+    /// `docs/models/cabinets.md`.
+    pub const AMERICAN_810: CabinetProfile = CabinetProfile {
+        id: "cab_ampeg_svt_810e",
+        name: "American 8x10",
+        inspiration: "Ampeg SVT-810E sealed 8x10, four chambers of two, 32 ohm tens",
+        width: 0.6604,
+        height: 1.219,
+        depth: 0.4064,
+        wall: 0.019,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
+        drivers: 8,
+        compartments: 4,
+        positions: [
+            (-0.142, 0.450),
+            (0.142, 0.450),
+            (-0.142, 0.150),
+            (0.142, 0.150),
+            (-0.142, -0.150),
+            (0.142, -0.150),
+            (-0.142, -0.450),
+            (0.142, -0.450),
+        ],
+        open_fraction: 0.0,
+        slant: 0.0,
+        leakage_q: 7.0,
+        default_speaker: &SpeakerProfile::AMERICAN_BASS_10,
+    };
+
+    pub const ALL: [&'static CabinetProfile; 13] = [
         &Self::BRIT_1960,
         &Self::CALI_OVERSIZED,
         &Self::BRIT_CLOSED,
@@ -317,6 +385,7 @@ impl CabinetProfile {
         &Self::CLOSED_212,
         &Self::JAZZ_OPEN_212,
         &Self::AMERICAN_CLOSED_412,
+        &Self::AMERICAN_810,
     ];
 
     pub fn internal(&self) -> (f64, f64, f64) {
@@ -331,12 +400,21 @@ impl CabinetProfile {
         self.open_fraction > 0.0
     }
 
-    /// Air volume behind all drivers, m^3.
+    /// Air volume behind all drivers, m^3, every chamber together.
     pub fn volume(&self) -> f64 {
         let (w, h, d) = self.internal();
+        let dividers = (self.compartments.max(1) - 1) as f64 * w * d * self.wall;
         (w * h * d * (1.0 - self.slant) * (1.0 - BRACING)
-            - DRIVER_DISPLACEMENT * self.drivers as f64)
+            - DRIVER_DISPLACEMENT * self.drivers as f64
+            - dividers)
             .max(0.005)
+    }
+
+    /// One chamber's inside height, m: the inside less the dividers, shared.
+    pub fn compartment_height(&self) -> f64 {
+        let (_, h, _) = self.internal();
+        let n = self.compartments.max(1) as f64;
+        (h - (n - 1.0) * self.wall) / n
     }
 
     /// The cavity and opening load every driver continuously, including open backs.
@@ -375,6 +453,6 @@ impl CabinetProfile {
     }
 
     pub fn driver_positions(&self) -> &[(f64, f64)] {
-        &self.positions[..self.drivers.clamp(1, 4)]
+        &self.positions[..self.drivers.clamp(1, MAX_DRIVERS)]
     }
 }

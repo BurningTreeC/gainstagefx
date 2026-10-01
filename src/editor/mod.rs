@@ -35,7 +35,7 @@ use vizia_plug::{create_vizia_editor, ViziaState, ViziaTheming};
 
 use crate::params::{
     CabModel, Cabinet, Circuit, GainStageParams, MicModel, Oversampling, PedalModel, SpeakerModel,
-    ToneStack,
+    Switch, ToneStack,
 };
 use dropdown::{Choice, DropButton, Dropdowns};
 use paint::PanelCanvas;
@@ -652,6 +652,9 @@ fn input(cx: &mut Context) {
             } else {
                 370.0 / (count - 1) as f32
             };
+            // A pedal with no drive control (the Treble Boost, whose one pot
+            // is its level) greys the knob rather than leaving one that turns
+            // nothing.
             placement_knob(
                 cx,
                 x0,
@@ -659,7 +662,7 @@ fn input(cx: &mut Context) {
                 11.0,
                 drive_label,
                 |p| &p.pedal_drive,
-                live,
+                live && pedal.voice().has_drive(),
                 percent,
             );
             if shown.is_empty() {
@@ -686,6 +689,8 @@ fn input(cx: &mut Context) {
                 }
             }
             let last = x0 + step * (count - 1) as f32;
+            // And one with no level control (the Clean Boost, whose one knob is
+            // its gain) greys this one.
             placement_knob(
                 cx,
                 last,
@@ -693,7 +698,7 @@ fn input(cx: &mut Context) {
                 11.0,
                 level_label,
                 |p| &p.pedal_level,
-                live,
+                live && pedal.voice().has_level(),
                 percent,
             );
         });
@@ -807,12 +812,81 @@ fn circuit(cx: &mut Context) {
         });
     };
 
+    // A circuit's own three-position switches, named as the circuit names its
+    // positions -- the SVT's BASS CUT / OFF / ULTRA LO beside its ULTRA HI, and
+    // its 220 Hz / 800 Hz / 3 kHz beneath -- and grey where the circuit has
+    // none, for the same reason as the two above.
+    {
+        let circuit = parameter_signal.map(|p| p.circuit.value());
+        Binding::new(cx, circuit, move |cx| {
+            let voice = circuit.get().voice();
+            // Each row shows the circuit's own positions out of the parameter's
+            // four, so a two- or three-position switch is that many segments.
+            // A value past a circuit's last position plays as its last
+            // (`CircuitSwitch::at`), and the row lights its last to match.
+            let low = voice.low_switch();
+            grid.caption(cx, 0, 4, "low switch", low.is_some());
+            match low {
+                Some(s) => Selector::capped(
+                    cx,
+                    parameter_signal,
+                    |p| &p.low_switch,
+                    s.labels.to_vec(),
+                    Switch::ALL.len(),
+                    s.labels.len() - 1,
+                ),
+                None => Selector::window(
+                    cx,
+                    parameter_signal,
+                    |p| &p.low_switch,
+                    vec!["Left", "Centre", "Right"],
+                    false,
+                    0,
+                    Switch::ALL.len(),
+                    None,
+                ),
+            }
+            .position_type(PositionType::Absolute)
+            .left(Pixels(Grid::left()))
+            .top(Pixels(grid.y(4)))
+            .width(Pixels(Grid::LEFT_W))
+            .height(Pixels(20.0));
+            let mid = voice.mid_switch();
+            grid.caption(cx, 0, 5, "mid switch", mid.is_some());
+            match mid {
+                Some(s) => Selector::capped(
+                    cx,
+                    parameter_signal,
+                    |p| &p.mid_switch,
+                    s.labels.to_vec(),
+                    Switch::ALL.len(),
+                    s.labels.len() - 1,
+                ),
+                None => Selector::window(
+                    cx,
+                    parameter_signal,
+                    |p| &p.mid_switch,
+                    vec!["Left", "Centre", "Right"],
+                    false,
+                    0,
+                    Switch::ALL.len(),
+                    None,
+                ),
+            }
+            .position_type(PositionType::Absolute)
+            .left(Pixels(Grid::left()))
+            .top(Pixels(grid.y(5)))
+            .width(Pixels(Grid::LEFT_W))
+            .height(Pixels(20.0));
+        });
+    };
+
     // The one piece of prose that earns its space: it changes with the
     // selection, so it is telling you something you cannot see elsewhere.
     Label::new(cx, parameter_signal.map(|p| describe(p.circuit.value())))
         .position_type(PositionType::Absolute)
         .left(Pixels(body_x()))
-        .top(Pixels(top + 154.0))
+        .top(Pixels(top + 182.0))
         .width(Pixels(body_w()))
         .height(Pixels(22.0))
         .alignment(Alignment::Left)
@@ -1059,6 +1133,46 @@ pub fn describe(circuit: Circuit) -> String {
         Circuit::Ds1 => {
             "A transistor clips first and a diode pair clips what is \
                           left, then a scoop: bright, tight distortion."
+        }
+        Circuit::TrebleBoost => {
+            "One germanium transistor behind a 5 nF capacitor: a \
+                          treble boost to push a valve amp into breakup."
+        }
+        Circuit::PlexiBass => {
+            "Modeled after a late-60s British 100 W bass head: the lead \
+                          amp's sibling, without its bass cut."
+        }
+        Circuit::Brum100 => {
+            "Modeled after a late-60s British 100 W head from the Midlands: \
+                          600 V on four EL34s, and no master."
+        }
+        Circuit::OregonT => {
+            "Modeled after an early-70s American 150 W head: four 6550s in \
+                          ultra-linear behind a tweed-style preamp."
+        }
+        Circuit::GoldDrive => {
+            "Clipped and clean summed: germanium diodes on one path, two clean \
+                          ones beside it, and a treble shelf."
+        }
+        Circuit::BritDrive => {
+            "Two op-amp stages into red LEDs, then a bass, middle and treble \
+                          stack that all move each other."
+        }
+        Circuit::German76 => {
+            "Modeled after a late-50s German broadcast valve amplifier: four \
+                          valves, two transformers, stepped gain."
+        }
+        Circuit::British47 => {
+            "Modeled after a late-50s British studio valve amplifier: two valves, \
+                          two transformers, its gain a switch."
+        }
+        Circuit::AmericanSvt => {
+            "Modeled after a 300 W American bass head: six 6550s on cathode \
+                          followers, a midrange in a feedback loop."
+        }
+        Circuit::CleanBoost => {
+            "One op-amp and one knob: up to 26 dB, flat, until a hot pickup \
+                          meets its 9 V rail."
         }
     }
     .to_string()

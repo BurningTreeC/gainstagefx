@@ -1025,6 +1025,9 @@ pub struct Pentode {
     /// and plate knee; if that point wins, the next Newton stamp derives the
     /// analytic slopes from those exact intermediates.
     trial_eval: Option<PentodeEval>,
+    /// The screen keeps conducting with the plate at its edge. See
+    /// `Pentode::on_winding`.
+    screen_on_winding: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1074,7 +1077,50 @@ impl Pentode {
             delta: 0.0,
             clamped: false,
             trial_eval: None,
+            screen_on_winding: false,
         }
+    }
+
+    /// A valve whose screen returns to a winding: an ultra-linear stage's tap
+    /// (`power::PowerSpec::screen_tap`).
+    ///
+    /// A plate at or below its cathode collects nothing, and `new` returns no
+    /// screen current there either. Koren's screen law has no plate term, and
+    /// a real valve's screen takes *more* of the cathode current as the plate
+    /// falls, not none of it, so that zero is an artefact of the edge -- and
+    /// harmless where the screen sits on a capacitor, which holds its voltage
+    /// whatever a Newton step does to the plate. On a winding it is not: the
+    /// screen's current is reflected to the secondary like the plate's, so a
+    /// step that lands the plate on its edge also deletes tens of milliamps
+    /// from the output, and the solve two-cycles. Driven hard, the Sunn Model
+    /// T's stage went unsettled on every sample from 300 mV at the jack at
+    /// 96 kHz and froze (`examples/oregon_t_op.rs -- --map`). This screen
+    /// keeps conducting at the plate's edge; only the plate stops.
+    ///
+    /// Not the default, although it is the better reading of the law
+    /// everywhere: on the stages whose screens sit on a supply it changes no
+    /// solution, but it changes the Newton path enough to move the frozen
+    /// fixtures (`tests/corrected_baseline.rs`, the Twin) past their
+    /// tolerance, and a fixture is not moved to make a change pass.
+    pub fn on_winding(
+        p: usize,
+        g: usize,
+        k: usize,
+        s: usize,
+        count: f64,
+        spec: PentodeSpec,
+    ) -> Self {
+        Self {
+            screen_on_winding: true,
+            ..Self::new(p, g, k, s, count, spec)
+        }
+    }
+
+    /// Whether the plate at `vpk` takes the screen down with it: a plate at
+    /// its edge on a valve whose screen does not sit on a winding.
+    #[inline]
+    fn edge_silences_screen(&self, vpk: f64) -> bool {
+        vpk <= 0.0 && !self.screen_on_winding
     }
 
     /// Plate and screen current and their slopes, from one evaluation.
@@ -1098,7 +1144,9 @@ impl Pentode {
         vsk: f64,
     ) -> (f64, f64, f64, f64, f64, f64, f64) {
         let c = &self.spec;
-        if vsk <= 0.0 || vpk <= 0.0 {
+        // At the plate's edge the plate collects nothing, and the screen
+        // nothing either unless it sits on a winding; see `on_winding`.
+        if vsk <= 0.0 || self.edge_silences_screen(vpk) {
             return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         }
         let inner = c.kp * (self.inv_mu + vgk / vsk);
@@ -1118,9 +1166,15 @@ impl Pentode {
         // the screen has launched and the current falls away; above it the
         // curve is the long flat shelf that makes a power tube a current
         // source into its transformer.
-        let knee = (vpk * self.inv_kvb).atan();
-        let vpk_ratio = vpk * self.inv_kvb;
-        let d_knee = self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio);
+        let (knee, d_knee) = if vpk > 0.0 {
+            let vpk_ratio = vpk * self.inv_kvb;
+            (
+                vpk_ratio.atan(),
+                self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio),
+            )
+        } else {
+            (0.0, 0.0)
+        };
 
         let plate_base = powered * self.inv_kg1;
         let screen_base = powered * self.inv_kg2;
@@ -1157,7 +1211,8 @@ impl Pentode {
     /// used as the next Newton linearisation.
     #[inline]
     fn split_trial_eval(&self, vpk: f64, vgk: f64, vsk: f64) -> PentodeEval {
-        if vsk <= 0.0 || vpk <= 0.0 {
+        // See `split_with_slopes` and `on_winding`.
+        if vsk <= 0.0 || self.edge_silences_screen(vpk) {
             return PentodeEval {
                 vpk,
                 vgk,
@@ -1203,7 +1258,11 @@ impl Pentode {
         let powered = e1.powf(c.ex);
         let plate_base = powered * self.inv_kg1;
         let screen_base = powered * self.inv_kg2;
-        let knee = (vpk * self.inv_kvb).atan();
+        let knee = if vpk > 0.0 {
+            (vpk * self.inv_kvb).atan()
+        } else {
+            0.0
+        };
         PentodeEval {
             vpk,
             vgk,
@@ -1234,8 +1293,12 @@ impl Pentode {
         } else {
             evaluation.exp_inner / (1.0 + evaluation.exp_inner)
         };
-        let vpk_ratio = evaluation.vpk * self.inv_kvb;
-        let d_knee = self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio);
+        let d_knee = if evaluation.vpk > 0.0 {
+            let vpk_ratio = evaluation.vpk * self.inv_kvb;
+            self.inv_kvb / (1.0 + vpk_ratio * vpk_ratio)
+        } else {
+            0.0
+        };
         let d_e1_vgk = sigma;
         let d_e1_vsk = evaluation.soft * self.inv_kp - evaluation.vgk * sigma / evaluation.vsk;
         let d_plate = self.spec.ex * evaluation.plate_base / evaluation.e1;
@@ -2477,7 +2540,7 @@ impl TrialResidual for Pentode {
             self.trial_eval = None;
             // This is deliberately the pre-cache residual path. The test-only
             // A/B switch must restore the old line-search workload exactly.
-            if vsk <= 0.0 || vpk <= 0.0 {
+            if vsk <= 0.0 || self.edge_silences_screen(vpk) {
                 (0.0, 0.0)
             } else {
                 let c = &self.spec;
@@ -2494,10 +2557,12 @@ impl TrialResidual for Pentode {
                     let powered = e1.powf(c.ex);
                     let plate_base = powered * self.inv_kg1;
                     let screen_base = powered * self.inv_kg2;
-                    (
-                        self.count * plate_base * (vpk * self.inv_kvb).atan(),
-                        self.count * screen_base,
-                    )
+                    let knee = if vpk > 0.0 {
+                        (vpk * self.inv_kvb).atan()
+                    } else {
+                        0.0
+                    };
+                    (self.count * plate_base * knee, self.count * screen_base)
                 }
             }
         };

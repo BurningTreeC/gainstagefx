@@ -133,6 +133,26 @@ fn intent(gain: Gain) -> f64 {
         Gain::Hm2 => 45.0,
         Gain::Mt2 => 45.0,
         Gain::Ds1 => 45.0,
+        // A one-transistor booster whose knob is a volume: what it does to a
+        // guitar does not depend on the knob at all. Stated below like every
+        // pedal; the figure documents the intent.
+        Gain::TrebleBoost => 10.0,
+        // The Brit Plexi's two siblings and the Model T, stated at a guitar's
+        // level like the other non-master heads; these figures document the
+        // intent rather than driving the search.
+        Gain::PlexiBass | Gain::Brum100 => 25.0,
+        Gain::OregonT => 25.0,
+        // The three newer pedals, stated at a guitar's level like the rest.
+        Gain::GoldDrive => 20.0,
+        Gain::BritDrive => 40.0,
+        Gain::CleanBoost => 1.0,
+        // A bass head, stated at the same instrument level as the guitar heads.
+        Gain::AmericanSvt => 25.0,
+        // A microphone amplifier, like the Console and the 73P: barely working
+        // at nominal with the gain switched all the way up.
+        Gain::British47 => 3.0,
+        // The same, from a 200 ohm microphone.
+        Gain::German76 => 3.0,
     }
 }
 
@@ -187,7 +207,11 @@ fn stated_level(gain: Gain) -> Option<f64> {
         | Gain::DistPlus
         | Gain::Hm2
         | Gain::Mt2
-        | Gain::Ds1 => Some(GUITAR_VOLTS),
+        | Gain::Ds1
+        | Gain::TrebleBoost
+        | Gain::GoldDrive
+        | Gain::BritDrive
+        | Gain::CleanBoost => Some(GUITAR_VOLTS),
         Gain::Twin => Some(GUITAR_VOLTS),
         // The same guitar into the same kind of front end.
         Gain::Deluxe | Gain::DeluxeNormal => Some(GUITAR_VOLTS),
@@ -262,6 +286,13 @@ fn stated_level(gain: Gain) -> Option<f64> {
         Gain::Recto => Some(GUITAR_VOLTS),
         // And into the boost channel of a two-channel British head.
         Gain::Brit2205 => Some(GUITAR_VOLTS),
+        // And into a British bass head, a Midlands head, and the BRITE input of
+        // an American 150 W head.
+        Gain::PlexiBass | Gain::Brum100 | Gain::OregonT => Some(GUITAR_VOLTS),
+        // And a bass into the NORMAL input of channel 1 of an American 300 W
+        // head: a bass's passive pickups are at a guitar's level, and the
+        // plugin has one input calibration.
+        Gain::AmericanSvt => Some(GUITAR_VOLTS),
         _ => None,
     }
 }

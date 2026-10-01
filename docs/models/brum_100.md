@@ -4,9 +4,11 @@ Engineering identity: **Laney Supergroup 100 Mk I** (sold as the LA100BL), a 196
 Proposed stable ids `amp_laney_supergroup` (`circuit`) and `power_supergroup_el34`
 (`power_amp`). Proposed display: **Brum 100**.
 
-Status: **RESEARCHED 2026-09-25. Cleared for code on a traced drawing**, with the
-limitation in question 2. Not built. It is half of *Paranoia '70*; the other half is the
-treble booster in [treble_boost.md](treble_boost.md).
+Status: **IMPLEMENTED 2026-10-01 from the traced drawing** (`circuits::brum100`, power
+stage `power::PowerSpec::BRUM_EL34`, stable ids `amp_laney_supergroup` and
+`power_supergroup_el34`, displayed **Brum 100** and **Brum EL34**), with the limitation in
+question 2. It is half of *Paranoia '70*; the other half is the treble booster in
+[treble_boost.md](treble_boost.md).
 
 ## What it is for
 
@@ -64,8 +66,10 @@ supply: HT1 through T1 (20 H choke) to HT2, R39 2.7k to HT3, R38 22k to HT4,
    but not a Marshall: the mid pot is 22 k, the treble cap 270 pF, the bright cap 270 pF
    across the mixer, and the presence pot 3.3 k -- and its own EL34 power stage.
 7. **To be approximated, and why.**
-   - The supply voltages are not on the trace; the supply sheet gives the topology.
-     ESTIMATED from the EL34s' idle until a measured unit's voltages are found.
+   - The supply voltages: **two are on the trace after all** (corrected 2026-10-01).
+     Sheet 1 prints **HT1 600V** and **Vbias -54V** beside the terminals; whether loaded
+     is not said. HT2, behind the 20 H choke whose copper is not printed, is ESTIMATED
+     at 597 V.
    - Pot laws are not on the trace ("Key=T/B/M/P" and 50 %); taken from Marshall
      practice of the period. APPROXIMATED.
    - The output transformer's impedance: not on the trace. ESTIMATED as for the
@@ -79,3 +83,28 @@ supply: HT1 through T1 (20 H choke) to HT2, R39 2.7k to HT3, R38 22k to HT4,
   without circumventing anything).
 - Which channel Iommi played through, and whether he jumpered them: not stated in the
   sources located.
+
+## Implemented, 2026-10-01
+
+`circuits::brum100`, `power::PowerSpec::BRUM_EL34`, `tests/brum100.rs`,
+`examples/brum100_op.rs`. Re-read at 400 dpi from the three trace sheets.
+
+- **Preamp** as question 5, from TREBLE1 with TREBLE2 empty. The BASS channel's half has
+  its own cathode, so it is not built: its idle current is a resistance on HT5
+  (`BASS_V1_IDLE`, 300 k, re-measured). P1 is "GAIN TWO" and the panel calls the Drive
+  knob GAIN.
+- **The supply chain as drawn**: HT2 -- R39 2.7 k -- HT3 (C22 + C23 in series) -- R38 22 k
+  -- HT4 -- R14 10 k -- HT5 (C9 15 uF). **HT4 has no reservoir on the trace**: V2b and
+  the follower sit 22 k from HT3 with nothing to ground but HT5's 15 uF behind another
+  10 k. Built as drawn; PLAUSIBLE that a capacitor was missed in tracing. HT3 settles at
+  567 V with the inverter drawing 4.4 mA (`INVERTER_NODE`, `INVERTER_IDLE` 130 k), HT4 at
+  421 V.
+- **Power stage**: the presence is the 1959's arrangement -- R37's 3.3 k track *is* the
+  tail's return from the feedback node to ground, C18 on its wiper -- so
+  `presence_on_tail`; R22 10 k above it, R28 470 ohm, R26 / R27 1 M, C17 22 nF to the
+  second grid, C19 47 pF across 82 k / 100 k plates on HT3. Feedback R21 100 k from the
+  16 ohm tap (J7's top contact), built at 16 ohm. C20 / C21 100 nF into R31 / R32 220 k;
+  10 k stoppers and 470 ohm screens per valve. On 600 V and -54 V the EL34s idle at
+  32 mA and 18.9 W each.
+- ESTIMATED / APPROXIMATED as question 7, plus: the output transformer is the Brit EL34's
+  1.7 k data at the 16 ohm tap, as the Brit Plexi's is.

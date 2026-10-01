@@ -6,7 +6,7 @@
 //! fixed output calibration. Placement changes crossfade pressure kernels without
 //! allocating. A common propagation time is removed to preserve plugin latency.
 
-use super::cabinet::CabinetProfile;
+use super::cabinet::{CabinetProfile, MAX_DRIVERS};
 use super::diffraction::{self, ROUTES};
 use super::enclosure::{CavityRadiation, RADIATORS};
 use super::filters::{Biquad, DelayLine, DelayTap, OnePole};
@@ -105,7 +105,7 @@ struct MicChannel {
     slot: MicSlot,
     field: PressureField,
     front_panel: PressureField,
-    breakup_paths: [BreakupPath; 4],
+    breakup_paths: [BreakupPath; MAX_DRIVERS],
     driver_count: usize,
     rear: [RearPath; MAX_PATHS],
     /// The rear paths that can contribute, as indices into `rear` in their
@@ -133,7 +133,7 @@ impl MicChannel {
             slot: MicSlot::Off,
             field: PressureField::default(),
             front_panel: PressureField::default(),
-            breakup_paths: [BreakupPath::default(); 4],
+            breakup_paths: [BreakupPath::default(); MAX_DRIVERS],
             driver_count: 0,
             rear: [RearPath::default(); MAX_PATHS],
             rear_live: [0; MAX_PATHS],

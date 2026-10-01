@@ -76,6 +76,7 @@ and 3 % bracing (ESTIMATED), and less 8 % for the 1960A slant.
 | `cab_marshall_1936` | Closed 2x12 | 750 x 600 x 310 (DOC retail) | 15.9 (EST) | 2 | +-167 x 0 (DERIVED) | closed | Brit T75 (TUNED choice) |
 | `cab_roland_jc120_212` | Jazz Open 2x12 | 750 x 540 x 270 (DOC, Roland) | 18.0 (EST) | 2 | +-166 x -40 (DERIVED/EST) | open 40 % (EST) | Jazz 12 (DOC complement) |
 | `cab_peavey_412m` | American Closed 4x12 | 765 x 816 x 362 (PLAUS, owner) | 19.0 (EST) | 4 | +-168 x +-177 (DERIVED) | closed (DOC) | Brit K85 (PLAUS complement) |
+| `cab_ampeg_svt_810e` | American 8x10 | 660 x 1219 x 406 (DOC, Ampeg manual) | 19.0 (EST) | 8, in four sealed chambers of two (WIDELY REPORTED) | +-142 x +-150, +-450 (DERIVED) | closed (DOC) | American Bass 10 (PLAUS complement) |
 
 "TUNED choice" defaults are voicing choices for the Matched speaker selection, **not**
 claims about factory complements. The AB763 Twin/Deluxe original speaker fitments were not
@@ -128,6 +129,50 @@ WIDELY REPORTED. Checkpoint:
 
 The Matched speaker is the **Brit K85** (the G12K-85; `speakers.md`), the cabinet's
 documented complement for *this* rig and a plausible one for the model generally.
+
+## American 8x10: the Ampeg SVT-810E (2026-10-01)
+
+For the American SVT, whose drawing names its cabinet ("SVT ENCLOSURE: 32 ohm speakers
+(8) all in parallel", D 591719) and whose head Ampeg sold with a pair of sealed 8x10s
+([Wikipedia](https://en.wikipedia.org/wiki/Ampeg_SVT): "a pair of sealed 8x10" speaker
+enclosures because one cabinet could not handle the power"). Checkpoint:
+
+1. **Revision.** The SVT-810E as Ampeg builds it now (Classic and Heritage), the 8x10 of
+   the SVT since 1969: sealed, eight tens, 4 ohm mono or two 8 ohm halves in stereo. One
+   cabinet is modelled, at 4 ohm, as the drawing's calibration load ("connect a 4 ohm
+   load resistor").
+2. **Original drawing found?** No construction drawing. Ampeg's owner's manual gives the
+   size, **660.4 W x 1219 H x 406.4 D mm** ([manua.ls copy of the manual](https://www.manua.ls/ampeg/svt-810e/manual));
+   Ampeg's product page gives "8 Custom 10" Eminence drivers", "Infinite Baffle design"
+   and poplar-ply construction.
+3. **Best source.** The manual's dimensions; the drawing's eight 32 ohm drivers in
+   parallel for the wiring.
+4. **Cross-check.** Retail listings of Ampeg's figures, 26 x 48 x 16 in, are the same box.
+   The internal division is **WIDELY REPORTED**: "4 sealed 16 ohm 2x10 cabs stuck together
+   and wired into two separate 8 ohm 4x10s" ([TalkBass](https://www.talkbass.com/threads/ampeg-8x10-svt-ampeg.1494005/)),
+   "each pair sealed in its own chamber" (retailers). It agrees with the drawing's
+   wiring without being told: two 32 ohm drivers in parallel are 16 ohm, two such
+   chambers 8 ohm a half, both halves 4 ohm.
+5. **Values.** Four stacked chambers of two (`compartments: 4`), 19 mm dividers: each
+   chamber 622 x 281 mm inside. Driver centres by the equal-gap rule from the B810's
+   232 mm cutout, +-142 mm across, and the chambers' centres, +-150 and +-450 mm up and
+   down. About 29 L of sealed air per driver.
+6. **Exact.** Sealed, eight drivers, four chambers of two, straight.
+7. **Estimated.** Panel and divider thickness 19 mm (a 3/4 in board); bracing and driver
+   displacement as for every cabinet here. The baffle's own vibration is integrated over
+   the whole front as for the other cabinets, not chamber by chamber (APPROXIMATED).
+8. **Why.** The size is Ampeg's, the wiring the drawing's, and the division the one
+   arrangement that makes the two agree.
+
+**What the chambers change.** The enclosure model now takes `compartments`: identical
+sealed chambers stacked up the box, each with its share of the drivers and the air. The
+low-frequency loading is the same as one box of the same total volume -- every chamber is
+at the same pressure -- but the cavity modes are a 281 mm chamber's, not a 1.18 m box's
+(the first height mode near 610 Hz rather than 145 Hz), and the side and back panels are
+four smaller panels each. Every other cabinet is one compartment and is built exactly as
+before.
+
+The Matched speaker is the **American Bass 10** (Eminence Legend B810; `speakers.md`).
 
 ## Jazz Open 2x12: the Roland JC-120's cabinet (2026-09-24)
 

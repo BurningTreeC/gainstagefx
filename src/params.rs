@@ -146,6 +146,42 @@ pub enum Circuit {
     #[id = "pedal_boss_ds1_circuit"]
     #[name = "Orange Dist"]
     Ds1,
+    // Appended. The Dallas Rangemaster as a circuit, like every other pedal in
+    // the slot, and three amplifiers built from cleared drawings: the 1992
+    // Super Bass, the Laney Supergroup and the Sunn Model T.
+    #[id = "pedal_dallas_rangemaster_circuit"]
+    #[name = "Treble Boost"]
+    TrebleBoost,
+    #[id = "amp_marshall_1992"]
+    #[name = "Brit Plexi Bass"]
+    PlexiBass,
+    #[id = "amp_laney_supergroup"]
+    #[name = "Brum 100"]
+    Brum100,
+    #[id = "amp_sunn_model_t"]
+    #[name = "Oregon T"]
+    OregonT,
+    // Appended: three more pedals as circuits in their own right.
+    #[id = "pedal_klon_centaur_circuit"]
+    #[name = "Gold Drive"]
+    GoldDrive,
+    #[id = "pedal_marshall_guvnor_circuit"]
+    #[name = "Brit Drive"]
+    BritDrive,
+    #[id = "pedal_mxr_microamp_circuit"]
+    #[name = "Clean Boost"]
+    CleanBoost,
+    // Appended: the first bass amplifier.
+    #[id = "amp_ampeg_svt"]
+    #[name = "American SVT"]
+    AmericanSvt,
+    // Appended: the first of the four EMI / Telefunken / Helios preamplifiers.
+    #[id = "pre_emi_redd47"]
+    #[name = "British 47"]
+    British47,
+    #[id = "pre_telefunken_v76"]
+    #[name = "German 76"]
+    German76,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -210,9 +246,19 @@ impl Circuit {
             Circuit::DeluxeNormal => "American Deluxe Normal",
             Circuit::Brit2205 => "Brit 2205",
             Circuit::Ds1 => "Orange Dist",
+            Circuit::TrebleBoost => "Treble Boost",
+            Circuit::PlexiBass => "Brit Plexi Bass",
+            Circuit::Brum100 => "Brum 100",
+            Circuit::OregonT => "Oregon T",
+            Circuit::GoldDrive => "Gold Drive",
+            Circuit::BritDrive => "Brit Drive",
+            Circuit::CleanBoost => "Clean Boost",
+            Circuit::AmericanSvt => "American SVT",
+            Circuit::British47 => "British 47",
+            Circuit::German76 => "German 76",
         }
     }
-    pub const ALL: [Circuit; 32] = [
+    pub const ALL: [Circuit; 42] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -245,6 +291,16 @@ impl Circuit {
         Circuit::DeluxeNormal,
         Circuit::Brit2205,
         Circuit::Ds1,
+        Circuit::TrebleBoost,
+        Circuit::PlexiBass,
+        Circuit::Brum100,
+        Circuit::OregonT,
+        Circuit::GoldDrive,
+        Circuit::BritDrive,
+        Circuit::CleanBoost,
+        Circuit::AmericanSvt,
+        Circuit::British47,
+        Circuit::German76,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -281,6 +337,16 @@ impl Circuit {
             Circuit::DeluxeNormal => voice::Gain::DeluxeNormal,
             Circuit::Brit2205 => voice::Gain::Brit2205,
             Circuit::Ds1 => voice::Gain::Ds1,
+            Circuit::TrebleBoost => voice::Gain::TrebleBoost,
+            Circuit::PlexiBass => voice::Gain::PlexiBass,
+            Circuit::Brum100 => voice::Gain::Brum100,
+            Circuit::OregonT => voice::Gain::OregonT,
+            Circuit::GoldDrive => voice::Gain::GoldDrive,
+            Circuit::BritDrive => voice::Gain::BritDrive,
+            Circuit::CleanBoost => voice::Gain::CleanBoost,
+            Circuit::AmericanSvt => voice::Gain::AmericanSvt,
+            Circuit::British47 => voice::Gain::British47,
+            Circuit::German76 => voice::Gain::German76,
         }
     }
 
@@ -315,11 +381,17 @@ impl Circuit {
             | voice::Gain::DistPlus
             | voice::Gain::Hm2
             | voice::Gain::Mt2
-            | voice::Gain::Ds1 => Kind::Pedal,
+            | voice::Gain::Ds1
+            | voice::Gain::TrebleBoost
+            | voice::Gain::GoldDrive
+            | voice::Gain::BritDrive
+            | voice::Gain::CleanBoost => Kind::Pedal,
             voice::Gain::Neve
             | voice::Gain::American312
             | voice::Gain::ConsoleE
-            | voice::Gain::Tube610 => Kind::MicPre,
+            | voice::Gain::Tube610
+            | voice::Gain::British47
+            | voice::Gain::German76 => Kind::MicPre,
             _ => Kind::Amplifier,
         }
     }
@@ -409,10 +481,23 @@ pub enum PowerAmp {
     #[id = "power_2205_el34"]
     #[name = "Brit 2205 EL34"]
     Brit2205EL34,
+    // Appended: the matched stages of the three amplifiers above.
+    #[id = "power_1992_el34"]
+    #[name = "Brit Plexi Bass EL34"]
+    BritPlexiBassEL34,
+    #[id = "power_supergroup_el34"]
+    #[name = "Brum EL34"]
+    BrumEL34,
+    #[id = "power_sunn_model_t_6550"]
+    #[name = "Oregon 6550"]
+    Oregon6550,
+    #[id = "power_svt_6550"]
+    #[name = "American 6550"]
+    Svt6550,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 17] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -426,6 +511,10 @@ impl PowerAmp {
         Self::Recto6L6Tube,
         Self::AmericanDeluxe6V6,
         Self::Brit2205EL34,
+        Self::BritPlexiBassEL34,
+        Self::BrumEL34,
+        Self::Oregon6550,
+        Self::Svt6550,
     ];
 
     pub fn name(self) -> &'static str {
@@ -447,6 +536,10 @@ impl PowerAmp {
             Self::Recto6L6Tube => voice::PowerAmp::Recto6L6Tube,
             Self::AmericanDeluxe6V6 => voice::PowerAmp::AmericanDeluxe6V6,
             Self::Brit2205EL34 => voice::PowerAmp::Brit2205EL34,
+            Self::BritPlexiBassEL34 => voice::PowerAmp::BritPlexiBassEL34,
+            Self::BrumEL34 => voice::PowerAmp::BrumEL34,
+            Self::Oregon6550 => voice::PowerAmp::Oregon6550,
+            Self::Svt6550 => voice::PowerAmp::Svt6550,
         }
     }
 }
@@ -490,6 +583,41 @@ impl Mains {
     }
 }
 
+/// A circuit's own switch, up to four positions, as the panel's low and mid
+/// switch selectors hold it. What each position does belongs to the circuit
+/// (the American SVT's BASS SELECT and MIDRANGE SELECT, the German 76's low
+/// cut and "3 kHz"); the panel names them from `voice::CircuitSwitch::labels`.
+/// The second, `Centre`, is the default, and every circuit with a switch is
+/// built and calibrated there. Append new ids only.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum Switch {
+    #[id = "left"]
+    #[name = "Left"]
+    Left,
+    #[id = "centre"]
+    #[name = "Centre"]
+    Centre,
+    #[id = "right"]
+    #[name = "Right"]
+    Right,
+    #[id = "far"]
+    #[name = "Far Right"]
+    Far,
+}
+
+impl Switch {
+    pub const ALL: [Self; 4] = [Self::Left, Self::Centre, Self::Right, Self::Far];
+
+    pub fn voice(self) -> voice::Throw {
+        match self {
+            Self::Left => voice::Throw::Left,
+            Self::Centre => voice::Throw::Centre,
+            Self::Right => voice::Throw::Right,
+            Self::Far => voice::Throw::Far,
+        }
+    }
+}
+
 /// The pedal slot in front of the circuit. Append new ids only.
 #[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum PedalModel {
@@ -528,10 +656,22 @@ pub enum PedalModel {
     #[id = "pedal_boss_ds1"]
     #[name = "Orange Dist"]
     OrangeDist,
+    #[id = "pedal_dallas_rangemaster"]
+    #[name = "Treble Boost"]
+    TrebleBoost,
+    #[id = "pedal_klon_centaur"]
+    #[name = "Gold Drive"]
+    GoldDrive,
+    #[id = "pedal_marshall_guvnor"]
+    #[name = "Brit Drive"]
+    BritDrive,
+    #[id = "pedal_mxr_microamp"]
+    #[name = "Clean Boost"]
+    CleanBoost,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 14] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
@@ -542,6 +682,10 @@ impl PedalModel {
         Self::HeavyMetal,
         Self::MetalZone,
         Self::OrangeDist,
+        Self::TrebleBoost,
+        Self::GoldDrive,
+        Self::BritDrive,
+        Self::CleanBoost,
     ];
 
     pub fn name(self) -> &'static str {
@@ -560,6 +704,10 @@ impl PedalModel {
             Self::HeavyMetal => voice::Pedal::HeavyMetal,
             Self::MetalZone => voice::Pedal::MetalZone,
             Self::OrangeDist => voice::Pedal::OrangeDist,
+            Self::TrebleBoost => voice::Pedal::TrebleBoost,
+            Self::GoldDrive => voice::Pedal::GoldDrive,
+            Self::BritDrive => voice::Pedal::BritDrive,
+            Self::CleanBoost => voice::Pedal::CleanBoost,
         }
     }
 }
@@ -611,10 +759,13 @@ pub enum CabModel {
     #[id = "cab_peavey_412m"]
     #[name = "American Closed 4x12"]
     AmericanClosed412,
+    #[id = "cab_ampeg_svt_810e"]
+    #[name = "American 8x10"]
+    American810,
 }
 
 impl CabModel {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Legacy,
         Self::Bypass,
         Self::Brit1960,
@@ -629,6 +780,7 @@ impl CabModel {
         Self::Closed212,
         Self::JazzOpen212,
         Self::AmericanClosed412,
+        Self::American810,
     ];
 
     pub fn name(self) -> &'static str {
@@ -652,6 +804,7 @@ impl CabModel {
             Self::Closed212 => voice::CabinetChoice::Model(&P::CLOSED_212),
             Self::JazzOpen212 => voice::CabinetChoice::Model(&P::JAZZ_OPEN_212),
             Self::AmericanClosed412 => voice::CabinetChoice::Model(&P::AMERICAN_CLOSED_412),
+            Self::American810 => voice::CabinetChoice::Model(&P::AMERICAN_810),
         }
     }
 }
@@ -693,10 +846,13 @@ pub enum SpeakerModel {
     #[id = "spk_celestion_g12k85"]
     #[name = "Brit K85"]
     BritK85,
+    #[id = "spk_eminence_legend_b810"]
+    #[name = "American Bass 10"]
+    AmericanBass10,
 }
 
 impl SpeakerModel {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Matched,
         Self::Bypass,
         Self::BritV30,
@@ -708,6 +864,7 @@ impl SpeakerModel {
         Self::AmericanAlnico,
         Self::Jazz12,
         Self::BritK85,
+        Self::AmericanBass10,
     ];
 
     pub fn name(self) -> &'static str {
@@ -728,6 +885,7 @@ impl SpeakerModel {
             Self::AmericanAlnico => voice::SpeakerChoice::Model(&P::AMERICAN_ALNICO),
             Self::Jazz12 => voice::SpeakerChoice::Model(&P::JAZZ_12),
             Self::BritK85 => voice::SpeakerChoice::Model(&P::BRIT_K85),
+            Self::AmericanBass10 => voice::SpeakerChoice::Model(&P::AMERICAN_BASS_10),
         }
     }
 }
@@ -1094,6 +1252,12 @@ pub struct GainStageParams {
     /// Stock 120 pF Bright switch across the Twin channel Volume control.
     #[id = "twin_bright"]
     pub twin_bright: BoolParam,
+    /// A circuit's own three-position switches (the SVT's BASS SELECT and
+    /// MIDRANGE SELECT). Ignored by every circuit without one.
+    #[id = "low_switch"]
+    pub low_switch: EnumParam<Switch>,
+    #[id = "mid_switch"]
+    pub mid_switch: EnumParam<Switch>,
 
     // --- 2 Circuit -------------------------------------------------------
     #[id = "pedal"]
@@ -1454,6 +1618,8 @@ impl Default for GainStageParams {
             // Preserve the sound of sessions made before the switch was exposed:
             // the old model had the 120 pF capacitor permanently connected.
             twin_bright: BoolParam::new("Twin Bright", true),
+            low_switch: EnumParam::new("Low Switch", Switch::Centre),
+            mid_switch: EnumParam::new("Mid Switch", Switch::Centre),
 
             pedal: EnumParam::new("Pedal", PedalModel::None),
             pedal_drive: position("Pedal Drive", 0.5),

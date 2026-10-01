@@ -275,6 +275,29 @@ Target inspiration: At the Gates, *Slaughter of the Soul* (1995).
 Sources: [Guitar World: how the MT-2 conquered the world](https://www.guitarworld.com/features/boss-mt-2-metal-zone-legacy),
 [MusicRadar: the greatest Metal Zone moments](https://www.musicradar.com/news/greatest-boss-metal-zone-moments).
 
+### Paranoia '70 (group Metal / Heavy)
+
+Target inspiration: Black Sabbath, *Paranoid* (1970), Tony Iommi's rhythm sound. Added
+2026-10-01, when both halves of the rig became models: the Laney Supergroup (Brum 100,
+[brum_100.md](docs/models/brum_100.md)) and the Dallas Rangemaster (Treble Boost,
+[treble_boost.md](docs/models/treble_boost.md)).
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | "a 1965 Gibson SG Special" (P-90s) | WIDELY REPORTED (Guitar World, "Tonal Recall") | input trim 0 |
+| Pedal | a **Dallas Rangemaster**, which "boosted the input and gave it the overdrive he was looking for"; **modified** by "a guy in another band", after which "it had a lot more sustain" | DOCUMENTED that it was modified (Guitar Player; MusicRadar); **what was done is not documented** | **Treble Boost**, the stock OC44 unit, its one pot up (the slot's level knob at 1.0) - APPROXIMATED: the modification is unknown and not invented |
+| Amplifier | a **100 W Laney Supergroup Mk I** | WIDELY REPORTED (Guitar World) | **Brum 100**, from the traced 1969 drawing, TREBLE channel |
+| Knobs | "the presence, middle and treble on 10 with no bass whatsoever" | DOCUMENTED (Iommi, in Guitar World's feature) | Presence 1.0, Middle 1.0, Treble 1.0, Bass 0.0; Volume 0.8 - PLAUSIBLE, not stated |
+| Power | the Supergroup's own four EL34s | DOCUMENTED (it is the amplifier) | Matched, the Brum EL34 (600 V, -54 V, as the trace prints) |
+| Cabinet / speaker | "a Laney 4x12 cabinet" | WIDELY REPORTED | Brit Green 4x12 with its 25 W greenbacks - APPROXIMATED: no Laney cabinet is modelled |
+| Mics | not documented | - | Dynamic 57, close - PLAUSIBLE |
+
+Level: -19.2 dB untrimmed on the catalogue's chord, output trim +6.0 (`examples/presetlevel.rs`).
+
+Sources: [Guitar World, "Tonal Recall"](https://www.guitarworld.com/artists/tonal-recall-part-1),
+[Guitar Player](https://www.guitarplayer.com/guitarists/tony-iommi-modified-treble-booster-thrown-out),
+[MusicRadar](https://www.musicradar.com/artists/tony-iommi-secret-to-black-sabbath-electric-guitar-tone).
+
 ## Era presets: waiting for components
 
 These are not added under approximate aliases. Each needs the listed model first,
@@ -285,14 +308,13 @@ planned modern-high-gain and bass work in [docs/ROADMAP.md](docs/ROADMAP.md).
 |---|---|
 | Appetite '87 | Rig research. Commonly said to be a rented, modified 1959T; the stock Brit Plexi is not that amplifier |
 | Dirty Chains '92 | Three amplifiers at once, none of them modeled: "Lows: Bogner Fish preamp/VHT amp ... mids: Bogner Ecstasy; highs: Rockman Pocket amp direct" (Dave Jerden), split three ways and recombined |
-| Unknown Garden '94 | A Sunn Model T for much of it, which is not modeled. Researched and cleared on Sunn's own 1973 drawing: [oregon_t.md](docs/models/oregon_t.md); needs a 6550 fit first |
-| Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the record is the two together. The stock 1992 is researched and cleared ([brit_plexi_bass.md](docs/models/brit_plexi_bass.md)); what was done to this one is not documented -- forum accounts conflict between "stock" and "rewired to Super Lead specs", and the second would make it the existing Brit Plexi |
+| Unknown Garden '94 | The Sunn Model T is modelled since 2026-10-01 (Oregon T, [oregon_t.md](docs/models/oregon_t.md)). Rig research then: a Guild S-100, the Model T, a Big Muff Pi (all WIDELY REPORTED) -- but no source located gives the settings or the cabinet, and the Big Muff of that era is not the 1973 Ram's Head the Ram Fuzz is. Left for the owner rather than built on guesses |
+| Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the record is the two together. The stock 1992 is modelled since 2026-10-01 (Brit Plexi Bass, [brit_plexi_bass.md](docs/models/brit_plexi_bass.md)); what was done to this one is not documented -- forum accounts conflict between "stock" and "rewired to Super Lead specs", and the second would make it the existing Brit Plexi |
 | Never Mind '91, Seattle Ten '91 | The **Mesa/Boogie Studio Preamp** -- a rackmount preamplifier into a solid-state power amp (a Crown Power Base 2) into 4x12s -- which is not modeled. Research: [studio_pre.md](docs/models/studio_pre.md), which is blocked on a legible drawing. Earlier revisions of this table called it a "Studio .22 preamp"; there is no such product, and the Studio .22 is a different amplifier (an EL84 combo). The **Boss DS-1** those sessions also used is modelled (Orange Dist, [orange_dist.md](docs/models/orange_dist.md)), so only the preamplifier is missing |
 | Desert Deaf '02 | An Ampeg VT-40 and V-4B heads, and Peaveys -- not a Marshall Major, which an earlier revision of this table claimed ([brit_200.md](docs/models/brit_200.md) has the sources) |
-| Californicated '99 | A 1965 JTM45 with a Marshall Super Bass; neither is modeled (the Super Bass is researched: [brit_plexi_bass.md](docs/models/brit_plexi_bass.md)) |
+| Californicated '99 | A 1965 JTM45 with a Marshall Super Bass. The Super Bass is modelled since 2026-10-01 (Brit Plexi Bass, [brit_plexi_bass.md](docs/models/brit_plexi_bass.md)); the JTM45 is not |
 | Blood Sugar '91 | "Two Marshalls: a guitar head ... and a bass head", which models not stated; rig research |
 | Lead Airship II '69 | Rig research (the amplifier used on the record is disputed) |
-| Paranoia '70 | A Laney Supergroup Mk I and a modified Dallas Rangemaster, presence, middle and treble on 10 and no bass. Both researched and cleared -- [brum_100.md](docs/models/brum_100.md) on a traced drawing, [treble_boost.md](docs/models/treble_boost.md) as the stock booster, because Iommi's modification is not documented |
 
 ## Catalogue update (2026-09-15)
 

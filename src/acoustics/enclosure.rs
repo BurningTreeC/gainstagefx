@@ -7,6 +7,12 @@
 //! This common-motion reduction assumes identical, in-phase drivers. Slanted
 //! cabinets use a volume-equivalent rectangular cavity; joints and plywood
 //! anisotropy require measurements beyond the current profiles.
+//!
+//! A cabinet of several identical sealed chambers (`CabinetProfile::compartments`)
+//! is one chamber's modes and panels, counted as many times: with every cone in
+//! phase every chamber is at the same pressure, so the shared compliance is the
+//! whole volume against all the drivers, exactly as for one box, and only what
+//! depends on a chamber's size -- its standing waves, its panels -- changes.
 
 use super::cabinet::CabinetProfile;
 use super::speaker::{SpeakerProfile, RHO, SPEED_OF_SOUND};
@@ -70,10 +76,23 @@ pub fn piston_average(x: f64) -> f64 {
 
 impl Enclosure {
     pub fn new(cab: &CabinetProfile, speaker: &SpeakerProfile) -> Self {
-        let (w, h, _) = cab.internal();
+        let (w, whole, _) = cab.internal();
+        // One chamber: its inside height, its share of the air and of the drivers.
+        // For a one-chamber cabinet each of these is exactly the whole.
+        let n = cab.compartments.max(1);
+        let h = cab.compartment_height();
         let volume = cab.volume();
-        let d = volume / (w * h);
-        let opening_area = w * h * cab.open_fraction.clamp(0.0, 1.0);
+        let chamber = volume / n as f64;
+        let d = volume / (w * h * n as f64);
+        let opening_area = w * whole * cab.open_fraction.clamp(0.0, 1.0);
+        let chamber_opening = opening_area / n as f64;
+        let centre = -whole / 2.0 + h / 2.0;
+        let in_chamber: [bool; super::cabinet::MAX_DRIVERS] = std::array::from_fn(|i| {
+            cab.driver_positions()
+                .get(i)
+                .is_some_and(|&(_, y)| (y - centre).abs() < h / 2.0)
+        });
+        let chamber_drivers = in_chamber.iter().filter(|&&b| b).count().max(1);
         let material = cab.material;
         let panel = |width: f64, height: f64, remaining: f64, count: usize| {
             let rigidity =
@@ -90,11 +109,11 @@ impl Enclosure {
         };
         // Perforated baffle and partial back use remaining modal area/mass.
         // Their detailed brace/cutout boundary conditions remain approximate.
-        let front_fraction = (1.0 - cab.drivers as f64 * speaker.sd / (w * h)).clamp(0.05, 1.0);
+        let front_fraction = (1.0 - chamber_drivers as f64 * speaker.sd / (w * h)).clamp(0.05, 1.0);
         let panels = [
-            panel(w, h, front_fraction, 1),
-            panel(w, h, 1.0 - cab.open_fraction, 1),
-            panel(d, h, 1.0, 2),
+            panel(w, h, front_fraction, n),
+            panel(w, h, 1.0 - cab.open_fraction, n),
+            panel(d, h, 1.0, 2 * n),
             panel(w, d, 1.0, 2),
         ];
         let mut result = Self {
@@ -121,17 +140,21 @@ impl Enclosure {
                     let mean_shape = cab
                         .driver_positions()
                         .iter()
-                        .map(|&(x, y)| {
-                            (kx * (x + w / 2.0)).cos() * (ky * (y + h / 2.0)).cos() * aperture
+                        .zip(in_chamber)
+                        .filter(|&(_, inside)| inside)
+                        .map(|(&(x, y), _)| {
+                            (kx * (x + w / 2.0)).cos()
+                                * (ky * (y - centre + h / 2.0)).cos()
+                                * aperture
                         })
                         .sum::<f64>()
-                        / cab.drivers as f64;
+                        / chamber_drivers as f64;
                     let norm =
-                        volume / 2f64.powi((nx > 0) as i32 + (ny > 0) as i32 + (nz > 0) as i32);
+                        chamber / 2f64.powi((nx > 0) as i32 + (ny > 0) as i32 + (nz > 0) as i32);
                     let stiffness = RHO
                         * SPEED_OF_SOUND.powi(2)
                         * speaker.sd.powi(2)
-                        * cab.drivers as f64
+                        * chamber_drivers as f64
                         * mean_shape.powi(2)
                         / norm;
                     if stiffness < 1e-8 {
@@ -147,10 +170,10 @@ impl Enclosure {
                     let zair = RHO * SPEED_OF_SOUND;
                     let absorption = 4.0 * zr * zair / ((zr + zair).powi(2) + zi * zi);
                     let lining = cab.lining_absorption.clamp(0.0, 0.99);
-                    let absorbing_area = (surface - opening_area)
+                    let absorbing_area = (surface - chamber_opening)
                         * (lining + (1.0 - lining) * absorption)
-                        + opening_area;
-                    let damping = SPEED_OF_SOUND * absorbing_area / (4.0 * volume);
+                        + chamber_opening;
+                    let damping = SPEED_OF_SOUND * absorbing_area / (4.0 * chamber);
                     candidates[count] = Mode {
                         hz: omega / TAU,
                         stiffness,

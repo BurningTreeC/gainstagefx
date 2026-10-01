@@ -24,7 +24,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 13] = [
+const OWN: [(Circuit, [bool; 3]); 18] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     // The boost channel's own three; the muted Normal channel's two are not
@@ -49,6 +49,16 @@ const OWN: [(Circuit, [bool; 3]); 13] = [
     // not the generic Bass/Treble knobs. The Metal Zone still has a three-band
     // equaliser plus its own sweep control.
     (Circuit::Mt2, [true, true, true]),
+    // The 1959's bass sibling, the Laney and the Sunn: each a Marshall-family
+    // stack of its own, all three knobs.
+    (Circuit::PlexiBass, [true, true, true]),
+    (Circuit::Brum100, [true, true, true]),
+    (Circuit::OregonT, [true, true, true]),
+    // The Guv'nor's bass, middle and treble, on the stack knobs as the Metal
+    // Zone's three bands are.
+    (Circuit::BritDrive, [true, true, true]),
+    // The SVT's channel 1: BASS, MIDRANGE and TREBLE.
+    (Circuit::AmericanSvt, [true, true, true]),
 ];
 
 #[test]
@@ -160,6 +170,7 @@ fn a_pedal_circuits_tone_has_its_own_knob() {
         (Circuit::Muff, "TONE"),
         (Circuit::Rat, "FILTER"),
         (Circuit::Ds1, "TONE"),
+        (Circuit::GoldDrive, "TREBLE"),
     ];
     for circuit in Circuit::ALL {
         let name = expected
@@ -221,8 +232,21 @@ fn a_pedal_is_named_the_same_in_the_slot_and_as_the_circuit() {
             continue;
         };
         let (drive, level) = pedal.drive_and_level_labels();
-        assert_eq!(drive, gain.drive_name().to_lowercase(), "{pedal:?}");
-        assert_eq!(level, gain.level_name().to_lowercase(), "{pedal:?}");
+        if pedal.has_drive() && !pedal.has_level() {
+            // One knob and it is the gain (the Clean Boost): the slot's drive,
+            // the circuit's Drive, the same name; no level anywhere.
+            assert_eq!(drive, gain.drive_name().to_lowercase(), "{pedal:?}");
+            assert!(gain.level_control().is_none(), "{pedal:?}");
+        } else if pedal.has_drive() {
+            assert_eq!(drive, gain.drive_name().to_lowercase(), "{pedal:?}");
+            assert_eq!(level, gain.level_name().to_lowercase(), "{pedal:?}");
+        } else {
+            // One pot and no drive (the Treble Boost): in the slot it is the
+            // level knob, as the circuit it is the Drive knob, and it has the
+            // same name in both. The circuit has no level control besides it.
+            assert_eq!(level, gain.drive_name().to_lowercase(), "{pedal:?}");
+            assert!(gain.level_control().is_none(), "{pedal:?}");
+        }
         if let Some((_, name, _)) = gain.own_single_tone() {
             let lower = name.to_lowercase();
             assert_eq!(

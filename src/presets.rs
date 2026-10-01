@@ -13,7 +13,7 @@ use nice_plug::prelude::Enum;
 
 use crate::params::{
     Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, Mains, MicModel, Oversampling, PedalModel,
-    PowerAmp, SpeakerModel, ToneStack,
+    PowerAmp, SpeakerModel, Switch, ToneStack,
 };
 
 pub struct Preset {
@@ -92,6 +92,10 @@ pub struct Preset {
     /// American Twin input jack: false = High/1, true = Low/2 (-6 dB).
     pub twin_low_input: bool,
     pub twin_bright: bool,
+    /// A circuit's own three-position switches (the SVT's BASS SELECT and
+    /// MIDRANGE SELECT); centre everywhere else.
+    pub low_switch: Switch,
+    pub mid_switch: Switch,
     pub reverb: f32,
     pub speed: f32,
     pub intensity: f32,
@@ -169,6 +173,8 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         cabinet: Cabinet::Off,
         twin_low_input: false,
         twin_bright: true,
+        low_switch: Switch::Centre,
+        mid_switch: Switch::Centre,
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,
@@ -1114,6 +1120,85 @@ pub const PRESETS: &[Preset] = &[
         output_trim: 3.37,
         ..base("Amplifier", "Recto Lead")
     },
+    // --- Brit Plexi Bass -------------------------------------------------------
+    // The late-60s British 100 W bass head, the Brit Plexi's sibling of the same
+    // drawing set: both V1 halves on one cathode, nothing throwing the bottom
+    // away before the first stage, an unbypassed second stage and .1 uF into the
+    // output valves. Played as guitarists played it, turned up, into a 4x12.
+    Preset {
+        drive: 0.7,
+        circuit: Circuit::PlexiBass,
+        tone: ToneStack::Off,
+        bass: 0.35,
+        mid: 0.7,
+        treble: 0.65,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.025,
+        oversampling: Oversampling::Off,
+        output_trim: 0.0,
+        ..base("Amplifier", "Bass Head Crunch")
+    },
+    // --- Brum 100 --------------------------------------------------------------
+    // The late-60s Midlands 100 W head: Marshall-like and not a Marshall, 600 V
+    // on four EL34s, no master. The volume is what decides how hard they work.
+    Preset {
+        drive: 0.6,
+        circuit: Circuit::Brum100,
+        tone: ToneStack::Off,
+        bass: 0.4,
+        mid: 0.7,
+        treble: 0.65,
+        presence: 0.6,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.025,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -19.6 dB untrimmed, beside the Brit Plexi's.
+        output_trim: 6.0,
+        ..base("Amplifier", "Brum Crunch")
+    },
+    // --- Oregon T --------------------------------------------------------------
+    // The early-70s American 150 W head: a tweed-style preamp with a master,
+    // four 6550s in ultra-linear. Loud and clean a long way up, then thick.
+    Preset {
+        drive: 0.75,
+        master: 0.65,
+        circuit: Circuit::OregonT,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        mid: 0.6,
+        treble: 0.6,
+        presence: 0.5,
+        cab_model: CabModel::BritClosed,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.025,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -17.9 dB untrimmed.
+        output_trim: 5.0,
+        ..base("Amplifier", "Oregon Drive")
+    },
+    // --- American SVT ------------------------------------------------------------
+    // The 70s American 300 W bass head: channel 1's Volume past halfway, so the
+    // feedback loop around the midrange and the six 6550s' followers are both
+    // working, the midrange lifted at 800 Hz, Ultra Hi off, into its own 8x10.
+    Preset {
+        drive: 0.55,
+        circuit: Circuit::AmericanSvt,
+        tone: ToneStack::Off,
+        bass: 0.6,
+        mid: 0.6,
+        treble: 0.5,
+        twin_bright: false,
+        cab_model: CabModel::American810,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.05,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -12.2 dB untrimmed through the 8x10,
+        // against the catalogue's -12.8.
+        output_trim: 0.0,
+        ..base("Amplifier", "American SVT Grind")
+    },
     // The console microphone preamplifier: two cascaded transistor stages with
     // an input transformer. Clean at low drive, warming into subtle harmonic
     // saturation as the gain increases. No cabinet -- this is a preamplifier,
@@ -1133,6 +1218,39 @@ pub const PRESETS: &[Preset] = &[
         cabinet: Cabinet::Off,
         oversampling: Oversampling::Off,
         ..base("Preamp", "British 73, Driven")
+    },
+    // The EMI valve line amplifier: its gain is a three-position switch, and
+    // the Drive knob's middle third is its middle position, 40 dB. No cabinet.
+    Preset {
+        drive: 0.5,
+        circuit: Circuit::British47,
+        tone: ToneStack::Off,
+        cabinet: Cabinet::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "British 47 Pre")
+    },
+    // The German broadcast amplifier: its gain is a twelve-step switch, and
+    // the Drive knob's middle is its 46 dB step. The second preset is the
+    // Braunbuch's own use of the filters for a speaker close on a condenser
+    // microphone: "3 kHz" against the near-field lift, 80 Hz against the
+    // proximity bass.
+    Preset {
+        drive: 0.5,
+        circuit: Circuit::German76,
+        tone: ToneStack::Off,
+        cabinet: Cabinet::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "German 76 Pre")
+    },
+    Preset {
+        drive: 0.5,
+        circuit: Circuit::German76,
+        low_switch: Switch::Left,
+        mid_switch: Switch::Left,
+        tone: ToneStack::Off,
+        cabinet: Cabinet::Off,
+        oversampling: Oversampling::Off,
+        ..base("Preamp", "German 76, Speech")
     },
     // The other three console microphone preamplifiers, each modelled from its
     // drawing: a transformer, one discrete op-amp and a transformer; a 1:10
@@ -1330,6 +1448,39 @@ pub const PRESETS: &[Preset] = &[
         output_trim: -0.68,
         oversampling: Oversampling::Off,
         ..base("Metal / Heavy", "Slaughter '95")
+    },
+    // A treble booster into a Midlands 100 W head, "presence, middle and treble
+    // on 10 with no bass whatsoever", into a 4x12: the guitarist's own account
+    // of the early records' rig. The booster was modified by someone whose
+    // changes are not documented; this is the stock unit. See PRESETS.md,
+    // docs/models/brum_100.md and docs/models/treble_boost.md.
+    Preset {
+        // The booster "boosted the input and gave it the overdrive he was
+        // looking for": turned up. Its one pot is the slot's level knob.
+        pedal: PedalModel::TrebleBoost,
+        pedal_level: 1.0,
+        circuit: Circuit::Brum100,
+        power_amp: PowerAmp::Matched,
+        // How far the volume was up is not stated; most of the way, as a 100 W
+        // head driven by a booster into overdrive implies. PLAUSIBLE.
+        drive: 0.8,
+        // "Presence, middle and treble on 10 with no bass whatsoever."
+        presence: 1.0,
+        bass: 0.0,
+        mid: 1.0,
+        treble: 1.0,
+        tone: ToneStack::Off,
+        // "A Laney 4x12 cabinet", which is not modelled; a closed British 4x12 of
+        // 25 W greenbacks of the period stands for it. APPROXIMATED.
+        cab_model: CabModel::BritGreen,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.03,
+        // Set by `examples/presetlevel.rs`: -19.2 dB untrimmed.
+        output_trim: 6.0,
+        oversampling: Oversampling::Off,
+        ..base("Metal / Heavy", "Paranoia '70")
     },
     // A 100 W non-master British head turned up only as far as the song needed,
     // into a Marshall 4x12, each guitar on two large-diaphragm valve/FET
@@ -1710,6 +1861,8 @@ impl Preset {
             },
             twin_low_input: self.twin_low_input,
             twin_bright: self.twin_bright,
+            low_switch: self.low_switch.voice(),
+            mid_switch: self.mid_switch.voice(),
             reverb: self.reverb as f64,
             speed: self.speed as f64,
             intensity: self.intensity as f64,
@@ -1726,7 +1879,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 57] {
+    pub fn dials(&self) -> [(&'static str, f32); 59] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1736,6 +1889,8 @@ impl Preset {
                 if self.twin_low_input { 1.0 } else { 0.0 },
             ),
             ("twin_bright", if self.twin_bright { 1.0 } else { 0.0 }),
+            ("low_switch", self.low_switch.to_index() as f32),
+            ("mid_switch", self.mid_switch.to_index() as f32),
             ("pedal", self.pedal.to_index() as f32),
             ("pedal_drive", self.pedal_drive),
             ("pedal_tone", self.pedal_tone),
@@ -2001,6 +2156,7 @@ fn ids(id: &str) -> Option<&'static [&'static str]> {
         "speaker" => SpeakerModel::ids(),
         "mic_a" | "mic_b" => MicModel::ids(),
         "oversampling" => Oversampling::ids(),
+        "low_switch" | "mid_switch" => Switch::ids(),
         _ => None,
     }
 }
@@ -2094,6 +2250,12 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     // The Presence knob arrived on 2026-09-25. Its middle is where every power
     // stage rested before it existed, so an old preset keeps its sound there.
     preset.values.entry("presence".into()).or_insert(0.5);
+    // The circuits' own switches arrived on 2026-10-01 with the American SVT.
+    // The second position is where every circuit with one is built and was
+    // calibrated, and it is a third of the way along a four-entry list.
+    for id in ["low_switch", "mid_switch"] {
+        preset.values.entry(id.into()).or_insert(1.0 / 3.0);
+    }
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {
             if let Some(index) = names.iter().position(|name| *name == saved) {

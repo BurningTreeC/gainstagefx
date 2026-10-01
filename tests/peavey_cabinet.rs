@@ -91,9 +91,10 @@ fn the_cabinet_is_a_closed_peavey_4x12() {
     assert!(SpeakerProfile::ALL
         .iter()
         .any(|s| s.id == "spk_celestion_g12k85"));
-    // Appended to both parameter lists, so nothing recorded against them moves.
-    assert_eq!(CabModel::ALL.last(), Some(&CabModel::AmericanClosed412));
-    assert_eq!(SpeakerModel::ALL.last(), Some(&SpeakerModel::BritK85));
+    // Appended to both parameter lists, so nothing recorded against them moves;
+    // and they stay where they were appended when later entries follow them.
+    assert_eq!(CabModel::ALL[13], CabModel::AmericanClosed412);
+    assert_eq!(SpeakerModel::ALL[10], SpeakerModel::BritK85);
 }
 
 /// *Machine Rage '92* plays through "a 1987 Peavey 4x12 cabinet with Celestion

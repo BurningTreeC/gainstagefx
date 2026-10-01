@@ -74,6 +74,49 @@ pub enum Taper {
     Symmetric {
         span: f64,
     },
+    /// A reverse-log track as a pot maker means it -- a "C" taper: the audio
+    /// track wound from the other end, `1 - audio(1 - p)`, so the fraction
+    /// rises fast at first and slowly at the end.
+    ///
+    /// Not `ReverseAudio`, which is `1 - audio(p)` and exists so that a
+    /// rheostat's resistance follows the forward law in the knob's position.
+    /// A drawing that prints "REV LOG" on a pot means this one: the Sunn Model
+    /// T's presence, a 25 k rheostat whose resistance in circuit falls to a
+    /// tenth by half rotation.
+    AntiAudio,
+    /// Not a track at all: a rotary switch picking one of `count` taps, one
+    /// position for each equal share of the knob's travel. The fractions are
+    /// the taps, as a fraction of the whole resistance between the wiper and
+    /// `b`; entries past `count` are unused.
+    ///
+    /// For a circuit whose gain control is a switch rather than a pot -- the
+    /// EMI REDD.47's three-position S1, the Telefunken V76's twelve-position
+    /// gain switch -- so that the one Drive knob, and everything that sweeps
+    /// it, turns the control the hardware has. Several pots on one control
+    /// with the same `count` are the switch's decks. Like every track it is
+    /// kept inside the pot's clamp, so a "zero" tap is a ten-thousandth of the
+    /// resistance.
+    Steps {
+        fractions: [f64; MAX_STEPS],
+        count: usize,
+    },
+}
+
+/// The most positions a `Taper::Steps` switch has: the V76's gain switch.
+pub const MAX_STEPS: usize = 12;
+
+/// A `Taper::Steps` switch of `taps.len()` positions.
+pub const fn steps<const N: usize>(taps: [f64; N]) -> Taper {
+    let mut fractions = [0.0; MAX_STEPS];
+    let mut i = 0;
+    while i < N {
+        fractions[i] = taps[i];
+        i += 1;
+    }
+    Taper::Steps {
+        fractions,
+        count: N,
+    }
 }
 
 /// What an audio track has left in circuit at half rotation.
@@ -101,6 +144,11 @@ impl Taper {
                 } else {
                     1.0 - 0.5 * Self::log_law(2.0 * (1.0 - p), span)
                 }
+            }
+            Taper::AntiAudio => 1.0 - Self::audio_law(1.0 - p),
+            Taper::Steps { fractions, count } => {
+                let n = count.clamp(1, MAX_STEPS);
+                fractions[((p * n as f64) as usize).min(n - 1)]
             }
         }
     }
@@ -454,6 +502,11 @@ pub enum Part {
         s: usize,
         count: f64,
         spec: PentodeSpec,
+        /// The screen returns to a winding rather than to a supply with a
+        /// capacitor on it: an ultra-linear stage's tap. Such a screen keeps
+        /// conducting when a Newton step puts the plate at its edge; see
+        /// `device::Pentode::on_winding`.
+        screen_on_winding: bool,
     },
     /// An operational amplifier, holding its inputs together by whatever it
     /// has to put on its output -- until it runs out of rail.
@@ -731,6 +784,85 @@ impl PentodeSpec {
         kvb: 54.1185,
         kg2: 7165.23,
     };
+    /// The 6550, for the Sunn Model T (the Oregon 6550 stage).
+    ///
+    /// Fitted, not transcribed: `tools/tube_fit/fit_6550.py` solves for `mu`,
+    /// `kg1`, `kp` and `kvb` against General Electric's "6550-A" sheet of
+    /// April 1972 -- the average characteristics (250 V plate and screen,
+    /// -14 V, 140 mA, 11,000 micromho), the Class A1 row (400 V, 225 V,
+    /// -16.5 V, 87 mA) and the ultra-linear row (450 V on plate and screen at
+    /// -48 V, 75 mA a valve) -- and meets all four exactly. `kg2` then follows
+    /// from the average row's 12 mA of screen current. `ex` is held at 1.35 as
+    /// for every other power valve here.
+    ///
+    /// The ultra-linear row is in the fit because it is the only published
+    /// point with the screen near where a Model T runs it; fitted to the
+    /// pentode rows alone, all at 310 V of screen or less, the constants put a
+    /// Model T's valves at 110 mA each. With it, `mu` comes out at 8.18 without
+    /// being asked -- the sheet's own triode amplification factor is 8.
+    ///
+    /// Held out and checked: the ultra-linear row's screen current (6.05 mA
+    /// against 6.0), the cut-off figure (1.5 mA at -40 V against 1.0), and the
+    /// two push-pull pentode rows (70.7 mA against 75 at 450 V / 310 V, 41.2
+    /// against 50 at 600 V / 300 V). The screen law has no plate term, so the
+    /// Class A1 row's 4 mA, with the plate well above the screen, comes out at
+    /// 7.1: an ultra-linear stage never runs there.
+    pub const T6550: PentodeSpec = PentodeSpec {
+        mu: 8.1806,
+        ex: 1.35,
+        kg1: 439.866,
+        kp: 53.3598,
+        kvb: 49.0405,
+        kg2: 3726.51,
+    };
+    /// The EF86, the low-noise small pentode at the EMI REDD.47's input.
+    ///
+    /// Fitted by `tools/tube_fit/fit_ef86.py` against Philips's "EF86" of
+    /// January 1970: the typical point (250 V plate, 140 V screen, -2.2 V:
+    /// 3.0 mA, 0.6 mA screen, 2.2 mA/V) to 0.3 %, and the sheet's resistance-
+    /// coupled operating table -- 100 k plate, 390 k screen, 1 k cathode, the
+    /// REDD.47's own V1 -- within 3.5 % from 150 V to 400 V of supply. `mu` is
+    /// the sheet's grid 2 to grid 1 factor, 38, held. Its internal resistance
+    /// comes out at 1.24 Mohm against the sheet's 2.5 (not fitted: the Koren
+    /// knee's limit, as for the 6V6GT). The REDD.47's V1 runs at 1.50 mA from
+    /// 205 V against its drawing's 1.35.
+    pub const EF86: PentodeSpec = PentodeSpec {
+        mu: 38.0,
+        ex: 1.2169,
+        kg1: 823.495,
+        kp: 233.1269,
+        kvb: 24.9017,
+        kg2: 2806.23,
+    };
+    /// The EF804S, the Telefunken low-noise pentode of the V76's first three
+    /// stages: an EF86 for broadcast service, and the same family of figures.
+    ///
+    /// Fitted by `tools/tube_fit/fit_ef804s.py` against Telefunken's sheet:
+    /// the measuring point (250 V, 140 V screen, 500 ohm cathode: 3.2 mA,
+    /// 0.6 mA, 2.0 mA/V) to 0.5 %, and its resistance-coupled table's plate
+    /// currents within 3 %. `mu` is the sheet's 38, held.
+    pub const EF804S: PentodeSpec = PentodeSpec {
+        mu: 38.0,
+        ex: 1.2484,
+        kg1: 1023.258,
+        kp: 177.4464,
+        kvb: 2.4617,
+        kg2: 3480.65,
+    };
+    /// The E83F, the frame-grid output pentode of the V76's second amplifier.
+    ///
+    /// Fitted by `tools/tube_fit/fit_e83f.py` against Philips's December 1968
+    /// sheet: 10.46 mA, 2.11 mA screen, 8.78 mA/V and 0.50 Mohm at 210 V /
+    /// 120 V / 165 ohm against 10 / 2.1 / 9 / 0.5, and 0.49 mA at -5 V against
+    /// 0.5. `ex` sits at the fit's 1.8 bound; see the script.
+    pub const E83F: PentodeSpec = PentodeSpec {
+        mu: 38.0,
+        ex: 1.8,
+        kg1: 295.577,
+        kp: 93.9022,
+        kvb: 12.5293,
+        kg2: 970.63,
+    };
     /// The EL84, for an AC30.
     pub const EL84: PentodeSpec = PentodeSpec {
         mu: 19.4,
@@ -786,6 +918,37 @@ impl TriodeSpec {
         ex: 1.3328,
         kg1: 1065.41,
         kp: 171.87,
+        kvb: 300.0,
+    };
+    /// E88CC, the frame-grid double triode the EMI REDD.47 runs with both
+    /// halves in parallel at its output.
+    ///
+    /// Fitted by `tools/tube_fit/fit_e88cc.py` against Philips's "E88CC S.Q.
+    /// TUBE" of December 1968, at its two published operating points (100 V
+    /// through 680 ohm: 15 mA, 12.5 mA/V, mu 33; 90 V through 120 ohm: 12 mA,
+    /// 11.5 mA/V): 15.2 mA, 12.48 mA/V, mu 33.0 and 11.9 mA, 11.48 mA/V. Held
+    /// out: the REDD.47's drawing puts its pair at 18 mA on 200 ohm, which the
+    /// fit makes about 14 -- the spread of a valve at 3 V of bias.
+    pub const E88CC: TriodeSpec = TriodeSpec {
+        mu: 34.0199,
+        ex: 1.2832,
+        kg1: 217.2316,
+        kp: 200.3105,
+        kvb: 300.0,
+    };
+    /// 12BH7-A, the medium-mu twin that drives the Ampeg SVT's six 6550s: one
+    /// half a gain stage, the other a cathode follower, a side.
+    ///
+    /// Fitted by `tools/tube_fit/fit_12bh7.py` against RCA's "Tentative Data"
+    /// of 1 March 1955 -- 11.5 mA at 250 V and -10.5 V, 3100 micromho, 5300 ohm,
+    /// 4 mA at -14 V, 50 microamps at -23 V: five targets for four constants
+    /// (`kvb` held at 300), all met within 3 %. The small-signal amplification
+    /// factor comes out at 16.0 against the sheet's 16.5.
+    pub const T12BH7: TriodeSpec = TriodeSpec {
+        mu: 17.483,
+        ex: 1.3367,
+        kg1: 1185.58,
+        kp: 101.45,
         kvb: 300.0,
     };
 }
@@ -1273,6 +1436,31 @@ impl Netlist {
             s,
             count,
             spec,
+            screen_on_winding: false,
+        });
+        self
+    }
+
+    /// A power tube whose screen returns to a winding -- an ultra-linear
+    /// stage's tap -- rather than to a supply. See `Part::Pentode`.
+    pub fn pentode_on_winding(
+        &mut self,
+        p: &str,
+        g: &str,
+        k: &str,
+        screen: &str,
+        count: f64,
+        spec: PentodeSpec,
+    ) -> &mut Self {
+        let (p, g, k, s) = (self.pin(p), self.pin(g), self.pin(k), self.pin(screen));
+        self.parts.push(Part::Pentode {
+            p,
+            g,
+            k,
+            s,
+            count,
+            spec,
+            screen_on_winding: true,
         });
         self
     }
@@ -1599,6 +1787,29 @@ impl Circuit {
     /// recorded rather than derived. See `cuthill_mckee`.
     pub fn branch_of(&self, part: usize) -> usize {
         self.branch_row[part]
+    }
+
+    /// How many positions `control` has, when it is a rotary switch: every
+    /// pot it moves a `Taper::Steps` of the same count, as the decks of one
+    /// switch are. `None` for a continuous control, or one that moves nothing.
+    pub fn control_steps(&self, control: usize) -> Option<usize> {
+        let mut steps = None;
+        for part in &self.parts {
+            if let Part::Pot {
+                taper, control: c, ..
+            } = *part
+            {
+                if c != control {
+                    continue;
+                }
+                match (taper, steps) {
+                    (Taper::Steps { count, .. }, None) => steps = Some(count),
+                    (Taper::Steps { count, .. }, Some(n)) if n == count => {}
+                    _ => return None,
+                }
+            }
+        }
+        steps
     }
 
     /// Whether every part has a frequency response, and therefore whether the

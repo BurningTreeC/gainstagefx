@@ -3883,6 +3883,12 @@ impl Simulation {
         self.circuit.controls
     }
 
+    /// How many positions a control has, if it is a rotary switch. See
+    /// `Circuit::control_steps`.
+    pub fn control_steps(&self, which: usize) -> Option<usize> {
+        self.circuit.control_steps(which)
+    }
+
     /// Where the circuit rests a control that nobody turns, if it rests it at
     /// all. See `Netlist::rest`.
     pub fn resting_position(&self, which: usize) -> Option<f64> {
@@ -4207,10 +4213,14 @@ impl Simulation {
                         s,
                         count,
                         spec,
+                        screen_on_winding,
                     } => {
                         if !keep_devices {
-                            self.devices
-                                .push(AnyDevice::Pentode(Pentode::new(p, g, k, s, count, spec)));
+                            self.devices.push(AnyDevice::Pentode(if screen_on_winding {
+                                Pentode::on_winding(p, g, k, s, count, spec)
+                            } else {
+                                Pentode::new(p, g, k, s, count, spec)
+                            }));
                         }
                     }
                     Part::Jfet {

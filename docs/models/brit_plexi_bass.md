@@ -4,8 +4,10 @@ Engineering identity: **Marshall JMP 1992 Super Bass 100 W**, as Unicord drew it
 1970. Proposed stable id `amp_marshall_1992` (`circuit`); its power stage is very likely
 the Brit Plexi EL34's (see question 5). Proposed display: **Brit Plexi Bass**.
 
-Status: **RESEARCHED 2026-09-25. Cleared for code** for the stock amplifier. The presets
-that want it want *modified* ones, which is recorded below. Not built.
+Status: **IMPLEMENTED 2026-10-01** for the stock amplifier (`circuits::plexi_bass`, power
+stage `power::PowerSpec::PLEXI_BASS_EL34`, stable ids `amp_marshall_1992` and
+`power_1992_el34`, displayed **Brit Plexi Bass** and **Brit Plexi Bass EL34**). The presets
+that want it want *modified* ones, which is recorded below.
 
 ## What it is for
 
@@ -74,3 +76,30 @@ Spiral needs a decision on the conflicting accounts and Californicated needs a J
   `PLEXI_EL34`.
 - Decide what *Spiral '96* is. If the "Super Lead specs" account is right, that preset
   wants the existing Brit Plexi with its channels jumpered, not this.
+
+## Implemented, 2026-10-01
+
+`circuits::plexi_bass`, `power::PowerSpec::PLEXI_BASS_EL34`, `tests/plexi_bass.rs`,
+`examples/plexi_bass_op.rs`.
+
+**The power sections are not identical.** Compared line by line against Unicord 70-6-11
+(the 1959, re-fetched from Dr.Tube's `1959u.gif`), every value matches -- 82 k / 100 k
+inverter, 47 pF, 10 k and 470 ohm, 1 M legs, 47 k (100 k) feedback from 16 ohm, the 5 k
+presence with .1 uF, 220 k leaks, 5.6 k stoppers, 1 k screens, 20 k / 10 k / 10 k
+droppers with 50 uF -- **except the output couplings: .1 uF on the 1992, .022 on the
+1959.** Both sheets print the value; DOCUMENTED. Into 220 k that is a corner at 7 Hz
+instead of 33 Hz, and four and a half times the charge a grid-current pulse leaves on the
+capacitor, so the bias recovers more slowly after a hard note. So the 1992 has its own
+`PowerSpec`, which is the 1959's with that one value (and the inverter node below).
+
+**Built as a second voicing of the same construction**, with the 1992's values: the
+shared V1 cathode (820 ohm, and Unicord's "320" read as 320 uF, PLAUSIBLE) with **both
+halves built**, because the idle half's current sets the played half's bias; .022 uF
+couplings and no bright capacitor; V2a's 820 ohm unbypassed (the bracketed "1K" is the
+later value); the 250 pF / 56 k stack. The channel played is the one with 500 pF across
+its 470 k mixer -- the 1959's bright channel's position -- from its HIGH input, with the
+other volume at zero. Supply chain and pot laws as the Brit Plexi's.
+
+Measured: the inverter node 320.5 V (the constant is 320); both V1 plates 180.8 V on a
+1.31 V cathode; V2a 32.6 dB against the 1959's bypassed 36.3; from the jack to the
+treble wiper, tone at noon, 17 dB more at 40 Hz than the 1959 and 4 dB less at 4 kHz.

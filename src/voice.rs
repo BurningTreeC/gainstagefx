@@ -27,10 +27,11 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, bigmuff, brit2205, brit800, cabinet, clipper, console_e, deluxe,
-    distortion_plus, dr103, evh5150, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone,
-    neve, orange_dist, plexi, power, preamp, rectifier, rodent, round_fuzz, studio, tone, ts808,
-    tube610, twin,
+    ac30, american312, american_svt, bigmuff, brit2205, brit800, brit_drive, british_47, brum100,
+    cabinet, clean_boost, clipper, console_e, deluxe, distortion_plus, dr103, evh5150, german_76,
+    gold_drive, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone, neve, orange_dist,
+    oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent, round_fuzz, studio, tone,
+    treble_boost, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
@@ -167,12 +168,45 @@ pub enum Gain {
     /// it sits with the others in spirit; it is appended here, not beside
     /// them, so no voice index above it moves.
     Ds1,
+    /// Dallas Rangemaster, the stock OC44 unit (`circuits::treble_boost`).
+    /// A pedal, appended like the DS-1.
+    TrebleBoost,
+    /// Marshall 1992 Super Bass (Unicord drawing, 1970): the Brit Plexi's
+    /// sibling, with a shared V1 cathode, no bright capacitor, an unbypassed
+    /// V2a and a 250 pF / 56 k stack. Its matched power stage is the Brit
+    /// Plexi Bass EL34. See `circuits::plexi_bass`.
+    PlexiBass,
+    /// Laney Supergroup 100 Mk I (traced drawing of a 1969 build), TREBLE
+    /// channel. Its matched power stage is the Brum EL34, 600 V on four EL34s.
+    /// See `circuits::brum100`.
+    Brum100,
+    /// Sunn Model T (drawing D-1029 A, 1973), BRITE channel through its
+    /// master. Its matched power stage is the Oregon 6550, four 6550s in
+    /// ultra-linear. See `circuits::oregon_t`.
+    OregonT,
+    /// Klon Centaur (`circuits::gold_drive`).
+    GoldDrive,
+    /// Marshall The Guv'nor, the original (`circuits::brit_drive`).
+    BritDrive,
+    /// MXR MicroAmp (`circuits::clean_boost`).
+    CleanBoost,
+    /// Ampeg SVT, the 6550 head, channel 1 (D 591719 D, 1975). Six 6550s
+    /// behind cathode followers. See `circuits::american_svt`.
+    AmericanSvt,
+    /// EMI REDD.47, the cassette line amplifier (REDD.47/C1, 1959): EF86 and
+    /// paralleled E88CC between a 1:7 and a 7:1 transformer, its gain a
+    /// switch in the outer loop. See `circuits::british_47`.
+    British47,
+    /// The Telefunken / TAB V76 (IRT drawing S 1176, 1959): three EF804S
+    /// and an E83F between a 1:30 and a 9:1 transformer, its gain a
+    /// twelve-step switch. See `circuits::german_76`.
+    German76,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 32] = [
+    pub const ALL: [Gain; 42] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -205,6 +239,16 @@ impl Gain {
         Gain::DeluxeNormal,
         Gain::Brit2205,
         Gain::Ds1,
+        Gain::TrebleBoost,
+        Gain::PlexiBass,
+        Gain::Brum100,
+        Gain::OregonT,
+        Gain::GoldDrive,
+        Gain::BritDrive,
+        Gain::CleanBoost,
+        Gain::AmericanSvt,
+        Gain::British47,
+        Gain::German76,
     ];
 
     pub fn name(self) -> &'static str {
@@ -241,6 +285,16 @@ impl Gain {
             Gain::DeluxeNormal => "Deluxe Reverb, Normal",
             Gain::Brit2205 => "JCM800 2205",
             Gain::Ds1 => "Boss DS-1",
+            Gain::TrebleBoost => "Rangemaster",
+            Gain::PlexiBass => "1992 Super Bass",
+            Gain::Brum100 => "Supergroup 100",
+            Gain::OregonT => "Sunn Model T",
+            Gain::GoldDrive => "Klon Centaur",
+            Gain::BritDrive => "Marshall Guv'nor",
+            Gain::CleanBoost => "MXR MicroAmp",
+            Gain::AmericanSvt => "Ampeg SVT",
+            Gain::British47 => "EMI REDD.47",
+            Gain::German76 => "Telefunken V76",
         }
     }
 
@@ -277,6 +331,18 @@ impl Gain {
             Gain::Hm2 => heavy_metal::DIST,
             Gain::Mt2 => metal_zone::DIST,
             Gain::Ds1 => orange_dist::DIST,
+            // Its one pot, which is a volume after a fixed gain: see
+            // `drive_is_channel_volume`.
+            Gain::TrebleBoost => treble_boost::BOOST,
+            Gain::PlexiBass => plexi_bass::VOLUME,
+            Gain::Brum100 => brum100::VOLUME,
+            Gain::OregonT => oregon_t::VOLUME,
+            Gain::GoldDrive => gold_drive::GAIN,
+            Gain::BritDrive => brit_drive::GAIN,
+            Gain::CleanBoost => clean_boost::GAIN,
+            Gain::AmericanSvt => american_svt::VOLUME,
+            Gain::British47 => british_47::GAIN,
+            Gain::German76 => german_76::GAIN,
             _ => clipper::GAIN,
         }
     }
@@ -312,14 +378,23 @@ impl Gain {
             Gain::Peavey => "PRE GAIN",
             Gain::Neve => "GAIN",
             Gain::Brit800 => "PREAMP",
-            Gain::American312 | Gain::ConsoleE => "GAIN",
+            Gain::American312 | Gain::ConsoleE | Gain::British47 | Gain::German76 => "GAIN",
             Gain::Tube610 => "LEVEL",
-            Gain::Plexi | Gain::AC30 | Gain::DR103 => "VOLUME",
+            Gain::Plexi
+            | Gain::AC30
+            | Gain::DR103
+            | Gain::PlexiBass
+            | Gain::OregonT
+            | Gain::AmericanSvt => "VOLUME",
+            // The Laney prints its volumes as gains: this channel's is GAIN TWO.
+            Gain::Brum100 => "GAIN",
             Gain::Recto | Gain::Brit2205 => "GAIN",
             // The pedals, as their boxes print them.
             Gain::Screamer => "OVERDRIVE",
             Gain::Rat | Gain::DistPlus | Gain::Hm2 => "DISTORTION",
             Gain::FuzzFace => "FUZZ",
+            Gain::TrebleBoost => "BOOST",
+            Gain::GoldDrive | Gain::BritDrive | Gain::CleanBoost => "GAIN",
             Gain::Mt2 | Gain::Ds1 => "DIST",
             _ => "DRIVE",
         }
@@ -332,7 +407,8 @@ impl Gain {
         match self {
             Gain::Screamer | Gain::Green9 | Gain::Hm2 | Gain::Mt2 | Gain::Ds1 => "LEVEL",
             Gain::Muff | Gain::Rat | Gain::FuzzFace => "VOLUME",
-            Gain::DistPlus => "OUTPUT",
+            Gain::DistPlus | Gain::GoldDrive => "OUTPUT",
+            Gain::BritDrive => "LEVEL",
             _ => "MASTER",
         }
     }
@@ -389,6 +465,13 @@ impl Gain {
             Gain::Hm2 => Some(Level::Circuit(heavy_metal::LEVEL)),
             Gain::Mt2 => Some(Level::Circuit(metal_zone::LEVEL)),
             Gain::Ds1 => Some(Level::Circuit(orange_dist::LEVEL)),
+            // The Model T's master, R19, in the preamplifier as the drawing has
+            // it. The 1992 and the Supergroup have none, like the 1959, and the
+            // Rangemaster's only pot is already the Drive knob.
+            Gain::OregonT => Some(Level::Circuit(oregon_t::MASTER)),
+            Gain::GoldDrive => Some(Level::Circuit(gold_drive::LEVEL)),
+            Gain::BritDrive => Some(Level::Circuit(brit_drive::LEVEL)),
+            // The MicroAmp's one knob is its gain, already the Drive knob.
             _ => None,
         }
     }
@@ -416,6 +499,15 @@ impl Gain {
             Gain::DR103 => Some((dr103::BASS, dr103::MIDDLE, dr103::TREBLE)),
             Gain::Recto => Some((rectifier::BASS, rectifier::MIDDLE, rectifier::TREBLE)),
             Gain::Brit2205 => Some((brit2205::BASS, brit2205::MIDDLE, brit2205::TREBLE)),
+            Gain::PlexiBass => Some((plexi_bass::BASS, plexi_bass::MIDDLE, plexi_bass::TREBLE)),
+            Gain::Brum100 => Some((brum100::BASS, brum100::MIDDLE, brum100::TREBLE)),
+            Gain::OregonT => Some((oregon_t::BASS, oregon_t::MIDDLE, oregon_t::TREBLE)),
+            // BASS, MIDRANGE (inside the V3b-V4 loop) and TREBLE.
+            Gain::AmericanSvt => Some((
+                american_svt::BASS,
+                american_svt::MIDDLE,
+                american_svt::TREBLE,
+            )),
             // The original 5150's own stack, off its preamp sheet (2026-09-25).
             Gain::Peavey => Some((evh5150::BASS, evh5150::MIDDLE, evh5150::TREBLE)),
             // The pedals with a single tone control have a knob of their own
@@ -424,6 +516,8 @@ impl Gain {
             // Do not multiplex them onto Bass/Treble: those three remain the
             // optional plugin tone stack and the HM-2 pair is independent.
             Gain::Mt2 => Some((metal_zone::LOW, metal_zone::MIDDLE, metal_zone::HIGH)),
+            // The Guv'nor's own three, wired as its drawing has them.
+            Gain::BritDrive => Some((brit_drive::BASS, brit_drive::MIDDLE, brit_drive::TREBLE)),
             Gain::Neve => None,
             _ => None,
         }
@@ -499,6 +593,8 @@ impl Gain {
             Gain::Rat => Some((rodent::FILTER, "FILTER", true)),
             // A Big-Muff-style blend with a scoop in the middle, like the Muff's.
             Gain::Ds1 => Some((orange_dist::TONE, "TONE", false)),
+            // A shelf above 408 Hz, boost and cut: the Klon's TREBLE.
+            Gain::GoldDrive => Some((gold_drive::TREBLE, "TREBLE", false)),
             _ => None,
         }
     }
@@ -539,6 +635,10 @@ impl Gain {
             Gain::DR103 => Some(&power::PowerSpec::DR103_EL34),
             Gain::Recto => Some(&power::PowerSpec::RECTO_6L6),
             Gain::Brit2205 => Some(&power::PowerSpec::BRIT_2205_EL34),
+            Gain::PlexiBass => Some(&power::PowerSpec::PLEXI_BASS_EL34),
+            Gain::Brum100 => Some(&power::PowerSpec::BRUM_EL34),
+            Gain::OregonT => Some(&power::PowerSpec::OREGON_6550),
+            Gain::AmericanSvt => Some(&power::PowerSpec::SVT_6550),
             _ => None,
         }
     }
@@ -574,6 +674,16 @@ impl Gain {
                 | Gain::DeluxeNormal
                 | Gain::Brit2205
                 | Gain::Ds1
+                | Gain::TrebleBoost
+                | Gain::PlexiBass
+                | Gain::Brum100
+                | Gain::OregonT
+                | Gain::GoldDrive
+                | Gain::BritDrive
+                | Gain::CleanBoost
+                | Gain::AmericanSvt
+                | Gain::British47
+                | Gain::German76
         )
     }
 
@@ -703,6 +813,15 @@ impl Gain {
     /// soldered in. The Deluxe has the capacitor and no switch, so it is
     /// `None` there and the panel greys the control.
     pub fn bright_switch(self) -> Option<BrightSwitch> {
+        if self == Gain::AmericanSvt {
+            // ULTRA HI: C6 from VR1's top to its wiper. See `circuits::american_svt`.
+            return Some(BrightSwitch {
+                slot: american_svt::ULTRA_HI_SLOT,
+                on: american_svt::ULTRA_HI_FARADS,
+                off: american_svt::ULTRA_HI_OFF_FARADS,
+                on_label: "Ultra Hi (500 pF)",
+            });
+        }
         if self == Gain::Jazz120 {
             // SW2 does not switch C7 in and out: it shorts R4 so the 330 pF
             // couples fully. See `circuits::jazz120`.
@@ -720,6 +839,59 @@ impl Gain {
             off,
             on_label: "On (120 pF)",
         })
+    }
+
+    /// The circuit's low-frequency three-position switch, where it has one:
+    /// the SVT's BASS CUT / OFF / ULTRA LO. The netlist is built in the centre
+    /// position, which is where it is calibrated.
+    pub fn low_switch(self) -> Option<CircuitSwitch> {
+        match self {
+            Gain::AmericanSvt => Some(CircuitSwitch {
+                slots: &american_svt::BASS_SELECT_SLOTS,
+                values: &[
+                    &american_svt::BASS_SELECT[0],
+                    &american_svt::BASS_SELECT[1],
+                    &american_svt::BASS_SELECT[2],
+                ],
+                labels: &["Bass Cut", "Off", "Ultra Lo"],
+            }),
+            // The V76's low cut, its flat position second as every circuit's
+            // default is: 80 Hz, flat, 300 Hz, 80 + 300 Hz.
+            Gain::German76 => Some(CircuitSwitch {
+                slots: &german_76::LOW_CUT_SLOTS,
+                values: &[
+                    &german_76::LOW_CUT[0],
+                    &german_76::LOW_CUT[1],
+                    &german_76::LOW_CUT[2],
+                    &german_76::LOW_CUT[3],
+                ],
+                labels: &["80 Hz", "Flat", "300 Hz", "80+300"],
+            }),
+            _ => None,
+        }
+    }
+
+    /// The circuit's midrange three-position switch, where it has one: the
+    /// SVT's 1-2-3, 220 Hz, 800 Hz and 3 kHz. Built in the centre position.
+    pub fn mid_switch(self) -> Option<CircuitSwitch> {
+        match self {
+            Gain::AmericanSvt => Some(CircuitSwitch {
+                slots: &american_svt::MID_SELECT_SLOTS,
+                values: &[
+                    &american_svt::MID_SELECT[0],
+                    &american_svt::MID_SELECT[1],
+                    &american_svt::MID_SELECT[2],
+                ],
+                labels: &["220 Hz", "800 Hz", "3 kHz"],
+            }),
+            // The V76's "Gerade / 3 kHz", flat second.
+            Gain::German76 => Some(CircuitSwitch {
+                slots: &german_76::TREBLE_CUT_SLOTS,
+                values: &[&german_76::TREBLE_CUT[0], &german_76::TREBLE_CUT[1]],
+                labels: &["3 kHz", "Flat"],
+            }),
+            _ => None,
+        }
     }
 
     /// Whether this voice has a reverb tank and a tremolo of its own.
@@ -751,13 +923,19 @@ impl Gain {
     /// same shape of defect as `power_stage` against `build_power` -- one
     /// question with two answers, and the amplifier caught between them.
     ///
+    /// The Treble Boost too, and for the plainest reason of all: its one pot is
+    /// the collector load of a stage whose gain does not change, so the pot is
+    /// a volume and nothing else, and a make-up measured across it would make
+    /// the knob do nothing whatever.
+    ///
     /// The Brit 800, Plexi, AC30 and DR103 also put Drive on a Volume pot and
     /// are deliberately **not** here. Their make-up curves are what their
     /// shipped presets were trimmed against, so moving them is a separate,
     /// deliberate change with its own re-trimming, not a tidy-up to fold into
     /// this one.
     pub fn drive_is_channel_volume(self) -> bool {
-        self.ab763().is_some() || self == Gain::Jazz120
+        self.ab763().is_some()
+            || matches!(self, Gain::Jazz120 | Gain::TrebleBoost | Gain::CleanBoost)
     }
 
     /// Whether this voice has a bucket-brigade chorus of its own.
@@ -829,6 +1007,48 @@ pub struct BrightSwitch {
     pub on: f64,
     pub off: f64,
     pub on_label: &'static str,
+}
+
+/// Where one of the panel's circuit switches is thrown: up to four
+/// positions. Every circuit puts its own default in the second, `Centre`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Throw {
+    Left,
+    #[default]
+    Centre,
+    Right,
+    Far,
+}
+
+impl Throw {
+    pub fn index(self) -> usize {
+        match self {
+            Throw::Left => 0,
+            Throw::Centre => 1,
+            Throw::Right => 2,
+            Throw::Far => 3,
+        }
+    }
+}
+
+/// A circuit's own switch that is real parts in its netlist, as the panel's
+/// low and mid switch selectors reach it: the adjustable parts it moves, the
+/// value each takes in each of its two to four positions, and what the panel
+/// calls them. A position past the switch's last is its last. The netlist is
+/// built in position two, which is where the circuit is calibrated. See
+/// `Gain::low_switch` and `Gain::mid_switch`.
+#[derive(Clone, Copy, Debug)]
+pub struct CircuitSwitch {
+    pub slots: &'static [usize],
+    pub values: &'static [&'static [f64]],
+    pub labels: &'static [&'static str],
+}
+
+impl CircuitSwitch {
+    /// The values for `throw`, the last position's past the end.
+    pub fn at(&self, throw: Throw) -> &'static [f64] {
+        self.values[throw.index().min(self.values.len() - 1)]
+    }
 }
 
 /// Which part does the amplifying, for the channels built around one.
@@ -1076,10 +1296,21 @@ pub enum PowerModel {
     /// without the Hiwatt's own V3a. What `PowerAmp::DR103EL34` means behind
     /// anything but the DR103. See `power::PowerSpec::DR103_EL34_RETURN`.
     DR103EL34Return,
+    /// The 1992 Super Bass's four EL34s. See `power::PowerSpec::PLEXI_BASS_EL34`.
+    BritPlexiBassEL34,
+    /// The Laney Supergroup's four EL34s on 600 V. See
+    /// `power::PowerSpec::BRUM_EL34`.
+    BrumEL34,
+    /// The Sunn Model T's four 6550s, ultra-linear. See
+    /// `power::PowerSpec::OREGON_6550`.
+    Oregon6550,
+    /// The Ampeg SVT's six 6550s behind a cathodyne and two direct-coupled
+    /// followers. See `power::PowerSpec::SVT_6550`.
+    Svt6550,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 14] = [
+    pub const ALL: [PowerModel; 18] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -1094,6 +1325,10 @@ impl PowerModel {
         PowerModel::British73Out,
         PowerModel::Brit2205EL34,
         PowerModel::DR103EL34Return,
+        PowerModel::BritPlexiBassEL34,
+        PowerModel::BrumEL34,
+        PowerModel::Oregon6550,
+        PowerModel::Svt6550,
     ];
 
     /// The valve stage this model is, where it is one.
@@ -1118,6 +1353,10 @@ impl PowerModel {
             Self::AmericanDeluxe6V6 => &power::PowerSpec::DELUXE_6V6,
             Self::Brit2205EL34 => &power::PowerSpec::BRIT_2205_EL34,
             Self::DR103EL34Return => &power::PowerSpec::DR103_EL34_RETURN,
+            Self::BritPlexiBassEL34 => &power::PowerSpec::PLEXI_BASS_EL34,
+            Self::BrumEL34 => &power::PowerSpec::BRUM_EL34,
+            Self::Oregon6550 => &power::PowerSpec::OREGON_6550,
+            Self::Svt6550 => &power::PowerSpec::SVT_6550,
             Self::Jazz120SS | Self::British73Out => return None,
         })
     }
@@ -1168,6 +1407,10 @@ impl PowerModel {
             Self::British73Out => 11,
             Self::Brit2205EL34 => 12,
             Self::DR103EL34Return => 13,
+            Self::BritPlexiBassEL34 => 14,
+            Self::BrumEL34 => 15,
+            Self::Oregon6550 => 16,
+            Self::Svt6550 => 17,
         }
     }
 
@@ -1192,6 +1435,12 @@ impl PowerModel {
             Self::Brit2205EL34 => voice_index(Gain::Brit2205, Diode::Silicon, Amplifier::Valve),
             // After the Recto's valve-rectifier stage in `EXTRA_POWER_SPECS`.
             Self::DR103EL34Return => VOICES + 1,
+            Self::BritPlexiBassEL34 => {
+                voice_index(Gain::PlexiBass, Diode::Silicon, Amplifier::Valve)
+            }
+            Self::BrumEL34 => voice_index(Gain::Brum100, Diode::Silicon, Amplifier::Valve),
+            Self::Oregon6550 => voice_index(Gain::OregonT, Diode::Silicon, Amplifier::Valve),
+            Self::Svt6550 => voice_index(Gain::AmericanSvt, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -1213,10 +1462,14 @@ pub enum PowerAmp {
     Recto6L6Tube,
     AmericanDeluxe6V6,
     Brit2205EL34,
+    BritPlexiBassEL34,
+    BrumEL34,
+    Oregon6550,
+    Svt6550,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 17] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -1230,6 +1483,10 @@ impl PowerAmp {
         Self::Recto6L6Tube,
         Self::AmericanDeluxe6V6,
         Self::Brit2205EL34,
+        Self::BritPlexiBassEL34,
+        Self::BrumEL34,
+        Self::Oregon6550,
+        Self::Svt6550,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -1247,6 +1504,10 @@ impl PowerAmp {
                 Gain::Jazz120 => Some(PowerModel::Jazz120SS),
                 Gain::Neve => Some(PowerModel::British73Out),
                 Gain::Brit2205 => Some(PowerModel::Brit2205EL34),
+                Gain::PlexiBass => Some(PowerModel::BritPlexiBassEL34),
+                Gain::Brum100 => Some(PowerModel::BrumEL34),
+                Gain::OregonT => Some(PowerModel::Oregon6550),
+                Gain::AmericanSvt => Some(PowerModel::Svt6550),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1267,6 +1528,10 @@ impl PowerAmp {
             Self::Recto6L6Tube => Some(PowerModel::Recto6L6Tube),
             Self::AmericanDeluxe6V6 => Some(PowerModel::AmericanDeluxe6V6),
             Self::Brit2205EL34 => Some(PowerModel::Brit2205EL34),
+            Self::BritPlexiBassEL34 => Some(PowerModel::BritPlexiBassEL34),
+            Self::BrumEL34 => Some(PowerModel::BrumEL34),
+            Self::Oregon6550 => Some(PowerModel::Oregon6550),
+            Self::Svt6550 => Some(PowerModel::Svt6550),
         }
     }
 }
@@ -1296,6 +1561,16 @@ pub enum Pedal {
     MetalZone,
     /// The Boss DS-1, TA7136P original (`circuits::orange_dist`).
     OrangeDist,
+    /// The Dallas Rangemaster, stock OC44 (`circuits::treble_boost`). One
+    /// knob, and it is the level: the slot's drive knob is greyed.
+    TrebleBoost,
+    /// The Klon Centaur (`circuits::gold_drive`).
+    GoldDrive,
+    /// The Marshall Guv'nor (`circuits::brit_drive`). Five knobs.
+    BritDrive,
+    /// The MXR MicroAmp (`circuits::clean_boost`). One knob, its gain: the
+    /// slot's level knob is greyed.
+    CleanBoost,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
@@ -1327,9 +1602,11 @@ struct ToneKnob {
 /// Where a pedal's knobs land in its netlist. `None` is a knob it does not have.
 #[derive(Clone, Copy, Debug)]
 struct PedalControls {
-    drive: usize,
+    /// `None` where the pedal has no drive control (`Pedal::has_drive`).
+    drive: Option<usize>,
     tones: [Option<ToneKnob>; PEDAL_TONES],
-    level: usize,
+    /// `None` where the pedal has no level control (`Pedal::has_level`).
+    level: Option<usize>,
 }
 
 /// A pedal with one tone control, which is most of them.
@@ -1367,6 +1644,11 @@ impl Pedal {
             Pedal::YellowDist => ("distortion", "output"),
             Pedal::HeavyMetal => ("distortion", "level"),
             Pedal::MetalZone | Pedal::OrangeDist => ("dist", "level"),
+            // Its one pot sets the boost, which is the level; there is no drive.
+            Pedal::TrebleBoost => ("drive", "boost"),
+            Pedal::GoldDrive => ("gain", "output"),
+            Pedal::BritDrive => ("gain", "level"),
+            Pedal::CleanBoost => ("gain", "level"),
         }
     }
 
@@ -1383,10 +1665,14 @@ impl Pedal {
             Pedal::HeavyMetal => Some(Gain::Hm2),
             Pedal::MetalZone => Some(Gain::Mt2),
             Pedal::OrangeDist => Some(Gain::Ds1),
+            Pedal::TrebleBoost => Some(Gain::TrebleBoost),
+            Pedal::GoldDrive => Some(Gain::GoldDrive),
+            Pedal::BritDrive => Some(Gain::BritDrive),
+            Pedal::CleanBoost => Some(Gain::CleanBoost),
         }
     }
 
-    pub const ALL: [Pedal; 10] = [
+    pub const ALL: [Pedal; 14] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
@@ -1397,9 +1683,13 @@ impl Pedal {
         Pedal::HeavyMetal,
         Pedal::MetalZone,
         Pedal::OrangeDist,
+        Pedal::TrebleBoost,
+        Pedal::GoldDrive,
+        Pedal::BritDrive,
+        Pedal::CleanBoost,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 9;
+    const SLOTS: usize = 13;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -1413,6 +1703,10 @@ impl Pedal {
             Pedal::HeavyMetal => Some(6),
             Pedal::MetalZone => Some(7),
             Pedal::OrangeDist => Some(8),
+            Pedal::TrebleBoost => Some(9),
+            Pedal::GoldDrive => Some(10),
+            Pedal::BritDrive => Some(11),
+            Pedal::CleanBoost => Some(12),
         }
     }
 
@@ -1451,6 +1745,22 @@ impl Pedal {
         matches!(self, Pedal::HeavyMetal | Pedal::MetalZone)
     }
 
+    /// Whether the pedal has a drive control. Every one but the Treble Boost
+    /// does: its one pot is a volume after a fixed gain, so it is the slot's
+    /// level knob and the drive knob is greyed rather than turning nothing.
+    pub fn has_drive(self) -> bool {
+        self.slot()
+            .is_some_and(|slot| Self::controls(slot).drive.is_some())
+    }
+
+    /// Whether the pedal has a level control. Every one but the Clean Boost
+    /// does: its one knob is GAIN, the slot's drive, and the level knob is
+    /// greyed rather than turning nothing.
+    pub fn has_level(self) -> bool {
+        self.slot()
+            .is_some_and(|slot| Self::controls(slot).level.is_some())
+    }
+
     /// Whether the pedal has any tone control at all.
     pub fn has_tone(self) -> bool {
         self.tone_labels()[0].is_some()
@@ -1478,42 +1788,46 @@ impl Pedal {
             5 => distortion_plus::build(10_000.0, 470_000.0),
             6 => heavy_metal::build(10_000.0, 470_000.0),
             7 => metal_zone::build(10_000.0, 470_000.0),
-            _ => orange_dist::build(10_000.0, 470_000.0),
+            8 => orange_dist::build(10_000.0, 470_000.0),
+            9 => treble_boost::build(10_000.0, 470_000.0),
+            10 => gold_drive::build(10_000.0, 470_000.0),
+            11 => brit_drive::build(10_000.0, 470_000.0),
+            _ => clean_boost::build(10_000.0, 470_000.0),
         }
     }
 
     fn controls(slot: usize) -> PedalControls {
         match slot {
             0 | 2 => PedalControls {
-                drive: ts808::DRIVE,
+                drive: Some(ts808::DRIVE),
                 tones: one_tone(ts808::TONE, "tone", false),
-                level: ts808::LEVEL,
+                level: Some(ts808::LEVEL),
             },
             1 => PedalControls {
-                drive: bigmuff::SUSTAIN,
+                drive: Some(bigmuff::SUSTAIN),
                 tones: one_tone(bigmuff::TONE, "tone", false),
-                level: bigmuff::VOLUME,
+                level: Some(bigmuff::VOLUME),
             },
             3 => PedalControls {
-                drive: rodent::DISTORTION,
+                drive: Some(rodent::DISTORTION),
                 tones: one_tone(rodent::FILTER, "filter", true),
-                level: rodent::VOLUME,
+                level: Some(rodent::VOLUME),
             },
             4 => PedalControls {
-                drive: round_fuzz::FUZZ,
+                drive: Some(round_fuzz::FUZZ),
                 tones: NO_TONES,
-                level: round_fuzz::VOLUME,
+                level: Some(round_fuzz::VOLUME),
             },
             5 => PedalControls {
-                drive: distortion_plus::DISTORTION,
+                drive: Some(distortion_plus::DISTORTION),
                 tones: NO_TONES,
-                level: distortion_plus::VOLUME,
+                level: Some(distortion_plus::VOLUME),
             },
             // The first pedal here with two tone controls, and they are a
             // boost-and-cut pair rather than a passive tone: "colour mix" is
             // what the box calls them.
             6 => PedalControls {
-                drive: heavy_metal::DIST,
+                drive: Some(heavy_metal::DIST),
                 tones: [
                     Some(ToneKnob {
                         control: heavy_metal::LOW,
@@ -1528,12 +1842,12 @@ impl Pedal {
                     None,
                     None,
                 ],
-                level: heavy_metal::LEVEL,
+                level: Some(heavy_metal::LEVEL),
             },
             // Four tone controls, which is what the slot was widened to carry:
             // three bands and the sweep that moves the middle one.
             7 => PedalControls {
-                drive: metal_zone::DIST,
+                drive: Some(metal_zone::DIST),
                 tones: [
                     Some(ToneKnob {
                         control: metal_zone::LOW,
@@ -1556,14 +1870,55 @@ impl Pedal {
                         inverted: false,
                     }),
                 ],
-                level: metal_zone::LEVEL,
+                level: Some(metal_zone::LEVEL),
             },
             // One tone control, a blend with a scoop in the middle; the box
             // calls it TONE.
-            _ => PedalControls {
-                drive: orange_dist::DIST,
+            8 => PedalControls {
+                drive: Some(orange_dist::DIST),
                 tones: one_tone(orange_dist::TONE, "tone", false),
-                level: orange_dist::LEVEL,
+                level: Some(orange_dist::LEVEL),
+            },
+            // One pot, the collector load, which is a volume: the level.
+            9 => PedalControls {
+                drive: None,
+                tones: NO_TONES,
+                level: Some(treble_boost::BOOST),
+            },
+            // Gain, Treble and Output.
+            10 => PedalControls {
+                drive: Some(gold_drive::GAIN),
+                tones: one_tone(gold_drive::TREBLE, "treble", false),
+                level: Some(gold_drive::LEVEL),
+            },
+            // Gain, three tone controls, and Level.
+            11 => PedalControls {
+                drive: Some(brit_drive::GAIN),
+                tones: [
+                    Some(ToneKnob {
+                        control: brit_drive::BASS,
+                        label: "bass",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: brit_drive::MIDDLE,
+                        label: "middle",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: brit_drive::TREBLE,
+                        label: "treble",
+                        inverted: false,
+                    }),
+                    None,
+                ],
+                level: Some(brit_drive::LEVEL),
+            },
+            // One knob, GAIN on the box: the drive, and no level.
+            _ => PedalControls {
+                drive: Some(clean_boost::GAIN),
+                tones: NO_TONES,
+                level: None,
             },
         }
     }
@@ -1827,6 +2182,22 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::Hm2 => heavy_metal::build(10_000.0, 470_000.0),
         Gain::Mt2 => metal_zone::build(10_000.0, 470_000.0),
         Gain::Ds1 => orange_dist::build(10_000.0, 470_000.0),
+        Gain::TrebleBoost => treble_boost::build(10_000.0, 470_000.0),
+        // Loaded by the power stage's wide-open master track and the
+        // inverter's leak, as the Brit Plexi is.
+        Gain::PlexiBass => plexi_bass::build(10_000.0, 1_000_000.0),
+        Gain::Brum100 => brum100::build(10_000.0, 1_000_000.0),
+        // R19's wiper into C8: the power stage's wide-open 1 M master track in
+        // parallel with the inverter's 1 M leak behind C8.
+        Gain::OregonT => oregon_t::build(10_000.0, 500_000.0),
+        Gain::GoldDrive => gold_drive::build(10_000.0, 470_000.0),
+        Gain::BritDrive => brit_drive::build(10_000.0, 470_000.0),
+        Gain::CleanBoost => clean_boost::build(10_000.0, 470_000.0),
+        Gain::AmericanSvt => american_svt::build(10_000.0, 1_000_000.0),
+        // At EMI's own impedances: a 200 ohm source, a 200 ohm load.
+        Gain::British47 => british_47::build(200.0, 200.0),
+        // At the Braunbuch's own: a 200 ohm generator, a 300 ohm load.
+        Gain::German76 => german_76::build(200.0, 300.0),
     }
 }
 
@@ -2066,6 +2437,32 @@ impl Calibration {
         let i = (x as usize).min(POINTS - 2);
         let f = x - i as f64;
         self.make_up_db[i] * (1.0 - f) + self.make_up_db[i + 1] * f
+    }
+
+    /// The make-up at a drive position on a control that is a switch of
+    /// `steps` positions, or between the points on one that is not.
+    ///
+    /// A switch's gain is flat across each position and jumps between them,
+    /// and a straight line between two points either side of a jump is wrong
+    /// by up to the whole jump: the German 76's 46 dB position read 3.5 dB
+    /// loud at the knob's middle, half way from its 40 dB neighbour. So the
+    /// position's own value is taken instead, from the point inside it
+    /// nearest the knob -- every position of the twelve the V76 has holds at
+    /// least one of the thirty-three.
+    pub fn make_up_db_on(&self, drive: f64, steps: Option<usize>) -> f64 {
+        let Some(n) = steps.filter(|&n| n > 1) else {
+            return self.make_up_db_at(drive);
+        };
+        let drive = drive.clamp(0.0, 1.0);
+        let step = |d: f64| ((d * n as f64) as usize).min(n - 1);
+        (0..POINTS)
+            .filter(|&i| step(knot_position(i)) == step(drive))
+            .min_by(|&a, &b| {
+                (knot_position(a) - drive)
+                    .abs()
+                    .total_cmp(&(knot_position(b) - drive).abs())
+            })
+            .map_or_else(|| self.make_up_db_at(drive), |i| self.make_up_db[i])
     }
 }
 
@@ -2484,6 +2881,11 @@ pub struct Settings {
     pub twin_low_input: bool,
     /// Stock 120 pF Bright switch across the upper half of the Twin Volume pot.
     pub twin_bright: bool,
+    /// The circuit's own three-position switches, where it has them (the
+    /// SVT's BASS SELECT and MIDRANGE SELECT). Ignored by every other voice.
+    /// See `Gain::low_switch` and `Gain::mid_switch`.
+    pub low_switch: Throw,
+    pub mid_switch: Throw,
     /// The three the Twin Reverb has and nothing else does. Ignored by every
     /// other voice; the panel greys them out. See `Gain::extra_controls`.
     pub reverb: f64,
@@ -2527,6 +2929,8 @@ impl Default for Settings {
             mid: 0.5,
             twin_low_input: false,
             twin_bright: true,
+            low_switch: Throw::Centre,
+            mid_switch: Throw::Centre,
             reverb: 0.0,
             speed: 0.4,
             intensity: 0.0,
@@ -4491,7 +4895,9 @@ impl Chain {
         if let Some(i) = self.pedal {
             let controls = Pedal::controls(i);
             let sim = &mut self.pedals[i];
-            sim.set_control(controls.drive, s.drive.clamp(0.0, 1.0));
+            if let Some(drive) = controls.drive {
+                sim.set_control(drive, s.drive.clamp(0.0, 1.0));
+            }
             for (knob, &value) in controls.tones.iter().zip(s.tone.iter()) {
                 let Some(knob) = knob else { continue };
                 let value = value.clamp(0.0, 1.0);
@@ -4500,10 +4906,10 @@ impl Chain {
                     if knob.inverted { 1.0 - value } else { value },
                 );
             }
-            let rest = sim
-                .resting_position(controls.level)
-                .unwrap_or(DEFAULT_MASTER_REST);
-            sim.set_control(controls.level, Self::master_position(rest, s.level));
+            if let Some(level) = controls.level {
+                let rest = sim.resting_position(level).unwrap_or(DEFAULT_MASTER_REST);
+                sim.set_control(level, Self::master_position(rest, s.level));
+            }
             self.pedal_into = Pedal::input_volts(i) / 10f64.powf(NOMINAL_DBFS / 20.0);
             self.pedal_hand_off = self.into / self.pedal_into;
         }
@@ -4550,6 +4956,10 @@ impl Chain {
             PowerAmp::Recto6L6Tube => 9,
             PowerAmp::AmericanDeluxe6V6 => 10,
             PowerAmp::Brit2205EL34 => 11,
+            PowerAmp::BritPlexiBassEL34 => 12,
+            PowerAmp::BrumEL34 => 13,
+            PowerAmp::Oregon6550 => 14,
+            PowerAmp::Svt6550 => 15,
         };
         let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
         10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
@@ -4806,14 +5216,17 @@ impl Chain {
         } else {
             self.drive
         };
-        self.out_of_target = 10f64.powf(calibration.make_up_db_at(make_up_drive) / 20.0)
+        // A gain switch's make-up is its position's, not a line across two.
+        let steps = self.gains[self.gain].control_steps(voice_at(self.gain).0.drive_control());
+        self.out_of_target = 10f64.powf(calibration.make_up_db_on(make_up_drive, steps) / 20.0)
             / self.into
             * self.master_lift
             * trim;
         // What the make-up would be with the Drive control at its reference
         // position. See `iron_drive`.
         self.iron_reference =
-            10f64.powf(calibration.make_up_db_at(IRON_REFERENCE_DRIVE) / 20.0) / self.into * trim;
+            10f64.powf(calibration.make_up_db_on(IRON_REFERENCE_DRIVE, steps) / 20.0) / self.into
+                * trim;
     }
 
     /// How much harder than usual the Drive control is pushing the iron.
@@ -5189,6 +5602,7 @@ impl Chain {
         self.set_voice(s.gain, s.diode, s.amplifier);
         self.set_twin_input(s.twin_low_input);
         self.set_twin_bright(s.twin_bright);
+        self.set_switches(s.low_switch, s.mid_switch);
         // After `set_voice`, because which control this reaches depends on
         // which circuit is selected, and before `set_drive`, because both
         // touch the same simulation and the order they dirty it in should not
@@ -5678,6 +6092,22 @@ impl Chain {
         // switch is not this amplifier's and the control does nothing.
         if let Some(sw) = self.voice.bright_switch() {
             self.gains[self.gain].set_value(sw.slot, if bright { sw.on } else { sw.off });
+        }
+    }
+
+    /// A circuit's own three-position switches: real contacts in its netlist,
+    /// thrown by moving the adjustable parts that stand for them. `None` where
+    /// the circuit has no such switch, and then the selector does nothing.
+    fn set_switches(&mut self, low: Throw, mid: Throw) {
+        for (switch, throw) in [
+            (self.voice.low_switch(), low),
+            (self.voice.mid_switch(), mid),
+        ] {
+            if let Some(sw) = switch {
+                for (&slot, &value) in sw.slots.iter().zip(sw.at(throw)) {
+                    self.gains[self.gain].set_value(slot, value);
+                }
+            }
         }
     }
 

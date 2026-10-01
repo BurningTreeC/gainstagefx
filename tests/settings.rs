@@ -10,7 +10,7 @@
 //! So each control is checked here by the only thing that actually matters:
 //! move it, and the audio has to change.
 
-use gainstagefx::voice::{Cabinet, Chain, Diode, Gain, Iron, Settings, Tone, NOMINAL_DBFS};
+use gainstagefx::voice::{Cabinet, Chain, Diode, Gain, Iron, Settings, Throw, Tone, NOMINAL_DBFS};
 
 const RATE: f64 = 48_000.0;
 
@@ -56,6 +56,12 @@ fn every_control_reaches_the_circuit() {
         pedal: Default::default(),
         twin_low_input: false,
         twin_bright: true,
+        // Centre, and not in the `moved` table below: a Distortion has no
+        // three-position switch of its own, so these are meant to reach nothing
+        // here -- `tests/american_svt.rs` is where they are proved to reach the
+        // SVT's contacts.
+        low_switch: Throw::Centre,
+        mid_switch: Throw::Centre,
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,

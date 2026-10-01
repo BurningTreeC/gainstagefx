@@ -48,7 +48,7 @@ what is in it.
 | | | |
 |---|---|---|
 | **1 Input** | Trim, meter, noise reduction, pedal with its own knobs, named as its box names them | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
-| **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp, mains; the blackface amplifiers' input jack and bright switch | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
+| **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp, mains; the blackface amplifiers' input jack, the bright switch (the JC-120's and the SVT's Ultra Hi too), and a circuit's own low and mid switches of two to four positions (the SVT's BASS and MIDRANGE SELECT, the German 76's low cut and "3 kHz") | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
 | **3 Drive** | Drive and master, named as the circuit names them (on a pedal, its drive and level), presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity, chorus | A passive stack, so it only ever cuts. A modelled amplifier's own stack takes these knobs, and so do the Metal Zone's three bands; a pedal's single tone control (TONE, or the Rodent's FILTER) has a knob of its own beside them, as do the Metal Zone's swept middle and the Heavy Metal's Colour Mix pair. The second row is the blackface amplifiers' reverb and tremolo and the Jazz 120's chorus. |
 | **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, pan, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
@@ -108,6 +108,8 @@ sources, where they disagree and what was approximated.
 | American 312 | A console microphone preamplifier card: input transformer, one discrete op-amp, output transformer | none |
 | British 4K E | A 1980s console channel's microphone input: a 1:10 transformer into two op-amps around one gain pot | none |
 | Tube 610 | A 1960s valve console channel: four triodes in two feedback loops, a transformer at each end | none |
+| British 47 | A late-50s British studio valve amplifier: a pentode and a paralleled triode between a 1:7 and a 7:1 transformer, two feedback loops, its gain a three-position switch on the Drive knob | none |
+| German 76 | A late-50s German broadcast microphone amplifier: two two-valve amplifiers, each in its own loop, between a 1:30 and a 9:1 transformer; its gain a twelve-step switch on the Drive knob (3 to 76 dB), its low cut and "3 kHz" on the panel's switches | none |
 | American Twin | A 1960s blackface clean channel with spring reverb and optical tremolo | American 6L6 Clean |
 | American Deluxe | The smaller blackface combo's vibrato channel: the same design with spring reverb and optical tremolo, no middle control, into two 6V6s on a valve rectifier | American Deluxe 6V6 |
 | American Deluxe Normal | The same amplifier through its normal channel: no bright capacitor, no reverb, no tremolo | American Deluxe 6V6 |
@@ -125,8 +127,16 @@ sources, where they disagree and what was approximated.
 | Heavy Metal | A gated distortion: two germanium diodes in series with the signal, and three gyrators | none |
 | Metal Zone | Two gain stages and seven filters, with a three-band equaliser whose middle sweeps | none |
 | Orange Dist | A transistor that clips first and a diode pair that clips what is left, with the bass cut before either and a scoop after | none |
+| Treble Boost | One germanium transistor behind a 5 nF capacitor; its one knob is a volume after a fixed gain | none |
+| Brit Plexi Bass | The Brit Plexi's late-60s bass sibling of the same drawing set: V1's halves on one cathode, nothing throwing the bottom away, an unbypassed second stage, a 250 pF / 56 k stack and no master | Brit Plexi Bass EL34 |
+| Brum 100 | A late-60s Midlands 100 W head, Marshall-like and not a Marshall: split V1 cathodes, a 270 pF / 56 k / 22 k stack and no master, into four EL34s on 600 V | Brum EL34 |
+| Oregon T | An early-70s American 150 W head: a tweed-style preamp with a master, into four 6550s in ultra-linear | Oregon 6550 |
+| American SVT | A 70s American 300 W bass head's first channel: a James stack, a midrange whose toroid resonance sits inside a two-stage feedback loop, its three-way midrange frequency and Bass Cut / Ultra Lo switches, and Ultra Hi on the Bright switch | American 6550 |
+| Gold Drive | An overdrive whose germanium-clipped path is summed with two clean ones | none |
+| Brit Drive | Two op-amp stages into red LEDs, then a bass, middle and treble stack | none |
+| Clean Boost | One op-amp, one knob, up to 26 dB | none |
 
-**Every pedal is also a circuit.** The nine in the pedal slot can each be
+**Every pedal is also a circuit.** The thirteen in the pedal slot can each be
 selected on their own, with nothing behind them — which is how a pedal into a
 desk was always recorded, and how an HM-2 into an MT-2 becomes expressible: one
 in the slot, the other as the circuit. Selected as the circuit, a pedal keeps
@@ -186,8 +196,14 @@ of gain-bandwidth and slew rate, as the original's does), **Round Fuzz** (two
 germanium transistors), **Yellow Dist** (one slow op-amp and a pair of germanium
 diodes to ground), **Heavy Metal** (a gated distortion with two tone controls),
 **Metal Zone** (two gain stages and seven filters, with a three-band equaliser
-whose middle sweeps) and **Orange Dist** (a transistor booster that clips before
-the op-amp and diodes do, with the bass cut ahead of both),
+whose middle sweeps), **Orange Dist** (a transistor booster that clips before
+the op-amp and diodes do, with the bass cut ahead of both), **Treble Boost**
+(one germanium transistor behind a 5 nF capacitor, whose single knob is the
+slot's level -- its drive knob is greyed, because it has no drive), **Gold
+Drive** (a germanium-clipped gain stage summed with two clean paths, and a
+treble shelf), **Brit Drive** (two op-amp stages into red LEDs and a
+three-knob stack) and **Clean Boost** (one op-amp and one knob, its gain: the
+level knob is greyed),
 each with the knobs that pedal actually has, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
@@ -241,6 +257,10 @@ nearest setting to the 90 volts that player is reported to have used.
 | Recto 6L6 | Four 6L6s on a cold -51 V bias from the manufacturer's own drawing, with no feedback loop, as in the red channel's Modern mode; the Cali Rectifier's own |
 | Recto 6L6 Tube | The same stage with its rectifier switch on valve: two 5U4GB, so the rail sits lower and sags under a chord |
 | American Deluxe 6V6 | Two 6V6s behind a 12AT7 inverter on a GZ34 valve rectifier, with the AB763's light feedback and no presence; the American Deluxe's own |
+| Brit Plexi Bass EL34 | The Brit Plexi EL34 with the 1992's .1 uF couplings into the output valves, where the 1959 has .022: the corner moves from 33 Hz to 7 Hz; the Brit Plexi Bass's own |
+| Brum EL34 | Four EL34s on 600 V and -54 V, as the trace prints them, with 10 k grid stoppers, 470 ohm screens and a 3.3 k presence whose track is the inverter's tail; the Brum 100's own |
+| Oregon 6550 | Four 6550s in **ultra-linear** -- each side's screens on a tap of its own half of the primary -- behind a 12AX7 long-tailed pair, with 22 k of feedback from the 16 ohm tap and a reverse-log presence; the Oregon T's own |
+| American 6550 | Six 6550s held by two **direct-coupled cathode followers** -- the output grids are driven into grid current with no coupling capacitor of their own to charge -- behind a 12BH7 gain stage a side and a cathodyne, on 660 V with the drivers on the screens' sagging rail; the American SVT's own |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
 output valves with their screen supplies, a centre-tapped transformer with a
@@ -267,10 +287,13 @@ stage is behind it; behind any other circuit the Recto stages grey it.
 ## Speaker, cabinet and microphones
 
 **Cabinet:** Legacy (the old resistor load and Combo/Stack filter, the default),
-Bypass (the driver on an open baffle), or one of twelve cabinets with real
+Bypass (the driver on an open baffle), or one of thirteen cabinets with real
 dimensions and driver layouts: Brit 1960 4x12, Cali Oversized 4x12, Brit Closed
 4x12, Brit Green 4x12, Brit V30 4x12, Oversized 4x12, American Open 2x12,
-American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12, American Closed 4x12.
+American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12, American Closed 4x12,
+and the American 8x10 -- eight tens in four sealed chambers of two, the American
+SVT's own box, whose standing waves are a chamber's while its sealed air is the
+whole cabinet's.
 
 Bypass there means *no box*, not no speaker: the driver still radiates, on an
 open baffle, and a microphone still picks it up, which is why it does not sound
@@ -279,7 +302,7 @@ row's own Bypass, and that is bit-identical to Legacy/Off (a test says so).
 
 **Speaker:** Matched (the cabinet's own driver), Bypass (the power stage's
 output, a DI), or Brit V30, Brit Green 25, Brit T75, American Vintage 12,
-American Vintage 10, American Ceramic, American Alnico, Jazz 12, Brit K85. Each is a Thiele–Small
+American Vintage 10, American Ceramic, American Alnico, Jazz 12, Brit K85, American Bass 10. Each is a Thiele–Small
 electrical and mechanical model with a lossy voice coil, fitted to the
 manufacturer's impedance and response data where it is published and estimated
 where it is not, and its impedance is solved inside the power
@@ -344,7 +367,13 @@ hardware behind them at all.
 | American 312 | API 312 microphone preamplifier card (2622, 2520, 2503) | [american_312.md](docs/models/american_312.md) |
 | British 4K E | SSL SL 4000 E channel amp, 82E01 microphone amplifier | [british_4k_e.md](docs/models/british_4k_e.md) |
 | Tube 610 | Universal Audio 610-A modular console preamplifier | [tube_610.md](docs/models/tube_610.md) |
-| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist | the pedals above, selectable as circuits in their own right | as listed under Pedals |
+| British 47 | EMI REDD.47 line amplifier, drawing REDD.47/C1 (1959) and description REDD.M47 | [british_47.md](docs/models/british_47.md) |
+| German 76 | Telefunken/TAB V76/80 microphone amplifier, IRT drawing S 1176 and Braunbuch description (1959) | [german_76.md](docs/models/german_76.md) |
+| Brit Plexi Bass | Marshall JMP 1992 Super Bass 100 W, Unicord drawing 70-13-11, July 1970 | [brit_plexi_bass.md](docs/models/brit_plexi_bass.md) |
+| Brum 100 | Laney Supergroup 100 Mk I, a 1969 build, from a traced drawing | [brum_100.md](docs/models/brum_100.md) |
+| Oregon T | Sunn Model T, drawing D-1029 A, 1973, BRITE channel | [oregon_t.md](docs/models/oregon_t.md) |
+| American SVT | Ampeg SVT (6550), "SVT PREAMP" D 591719 rev D, 1975, channel 1, NORMAL input | [american_svt.md](docs/models/american_svt.md) |
+| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
 **Pedals** (the slot in front of whatever is selected)
 
@@ -359,6 +388,10 @@ hardware behind them at all.
 | Heavy Metal | Boss HM-2 Heavy Metal, the Japanese original | [heavy_metal.md](docs/models/heavy_metal.md) |
 | Metal Zone | Boss MT-2 Metal Zone | [metal_zone.md](docs/models/metal_zone.md) |
 | Orange Dist | Boss DS-1 Distortion, the TA7136P original (before the 1994 DS-1A) | [orange_dist.md](docs/models/orange_dist.md) |
+| Treble Boost | Dallas Rangemaster Treble Booster, the stock OC44 unit | [treble_boost.md](docs/models/treble_boost.md) |
+| Gold Drive | Klon Centaur, from ElectroSmash's analysis (the board was potted; no Klon drawing exists) | [gold_drive.md](docs/models/gold_drive.md) |
+| Brit Drive | Marshall The Guv'nor, the original (1988-92), from ElectroSmash's analysis | [brit_drive.md](docs/models/brit_drive.md) |
+| Clean Boost | MXR M-133 MicroAmp, from ElectroSmash's analysis | [clean_boost.md](docs/models/clean_boost.md) |
 
 **Power stages**
 
@@ -375,6 +408,10 @@ hardware behind them at all.
 | *(matched to Jazz 120)* | Roland JC-120: 60 W complementary transistor amplifier, 2SC4386/2SA1671, bootstrapped VAS | [jazz_120.md](docs/models/jazz_120.md) |
 | American Deluxe 6V6 | Deluxe Reverb AB763: 12AT7 inverter, two 6V6GT, GZ34 rectifier | [american_deluxe.md](docs/models/american_deluxe.md) |
 | Recto 6L6 / Recto 6L6 Tube | Dual Rectifier: four 6L6 on the silicon setting, or two 5U4GB valve rectifiers; the loop lifted, as in RD NORM | [cali_rectifier.md](docs/models/cali_rectifier.md) |
+| Brit Plexi Bass EL34 | 1992 Super Bass: the 1959's stage of the same drawing set with .1 uF output couplings | [brit_plexi_bass.md](docs/models/brit_plexi_bass.md) |
+| Brum EL34 | Laney Supergroup 100 Mk I: four EL34 on 600 V, 3.3 k presence on the tail | [brum_100.md](docs/models/brum_100.md) |
+| Oregon 6550 | Sunn Model T: four 6550 ultra-linear (GE 6550-A fit), 22 k feedback from 16 ohm, chart-fitted supply | [oregon_t.md](docs/models/oregon_t.md) |
+| American 6550 | Ampeg SVT "SVT POWER AMP SCHEMATIC" D 591720 rev H: six 6550, 12BH7 (RCA fit) gain stages and followers, a cathodyne, 47 k from 4 ohm; idle at the calibration procedure's 24 mA a valve | [american_svt.md](docs/models/american_svt.md) |
 
 **Cabinets, speakers and microphones** — dimensions from the manufacturers,
 Thiele–Small parameters and response curves from data sheets where they are
@@ -392,8 +429,9 @@ published and estimated where they are not ([cabinets.md](docs/models/cabinets.m
 | American Open 1x12 | Fender '65 Deluxe Reverb | American Alnico | Jensen P12N |
 | Closed 1x12 | Marshall 1912 | Jazz 12 | Roland 30-103D (the JC-120's) |
 | Closed 2x12 | Marshall 1936 | Brit K85 | Celestion G12K-85 (from G12K-100 data) |
-| Jazz Open 2x12 | Roland JC-120 combo | | |
+| Jazz Open 2x12 | Roland JC-120 combo | American Bass 10 | Eminence Legend B810, 32 ohm (the SVT 8x10's replacement ten) |
 | American Closed 4x12 | Peavey 412M, late 1980s | | |
+| American 8x10 | Ampeg SVT-810E, four sealed chambers of two | | |
 | Oversized 4x12 | *generic* | | |
 | Combo / Stack (Legacy) | *generic* filters, kept for old sessions | | |
 
@@ -425,7 +463,8 @@ threads), so these are upper bounds until they are measured again.
 
 The heaviest is Puppet Master '86 at 38 %: the Cali IIC+'s six triodes and graphic, a
 speaker-loaded power stage and two microphones. The microphone preamplifiers are among
-the cheapest (2.8 to 11 %). Measured with `cargo run --release --example presetcost`.
+the cheapest: 2.2 to 13 % in a run on 2026-10-01, the four-valve German 76 at 12 %.
+Measured with `cargo run --release --example presetcost`.
 
 Swapping the Legacy cabinet for a physical one moves an amplifier's cost by a
 few points either way. On the same settings, the Cali IIC+ went from 20 to
@@ -458,7 +497,7 @@ side with `cargo run --release --example stutter`.
 
 ## Presets
 
-Seventy-eight, in twelve groups shown quietest first so the list reads as a
+Eighty-two, in twelve groups shown quietest first so the list reads as a
 range: Studio, Preamp, Crunch, High Gain, Overdrive, Distortion, Amplifier, and
 five groups of chains aimed at particular records — **Classic Rock**,
 **Psychedelic / Lead**, **Alternative**, **Metal / Heavy** and **Blues**. The **Studio** group holds the console and microphone-preamplifier

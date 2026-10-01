@@ -351,8 +351,43 @@ impl SpeakerProfile {
         },
     };
 
+    /// Eminence Legend B810, the 32 ohm ten Eminence built after the 1970s
+    /// SVT's and sells as the 8x10's replacement: the American 8x10's driver,
+    /// a stand-in for Ampeg's unpublished "custom 10" Eminence" (PLAUSIBLE).
+    /// Every T/S value PUBLISHED (Fs 52.07 Hz, Re 27.5, Qms 13.91, Qes 0.68,
+    /// Bl 17.7, Mms 24 g, Sd 350 cm2) and referred to 8 ohm like every profile
+    /// here -- impedances a quarter, Bl a half -- since eight in parallel are
+    /// 4 ohm. The coil is FITTED to the sheet's impedance curve and the breakup
+    /// voicing to its response, 1.19 dB rms from 300 Hz to 7 kHz, both read by
+    /// colour off Eminence's plot (`tools/speaker_fit/fit_b810.py`). See
+    /// `docs/models/speakers.md`.
+    pub const AMERICAN_BASS_10: SpeakerProfile = SpeakerProfile {
+        id: "spk_eminence_legend_b810",
+        name: "American Bass 10",
+        inspiration: "Eminence Legend B810, 32 ohm (referred to 8)",
+        re: 6.875,
+        l1: 0.59374e-3,
+        r1: 64.237,
+        l2: 1.04726e-3,
+        r2: 4.9425,
+        fs: 52.07,
+        qms: 13.91,
+        mms: 24.0e-3,
+        bl: 8.85,
+        sd: 350.1e-4,
+        breakup: Breakup {
+            peaks: [
+                pk(1133.0, 5.32, 1.83),
+                pk(2545.0, 8.84, 4.00),
+                pk(4941.0, 7.28, 5.30),
+            ],
+            lowpass_hz: 4155.0,
+            lowpass_q: 2.50,
+        },
+    };
+
     /// Every implemented driver, in the order stable ids were assigned.
-    pub const ALL: [&'static SpeakerProfile; 9] = [
+    pub const ALL: [&'static SpeakerProfile; 10] = [
         &Self::BRIT_V30,
         &Self::BRIT_GREEN_25,
         &Self::BRIT_T75,
@@ -362,6 +397,7 @@ impl SpeakerProfile {
         &Self::AMERICAN_ALNICO,
         &Self::JAZZ_12,
         &Self::BRIT_K85,
+        &Self::AMERICAN_BASS_10,
     ];
 
     /// The data sets are 8 ohm parts.

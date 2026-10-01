@@ -74,6 +74,17 @@ pub const MASTER: usize = 1;
 /// (`FeedbackNetwork`). No panel knob; it rests at its `rest`.
 pub const RESONANCE: usize = 2;
 
+/// The Sunn Model T's plate supply, as an open-circuit voltage behind a
+/// resistance: the two numbers that put node A at the drawing's chart values,
+/// 519 V with no signal and 481 V at 150 W into 4 ohm, with this model's
+/// valves drawing what they draw -- 150 W being 24.5 V rms across the chart's
+/// 4 ohm, or 49 V across the 16 ohm tap this stage is built at. Fitted by
+/// `examples/oregon_t_op.rs`, which
+/// prints both readings; `tests/oregon_t.rs` holds them. See
+/// `PowerSpec::OREGON_6550`.
+pub const OREGON_A_OPEN: f64 = 636.5;
+pub const OREGON_A_SOURCE: f64 = 279.3;
+
 /// Everything that differs between one amplifier's power stage and another's.
 ///
 /// Grouped rather than passed as a row of bare numbers because they are all
@@ -238,6 +249,27 @@ pub struct PowerSpec {
     /// below the loop is split. `None` everywhere but the Mark IIC+. See
     /// `SeriesLoop`.
     pub series_loop: Option<&'static SeriesLoop>,
+    /// Where the output valves' screens are fed from. Zero is their own supply
+    /// (`screen_supply` behind `screen_resistance`), which is every stage here
+    /// but one. Otherwise the stage is **ultra-linear**: each side's screens
+    /// return through `screen_resistor` to a tap on its own half of the
+    /// primary, this fraction of that half's turns out from the centre tap, so
+    /// a share of the plate's swing comes back onto the screen. That is local
+    /// feedback inside the valve -- somewhere between a pentode and a triode --
+    /// and it is built as a third winding on each half (`assemble`), coupled to
+    /// the same secondary as the plate's. Only the Sunn Model T's.
+    pub screen_tap: f64,
+    /// A resistor in series with each side's plates, per side. Zero is none.
+    /// The Model T has 47 ohm 5 W resistors in its plates.
+    pub plate_resistor: f64,
+    /// A front end of the Ampeg kind in place of the long-tailed pair and the
+    /// output grids' capacitor coupling: a gain stage with the loop on its
+    /// cathode, a cathodyne, and a gain stage and a direct-coupled cathode
+    /// follower a side. With it the `pi_*`, `couple`, `grid_leak`, `bias` and
+    /// `feedback_network` fields are unused, `stopper` is what each follower
+    /// drives its side's grids through, and `feedback` lands on the gain
+    /// stage's cathode. `None` everywhere but the SVT's. See `FollowerFront`.
+    pub follower_front: Option<&'static FollowerFront>,
 }
 
 /// The Mark IIC+'s inverter and loop as both redraws have them (RP10 and
@@ -459,6 +491,161 @@ impl DriverSpec {
     };
 }
 
+/// The Ampeg SVT's power amplifier ahead of its output valves, from Ampeg's
+/// "SVT POWER AMP SCHEMATIC", D 591720 revision H (1975). See
+/// `docs/models/american_svt.md`.
+///
+/// ```text
+/// in -- R1 1k -- V1a grid, R2 470k leak
+/// V1a: R3 220k plate from C, cathode R4 2k2 + R5 220, the loop on their junction
+/// V1a plate -- C1 .1 -- V1b, a cathodyne: R6 15k plate from C, R8 1k cathode
+///   then R9 10k + VR3 to ground, R7 1M grid leak to the R8/R9 junction;
+///   20 pF plate to plate, C2 120 pF grid to ground
+/// each output, C3 / C4 .1 -- 12BH7 gain stage: R10 470k leak, R15 47k plate
+///   from H, R12 1k8 cathode -- C5 .047 -- R16 150k -- 12BH7 follower's grid,
+///   R17 150k from C5's far side to the bias wiper (R20 39k from D, VR 15k,
+///   R21 22k to ground); follower plate on E, cathode R24 47k to D
+/// the follower's cathode drives its side's three 6550 grids, 47k each
+/// ```
+///
+/// **The output grids are held, not coupled.** A guitar amplifier couples
+/// each output grid through a capacitor and a leak, and a grid driven into
+/// current charges that capacitor and biases the valve off until it drains.
+/// Here a follower holds each bank's grids, its cathode returned to -150 V:
+/// driven positive it supplies the grid current through 47 k a valve, and the
+/// valves run into class AB2 with no capacitor of their own to charge. Driven
+/// to three times full output the followers' grids stay ten volts below their
+/// cathodes while the output grids reach +1.25 V (`examples/svt_lf.rs`).
+///
+/// **The stage ahead of them does block.** The 12BH7 gain stages are coupled
+/// through C3 / C4 into 470 k, and the cathodyne swings their grids past their
+/// cathodes when the stage is driven hard: C3 charges, the gain stage sits cut
+/// off and recovers over 0.1 uF x 470 k, 47 ms, and C5 carries that recovery
+/// into the followers' grids as a swing of tens of volts that dies away over a
+/// tenth of a second. Measured, not invented: it is what the drawn coupling
+/// does.
+///
+/// **The drivers sag with the screens.** E feeds the six screens, both
+/// followers' plates and, through R52's 1 k, both 12BH7 gain stages. Under a
+/// loud note the screens pull E down and the driver stages lose headroom with
+/// it.
+#[derive(Clone, Copy, Debug)]
+pub struct FollowerFront {
+    pub tube: TriodeSpec,
+    /// R1, and R2 to ground.
+    pub input_series: f64,
+    pub input_leak: f64,
+    /// C, the inverter's rail: a stiff upstream voltage behind its dropper,
+    /// with its reservoir. B (462 V) is that upstream voltage; R50 and C12B.
+    pub rail_upstream: f64,
+    pub rail_dropper: f64,
+    pub rail_reservoir: f64,
+    /// V1a: R3, R4, and R5 below the loop's node.
+    pub gain_plate: f64,
+    pub gain_cathode: f64,
+    pub feedback_foot: f64,
+    /// The loop's capacitor across `PowerSpec::feedback` (C7).
+    pub feedback_cap: f64,
+    /// C1; the 20 pF from V1a's plate to V1b's; C2 from V1b's grid to ground.
+    pub interstage: f64,
+    pub plate_to_plate: f64,
+    pub grid_shunt: f64,
+    /// The cathodyne: R6, R8, R9 with VR3 at its rest, R7.
+    pub split_plate: f64,
+    pub split_bias: f64,
+    pub split_load: f64,
+    pub split_leak: f64,
+    /// C3, C4.
+    pub split_couple: f64,
+    pub driver_tube: TriodeSpec,
+    /// R10 / R11, R15 / R14, R12 / R13.
+    pub driver_leak: f64,
+    pub driver_plate: f64,
+    pub driver_cathode: f64,
+    /// H from E: R52 and C9B.
+    pub driver_dropper: f64,
+    pub driver_reservoir: f64,
+    /// C5 / C6, R16 / R18 into the follower's grid, R17 / R19 from the bias.
+    pub follower_couple: f64,
+    pub follower_stopper: f64,
+    pub follower_feed: f64,
+    /// R24 / R25, the follower's cathode load to D.
+    pub follower_load: f64,
+    /// The bias divider: R20 / R23 from D, the 15 k BIAS CONTROL, R21 / R22
+    /// to ground, and where the control rests -- the fraction of its track
+    /// between the wiper and R21, so 1 is the wiper at R20's end, the most
+    /// negative grid and the least current.
+    pub bias_upper: f64,
+    pub bias_pot: f64,
+    pub bias_lower: f64,
+    pub bias_rest: f64,
+    /// D: open-circuit voltage, source resistance, reservoir (C8).
+    pub bias_rail: f64,
+    pub bias_source: f64,
+    pub bias_reservoir: f64,
+}
+
+/// The SVT's A supply, as an open-circuit voltage behind a resistance. The
+/// resistance is ESTIMATED (no full-power figure is on the drawing); the
+/// voltage is fitted so that A sits at the drawing's 660 V with no signal and
+/// this model's valves idling at the calibration procedure's 24 mA. See
+/// `examples/svt_op.rs`.
+pub const SVT_A_SOURCE: f64 = 50.0;
+pub const SVT_A_OPEN: f64 = 667.2;
+/// E, the screens' and drivers' rail, the same way: 350 V at idle behind an
+/// ESTIMATED 150 ohm.
+pub const SVT_E_SOURCE: f64 = 150.0;
+pub const SVT_E_OPEN: f64 = 353.6;
+/// D, the -150 V bias rail, behind an ESTIMATED 1 k.
+pub const SVT_D_SOURCE: f64 = 1_000.0;
+pub const SVT_D_OPEN: f64 = -158.5;
+
+impl FollowerFront {
+    /// D 591720's, value for value.
+    pub const SVT: FollowerFront = FollowerFront {
+        tube: TriodeSpec::ECC83,
+        input_series: 1_000.0,  // R1
+        input_leak: 470_000.0,  // R2
+        rail_upstream: 462.0,   // B
+        rail_dropper: 15_000.0, // R50
+        rail_reservoir: 40e-6,  // C12B
+        gain_plate: 220_000.0,  // R3
+        // R4 reads "22K"; the sheet's 1.7 V on the cathode at V1a's 0.7 mA
+        // asks for 2.2 k with R5. PLAUSIBLE.
+        gain_cathode: 2_200.0,
+        feedback_foot: 220.0,   // R5
+        feedback_cap: 120e-12,  // C7
+        interstage: 0.1e-6,     // C1
+        plate_to_plate: 20e-12, // the 20 pF
+        grid_shunt: 120e-12,    // C2
+        split_plate: 15_000.0,  // R6
+        split_bias: 1_000.0,    // R8
+        // R9 10 k and 4 k of VR3: R8 + R9 + VR3 = R6, the balance the
+        // procedure's least-distortion setting finds. ESTIMATED.
+        split_load: 14_000.0,
+        split_leak: 1_000_000.0, // R7
+        split_couple: 0.1e-6,    // C3, C4
+        driver_tube: TriodeSpec::T12BH7,
+        driver_leak: 470_000.0,      // R10, R11
+        driver_plate: 47_000.0,      // R15, R14
+        driver_cathode: 1_800.0,     // R12, R13
+        driver_dropper: 1_000.0,     // R52
+        driver_reservoir: 40e-6,     // C9B
+        follower_couple: 0.047e-6,   // C5, C6
+        follower_stopper: 150_000.0, // R16, R18
+        follower_feed: 150_000.0,    // R17, R19
+        follower_load: 47_000.0,     // R24, R25
+        bias_upper: 39_000.0,        // R20, R23
+        bias_pot: 15_000.0,          // VR2, VR1
+        bias_lower: 22_000.0,        // R21, R22
+        // Where each bank idles at 24 mA a valve: `examples/svt_op.rs`.
+        bias_rest: 0.8865,
+        bias_rail: SVT_D_OPEN,
+        bias_source: SVT_D_SOURCE,
+        bias_reservoir: 90e-6, // C8
+    };
+}
+
 impl PowerSpec {
     /// 1981 2203 EL34 circuit with Hammond replacement-iron data. The matched
     /// power stage of the Brit 800 preamplifier (`circuits::brit800`), whose
@@ -519,6 +706,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The 1959 Super Lead's, as Unicord drew it in July 1970 (70-6-11 issue B):
@@ -603,6 +793,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The JCM800 2205's, from Marshall's "2205 STD Output Stage & PSU", issue 2
@@ -698,6 +891,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The AC30/6 Top Boost's, from the 1974 Dallas drawing Sc/V/1313, checked
@@ -788,6 +984,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The DR103's, from Hiwatt's own output-stage (Issue 1, 1994) and power
@@ -874,6 +1073,9 @@ impl PowerSpec {
         driver: Some(&DriverSpec::HIWATT_DR103),
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The DR103's power stage as another preamplifier meets it: the Hiwatt's
@@ -972,6 +1174,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The same amplifier with its rectifier switch on VALVE rather than SILICON
@@ -1057,6 +1262,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The Peavey EVH 5150's, read off page 5 of Peavey's drawing at 200 dpi.
@@ -1123,6 +1331,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: Some(&FeedbackNetwork::PEAVEY_5150),
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The Mesa Boogie Mark IIC+'s.
@@ -1212,6 +1423,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: Some(&SeriesLoop::MARK_IIC_PLUS),
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     /// The Fender Twin Reverb AB763's, off the manufacturer's schematic.
@@ -1356,6 +1570,9 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
     };
 
     pub const TWIN: PowerSpec = PowerSpec {
@@ -1442,6 +1659,334 @@ impl PowerSpec {
         driver: None,
         feedback_network: None,
         series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
+    };
+
+    /// The 1992 Super Bass's, as Unicord drew it in July 1970 (70-13-11): the
+    /// matched power stage of the Brit Plexi Bass (`circuits::plexi_bass`).
+    /// See `docs/models/brit_plexi_bass.md`.
+    ///
+    /// The 1959's stage of the same drawing set and the same month, part for
+    /// part -- 82 k / 100 k inverter, 47 pF, 220 k leaks, 5.6 k stoppers, 1 k
+    /// screens, 47 k of feedback from the 16 ohm tap, the 5 k presence whose
+    /// track is the tail's return -- **but one**: the inverter couples to the
+    /// output valves through **.1 uF** where the 1959 has .022. Into the 220 k
+    /// leaks that moves the corner from 33 Hz to 7 Hz, which is the bass
+    /// amplifier, and it is also four and a half times the charge a grid
+    /// current pulse leaves behind, so the bias shift after a hard note
+    /// recovers that much more slowly. DOCUMENTED; both sheets print the value.
+    pub const PLEXI_BASS_EL34: PowerSpec = PowerSpec {
+        name: "Brit Plexi Bass EL34 (1992, 1970)",
+        // The inverter node behind the same 20 k dropper, which the 1992's
+        // preamplifier loads a little differently (`plexi_bass::INVERTER_NODE`).
+        pi_supply: crate::circuits::plexi_bass::INVERTER_NODE,
+        couple: 0.1e-6,
+        ..Self::PLEXI_EL34
+    };
+
+    /// The Laney Supergroup 100 Mk I's, from the traced drawing of a 1969 build
+    /// ("SUPERGROUP 100 mk I build '69", vddj, 2008, sheets 1 and 2): the
+    /// matched power stage of the Brum 100 (`circuits::brum100`). See
+    /// `docs/models/brum_100.md`.
+    ///
+    /// Marshall-like and not a Marshall:
+    ///
+    /// - **600 V on the plates** (HT1, printed on the supply sheet) and
+    ///   **-54 V** of bias (Vbias, printed beside it), where a 1959 runs about
+    ///   460 V. The screens come off HT2, behind a 20 H choke.
+    /// - **10 k grid stoppers** (R33-R36) and **470 ohm screen resistors**
+    ///   (R40-R43), where the Marshall has 5.6 k and 1 k.
+    /// - **.1 uF** couplings (C20/C21) into 220 k leaks, as the 1992 Super Bass.
+    /// - **A 3.3 k presence** (R37) whose track is the bottom of the tail, with
+    ///   C18 100 nF on its wiper: the 1959's arrangement with a smaller pot, so
+    ///   the presence shelf sits higher. 100 k of feedback (R21) from the 16 ohm
+    ///   tap, and the tail's 10 k (R22) and 470 ohm (R28), 1 M legs, 22 nF to the
+    ///   second grid (C17) and 47 pF across the plates (C19).
+    ///
+    /// ESTIMATED: the supply's source resistance and HT2 (the choke's copper is
+    /// not printed); the output transformer, which is the Brit EL34's 1.7 k
+    /// replacement-iron data at the 16 ohm tap, as the Brit Plexi's is; the
+    /// presence law, which the trace leaves as "Key=P" (linear, as the
+    /// 1959's).
+    pub const BRUM_EL34: PowerSpec = PowerSpec {
+        name: "Brum EL34 (Laney Supergroup 100 Mk I, 1969)",
+        // No master: the treble wiper drives C16 directly.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 22e-9, // C16
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0, // R26
+        pi_leak_lower: 1_000_000.0, // R27
+        pi_cathode: 470.0,          // R28
+        pi_tail: 10_000.0,          // R22
+        // R37's 3.3 k track is the tail's return; see `presence_on_tail`.
+        pi_tail_lower: 3_300.0,
+        pi_cross: 22e-9,           // C17
+        pi_plate_driven: 82_000.0, // R29
+        pi_plate_other: 100_000.0, // R30
+        // HT3, behind R39 2.7 k, with the inverter and the preamplifier
+        // drawing from it (`brum100::INVERTER_NODE`).
+        pi_supply: crate::circuits::brum100::INVERTER_NODE,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 47e-12, // C19
+        couple: 0.1e-6,       // C20, C21
+        grid_leak: 220_000.0, // R31, R32
+        // 10 k per valve, two a side.
+        stopper: 5_000.0,
+        // 470 ohm per valve.
+        screen_resistor: 235.0,
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::EL34,
+        // DOCUMENTED on the trace's supply sheet.
+        bias: -54.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // HT1, DOCUMENTED on the trace (whether loaded is not said).
+        plate_supply: 600.0,
+        screen_supply: crate::circuits::brum100::SCREEN_NODE,
+        // ESTIMATED, as for the Brit Plexi EL34.
+        supply_resistance: 100.0,
+        rectifier: None,
+        // C1-C4: two pairs of 33 uF in parallel, the pairs in series.
+        reservoir: 33e-6,
+        // ESTIMATED: the 20 H choke's copper, which is not printed.
+        screen_resistance: 150.0,
+        // C24 and C25, 33 uF each in series.
+        screen_reservoir: 16.5e-6,
+        // APPROXIMATED: the Brit EL34's 1.7 k data, at the 16 ohm tap.
+        ratio: 10.307_764_064_044_152,
+        primary_resistance: 15.96,
+        primary_inductance: 8.85,
+        leakage: 7.97e-3 / 106.25,
+        // The same core as the Brit EL34's: 100 W, so 40 V rms at 16 ohm.
+        saturation_volts: 56.568_542_494_923_8,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 16.0,
+        feedback: 100_000.0, // R21, from the 16 ohm tap
+        presence_pot: 3_300.0,
+        presence_cap: 0.1e-6, // C18
+        presence_taper: Taper::Linear,
+        presence_on_tail: true,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
+        series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
+    };
+
+    /// The Sunn Model T's, from Sunn's own drawing D-1029 revision A, ECN 441,
+    /// 25 September 1973, with its voltage chart: the matched power stage of
+    /// the Oregon T (`circuits::oregon_t`). See `docs/models/oregon_t.md`.
+    ///
+    /// The first **ultra-linear** stage here and the first with **6550s**:
+    ///
+    /// - Four 6550s whose screens return through **1.5 k 5 W** (R36, R37,
+    ///   R40, R41) to taps on the output transformer's primary, one tap a side,
+    ///   and whose plates reach it through **47 ohm 5 W** (R35, R38, R39, R42).
+    ///   The tap's fraction is not on the drawing: **40 %**, GE's own
+    ///   ultra-linear figure for the valve, ESTIMATED.
+    /// - A 12AX7 long-tailed pair with **82 k / 120 k** plates (R27, R28) from
+    ///   B, 270 pF across them (C11), 1 M legs (R21, R24), 470 ohm (R23) and
+    ///   4.7 k (R22) down to the feedback node, 10 k (R26) from there to ground,
+    ///   0.1 uF (C10) to the second grid, .022 (C8) in.
+    /// - **.25 uF** couplings (C12, C13) into **100 k** leaks (R29, R30) to the
+    ///   -55 V supply, 1 k stoppers.
+    /// - **22 k of feedback from the 16 ohm tap** (R20), built as drawn: the
+    ///   secondary here is the 16 ohm tap, and the chart's 4 ohm load on the
+    ///   4 ohm tap is the same load to the valves. Not 11 k from 4 ohm, which
+    ///   passes the same signal current but at DC puts half the resistance from
+    ///   the inverter's tail to ground: the tail came out at 32.8 V that way,
+    ///   and the chart says 38. And the **presence**: C9 .022 off the feedback node into R25, 25 k
+    ///   "REV LOG" wired as a rheostat to ground (`Taper::AntiAudio`).
+    ///
+    /// From the chart, no signal / 150 W into 4 ohm: A 519 / 481 V, B 419 V,
+    /// grids -53 / -55 V, plates 507 / 472 V, screens 504 / 459 V. The bias is
+    /// the grids' no-signal reading. The inverter is fed from B as a stiff
+    /// 419 V (APPROXIMATED: the chart's B under load is illegible). The supply
+    /// is A behind a resistance fitted to the chart's sag, 519 V to 481 V
+    /// (`examples/oregon_t_op.rs`), with C18's 20 uF; the two parallel chokes
+    /// and C17 before them are not built.
+    ///
+    /// ESTIMATED: the transformer -- 2 k plate to plate, which is what GE's
+    /// ultra-linear row asks for four valves (4 k for two), its inductance,
+    /// leakage and core -- and the tap.
+    pub const OREGON_6550: PowerSpec = PowerSpec {
+        name: "Oregon 6550 (Sunn Model T, D-1029 A, 1973)",
+        // The master is R19, in the preamplifier. Wide open, so it is not one.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.022e-6, // C8
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0, // R21
+        pi_leak_lower: 1_000_000.0, // R24
+        pi_cathode: 470.0,          // R23
+        pi_tail: 4_700.0,           // R22
+        pi_tail_lower: 10_000.0,    // R26
+        pi_cross: 0.1e-6,           // C10
+        pi_plate_driven: 82_000.0,  // R27
+        pi_plate_other: 120_000.0,  // R28
+        // B, no signal, from the chart.
+        pi_supply: 419.0,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 270e-12, // C11
+        couple: 0.25e-6,       // C12, C13
+        grid_leak: 100_000.0,  // R29, R30
+        // 1 k per valve, two a side.
+        stopper: 500.0,
+        // 1.5 k 5 W per valve, to the tap.
+        screen_resistor: 750.0,
+        tubes_per_side: 2.0,
+        tube: PentodeSpec::T6550,
+        // The grids' no-signal reading on the chart (points 13 and 14).
+        bias: -53.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // Fitted so that A sits at the chart's 519 V with no signal and 481 V
+        // at 150 W; see `examples/oregon_t_op.rs`.
+        plate_supply: OREGON_A_OPEN,
+        // Not built: the screens are on the taps.
+        screen_supply: 0.0,
+        supply_resistance: OREGON_A_SOURCE,
+        rectifier: None,
+        reservoir: 20e-6, // C18
+        screen_resistance: 0.0,
+        screen_reservoir: 0.0,
+        // ESTIMATED: 2 k plate to plate, at the 16 ohm tap.
+        ratio: 11.180_339_887_498_949,
+        // ESTIMATED; the direct current reaches the plates through the ideal
+        // windings here, so this is the magnetising branch's copper only.
+        primary_resistance: 19.0,
+        // ESTIMATED: twice the 2203 iron's for a bass amplifier's transformer.
+        primary_inductance: 15.0,
+        // APPROXIMATED: the 2203 iron's leakage referred to the primary.
+        leakage: 7.97e-3 / 125.0,
+        // ESTIMATED: sized to hold 150 W (69.3 V peak at 16 ohm) at 40 Hz.
+        saturation_volts: 69.282_032_302_755_09,
+        saturation_hz: 40.0,
+        core_sharpness: 6.0,
+        speaker: 16.0,
+        feedback: 22_000.0,     // R20, from the 16 ohm tap
+        presence_pot: 25_000.0, // R25
+        presence_cap: 0.022e-6, // C9
+        presence_taper: Taper::AntiAudio,
+        presence_on_tail: false,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
+        series_loop: None,
+        // ESTIMATED: GE's ultra-linear figure for the 6550.
+        screen_tap: 0.40,
+        // 47 ohm 5 W per valve.
+        plate_resistor: 23.5,
+        follower_front: None,
+    };
+    /// The Ampeg SVT's, from Ampeg's "SVT POWER AMP SCHEMATIC" D 591720
+    /// revision H (1975): the matched power stage of the American SVT
+    /// (`circuits::american_svt`). See `docs/models/american_svt.md`.
+    ///
+    /// - **Six 6550s**, three a side, each with a 5.1 ohm 5 W plate resistor, a
+    ///   22 ohm screen resistor from E (350 V) and a 47 k grid resistor from
+    ///   its bank's follower. Plates on A, 660 V with no signal.
+    /// - Everything ahead of them is `FollowerFront::SVT`: a gain stage, a
+    ///   cathodyne, and a 12BH7 gain stage and direct-coupled follower a side.
+    /// - **47 k with 120 pF across it from the 4 ohm tap** (R46, C7) to the
+    ///   gain stage's cathode.
+    /// - The transformer's ratio is the drawing's own: its boxed test voltages
+    ///   put 372 V on each half primary for 34.6 V across 4 ohm, 299 W. So 21.5
+    ///   plate to plate, 1.85 k, which is 5.5 k for each pair of valves.
+    ///
+    /// The idle is the calibration procedure's: 0.072 V across each bank's
+    /// 1 ohm, 24 mA a valve (`FollowerFront::bias_rest`). The 1 ohm resistors
+    /// themselves, the diodes across the screen resistors and the input diodes
+    /// are not built (see the log).
+    ///
+    /// ESTIMATED: the transformer's inductance, copper, leakage and core, and
+    /// the supplies' source resistances (`SVT_A_SOURCE`, `SVT_E_SOURCE`,
+    /// `SVT_D_SOURCE`).
+    pub const SVT_6550: PowerSpec = PowerSpec {
+        name: "American 6550 (Ampeg SVT, D 591720 H, 1975)",
+        // The SVT has no master: its channel volumes are the only level
+        // controls. Wide open, so it is not one.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        // Unused: `follower_front` replaces the long-tailed pair. Stated as
+        // the front's own values where there is one.
+        pi_couple: 0.1e-6,
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 1_000.0,
+        pi_tail: 14_000.0,
+        pi_tail_lower: 0.0,
+        pi_cross: 0.0,
+        pi_plate_driven: 15_000.0,
+        pi_plate_other: 15_000.0,
+        pi_supply: 362.0,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 0.0,
+        couple: 0.0,
+        grid_leak: 0.0,
+        // 47 k a valve (R29, R34, R43 and the lower bank's), three a side.
+        stopper: 47_000.0 / 3.0,
+        // 22 ohm a valve.
+        screen_resistor: 22.0 / 3.0,
+        tubes_per_side: 3.0,
+        tube: PentodeSpec::T6550,
+        // Unused: the followers hold the grids. See `FollowerFront::bias_rest`.
+        bias: 0.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        plate_supply: SVT_A_OPEN,
+        // E, which also feeds the followers and the 12BH7 gain stages.
+        screen_supply: SVT_E_OPEN,
+        supply_resistance: SVT_A_SOURCE,
+        rectifier: None,
+        // C10 and C12A, 100 uF each, in series.
+        reservoir: 50e-6,
+        screen_resistance: SVT_E_SOURCE,
+        screen_reservoir: 100e-6, // C9A
+        // 744 V plate to plate for 34.6 V at 4 ohm: the drawing's boxes.
+        ratio: 744.0 / 34.6,
+        // ESTIMATED, as the Sunn's.
+        primary_resistance: 15.0,
+        // ESTIMATED: a bass amplifier's iron, its open-loop corner near 15 Hz
+        // against 1.85 k.
+        primary_inductance: 20.0,
+        // APPROXIMATED: the Sunn's leakage scaled to the 4 ohm tap, so its top
+        // corner against the load is where the Sunn's is.
+        leakage: 7.97e-3 / 125.0 / 4.0,
+        // ESTIMATED: sized to hold 300 W (49 V peak at 4 ohm) at 40 Hz.
+        saturation_volts: 48.989_794_855_663_56,
+        saturation_hz: 40.0,
+        core_sharpness: 6.0,
+        speaker: 4.0,
+        feedback: 47_000.0, // R46, from the 4 ohm tap
+        presence_pot: 0.0,
+        presence_cap: 0.0,
+        presence_taper: Taper::Linear,
+        presence_on_tail: false,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
+        series_loop: None,
+        screen_tap: 0.0,
+        // 5.1 ohm 5 W a valve.
+        plate_resistor: 5.1 / 3.0,
+        follower_front: Some(&FollowerFront::SVT),
     };
 }
 
@@ -1471,126 +2016,15 @@ impl PowerSpec {
     }
 }
 
-pub fn build(spec: &PowerSpec, source: f64) -> Result<Circuit, Fault> {
-    tap(spec, source, "spk")
-}
-
-/// The same amplifier brought out at a chosen node, for measuring one stage at
-/// a time.
-pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
-    assemble(spec, source, at, None).map(|(circuit, _)| circuit)
-}
-
-/// The amplifier driving a loudspeaker instead of a resistor. The driver is
-/// stamped into this netlist, at the transformer tap the spec was drawn for, so
-/// the tubes, the transformer and the feedback loop all see its impedance. See
-/// `acoustics::speaker`.
-pub fn build_with_speaker(
+/// The long-tailed pair and its grid network, which every stage but the SVT's
+/// has, built part for part in the order it always was. Returns the node the
+/// feedback loop comes back to.
+fn long_tailed_pair(
+    net: &mut Netlist,
     spec: &PowerSpec,
-    source: f64,
-    load: &LoadValues,
-) -> Result<(Circuit, LoadSlots), Fault> {
-    build_with_speaker_and(spec, source, load, &Parasitics::of(spec))
-}
-
-/// As `build_with_speaker`, with the high-frequency parasitics stated explicitly.
-pub fn build_with_speaker_and(
-    spec: &PowerSpec,
-    source: f64,
-    load: &LoadValues,
-    parasitics: &Parasitics,
-) -> Result<(Circuit, LoadSlots), Fault> {
-    assemble(spec, source, "spk", Some((load, parasitics)))
-        .map(|(circuit, slots)| (circuit, slots.expect("a speaker was stamped")))
-}
-
-/// The capacitance a resistor-loaded power netlist leaves out.
-///
-/// Into a resistor it barely matters, and the legacy netlists every calibration
-/// was measured on do not have it. Into a loudspeaker it does. When the output
-/// tubes cut off hard into an inductive load, only the transformer's winding
-/// capacitance limits how fast the plates can fly. Without it, a heavily fed-back
-/// stage (Twin, 5150) driven far into clipping at high frequency failed to
-/// converge and swung to a kilovolt at 192 kHz. Measured with the lossy coil:
-/// 1.5-4.7 nF removed every unsettled solve and bounded the output, and changed
-/// moderate-drive output by under 0.1 %.
-///
-/// No winding capacitance is published for any of these transformers. Hammond's
-/// 1750U (2203 replacement) response tolerance, 50 Hz-12 kHz at 0/-1 dB, bounds it
-/// below about 11 nF. So `of` is ESTIMATED by one rule: the capacitance that puts the
-/// loaded primary's high-frequency corner at 30 kHz. The published tube
-/// interelectrode capacitances (JJ EL34, RCA 6L6GC) were tried as well. With this
-/// otherwise incomplete high-frequency network they *reduced* stability margins,
-/// so they are not stamped. See docs/models/speakers.md.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Parasitics {
-    /// Across the whole primary, plate to plate, farads. Zero means not stamped.
-    pub primary_cap: f64,
-}
-
-impl Parasitics {
-    pub const NONE: Parasitics = Parasitics { primary_cap: 0.0 };
-
-    /// Where the loaded primary's high-frequency corner is put. See above.
-    pub const PRIMARY_CORNER_HZ: f64 = 30_000.0;
-
-    pub fn of(spec: &PowerSpec) -> Parasitics {
-        let raa = spec.ratio * spec.ratio * spec.speaker;
-        Parasitics {
-            primary_cap: 1.0 / (std::f64::consts::TAU * Self::PRIMARY_CORNER_HZ * raa),
-        }
-    }
-}
-
-/// The impedance multiplier that refers an 8 ohm driver to this spec's tap.
-pub fn speaker_scale(spec: &PowerSpec) -> f64 {
-    spec.speaker / crate::acoustics::speaker::SpeakerProfile::NOMINAL_OHMS
-}
-
-fn assemble(
-    spec: &PowerSpec,
-    source: f64,
-    at: &str,
-    load: Option<(&LoadValues, &Parasitics)>,
-) -> Result<(Circuit, Option<LoadSlots>), Fault> {
-    let mut net = Netlist::new(spec.name);
-
-    // --- the long-tailed pair ----------------------------------------------
-    // The grid-leak chain is two resistors in series and the junction of them
-    // is not ground: it carries the joined cathodes through `pi_cathode`, and
-    // the tail hangs off it. That is what makes this a pair rather than two
-    // stages sharing a socket -- the current one half stops drawing, the other
-    // half takes, and the tail voltage is what tells it to.
-    // A direct-coupled inverter is handed the driver's direct voltage as well as
-    // its signal; a capacitor-coupled one is handed the signal alone.
-    let twin_supply = spec.name == PowerSpec::TWIN.name;
-    net.input_at("in", source, spec.driver_volts);
-    // The AB763 Twin has no master volume. Every other modular power model may
-    // keep its real/synthetic interstage master, but inserting a 1 MΩ pot into
-    // the Twin adds both a nonexistent divider and a parallel load at the exact
-    // hand-off we are trying to model. For the Twin the channel-mix source goes
-    // straight to the stock 0.001 µF phase-inverter coupling capacitor.
-    let master_node = if twin_supply {
-        "in"
-    } else {
-        net.rest(MASTER, spec.master_rest).pot(
-            "in",
-            "master",
-            "gnd",
-            spec.master,
-            Taper::Audio,
-            MASTER,
-        );
-        "master"
-    };
-    // The Mark IIC+'s graphic output follower, which is what drives its
-    // inverter; see `SeriesLoop`.
-    let master_node = if spec.series_loop.is_some() {
-        net.linear_opamp("pi_drive", master_node, "pi_drive");
-        "pi_drive"
-    } else {
-        master_node
-    };
+    master_node: &'static str,
+    twin_supply: bool,
+) -> &'static str {
     // How the inverter's grids get their direct voltage, which is most of what
     // decides whether an amplifier stays clean when it is driven hard.
     //
@@ -1734,6 +2168,195 @@ fn assemble(
     if let Some(l) = spec.series_loop {
         net.capacitor("pi_p2", "gnd", l.other_plate_cap);
     }
+    tail
+}
+
+/// The SVT's front end: V1a with the loop on its cathode, the cathodyne, and a
+/// 12BH7 gain stage and direct-coupled follower a side, each follower's
+/// cathode (`f_fk1`, `f_fk2`) left for the output valves' stoppers. Returns the
+/// loop's node. See `FollowerFront`.
+fn follower_front(net: &mut Netlist, f: &FollowerFront, master_node: &'static str) -> &'static str {
+    // V1a, with R4 and R5 under it and the loop landing between them.
+    net.resistor(master_node, "f_g1", f.input_series) // R1
+        .resistor("f_g1", "gnd", f.input_leak) // R2
+        .supply("f_c", f.rail_dropper, f.rail_upstream) // R50 from B
+        .capacitor("f_c", "gnd", f.rail_reservoir) // C12B
+        .resistor("f_c", "f_p1", f.gain_plate) // R3
+        .triode("f_p1", "f_g1", "f_k1", f.tube)
+        .resistor("f_k1", "f_fb", f.gain_cathode) // R4
+        .resistor("f_fb", "gnd", f.feedback_foot); // R5
+                                                   // V1b, the cathodyne: equal loads above and below, so its plate and its
+                                                   // cathode swing equally and oppositely. The grid leak returns below R8,
+                                                   // which is what lets the grid sit at the cathode's direct voltage.
+    net.capacitor("f_p1", "f_g2", f.interstage) // C1
+        .capacitor("f_p1", "f_p2", f.plate_to_plate) // 20 pF
+        .capacitor("f_g2", "gnd", f.grid_shunt) // C2
+        .resistor("f_g2", "f_kb", f.split_leak) // R7
+        .resistor("f_c", "f_p2", f.split_plate) // R6
+        .triode("f_p2", "f_g2", "f_k2", f.tube)
+        .resistor("f_k2", "f_kb", f.split_bias) // R8
+        .resistor("f_kb", "gnd", f.split_load); // R9 + VR3
+                                                // H off E (`scr`) through R52, and D, the bias rail.
+    net.resistor("scr", "f_h", f.driver_dropper) // R52
+        .capacitor("f_h", "gnd", f.driver_reservoir) // C9B
+        .supply("f_neg", f.bias_source, f.bias_rail)
+        .capacitor("f_neg", "gnd", f.bias_reservoir); // C8
+                                                      // Each side: the cathodyne's plate drives the upper bank (side 1, `pl_a`),
+                                                      // its cathode the lower. The BIAS CONTROL is built as the two halves of
+                                                      // its track at its rest, since nothing turns it.
+    let upper = f.bias_upper + f.bias_pot * (1.0 - f.bias_rest);
+    let lower = f.bias_lower + f.bias_pot * f.bias_rest;
+    for (side, from) in [(1usize, "f_p2"), (2, "f_k2")] {
+        let grid = format!("f_dg{side}");
+        let plate = format!("f_dp{side}");
+        let cathode = format!("f_dk{side}");
+        let coupled = format!("f_n{side}");
+        let wiper = format!("f_bw{side}");
+        let follower_grid = format!("f_fg{side}");
+        let follower = format!("f_fk{side}");
+        net.capacitor(from, &grid, f.split_couple) // C3 / C4
+            .resistor(&grid, "gnd", f.driver_leak) // R10 / R11
+            .resistor("f_h", &plate, f.driver_plate) // R15 / R14
+            .triode(&plate, &grid, &cathode, f.driver_tube)
+            .resistor(&cathode, "gnd", f.driver_cathode) // R12 / R13
+            .capacitor(&plate, &coupled, f.follower_couple) // C5 / C6
+            .resistor(&coupled, &follower_grid, f.follower_stopper) // R16 / R18
+            .resistor(&coupled, &wiper, f.follower_feed) // R17 / R19
+            .resistor("f_neg", &wiper, upper) // R20 / R23 and the track
+            .resistor(&wiper, "gnd", lower) // the track and R21 / R22
+            .triode("scr", &follower_grid, &follower, f.driver_tube)
+            .resistor(&follower, "f_neg", f.follower_load); // R24 / R25
+    }
+    "f_fb"
+}
+
+pub fn build(spec: &PowerSpec, source: f64) -> Result<Circuit, Fault> {
+    tap(spec, source, "spk")
+}
+
+/// The same amplifier brought out at a chosen node, for measuring one stage at
+/// a time.
+pub fn tap(spec: &PowerSpec, source: f64, at: &str) -> Result<Circuit, Fault> {
+    assemble(spec, source, at, None).map(|(circuit, _)| circuit)
+}
+
+/// The amplifier driving a loudspeaker instead of a resistor. The driver is
+/// stamped into this netlist, at the transformer tap the spec was drawn for, so
+/// the tubes, the transformer and the feedback loop all see its impedance. See
+/// `acoustics::speaker`.
+pub fn build_with_speaker(
+    spec: &PowerSpec,
+    source: f64,
+    load: &LoadValues,
+) -> Result<(Circuit, LoadSlots), Fault> {
+    build_with_speaker_and(spec, source, load, &Parasitics::of(spec))
+}
+
+/// As `build_with_speaker`, with the high-frequency parasitics stated explicitly.
+pub fn build_with_speaker_and(
+    spec: &PowerSpec,
+    source: f64,
+    load: &LoadValues,
+    parasitics: &Parasitics,
+) -> Result<(Circuit, LoadSlots), Fault> {
+    assemble(spec, source, "spk", Some((load, parasitics)))
+        .map(|(circuit, slots)| (circuit, slots.expect("a speaker was stamped")))
+}
+
+/// The capacitance a resistor-loaded power netlist leaves out.
+///
+/// Into a resistor it barely matters, and the legacy netlists every calibration
+/// was measured on do not have it. Into a loudspeaker it does. When the output
+/// tubes cut off hard into an inductive load, only the transformer's winding
+/// capacitance limits how fast the plates can fly. Without it, a heavily fed-back
+/// stage (Twin, 5150) driven far into clipping at high frequency failed to
+/// converge and swung to a kilovolt at 192 kHz. Measured with the lossy coil:
+/// 1.5-4.7 nF removed every unsettled solve and bounded the output, and changed
+/// moderate-drive output by under 0.1 %.
+///
+/// No winding capacitance is published for any of these transformers. Hammond's
+/// 1750U (2203 replacement) response tolerance, 50 Hz-12 kHz at 0/-1 dB, bounds it
+/// below about 11 nF. So `of` is ESTIMATED by one rule: the capacitance that puts the
+/// loaded primary's high-frequency corner at 30 kHz. The published tube
+/// interelectrode capacitances (JJ EL34, RCA 6L6GC) were tried as well. With this
+/// otherwise incomplete high-frequency network they *reduced* stability margins,
+/// so they are not stamped. See docs/models/speakers.md.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Parasitics {
+    /// Across the whole primary, plate to plate, farads. Zero means not stamped.
+    pub primary_cap: f64,
+}
+
+impl Parasitics {
+    pub const NONE: Parasitics = Parasitics { primary_cap: 0.0 };
+
+    /// Where the loaded primary's high-frequency corner is put. See above.
+    pub const PRIMARY_CORNER_HZ: f64 = 30_000.0;
+
+    pub fn of(spec: &PowerSpec) -> Parasitics {
+        let raa = spec.ratio * spec.ratio * spec.speaker;
+        Parasitics {
+            primary_cap: 1.0 / (std::f64::consts::TAU * Self::PRIMARY_CORNER_HZ * raa),
+        }
+    }
+}
+
+/// The impedance multiplier that refers an 8 ohm driver to this spec's tap.
+pub fn speaker_scale(spec: &PowerSpec) -> f64 {
+    spec.speaker / crate::acoustics::speaker::SpeakerProfile::NOMINAL_OHMS
+}
+
+fn assemble(
+    spec: &PowerSpec,
+    source: f64,
+    at: &str,
+    load: Option<(&LoadValues, &Parasitics)>,
+) -> Result<(Circuit, Option<LoadSlots>), Fault> {
+    let mut net = Netlist::new(spec.name);
+
+    // --- the long-tailed pair ----------------------------------------------
+    // The grid-leak chain is two resistors in series and the junction of them
+    // is not ground: it carries the joined cathodes through `pi_cathode`, and
+    // the tail hangs off it. That is what makes this a pair rather than two
+    // stages sharing a socket -- the current one half stops drawing, the other
+    // half takes, and the tail voltage is what tells it to.
+    // A direct-coupled inverter is handed the driver's direct voltage as well as
+    // its signal; a capacitor-coupled one is handed the signal alone.
+    let twin_supply = spec.name == PowerSpec::TWIN.name;
+    net.input_at("in", source, spec.driver_volts);
+    // The AB763 Twin has no master volume. Every other modular power model may
+    // keep its real/synthetic interstage master, but inserting a 1 MΩ pot into
+    // the Twin adds both a nonexistent divider and a parallel load at the exact
+    // hand-off we are trying to model. For the Twin the channel-mix source goes
+    // straight to the stock 0.001 µF phase-inverter coupling capacitor.
+    let master_node = if twin_supply {
+        "in"
+    } else {
+        net.rest(MASTER, spec.master_rest).pot(
+            "in",
+            "master",
+            "gnd",
+            spec.master,
+            Taper::Audio,
+            MASTER,
+        );
+        "master"
+    };
+    // The Mark IIC+'s graphic output follower, which is what drives its
+    // inverter; see `SeriesLoop`.
+    let master_node = if spec.series_loop.is_some() {
+        net.linear_opamp("pi_drive", master_node, "pi_drive");
+        "pi_drive"
+    } else {
+        master_node
+    };
+    // The inverter: a long-tailed pair everywhere but the SVT, whose front end
+    // stands in its place and in place of the output grids' coupling. Either
+    // way `tail` is where the loop comes back.
+    let tail = match spec.follower_front {
+        Some(front) => follower_front(&mut net, front, master_node),
+        None => long_tailed_pair(&mut net, spec, master_node, twin_supply),
+    };
 
     // --- the supplies ------------------------------------------------------
     // A voltage behind a resistance with a reservoir across it. Under load the
@@ -1762,9 +2385,13 @@ fn assemble(
         }
         None => {
             net.supply("ht", spec.supply_resistance, spec.plate_supply)
-                .capacitor("ht", "gnd", spec.reservoir)
-                .supply("scr", spec.screen_resistance, spec.screen_supply)
-                .capacitor("scr", "gnd", spec.screen_reservoir);
+                .capacitor("ht", "gnd", spec.reservoir);
+            // An ultra-linear stage's screens hang off the primary, not a
+            // supply of their own.
+            if spec.screen_tap <= 0.0 {
+                net.supply("scr", spec.screen_resistance, spec.screen_supply)
+                    .capacitor("scr", "gnd", spec.screen_reservoir);
+            }
         }
         Some(valve) => {
             // The transformer behind the valve, the valve, then the reservoir.
@@ -1799,6 +2426,9 @@ fn assemble(
             .resistor("bias", "bias_leg", 5_000.0)
             .resistor("bias_leg", "gnd", 27_000.0);
         ("bias", "gnd")
+    } else if spec.follower_front.is_some() {
+        // The followers hold the grids; there is no leak to return.
+        ("gnd", "gnd")
     } else {
         // Stiff generic fixed-bias source used by the other power models.
         net.supply("bias", 22_000.0, spec.bias);
@@ -1810,18 +2440,53 @@ fn assemble(
         let grid = format!("og{side}");
         let node = format!("on{side}");
         let screen = format!("os{side}");
-        net.capacitor(from, &node, spec.couple)
-            .resistor(&node, leak_return, spec.grid_leak)
-            .resistor(&node, &grid, spec.stopper)
-            .resistor("scr", &screen, spec.screen_resistor)
-            .pentode(
-                plate,
+        // Ultra-linear: each side's screens return to the tap on its own half
+        // of the primary (built with the transformer, below).
+        let screen_feed = match (spec.screen_tap > 0.0, side) {
+            (false, _) => "scr",
+            (true, 1) => "tap_a",
+            (true, _) => "tap_b",
+        };
+        // With plate resistors the valves' plates are a node of their own,
+        // and the resistor joins it to the winding after the valve is placed,
+        // so a stage without them is built part for part as it always was.
+        let anode = if spec.plate_resistor > 0.0 {
+            format!("ov{side}")
+        } else {
+            plate.to_string()
+        };
+        if spec.follower_front.is_some() {
+            // Straight from the bank's follower, through its stoppers.
+            net.resistor(&format!("f_fk{side}"), &grid, spec.stopper)
+                .resistor(screen_feed, &screen, spec.screen_resistor);
+        } else {
+            net.capacitor(from, &node, spec.couple)
+                .resistor(&node, leak_return, spec.grid_leak)
+                .resistor(&node, &grid, spec.stopper)
+                .resistor(screen_feed, &screen, spec.screen_resistor);
+        }
+        if spec.screen_tap > 0.0 {
+            net.pentode_on_winding(
+                &anode,
                 &grid,
                 cathode,
                 &screen,
                 spec.tubes_per_side,
                 spec.tube,
             );
+        } else {
+            net.pentode(
+                &anode,
+                &grid,
+                cathode,
+                &screen,
+                spec.tubes_per_side,
+                spec.tube,
+            );
+        }
+        if spec.plate_resistor > 0.0 {
+            net.resistor(&anode, plate, spec.plate_resistor);
+        }
     }
     // The cut control, across the two grids it has just built.
     if spec.cut_pot > 0.0 {
@@ -1925,6 +2590,17 @@ fn assemble(
     }
     net.transformer("pl_a", "ht", "sec", "gnd", each)
         .transformer("ht", "pl_b", "sec", "gnd", each);
+    // The ultra-linear taps: a third and fourth winding on the same secondary,
+    // each `screen_tap` of its half's turns, so each tap follows its own plate
+    // by that fraction of the swing, `v(tap) - v(ht) = x (v(plate) - v(ht))`.
+    // The screens' current comes back through the windings it flows in, so it
+    // is reflected to the secondary the way the plates' is, and a balanced
+    // pair's cancels in the core.
+    if spec.screen_tap > 0.0 {
+        let tap = each * spec.screen_tap;
+        net.transformer("tap_a", "ht", "sec", "gnd", tap)
+            .transformer("ht", "tap_b", "sec", "gnd", tap);
+    }
     if twin_supply {
         // The Twin's low-frequency output-transformer saturation is the one
         // measured source of audible 48 kHz fold-back. Antialias only this
@@ -2002,6 +2678,10 @@ fn assemble(
         .capacitor("fb_r", tail, l.shelf_cap); // C61
     } else if spec.feedback > 0.0 {
         net.resistor("spk", tail, spec.feedback);
+        // The SVT's C7 across R46.
+        if let Some(f) = spec.follower_front {
+            net.capacitor("spk", tail, f.feedback_cap);
+        }
         // Not every amplifier with a loop puts a presence control in it. The
         // Hiwatt's is in its preamplifier and is not built; see `circuits::dr103`.
         if spec.presence_pot > 0.0 && spec.presence_on_tail {

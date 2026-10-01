@@ -230,9 +230,11 @@ fn it_is_a_pedal_and_a_circuit() {
         "pedal_boss_ds1_circuit"
     );
     assert_eq!(Circuit::Ds1.voice(), Gain::Ds1);
-    // Appended to both lists, so nothing recorded against them moves.
-    assert_eq!(PedalModel::ALL.last(), Some(&PedalModel::OrangeDist));
-    assert_eq!(Circuit::ALL.last(), Some(&Circuit::Ds1));
+    // Appended to both lists, so nothing recorded against them moves -- and
+    // it stays where it was appended when later entries follow it (the
+    // Treble Boost and the three amplifiers of 2026-10-01).
+    assert_eq!(PedalModel::ALL[9], PedalModel::OrangeDist);
+    assert_eq!(Circuit::ALL[31], Circuit::Ds1);
 
     assert_eq!(
         Pedal::OrangeDist.tone_labels(),

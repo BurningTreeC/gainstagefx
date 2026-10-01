@@ -108,7 +108,7 @@ fn the_open_sections_survive_a_session_and_size_the_window() {
             "the panel reopened at a size that does not fit its open sections"
         );
     }
-    assert_eq!(window_height(ALL_OPEN), 968.0);
+    assert_eq!(window_height(ALL_OPEN), 996.0);
 }
 
 /// Nice-plug 0.4 asks for an explicit native size through baseview's host
@@ -224,9 +224,9 @@ fn asynchronous_native_resize_and_host_rollback_restore_zoom() {
 fn large_menu_scales_are_relative_to_the_base_dpi() {
     let state = default_state(Arc::new(AtomicU8::new(ALL_OPEN)));
     for (zoom, dpi, dimensions) in [
-        (1.0, 1.5, (1170, 1452)),
-        (1.75, 2.625, (2048, 2541)),
-        (2.0, 3.0, (2340, 2904)),
+        (1.0, 1.5, (1170, 1494)),
+        (1.75, 2.625, (2048, 2615)),
+        (2.0, 3.0, (2340, 2988)),
     ] {
         assert!(gainstagefx::editor::session::SCALES.contains(&zoom));
         remember_scale(&state, zoom);

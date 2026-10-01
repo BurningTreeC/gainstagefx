@@ -97,6 +97,7 @@ committing it.
 | American Alnico | `spk_jensen_p12n` | 6.03 | 0.433 | 41.33 | 1.013 | 5.71 | 90 | 4.36 | 30.9 | 10.62 | 490.9 | PUBLISHED; coil FITTED |
 | Jazz 12 | `spk_roland_30_103d` | 6.68 | 0.448 | 44.05 | 1.221 | 6.19 | 85 | 9.73 | 28.0 | 10.72 | 490.9 | size/impedance DOCUMENTED; rest ESTIMATED; voicing FITTED to a measurement (below) |
 | Brit K85 | `spk_celestion_g12k85` | 7.0 | 0.448 | 44.05 | 1.221 | 6.19 | 85 | 9.73 | 28.0 | 14.16 | 490.9 | Re/Fs PUBLISHED (for the G12K-100); rest ESTIMATED as for the Celestions (below) |
+| American Bass 10 | `spk_eminence_legend_b810` | 6.875 | 0.594 | 64.24 | 1.047 | 4.94 | 52.07 | 13.91 | 24.0 | 8.85 | 350.1 | PUBLISHED (32 ohm, referred to 8); coil FITTED |
 
 Derived Celestion Qes / Qts / Zmax: V30 0.445 / 0.426 / 167 ohm, Green 25 0.902 / 0.825 / 79 ohm,
 T75 0.856 / 0.787 / 84 ohm. These fall inside the analogue-driver bounds.
@@ -264,3 +265,39 @@ For *Machine Rage '92*'s "1987 Peavey 4x12 cabinet with Celestion G12K-85 speake
 8. **Why.** The G12K-85 is the documented speaker of a documented rig, and the only
    manufacturer data for its design is the G12K-100's.
 
+## American Bass 10: the Eminence Legend B810 (2026-10-01)
+
+For the American 8x10, whose drawing gives its drivers as "32 ohm speakers (8)"
+(Ampeg D 591719).
+
+1. **Revision.** The Eminence Legend B810, 32 ohm, 150 W: Eminence's ten "modeled after
+   vintage 70's SVT speakers" and sold as the direct replacement for Ampeg's 8x10s
+   (WIDELY REPORTED by its retailers). Ampeg's current drivers are "custom 10" Eminence"
+   (Ampeg's product page; part 86-032-01 WIDELY REPORTED), whose data is not published;
+   the 1970s originals' make is disputed (CTS and Eminence are both reported). The B810
+   is therefore a stand-in with the right impedance, size and maker, not the part
+   itself: PLAUSIBLE.
+2. **Original data found?** For the B810, yes: Eminence's data sheet with full T/S
+   parameters and an LMS response and impedance plot
+   ([loudspeakerdatabase.com copy](https://loudspeakerdatabase.com/Eminence/LEGEND_B810)).
+3. **Best source.** That sheet: Fs 52.07 Hz, Re 27.5 ohm, Le 2.72 mH, Qms 13.91, Qes 0.68,
+   Qts 0.65, Bl 17.7 T m, Mms 24 g, Sd 350 cm2, Vas 66.4 L, xmax 4.7 mm, 92.7 dB.
+4. **Cross-check.** The parameters agree with each other: Qes from Fs, Mms, Re and Bl is
+   0.689 (published 0.68). The digitised impedance peak lands at 52.3 Hz (published Fs
+   52.07); its 494 ohm against the T/S's 590 is the plot's resolution at a sharp peak.
+5. **Values** (8 ohm referred: impedances / 4, Bl / 2, as the catalogue's profiles are 8
+   ohm data and eight in parallel are 4 ohm): Re 6.875, L1 0.594 mH, R1 64.24, L2 1.047
+   mH, R2 4.943, Fs 52.07, Qms 13.91, Mms 24.0 g, Bl 8.85, Sd 350.1 cm2.
+6. **Fitted, and how** (`tools/speaker_fit/fit_b810.py`, local like the rest of that
+   folder). The plot was read **by colour against its own frame**, not by eye: the red
+   SPL trace and the pink impedance trace in every pixel column, against the frame's
+   20 Hz-20 kHz and 60-100 dB / 30-600 ohm axes (spot checks: 93.5 dB at 1 kHz, 98.8 dB at
+   2.5 kHz, 30.9 ohm at 200 Hz). The voice coil's lossy-inductance pair is fitted to the
+   impedance above 250 Hz as for the Jensens (log-rms error 0.035, inside their
+   0.029-0.038); the breakup voicing to the SPL exactly as for the Jensens, with the
+   same Jensen-calibrated baffle term (rerun: paths 0.285-1.357 m, and every committed
+   Jensen value reproduces). Peaks 1133 Hz +5.32 dB Q 1.83, 2545 Hz +8.84 dB Q 4.00,
+   4941 Hz +7.28 dB Q 5.30; low-pass 4155 Hz Q 2.50 (at its bound: the sheet's response
+   falls off a cliff at 5 kHz); 1.19 dB rms, 300 Hz-7 kHz, better than any fit here.
+7. **Estimated.** Nothing beyond the stand-in itself: every parameter is the sheet's.
+8. **Why.** The only published data for a 32 ohm ten built to the SVT's specification.

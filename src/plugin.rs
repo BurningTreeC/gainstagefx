@@ -811,6 +811,8 @@ impl Plugin for GainStageFx {
             treble: self.params.treble.smoothed.next_step(samples) as f64,
             twin_low_input: self.params.twin_low_input.value(),
             twin_bright: self.params.twin_bright.value(),
+            low_switch: self.params.low_switch.value().voice(),
+            mid_switch: self.params.mid_switch.value().voice(),
             reverb: self.params.reverb.smoothed.next_step(samples) as f64,
             speed: self.params.speed.smoothed.next_step(samples) as f64,
             intensity: self.params.intensity.smoothed.next_step(samples) as f64,
