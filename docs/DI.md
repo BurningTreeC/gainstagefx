@@ -38,8 +38,9 @@ input x drive volts -> [pedal -> hand-off] -> gain circuit -> graphic -> | power
 - **Pedal** is the pedal's output after the hand-off, inside the oversampled half
   (`Front`).
 - **Preamp** is the sample stream the front half hands the back half (`mid`), the gain
-  circuit's output -- exactly where the 800RB's direct out sits relative to its power
-  amplifier.
+  circuit's output -- ahead of the power amplifier, as an amplifier's direct out is. A
+  circuit that names its own direct-out node is read there instead: the 800RB's, at the
+  return, ahead of the boost that ends the circuit here (`Gain::direct_out`).
 
 ## How a tap is made
 
@@ -67,6 +68,16 @@ input x drive volts -> [pedal -> hand-off] -> gain circuit -> graphic -> | power
      first column): the preamplifier at the level the whole amplifier has at the
      calibration drive, exactly as Power Amp = Bypass is levelled. Measured: within 0.5 dB
      of the input for the Clean, SVT, REDD.47 and V76 voices (`tests/di.rs`).
+   - Preamp, for a circuit whose own direct out sits ahead of its last stage
+     (`Gain::direct_out`): the 800RB's is "after the effects loop", and the boost after it
+     is the circuit's last stage here. The tap reads that node, not the output, so the
+     boost moves the amplifier and not the DI. The make-up cannot level it -- the boost
+     clips at the calibration level and the direct out does not, so the make-up lifted it
+     11 dB too far and turned it down as the volume came up -- so it is levelled as the
+     pedal tap is, by what the circuit does to the signal on the way there: its measured
+     small-signal gain to the node at the drive (`src/direct_out.rs`, written by
+     `examples/directout.rs`). Measured: -0.3 dB re the input; the boost from 0.2 to 0.9
+     moves the amplifier 8 dB and the DI 0.1 dB (`tests/di.rs`).
 5. **Cost.** Nothing when the DI is not in use. In use, one decimator and one buffer copy
    a sample -- no solver work at all, since the tap reads what is computed anyway.
 6. **Safety.** No allocation on the audio thread (`assert_no_heap` covers it), tested at

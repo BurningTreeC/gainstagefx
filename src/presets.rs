@@ -1244,6 +1244,31 @@ pub const PRESETS: &[Preset] = &[
         output_trim: 0.0,
         ..base("Preamp", "Bass Driver Direct")
     },
+    // --- American 800RB -----------------------------------------------------------
+    // The 80s solid-state bass head as it is best known: Mid Contour in for the
+    // notch at 500 Hz, Hi Boost in for the edge it puts on a pick or a slap,
+    // the high mid lifted, into its own 300 W stage and an 8x10 (GK's 4x10 is
+    // not modelled).
+    Preset {
+        drive: 0.45,
+        circuit: Circuit::American800RB,
+        tone: ToneStack::Off,
+        bass: 0.6,
+        mid: 0.5,
+        treble: 0.55,
+        // HIGH MID, the circuit's fourth band.
+        tone_sweep: 0.6,
+        twin_bright: true,
+        mid_switch: Switch::Left,
+        cab_model: CabModel::American810,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.05,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -11.1 dB untrimmed through the 8x10,
+        // against the catalogue's -12.8.
+        output_trim: -1.5,
+        ..base("Amplifier", "American 800RB Clank")
+    },
     // The console microphone preamplifier: two cascaded transistor stages with
     // an input transformer. Clean at low drive, warming into subtle harmonic
     // saturation as the gain increases. No cabinet -- this is a preamplifier,

@@ -27,11 +27,11 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, american_svt, bass_driver, bigmuff, brit2205, brit800, brit_drive,
-    british_47, brum100, cabinet, clean_boost, clipper, console_e, deluxe, distortion_plus, dr103,
-    evh5150, german_76, gold_drive, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone,
-    neve, orange_dist, oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent, round_fuzz,
-    studio, tone, treble_boost, ts808, tube610, twin,
+    ac30, american312, american_800rb, american_ss800, american_svt, bass_driver, bigmuff,
+    brit2205, brit800, brit_drive, british_47, brum100, cabinet, clean_boost, clipper, console_e,
+    deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive, heavy_metal, iron, jazz120,
+    jc120_power, markiic, metal_zone, neve, orange_dist, oregon_t, plexi, plexi_bass, power,
+    preamp, rectifier, rodent, round_fuzz, studio, tone, treble_boost, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
@@ -204,12 +204,16 @@ pub enum Gain {
     /// The Tech 21 SansAmp Bass Driver DI, V2, from a trace of a real unit
     /// (`circuits::bass_driver`).
     BassDriver,
+    /// The Gallien-Krueger 800RB's preamp, rev C of 1991, into its own 300 W
+    /// transistor amplifier (`circuits::american_800rb`,
+    /// `circuits::american_ss800`).
+    American800RB,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 43] = [
+    pub const ALL: [Gain; 44] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -253,6 +257,7 @@ impl Gain {
         Gain::British47,
         Gain::German76,
         Gain::BassDriver,
+        Gain::American800RB,
     ];
 
     pub fn name(self) -> &'static str {
@@ -300,6 +305,7 @@ impl Gain {
             Gain::British47 => "EMI REDD.47",
             Gain::German76 => "Telefunken V76",
             Gain::BassDriver => "Tech 21 SansAmp Bass Driver DI",
+            Gain::American800RB => "Gallien-Krueger 800RB",
         }
     }
 
@@ -349,6 +355,7 @@ impl Gain {
             Gain::British47 => british_47::GAIN,
             Gain::German76 => german_76::GAIN,
             Gain::BassDriver => bass_driver::DRIVE,
+            Gain::American800RB => american_800rb::VOLUME,
             _ => clipper::GAIN,
         }
     }
@@ -391,7 +398,8 @@ impl Gain {
             | Gain::DR103
             | Gain::PlexiBass
             | Gain::OregonT
-            | Gain::AmericanSvt => "VOLUME",
+            | Gain::AmericanSvt
+            | Gain::American800RB => "VOLUME",
             // The Laney prints its volumes as gains: this channel's is GAIN TWO.
             Gain::Brum100 => "GAIN",
             Gain::Recto | Gain::Brit2205 => "GAIN",
@@ -415,6 +423,9 @@ impl Gain {
             Gain::Muff | Gain::Rat | Gain::FuzzFace => "VOLUME",
             Gain::DistPlus | Gain::GoldDrive => "OUTPUT",
             Gain::BritDrive | Gain::BassDriver => "LEVEL",
+            // Its masters sit on 10 as the manual says; the knob is the boost,
+            // the preset volume ahead of them.
+            Gain::American800RB => "BOOST",
             _ => "MASTER",
         }
     }
@@ -478,6 +489,7 @@ impl Gain {
             Gain::GoldDrive => Some(Level::Circuit(gold_drive::LEVEL)),
             Gain::BritDrive => Some(Level::Circuit(brit_drive::LEVEL)),
             Gain::BassDriver => Some(Level::Circuit(bass_driver::LEVEL)),
+            Gain::American800RB => Some(Level::Circuit(american_800rb::BOOST)),
             // The MicroAmp's one knob is its gain, already the Drive knob.
             _ => None,
         }
@@ -528,6 +540,13 @@ impl Gain {
             // Active, +-12 dB each; the bass and mid with their shifts on the
             // panel's low and mid switches.
             Gain::BassDriver => Some((bass_driver::BASS, bass_driver::MID, bass_driver::TREBLE)),
+            // Four bands: BASS, LOW MID and TREBLE here, HIGH MID beside them
+            // (`own_sweep`).
+            Gain::American800RB => Some((
+                american_800rb::BASS,
+                american_800rb::LO_MID,
+                american_800rb::TREBLE,
+            )),
             Gain::Neve => None,
             _ => None,
         }
@@ -553,6 +572,8 @@ impl Gain {
             // Not a tone control but the box's one control beyond the stack's
             // three and presence: the blend of dry against the emulation.
             Gain::BassDriver => Some((bass_driver::BLEND, "BLEND")),
+            // The fourth band of its four.
+            Gain::American800RB => Some((american_800rb::HI_MID, "HI MID")),
             _ => None,
         }
     }
@@ -700,6 +721,7 @@ impl Gain {
                 | Gain::British47
                 | Gain::German76
                 | Gain::BassDriver
+                | Gain::American800RB
         )
     }
 
@@ -779,6 +801,18 @@ impl Gain {
     /// their numbers stay in one place; the Jazz 120 is the simpler case and
     /// states its own.
     pub fn input_jacks(self) -> Option<InputJacks> {
+        if self == Gain::American800RB {
+            // One jack and the -10 dB switch: R3 across R5.
+            return Some(InputJacks {
+                series: american_800rb::PAD_SLOT,
+                high_series: american_800rb::SWITCH_OPEN,
+                low_series: american_800rb::SWITCH_CLOSED,
+                jack_load: None,
+                grid_shunt: None,
+                high_label: "Normal",
+                low_label: "-10 dB",
+            });
+        }
         if self == Gain::Jazz120 {
             // R1 33 k on HIGH and R2 68 k on LOW into the same node, and the
             // sheet's own sensitivities beside them.
@@ -828,7 +862,28 @@ impl Gain {
     /// The Bright switch, where the panel has one rather than a capacitor
     /// soldered in. The Deluxe has the capacitor and no switch, so it is
     /// `None` there and the panel greys the control.
+    /// Where the circuit's own direct out is taken, when it has one ahead of
+    /// its output: the node the Preamp DI reads instead of the output. The
+    /// 800RB's is "after the effects loop", ahead of the boost that is the
+    /// circuit's last stage here. Levelled by `DIRECT_OUT_DB`, which
+    /// `examples/directout.rs` measures. See `docs/DI.md`.
+    pub fn direct_out(self) -> Option<&'static str> {
+        match self {
+            Gain::American800RB => Some(american_800rb::DIRECT_OUT),
+            _ => None,
+        }
+    }
+
     pub fn bright_switch(self) -> Option<BrightSwitch> {
+        if self == Gain::American800RB {
+            // HI BOOST: shorts R23 so C26 and R28 bridge the volume.
+            return Some(BrightSwitch {
+                slot: american_800rb::HI_BOOST_SLOT,
+                on: american_800rb::SWITCH_CLOSED,
+                off: american_800rb::SWITCH_OPEN,
+                on_label: "Hi Boost",
+            });
+        }
         if self == Gain::AmericanSvt {
             // ULTRA HI: C6 from VR1's top to its wiper. See `circuits::american_svt`.
             return Some(BrightSwitch {
@@ -873,6 +928,12 @@ impl Gain {
             }),
             // The V76's low cut, its flat position second as every circuit's
             // default is: 80 Hz, flat, 300 Hz, 80 + 300 Hz.
+            // LO CUT, flat second.
+            Gain::American800RB => Some(CircuitSwitch {
+                slots: &american_800rb::LO_CUT_SLOTS,
+                values: &[&american_800rb::LO_CUT[0], &american_800rb::LO_CUT[1]],
+                labels: &["Lo Cut", "Flat"],
+            }),
             // BASS SHIFT, the built position second: 40 Hz, 80 Hz.
             Gain::BassDriver => Some(CircuitSwitch {
                 slots: &bass_driver::BASS_SHIFT_SLOTS,
@@ -907,6 +968,12 @@ impl Gain {
                 labels: &["220 Hz", "800 Hz", "3 kHz"],
             }),
             // The V76's "Gerade / 3 kHz", flat second.
+            // MID CONTOUR, flat second.
+            Gain::American800RB => Some(CircuitSwitch {
+                slots: &american_800rb::CONTOUR_SLOTS,
+                values: &[&american_800rb::CONTOUR[0], &american_800rb::CONTOUR[1]],
+                labels: &["Contour", "Flat"],
+            }),
             // MID SHIFT, the built position second: 1 kHz, 500 Hz.
             Gain::BassDriver => Some(CircuitSwitch {
                 slots: &bass_driver::MID_SHIFT_SLOTS,
@@ -1350,10 +1417,12 @@ pub enum PowerModel {
     /// The Ampeg SVT's six 6550s behind a cathodyne and two direct-coupled
     /// followers. See `power::PowerSpec::SVT_6550`.
     Svt6550,
+    /// The GK 800RB's 300 W transistor amplifier. See `circuits::american_ss800`.
+    AmericanSS800,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 18] = [
+    pub const ALL: [PowerModel; 19] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -1372,6 +1441,7 @@ impl PowerModel {
         PowerModel::BrumEL34,
         PowerModel::Oregon6550,
         PowerModel::Svt6550,
+        PowerModel::AmericanSS800,
     ];
 
     /// The valve stage this model is, where it is one.
@@ -1400,7 +1470,7 @@ impl PowerModel {
             Self::BrumEL34 => &power::PowerSpec::BRUM_EL34,
             Self::Oregon6550 => &power::PowerSpec::OREGON_6550,
             Self::Svt6550 => &power::PowerSpec::SVT_6550,
-            Self::Jazz120SS | Self::British73Out => return None,
+            Self::Jazz120SS | Self::British73Out | Self::AmericanSS800 => return None,
         })
     }
 
@@ -1417,6 +1487,9 @@ impl PowerModel {
         match self.spec() {
             Some(spec) => power::build_with_speaker(spec, 10_000.0, load),
             None if self == Self::British73Out => neve::output_with_speaker(LOAD, load),
+            None if self == Self::AmericanSS800 => {
+                american_ss800::build_with_speaker(3_300.0, load)
+            }
             None => jc120_power::build_with_speaker(1_000.0, load),
         }
     }
@@ -1429,7 +1502,10 @@ impl PowerModel {
             // The JC-120 drives one 8 ohm speaker a side, which is the
             // profile's own impedance; the 73P's transformer is wound for a
             // line and for no impedance of speaker at all. Both take the
-            // profile as it is.
+            // profile as it is. The 800RB's 300 W is rated into 4 ohm.
+            None if self == Self::AmericanSS800 => {
+                4.0 / crate::acoustics::speaker::SpeakerProfile::NOMINAL_OHMS
+            }
             None => 1.0,
         }
     }
@@ -1454,6 +1530,7 @@ impl PowerModel {
             Self::BrumEL34 => 15,
             Self::Oregon6550 => 16,
             Self::Svt6550 => 17,
+            Self::AmericanSS800 => 18,
         }
     }
 
@@ -1484,6 +1561,9 @@ impl PowerModel {
             Self::BrumEL34 => voice_index(Gain::Brum100, Diode::Silicon, Amplifier::Valve),
             Self::Oregon6550 => voice_index(Gain::OregonT, Diode::Silicon, Amplifier::Valve),
             Self::Svt6550 => voice_index(Gain::AmericanSvt, Diode::Silicon, Amplifier::Valve),
+            Self::AmericanSS800 => {
+                voice_index(Gain::American800RB, Diode::Silicon, Amplifier::Valve)
+            }
         }
     }
 }
@@ -1509,10 +1589,11 @@ pub enum PowerAmp {
     BrumEL34,
     Oregon6550,
     Svt6550,
+    AmericanSS800,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -1530,6 +1611,7 @@ impl PowerAmp {
         Self::BrumEL34,
         Self::Oregon6550,
         Self::Svt6550,
+        Self::AmericanSS800,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -1551,6 +1633,7 @@ impl PowerAmp {
                 Gain::Brum100 => Some(PowerModel::BrumEL34),
                 Gain::OregonT => Some(PowerModel::Oregon6550),
                 Gain::AmericanSvt => Some(PowerModel::Svt6550),
+                Gain::American800RB => Some(PowerModel::AmericanSS800),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1575,6 +1658,7 @@ impl PowerAmp {
             Self::BrumEL34 => Some(PowerModel::BrumEL34),
             Self::Oregon6550 => Some(PowerModel::Oregon6550),
             Self::Svt6550 => Some(PowerModel::Svt6550),
+            Self::AmericanSS800 => Some(PowerModel::AmericanSS800),
         }
     }
 }
@@ -2199,6 +2283,9 @@ pub fn build_power(gain: Gain) -> Option<Result<Netlist, Fault>> {
         // same reason the 73P's line driver is its own block. Driven from the
         // main amplifier board's own follower, so the source is low.
         Gain::Jazz120 => Some(jc120_power::build(1_000.0, 8.0)),
+        // The 800RB's 300 W amplifier into its 4 ohm, driven from the boost
+        // stage's drain through the LO master; also not a `PowerSpec`.
+        Gain::American800RB => Some(american_ss800::build(3_300.0, 4.0)),
         _ => gain.power_stage().map(|spec| power::build(spec, 10_000.0)),
     }
 }
@@ -2289,6 +2376,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // At the Braunbuch's own: a 200 ohm generator, a 300 ohm load.
         Gain::German76 => german_76::build(200.0, 300.0),
         Gain::BassDriver => bass_driver::build(10_000.0, 470_000.0),
+        Gain::American800RB => american_800rb::build(10_000.0, 1_000_000.0),
     }
 }
 
@@ -2519,15 +2607,39 @@ pub struct Calibration {
     pub make_up_db: [f64; POINTS],
 }
 
+/// A table sampled at the `knot_position`s, at a drive position between them.
+pub fn knots_at(table: &[f64; POINTS], drive: f64) -> f64 {
+    // Into knot space, which is where the points are evenly spaced. The cube
+    // root is the inverse of `knot_position`.
+    let x = drive.clamp(0.0, 1.0).powf(1.0 / KNOT_SHAPE) * (POINTS - 1) as f64;
+    let i = (x as usize).min(POINTS - 2);
+    let f = x - i as f64;
+    table[i] * (1.0 - f) + table[i + 1] * f
+}
+
+/// The same on a control that is a switch of `steps` positions: the
+/// position's own value, from the knot inside it nearest the knob. See
+/// `Calibration::make_up_db_on`.
+pub fn knots_on(table: &[f64; POINTS], drive: f64, steps: Option<usize>) -> f64 {
+    let Some(n) = steps.filter(|&n| n > 1) else {
+        return knots_at(table, drive);
+    };
+    let drive = drive.clamp(0.0, 1.0);
+    let step = |d: f64| ((d * n as f64) as usize).min(n - 1);
+    (0..POINTS)
+        .filter(|&i| step(knot_position(i)) == step(drive))
+        .min_by(|&a, &b| {
+            (knot_position(a) - drive)
+                .abs()
+                .total_cmp(&(knot_position(b) - drive).abs())
+        })
+        .map_or_else(|| knots_at(table, drive), |i| table[i])
+}
+
 impl Calibration {
     /// The make-up at a drive position, between the measured points.
     pub fn make_up_db_at(&self, drive: f64) -> f64 {
-        // Into knot space, which is where the points are evenly spaced. The
-        // cube root is the inverse of `knot_position`.
-        let x = drive.clamp(0.0, 1.0).powf(1.0 / KNOT_SHAPE) * (POINTS - 1) as f64;
-        let i = (x as usize).min(POINTS - 2);
-        let f = x - i as f64;
-        self.make_up_db[i] * (1.0 - f) + self.make_up_db[i + 1] * f
+        knots_at(&self.make_up_db, drive)
     }
 
     /// The make-up at a drive position on a control that is a switch of
@@ -2541,24 +2653,13 @@ impl Calibration {
     /// nearest the knob -- every position of the twelve the V76 has holds at
     /// least one of the thirty-three.
     pub fn make_up_db_on(&self, drive: f64, steps: Option<usize>) -> f64 {
-        let Some(n) = steps.filter(|&n| n > 1) else {
-            return self.make_up_db_at(drive);
-        };
-        let drive = drive.clamp(0.0, 1.0);
-        let step = |d: f64| ((d * n as f64) as usize).min(n - 1);
-        (0..POINTS)
-            .filter(|&i| step(knot_position(i)) == step(drive))
-            .min_by(|&a, &b| {
-                (knot_position(a) - drive)
-                    .abs()
-                    .total_cmp(&(knot_position(b) - drive).abs())
-            })
-            .map_or_else(|| self.make_up_db_at(drive), |i| self.make_up_db[i])
+        knots_on(&self.make_up_db, drive, steps)
     }
 }
 
 include!("calibration.rs");
 include!("power_trim.rs");
+include!("direct_out.rs");
 
 /// The peak gain a linear section has anywhere in the audio band, at the
 /// control positions given.
@@ -3502,6 +3603,9 @@ struct Front<'a> {
 struct FrontTap<'a> {
     /// The circuit's output, else the pedal's.
     preamp: bool,
+    /// The circuit's own direct-out node, read instead of its output when it
+    /// has one (`Gain::direct_out`); the scale already carries its level.
+    node: Option<usize>,
     down: Downsampler<'a>,
     pad: &'a mut Delay,
     /// The pedal tap's scale: one over the circuit's input volts, which is
@@ -3627,13 +3731,13 @@ impl Front<'_> {
         let mut next_tank_drive = *self.drive_previous;
         let mut up = [0.0; MAX_OVERSAMPLING];
         let n = self.up.push(x * self.input_scale, &mut up);
-        let (tap_preamp, tap_scale) = match self.tap.as_mut() {
+        let (tap_preamp, tap_scale, tap_node) = match self.tap.as_mut() {
             Some(tap) if tap.preamp => {
                 *tap.scale += (tap.scale_target - *tap.scale) * 0.02;
-                (Some(true), *tap.scale)
+                (Some(true), *tap.scale, tap.node)
             }
-            Some(tap) => (Some(false), tap.pedal_scale),
-            None => (None, 0.0),
+            Some(tap) => (Some(false), tap.pedal_scale, None),
+            None => (None, 0.0, None),
         };
         let mut tapped = [0.0; MAX_OVERSAMPLING];
         for (k, (v, slot)) in up[..n].iter().zip(out.iter_mut()).enumerate() {
@@ -3708,7 +3812,8 @@ impl Front<'_> {
                 }
             }
             if tap_preamp == Some(true) {
-                tapped[k] = amplified * tap_scale;
+                let at = tap_node.map_or(amplified, |node| self.gain.voltage_at(node));
+                tapped[k] = at * tap_scale;
             }
             *slot = amplified;
         }
@@ -4384,6 +4489,10 @@ pub struct Chain {
     /// The circuit tap's scale, glided toward its target as `out_of` is.
     tap_scale: f64,
     tap_scale_target: f64,
+    /// Each voice's direct-out node and its measured gain from the circuit's
+    /// input, for the voices that have one (`Gain::direct_out`,
+    /// `DIRECT_OUT_DB`); resolved once here, as the Twin's reverb send is.
+    direct_outs: Vec<Option<(usize, &'static [f64; POINTS])>>,
     /// The reverb tank and the tremolo, which are not circuits and cannot be
     /// in a netlist. See `dsp::spring` and `dsp::tremolo`. Built for every
     /// chain rather than only for the Twin, because building one inside
@@ -4740,6 +4849,22 @@ impl Chain {
             .expect("Deluxe catalogue builds")
             .unknown_named(deluxe::SEND)
             .expect("Deluxe has the reverb-transformer secondary");
+        let direct_outs = (0..VOICES)
+            .map(|i| {
+                let (gain, diode, amplifier) = voice_at(i);
+                let node = gain.direct_out()?;
+                let index = build_voice(gain, diode, amplifier)
+                    .expect("catalogue builds")
+                    .unknown_named(node)
+                    .expect("a direct out names a node of its circuit");
+                let table = DIRECT_OUT_DB
+                    .iter()
+                    .find(|(measured, _)| *measured == gain)
+                    .map(|(_, table)| table)
+                    .expect("every direct out is measured by examples/directout.rs");
+                Some((index, table))
+            })
+            .collect();
         let mut chain = Self {
             mains: 1.0,
             gains,
@@ -4796,6 +4921,7 @@ impl Chain {
             tap_value: 0.0,
             tap_scale: 1.0,
             tap_scale_target: 1.0,
+            direct_outs,
             true_latency: false,
             #[cfg(test)]
             twin_reverb_send_plate,
@@ -5147,6 +5273,7 @@ impl Chain {
             PowerAmp::BrumEL34 => 13,
             PowerAmp::Oregon6550 => 14,
             PowerAmp::Svt6550 => 15,
+            PowerAmp::AmericanSS800 => 16,
         };
         Some(column)
     }
@@ -5414,6 +5541,16 @@ impl Chain {
         // selection's measured trim: the preamplifier at the level the whole
         // amplifier has at the calibration drive.
         self.tap_scale_target = make_up / self.into * self.trim_for(0);
+        // A direct out ahead of the circuit's last stage is not what the
+        // make-up was measured on: the 800RB's boost clips at the calibration
+        // level and its direct out does not, so the make-up would lift it 11
+        // dB too far and turn it down as the volume came up. It is levelled
+        // as the pedal tap is instead, by what the circuit does to the signal
+        // on the way there: its measured small-signal gain at this drive.
+        if let Some((_, table)) = self.direct_outs[self.gain] {
+            let gain = 10f64.powf(knots_on(table, make_up_drive, steps) / 20.0);
+            self.tap_scale_target = 1.0 / (self.into * gain);
+        }
         // What the make-up would be with the Drive control at its reference
         // position. See `iron_drive`.
         self.iron_reference =
@@ -5984,6 +6121,7 @@ impl Chain {
             DrySource::Input => None,
             source => Some(FrontTap {
                 preamp: source == DrySource::Preamp,
+                node: self.direct_outs[self.gain].map(|(node, _)| node),
                 down: tap_down,
                 pad: &mut self.tap_pad,
                 pedal_scale: 1.0 / self.into,

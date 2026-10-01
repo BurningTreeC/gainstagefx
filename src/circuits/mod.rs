@@ -2,6 +2,8 @@
 
 pub mod ac30;
 pub mod american312;
+pub mod american_800rb;
+pub mod american_ss800;
 pub mod american_svt;
 pub mod bass_driver;
 pub mod bigmuff;

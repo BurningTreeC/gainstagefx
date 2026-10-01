@@ -136,6 +136,7 @@ sources, where they disagree and what was approximated.
 | Brit Drive | Two op-amp stages into red LEDs, then a bass, middle and treble stack | none |
 | Clean Boost | One op-amp, one knob, up to 26 dB | none |
 | Bass Driver | A bass preamp and DI in a pedal: two drive stages into a zener pair, two low-passes, a blend with the dry bass, an active mid (500 / 1000 Hz shift), bass (80 / 40 Hz shift) and treble | none |
+| American 800RB | An 80s American solid-state bass head: an op-amp input stage with -10 dB, Lo Cut and Hi Boost, a mid contour notch, four active bands (bass, low mid, high mid, treble) and a JFET boost on the level knob | American SS 800 |
 
 **Every pedal is also a circuit.** The fourteen in the pedal slot can each be
 selected on their own, with nothing behind them — which is how a pedal into a
@@ -263,6 +264,7 @@ nearest setting to the 90 volts that player is reported to have used.
 | Brit Plexi Bass EL34 | The Brit Plexi EL34 with the 1992's .1 uF couplings into the output valves, where the 1959 has .022: the corner moves from 33 Hz to 7 Hz; the Brit Plexi Bass's own |
 | Brum EL34 | Four EL34s on 600 V and -54 V, as the trace prints them, with 10 k grid stoppers, 470 ohm screens and a 3.3 k presence whose track is the inverter's tail; the Brum 100's own |
 | Oregon 6550 | Four 6550s in **ultra-linear** -- each side's screens on a tap of its own half of the primary -- behind a 12AX7 long-tailed pair, with 22 k of feedback from the 16 ohm tap and a reverse-log presence; the Oregon T's own |
+| American SS 800 | **Transistors**, 300 W: an op-amp driving a common-base stage and a VAS, three complementary pairs a side on unregulated +-85 V rails that sag under a held note, with current limiters; the American 800RB's own |
 | American 6550 | Six 6550s held by two **direct-coupled cathode followers** -- the output grids are driven into grid current with no coupling capacitor of their own to charge -- behind a 12BH7 gain stage a side and a cathodyne, on 660 V with the drivers on the screens' sagging rail; the American SVT's own |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
@@ -376,6 +378,7 @@ hardware behind them at all.
 | Brum 100 | Laney Supergroup 100 Mk I, a 1969 build, from a traced drawing | [brum_100.md](docs/models/brum_100.md) |
 | Oregon T | Sunn Model T, drawing D-1029 A, 1973, BRITE channel | [oregon_t.md](docs/models/oregon_t.md) |
 | American SVT | Ampeg SVT (6550), "SVT PREAMP" D 591719 rev D, 1975, channel 1, NORMAL input | [american_svt.md](docs/models/american_svt.md) |
+| American 800RB | Gallien-Krueger 800RB, preamp 406-0045-C, 1991 | [american_800rb.md](docs/models/american_800rb.md) |
 | Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost, Bass Driver | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
 **Pedals** (the slot in front of whatever is selected)
@@ -416,6 +419,7 @@ hardware behind them at all.
 | Brum EL34 | Laney Supergroup 100 Mk I: four EL34 on 600 V, 3.3 k presence on the tail | [brum_100.md](docs/models/brum_100.md) |
 | Oregon 6550 | Sunn Model T: four 6550 ultra-linear (GE 6550-A fit), 22 k feedback from 16 ohm, chart-fitted supply | [oregon_t.md](docs/models/oregon_t.md) |
 | American 6550 | Ampeg SVT "SVT POWER AMP SCHEMATIC" D 591720 rev H: six 6550, 12BH7 (RCA fit) gain stages and followers, a cathodyne, 47 k from 4 ohm; idle at the calibration procedure's 24 mA a valve | [american_svt.md](docs/models/american_svt.md) |
+| American SS 800 | Gallien-Krueger 800RB's 300 W amplifier, 406-0044-B, 1991: LF353, MJ15023 VAS, three MJ15022 / MJ15023 pairs on +-85 V; bias at GK's 15 mA a device | [american_800rb.md](docs/models/american_800rb.md) |
 
 **Cabinets, speakers and microphones** — dimensions from the manufacturers,
 Thiele–Small parameters and response curves from data sheets where they are

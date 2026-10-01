@@ -311,8 +311,12 @@ fn the_rectifier_presence_is_in_its_preamplifier() {
     assert_eq!(PowerSpec::RECTO_6L6.feedback, 0.0);
     assert_eq!(PowerSpec::RECTO_6L6_TUBE.feedback, 0.0);
     assert_eq!(Gain::Recto.own_presence(), Some(rectifier::PRESENCE));
+    // The one other circuit with a presence of its own: the Bass Driver's,
+    // U1A's treble lift, which the panel's Presence knob turns.
+    use gainstagefx::circuits::bass_driver;
+    assert_eq!(Gain::BassDriver.own_presence(), Some(bass_driver::PRESENCE));
     for gain in Gain::ALL {
-        if gain != Gain::Recto {
+        if gain != Gain::Recto && gain != Gain::BassDriver {
             assert_eq!(gain.own_presence(), None, "{}", gain.name());
         }
     }

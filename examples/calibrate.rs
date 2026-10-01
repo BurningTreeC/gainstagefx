@@ -155,6 +155,8 @@ fn intent(gain: Gain) -> f64 {
         Gain::German76 => 3.0,
         // A drive pedal for bass, stated at a guitar's level like the rest.
         Gain::BassDriver => 30.0,
+        // A solid-state bass head, stated at an instrument's level like the SVT.
+        Gain::American800RB => 25.0,
     }
 }
 
@@ -296,6 +298,7 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // head: a bass's passive pickups are at a guitar's level, and the
         // plugin has one input calibration.
         Gain::AmericanSvt => Some(GUITAR_VOLTS),
+        Gain::American800RB => Some(GUITAR_VOLTS),
         _ => None,
     }
 }

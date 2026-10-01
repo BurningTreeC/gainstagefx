@@ -185,6 +185,9 @@ pub enum Circuit {
     #[id = "pedal_sansamp_bass_driver_circuit"]
     #[name = "Bass Driver"]
     BassDriver,
+    #[id = "amp_gk_800rb"]
+    #[name = "American 800RB"]
+    American800RB,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -260,9 +263,10 @@ impl Circuit {
             Circuit::British47 => "British 47",
             Circuit::German76 => "German 76",
             Circuit::BassDriver => "Bass Driver",
+            Circuit::American800RB => "American 800RB",
         }
     }
-    pub const ALL: [Circuit; 43] = [
+    pub const ALL: [Circuit; 44] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -306,6 +310,7 @@ impl Circuit {
         Circuit::British47,
         Circuit::German76,
         Circuit::BassDriver,
+        Circuit::American800RB,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -353,6 +358,7 @@ impl Circuit {
             Circuit::British47 => voice::Gain::British47,
             Circuit::German76 => voice::Gain::German76,
             Circuit::BassDriver => voice::Gain::BassDriver,
+            Circuit::American800RB => voice::Gain::American800RB,
         }
     }
 
@@ -501,10 +507,13 @@ pub enum PowerAmp {
     #[id = "power_svt_6550"]
     #[name = "American 6550"]
     Svt6550,
+    #[id = "power_gk_800rb"]
+    #[name = "American SS 800"]
+    AmericanSS800,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -522,6 +531,7 @@ impl PowerAmp {
         Self::BrumEL34,
         Self::Oregon6550,
         Self::Svt6550,
+        Self::AmericanSS800,
     ];
 
     pub fn name(self) -> &'static str {
@@ -547,6 +557,7 @@ impl PowerAmp {
             Self::BrumEL34 => voice::PowerAmp::BrumEL34,
             Self::Oregon6550 => voice::PowerAmp::Oregon6550,
             Self::Svt6550 => voice::PowerAmp::Svt6550,
+            Self::AmericanSS800 => voice::PowerAmp::AmericanSS800,
         }
     }
 }

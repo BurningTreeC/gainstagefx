@@ -1159,6 +1159,9 @@ pub fn describe(circuit: Circuit) -> String {
             "Two op-amp stages into red LEDs, then a bass, middle and treble \
                           stack that all move each other."
         }
+        Circuit::American800RB => {
+            "Modeled after an 80s solid-state bass head: op-amp preamp, four-band EQ, a boost, 300 W."
+        }
         Circuit::BassDriver => {
             "A bass preamp and DI in a pedal: drive into a zener pair, two filters, a dry blend, an active EQ."
         }

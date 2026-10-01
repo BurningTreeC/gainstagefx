@@ -141,6 +141,55 @@ fn the_preamp_tap_is_ahead_of_the_master_and_the_power_stage() {
     assert!((rms(&hotter, tap) / rms(&reference, tap) - 1.0).abs() > 0.01);
 }
 
+/// The 800RB's direct out is "after the effects loop", ahead of the boost the
+/// panel's level knob turns: the Preamp DI reads it there, so the boost moves
+/// the amplifier and not the DI -- only by the boost pot's loading on the
+/// return through R73, as the hardware's would. The volume ahead of it is
+/// levelled out, as the Drive is out of every tap, by the circuit's measured
+/// gain to the return (`src/direct_out.rs`): it moves the boost's clipping
+/// and the amplifier, and holds the DI. Hi Boost off -- the default
+/// `twin_bright` is the Twin's Bright, on -- because Hi Boost bridges the
+/// volume and is meant to change with it.
+#[test]
+fn the_800rbs_di_is_its_direct_out_ahead_of_the_boost() {
+    let base = Settings {
+        gain: Gain::American800RB,
+        drive: 0.4,
+        master: 0.2,
+        twin_bright: false,
+        dry_source: DrySource::Preamp,
+        ..Settings::default()
+    };
+    let rms = |run: &[(f64, f64, f64)], pick: fn(&(f64, f64, f64)) -> f64| {
+        let tail = &run[run.len() / 2..];
+        (tail.iter().map(|r| pick(r).powi(2)).sum::<f64>() / tail.len() as f64).sqrt()
+    };
+    let tap = |r: &(f64, f64, f64)| r.1;
+    let wet = |r: &(f64, f64, f64)| r.2;
+    let low = play(&base, 48_000.0, 9_600);
+    let boosted = play(
+        &Settings {
+            master: 0.9,
+            ..base
+        },
+        48_000.0,
+        9_600,
+    );
+    let volume = play(&Settings { drive: 0.6, ..base }, 48_000.0, 9_600);
+    let db = |a: f64, b: f64| 20.0 * (b / a).log10();
+    let (di_boost, wet_boost) = (
+        db(rms(&low, tap), rms(&boosted, tap)),
+        db(rms(&low, wet), rms(&boosted, wet)),
+    );
+    let di_volume = db(rms(&low, tap), rms(&volume, tap));
+    println!(
+        "boost 0.2 -> 0.9: DI {di_boost:+.2} dB, amplifier {wet_boost:+.2} dB; volume 0.4 -> 0.6: DI {di_volume:+.2} dB"
+    );
+    assert!(di_boost.abs() < 0.3, "{di_boost}");
+    assert!(wet_boost.abs() > 3.0, "{wet_boost}");
+    assert!(di_volume.abs() < 1.0, "{di_volume}");
+}
+
 /// The tap is levelled to the plugin's units, so a DI blended against the
 /// amplifier is neither buried nor towering: the circuit tap carries the
 /// make-up that holds the circuit's level at nominal, less the voice's own
@@ -160,11 +209,15 @@ fn the_taps_are_at_the_plugins_level() {
         Gain::AmericanSvt,
         Gain::British47,
         Gain::German76,
+        Gain::American800RB,
     ] {
         let run = play(
             &Settings {
                 gain,
                 drive: 0.4,
+                // The Twin's Bright by default, which is the 800RB's Hi
+                // Boost: a voicing, not a level.
+                twin_bright: gain != Gain::American800RB,
                 dry_source: DrySource::Preamp,
                 ..Settings::default()
             },

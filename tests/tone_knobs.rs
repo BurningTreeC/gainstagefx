@@ -24,7 +24,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 19] = [
+const OWN: [(Circuit, [bool; 3]); 20] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     // The boost channel's own three; the muted Normal channel's two are not
@@ -61,6 +61,8 @@ const OWN: [(Circuit, [bool; 3]); 19] = [
     (Circuit::AmericanSvt, [true, true, true]),
     // The Bass Driver's active BASS, MID and TREBLE.
     (Circuit::BassDriver, [true, true, true]),
+    // The 800RB's BASS, LOW MID and TREBLE; HIGH MID is the knob beyond them.
+    (Circuit::American800RB, [true, true, true]),
 ];
 
 #[test]
@@ -86,8 +88,8 @@ fn heavy_metal_colour_mix_is_dedicated_not_generic_bass_treble() {
 }
 
 /// The knob beyond the stack's three is shown only for a circuit that has
-/// such a control of its own: the Metal Zone's MID FREQ and the Bass Driver's
-/// BLEND, and nothing anywhere else.
+/// such a control of its own: the Metal Zone's MID FREQ, the Bass Driver's
+/// BLEND and the 800RB's HIGH MID, and nothing anywhere else.
 #[test]
 fn the_control_beyond_the_stack_is_exposed_only_where_the_circuit_has_one() {
     for circuit in Circuit::ALL {
@@ -95,6 +97,7 @@ fn the_control_beyond_the_stack_is_exposed_only_where_the_circuit_has_one() {
         match circuit {
             Circuit::Mt2 => assert_eq!(sweep, Some("MID FREQ")),
             Circuit::BassDriver => assert_eq!(sweep, Some("BLEND")),
+            Circuit::American800RB => assert_eq!(sweep, Some("HI MID")),
             _ => assert_eq!(
                 sweep,
                 None,

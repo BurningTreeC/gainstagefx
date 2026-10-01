@@ -1,5 +1,55 @@
 # Implementation progress
 
+## 2026-10-02 — The American 800RB and American SS 800 (Gallien-Krueger 800RB)
+
+The owner: "Build the GK 800RB and the MXR Phase 90 and the Boss CE-2". This is the first
+of the three; then, mid-build, "Add 50% and 65% scaling options to the plugin's GUI" and
+"Can't we model GK's own 410RBH cabinet?".
+
+- **The preamp** (`circuits::american_800rb`; circuit `amp_gk_800rb`, display "American
+  800RB"), GK drawing 406-0045-C of 8/13/91: U1A with -10 dB, Lo Cut and Hi Boost, the
+  volume, the Mid Contour network, U2A, the four bands, the loop, the J113 boost, and the
+  crossover's input as the bus's load. **Every stage within 1.6 dB of the voltages GK
+  prints on the drawing** (2 mV, 200 Hz, everything on 10); the bands at the manual's
+  centres, the contour -9.7 dB at 500 Hz. -10 dB as drawn is 13.7 dB, against 9.5 from
+  GK's sensitivities: recorded, not tuned.
+- **The power stage** (`circuits::american_ss800`; `power_gk_800rb`, "American SS 800"),
+  406-0044-B of 9/3/91: LF353, common-base stage, MJ15023 VAS, A06 / A56 spreader,
+  bootstrap, three MJ15022 / 23 pairs folded to one, limiters, Zobel. Bias rests at
+  GK's procedure (15 mA a device), gain 35.2 dB (36 on the drawing), and the rails'
+  resistance (7.52 ohm, ESTIMATED) fitted to the turn-on procedure's 36 V rms into 4 ohm
+  at slight clipping. Selectable behind any circuit; Matched behind its own preamp.
+- **U1 had to be a real op-amp.** Built with the solver's ideal op-amp, its local loop
+  (R30 / R29, x179) inside the global one had gain at every frequency, and the amplifier
+  latched U1 to a rail within a tenth of a second of silence and distorted 1 % at 0.1 V.
+  Built as the transconductor op-amp with the LF353's 4 MHz, 13 V/us and 100 V/mV (as
+  `rodent` builds its LM308), it idles, holds 2 mV in a second of silence (a test), and
+  meets the figures above.
+- **The drawing disagrees with itself** at the bootstrap, on both power drawings (rev B
+  and the 1992 rev C, which the log now records): R40 = R41 = 2.7 k to -85 V can only
+  put their junction at -43 V and the VAS at 15.6 mA, where GK prints -29 V and 1.0 V
+  across R37 (10 mA). The printed values are built.
+- **The direct out** is the return, ahead of the boost (`Gain::direct_out`): the Preamp
+  DI reads that node. The make-up could not level it -- the boost clips at the
+  calibration level (62 % there, nearly all even order), the return does not -- so it read
+  11 dB hot and fell as the volume rose; it is levelled instead by the circuit's measured
+  gain to the node (`src/direct_out.rs`, a new generated table, `examples/directout.rs`):
+  -0.3 dB re the input, and the boost moves the amplifier 8 dB and the DI 0.1 dB.
+- **On the panel**: VOLUME on Drive, BOOST on the level knob, BASS / LOW MID / TREBLE
+  and HIGH MID as the circuit's own four, Lo Cut and Contour on the low and mid
+  switches, Hi Boost on the bright switch, -10 dB on the input switch. Preset *American
+  800RB Clank* (contour and Hi Boost in, into the 8x10).
+- **Tables**: calibration and power trim gained the row (and power trim its column;
+  every existing figure identical); kernels 160 to 181, the 160 unchanged.
+- **GUI sizes 50 % and 65 %** (`editor::session::SCALES`, nine sizes now); the size list
+  got its own row height so all nine fit under the header of the smallest window, and
+  a test holds that. The wheel's fallback is 100 % wherever the list puts it.
+- **The 410RBH**: researched, not built (`docs/models/american_410.md`). GK's 1999 RBH
+  manual documents the box (24 x 27.5 x 18 in, 3/4 in birch, two front vents, four
+  P10/200, a P508 horn, 18 dB/oct crossover, 106 dB, usable from 31 Hz); nothing about the
+  driver beyond 32 ohm and 200 W. Buildable with estimates fitted to GK's two figures,
+  and only after the acoustics gain a front vent and a horn branch.
+
 ## 2026-10-02 — The Bass Driver (SansAmp Bass Driver DI V2)
 
 The owner: "Yes commit this then continue" -- after the DI, the next build of the plan.

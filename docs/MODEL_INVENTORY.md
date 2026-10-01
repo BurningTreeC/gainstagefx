@@ -9,7 +9,8 @@ lists in the task prompts are a minimum, not a boundary.**
 
 **Current reconciliation: 2026-10-01** (the Treble Boost, Brit Plexi Bass, Brum 100 and
 Oregon T implemented; four microphone preamplifiers researched; then the Gold Drive, Brit
-Drive, Clean Boost, the American SVT with its American 6550 stage, and the British 47
+Drive, Clean Boost, the American SVT with its American 6550 stage, the British 47, the
+German 76, the Bass Driver, and the American 800RB with its American SS 800 stage
 implemented). Before that, 2026-09-20. Section 9 records the current implementation,
 validation and performance gaps; older implementation dates identify historical work,
 not the date of a complete hardware or realtime qualification.
@@ -42,7 +43,8 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
    amp_fender_deluxe_ab763_normal, amp_jcm800_2205, pedal_boss_ds1_circuit,
    pedal_dallas_rangemaster_circuit, amp_marshall_1992, amp_laney_supergroup,
    amp_sunn_model_t, pedal_klon_centaur_circuit, pedal_marshall_guvnor_circuit,
-   pedal_mxr_microamp_circuit, amp_ampeg_svt, pre_emi_redd47, pre_telefunken_v76`. **Order is also load-bearing**:
+   pedal_mxr_microamp_circuit, amp_ampeg_svt, pre_emi_redd47, pre_telefunken_v76,
+   pedal_sansamp_bass_driver_circuit, amp_gk_800rb`. **Order is also load-bearing**:
    legacy saved presets store *normalized* values (index / (len-1)).
    - `amp_jcm800_2203` was appended on 2026-09-15 together with that migration:
      `presets::migrate` re-expresses a saved preset without stable ids against
@@ -55,9 +57,10 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
    power_twin_ab763, power_5150, power_2203_el34, power_1959_el34, power_ac30_el84,
    power_dr103_el34, power_recto_6l6, power_recto_6l6_tube, power_deluxe_6v6,
    power_2205_el34, power_1992_el34, power_supergroup_el34, power_sunn_model_t_6550,
-   power_svt_6550`.
+   power_svt_6550, power_gk_800rb`.
    The `pedal` ids gained `pedal_dallas_rangemaster`, then `pedal_klon_centaur`,
-   `pedal_marshall_guvnor` and `pedal_mxr_microamp` (2026-10-01), appended. Saved presets now also store
+   `pedal_marshall_guvnor`, `pedal_mxr_microamp` and `pedal_sansamp_bass_driver`
+   (2026-10-01), appended. Saved presets now also store
    `model_ids`, so this list *can* grow (ids take precedence). Host state stores
    enum ids as strings.
 3. `cabinet` ids `off, combo, stack` are the legacy baked cabinet filter. New physical
@@ -276,8 +279,8 @@ Bass -- amplifiers, their power stages, and drives:
 |---|---|---|---|
 | `amp_ampeg_svt` | American SVT | **Ampeg SVT** (revision to be chosen; the name covers several amplifiers) | PLANNED, not researched |
 | `power_svt_6550` | American 6550 | the SVT-family power stage | PLANNED. A large part of the model, not an afterthought |
-| `amp_gk_800rb` | American 800RB | **Gallien-Krueger 800RB** | CLEARED 2026-10-01 on GK's service manual (drawings with stage voltages, turn-on procedure, specifications, scope photographs); preamp revision to choose. A different architecture, not a cleaner SVT. Log: `docs/models/american_800rb.md` |
-| `power_gk_800rb` | American SS 800 | the 800RB solid-state power stage | CLEARED with it: 406-0044-B, LF353-driven bipolar class AB, three MJ15022/23 pairs on +-85 V. Solid-state; no invented tube sag |
+| `amp_gk_800rb` | American 800RB | **Gallien-Krueger 800RB**, preamp 406-0045-C (8/13/91) | IMPLEMENTED 2026-10-01 (`american_800rb.rs`): every stage within 1.6 dB of the drawing's printed voltages, the four bands at the manual's centres, Mid Contour -9.7 dB at 500 Hz, Lo Cut, Hi Boost, -10 dB (13.7 dB as drawn; GK's sensitivities say 9.5). Log: `docs/models/american_800rb.md` |
+| `power_gk_800rb` | American SS 800 | the 800RB's 300 W amplifier, 406-0044-B (9/3/91) | IMPLEMENTED 2026-10-01 (`american_ss800.rs`): LF353 with its own GBW (an ideal one latches), common-base stage, MJ15023 VAS, A06/A56 spreader, bootstrap, three MJ15022/23 pairs folded to one, limiters, Zobel; bias at GK's 15 mA, 35.2 dB (drawing 36), rails' resistance fitted to 36 V rms into 4 ohm. Solid-state; no tube sag, but the unregulated rails sag as rails do |
 | `amp_darkglass_microtubes_900` | Modern Micro 900 | **Darkglass Microtubes 900** (generation to be chosen) | NOT CLEARED 2026-10-01: no drawing or trace of any generation. Log: `docs/models/modern_micro_900.md` |
 | `power_modern_bass_900` | Modern Bass Power | the Microtubes 900 power stage | NOT CLEARED, with the amplifier. If Class-D, a justified audio-band reduction rather than switching simulation |
 | `pedal_sansamp_bass_driver` / `pedal_sansamp_bass_driver_circuit` | Bass Driver | **Tech 21 SansAmp Bass Driver DI**, V2 | IMPLEMENTED 2026-10-01 (`bass_driver.rs`), pedal and circuit, from kanengomibako's trace of a real V2 (January 2022, board photographs). Every stage within a decibel of the tracer's own LTspice of the trace: drive 12.8-48.5 dB against 12.9-48.5, presence +27.7 against +27.5, mid +-18, bass +14 / +11, treble +17. Zener pair SPICE-style (3.3 V at 5 mA, 65 ohm); op-amps ideal, rail to rail; switching held effect-on; 1/4" output at -10 dB. Its output is the DI after the pedal. Log: `docs/models/bass_driver.md` |
@@ -288,6 +291,14 @@ Bass -- amplifiers, their power stages, and drives:
 Bass cabinets (8x10 sealed, 4x10, 1x15) and the DI tap are architectural work rather than
 a single model; see the roadmap. `spk_celestion_v30` and the existing microphones are
 reused throughout rather than duplicated.
+
+Researched 2026-10-02, not built (owner's requests; each log holds its checkpoint):
+
+| Proposed ID | Display | Hardware inspiration | Status |
+|---|---|---|---|
+| `cab_gk_410rbh` / `spk_gk_p10_200` | American 4x10 / Cast Bass 10 | **Gallien-Krueger 410RBH**, Eminence-built RBH of GK's 1999 manual | Box, complement and performance DOCUMENTED by GK; driver data beyond 32 ohm / 200 W not published. Buildable with estimates fitted to GK's 106 dB and 31 Hz, after the acoustics gain a front vent and a horn branch; the owner's decision. Log: `docs/models/american_410.md` |
+| `pedal_mxr_phase90` / `pedal_mxr_phase90_circuit` | Orange Phase | **MXR Phase 90**, script logo (R28 for the block) | Clears on traces of genuine units (no factory drawing is public); script, or script with R28 switchable, to choose. Log: `docs/models/orange_phase.md` |
+| `pedal_boss_ce2` / `pedal_boss_ce2_circuit` | Blue Chorus | **Boss CE-2** | NOT YET CLEARED: Boss's service notes exist and were not obtainable (login walls); the slot also needs a netlist-delay-netlist pedal shape for its bucket brigade. Log: `docs/models/blue_chorus.md` |
 
 ## 7. Gaps between repository and targets
 
@@ -400,7 +411,7 @@ hard-deadline qualification has been established by this audit.
 | Revv G3, Fortin 33, Generator 120, Generator power | Modern chain | not started | Not yet acquired in repository | Research needed | No netlists | None | Revisions, switching and Depth must be established | None | Not measured |
 | Modern Oversized 4x12 | Cabinet | not started | Not applicable | Geometry research needed | No distinct profile | None | Do not rename existing oversized profile | None | Not measured |
 | Ampeg SVT (6550) / American SVT, American 6550 | Bass amp and power | implemented 2026-10-01 | Ampeg factory D 591719 D and D 591720 H | SVT-VR / SVT-CL manuals; RCA 12BH7-A | Channel 1 with the midrange loop; cathodyne, 12BH7 gain stages and direct-coupled followers, six 6550 | Midrange, idle, boxed AC voltages, AB2 drive, rates | BASS/MIDRANGE SELECT on the panel's low and mid switches; ULTRA LO deeper than the SVT-CL's published figure; toroid L ESTIMATED; V1 short of the boxes by 0.7 dB; supplies and iron ESTIMATED | `american_svt` | Unqualified |
-| GK 800RB / American 800RB, SS 800 | Bass amp and power | cleared 2026-10-01 | GK service manual: preamp 406-0045-C and -D/E, power 406-0044-B (635 ppi) | Stage voltages, turn-on procedure, specifications, scope photographs | Not built | None | Preamp revision to choose | none | -- |
+| GK 800RB / American 800RB, SS 800 | Bass amp and power | implemented 2026-10-01 | GK service manual: preamp 406-0045-C (and -D/E), power 406-0044-B (and -C), 635 ppi | Stage voltages, turn-on procedure, specifications, operator's pages | Preamp to the masters with its four switches; the 300 W amplifier as the power stage, speaker-loaded | Stage voltages, bands, switches, idle and silence, gain, clipping, registration, rates, no allocation | -10 dB and the bootstrap disagree with GK's own figures (recorded); J113, output betas and the rails' resistance ESTIMATED; op-amps of the preamp ideal; 100 W amplifier, bi-amp and crossover outputs not built | `american_800rb` | Unqualified |
 | Darkglass Microtubes 900 / Modern Micro 900, power | Bass amp and power | not cleared 2026-10-01 | None published | -- | Not built | None | No drawing or trace of any generation | none | -- |
 | SansAmp Bass Driver DI / Bass Driver | Bass pedal and circuit | implemented 2026-10-01 | kanengomibako's trace of a real V2 (V1 early and late traced too) | Tech 21 manual; the tracer's LTspice of the trace | Every stage, as a pedal and a circuit, with both shifts | Stage, level-rest, slot, registration, rate tests | Zener SPICE-style; op-amps ideal; XLR output not built | `bass_driver` | Unqualified |
 | Darkglass B3K / Modern Micro B3 | Bass pedal | not cleared 2026-10-01 | Traces of clone kits only | -- | Not built | None | No trace of a genuine unit | none | -- |

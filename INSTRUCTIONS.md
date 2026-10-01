@@ -53,8 +53,9 @@ tests look hung.
 
 ## 4. Regenerate the generated tables, in this order
 
-`src/calibration.rs`, `src/power_trim.rs` and `src/dsp/partition/kernels.rs`
-are generated. Edit the generator, never the table. The order matters: power
+`src/calibration.rs`, `src/power_trim.rs`, `src/direct_out.rs` and
+`src/dsp/partition/kernels.rs` are generated. Edit the generator, never the
+table. The order matters: power
 trim is measured at the calibrated drive, and the kernels are counted on the
 presets as they then play.
 
@@ -72,7 +73,16 @@ presets as they then play.
    cargo run --release --example powertrim > /tmp/power_trim.rs
    mv /tmp/power_trim.rs src/power_trim.rs
    ```
-3. **Compiled solver kernels**, last, once the circuit is final:
+3. **Direct outs**, when a circuit with its own direct out ahead of its last
+   stage (`Gain::direct_out`, the 800RB's) changed or was added: the circuit's
+   gain to that node at each drive knot, which levels its Preamp DI.
+   ```
+   cargo run --release --example directout > /tmp/direct_out.rs
+   mv /tmp/direct_out.rs src/direct_out.rs
+   ```
+   The circuit's own test re-measures three knots and fails while it is stale
+   (`tests/american_800rb.rs`).
+4. **Compiled solver kernels**, last, once the circuit is final:
    ```
    cargo run --release --example kernels            # writes the file itself, ~8 min
    cargo run --release --example kernels -- --check # preview only

@@ -81,6 +81,7 @@ fn main() {
         "Brum EL34",
         "Oregon 6550",
         "American 6550",
+        "American SS 800",
     ];
     assert_eq!(
         column_names.len(),
