@@ -38,6 +38,8 @@
 !/docs/SOLVER_EXPERIMENTS.md
 # The realtime record IMPLEMENTATION_PROGRESS.md points at, for the same reason.
 !/docs/realtime-multi-instance.md
+# The DI's design, which the code, the README and the research logs point at.
+!/docs/DI.md
 
 CLAUDE.md
 AGENTS.md

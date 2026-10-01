@@ -10,7 +10,9 @@
 //! So each control is checked here by the only thing that actually matters:
 //! move it, and the audio has to change.
 
-use gainstagefx::voice::{Cabinet, Chain, Diode, Gain, Iron, Settings, Throw, Tone, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Cabinet, Chain, Diode, DrySource, Gain, Iron, Settings, Throw, Tone, NOMINAL_DBFS,
+};
 
 const RATE: f64 = 48_000.0;
 
@@ -62,6 +64,7 @@ fn every_control_reaches_the_circuit() {
         // SVT's contacts.
         low_switch: Throw::Centre,
         mid_switch: Throw::Centre,
+        dry_source: DrySource::Input,
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,

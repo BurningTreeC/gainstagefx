@@ -52,7 +52,7 @@ what is in it.
 | **3 Drive** | Drive and master, named as the circuit names them (on a pedal, its drive and level), presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity, chorus | A passive stack, so it only ever cuts. A modelled amplifier's own stack takes these knobs, and so do the Metal Zone's three bands; a pedal's single tone control (TONE, or the Rodent's FILTER) has a knob of its own beside them, as do the Metal Zone's swept middle and the Heavy Metal's Colour Mix pair. The second row is the blackface amplifiers' reverb and tremolo and the Jazz 120's chorus. |
 | **5 Cabinet** | Cabinet, speaker, mic A, mic B, placement, pan, blend, polarity, time | Legacy keeps the old baked cabinet filter; any other cabinet switches to the physical path. |
-| **6 Output** | Mix, level | The dry path is delayed to match, so mixing is a mix and not a comb filter. |
+| **6 Output** | Mix, level; dry from, dry route | The dry path is delayed to match, so mixing is a mix and not a comb filter. The dry signal is a DI, taken where real ones are: the **input** (a DI box, and the default), after the **pedal** (a DI pedal's balanced output, the SansAmp's XLR), or after the circuit, ahead of the power stage (**preamp**: an amplifier's direct out, as the GK 800RB's is). Mix blends it against the amplifier; **Split L/R** puts the amplifier alone on the left and the DI alone on the right, for recording them to separate tracks (one mono chain while split). See `docs/DI.md`. |
 
 Bypass is the host's: the plugin reports a bypass parameter, so the DAW's own
 bypass switch and automation lane drive it.

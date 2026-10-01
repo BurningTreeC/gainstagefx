@@ -1,5 +1,47 @@
 # Implementation progress
 
+## 2026-10-01 (late night) — Bass research, and the DI's design
+
+The owner: "start with the bass research and the DI tap design" -- yes. No code.
+
+- **Cleared**: the **GK 800RB** and its **SS 800** stage, on GK's own service manual
+  (635 ppi drawings with RMS voltages at every stage, the turn-on procedure's levels, the
+  specifications, sixteen scope photographs; `american_800rb.md`; preamp rev C of 1991 or
+  D/E of 1995 to choose). The **SansAmp Bass Driver DI**, on kanengomibako's traces of
+  real V1 early, V1 late and V2 units, with board photographs and measured responses; the
+  old forum schematic, never corroborated against a Tech 21 and suspected to be the
+  Behringer BDI21, is not used (`bass_driver.md`; version to choose).
+- **Not cleared**: the **Darkglass B3K** (every trace is of a clone kit) and the
+  **Microtubes 900** (nothing published). The **Bass Big Muff** has two traces of genuine
+  EC-D40 boards, behind a forum login and with three unmarked capacitors
+  (`bass_fuzz_pi.md`).
+- **The DI** (`docs/DI.md`): three taps, each a piece of real hardware -- input (a DI box;
+  already the Mix knob's dry path), after the pedal (the SansAmp's XLR), after the
+  preamplifier (the 800RB's direct out, "after the effects loop", before boost, masters and
+  crossover).
+
+The owner chose: the Mix knob's dry source made selectable, with a split output as an
+option; the SansAmp V2; the 800RB's rev C preamp. **The DI is built**:
+
+- Two parameters, appended: `dry_source` (Input, Pedal, Preamp) and `dry_route` (Mix,
+  Split L/R); `presets::migrate` gives an older preset the first of each, which is what it
+  had. On the Output section, between Mix and Level, without changing its height.
+- The tap is taken in the chain's first half, on the calling thread whether or not the
+  chain is pipelined, through a second decimator (the same half-band filters) and the same
+  latency pad as the wet path. Levelled: the pedal tap by the circuit's input volts; the
+  circuit tap by the make-up **and the Bypass power selection's measured trim**, because
+  the make-up was measured through each voice's own power stage (the first build put the
+  SVT's tap at -39.7 dB; now +0.1). `Chain::dry`, `Chain::process_block_with_dry`.
+- Split: the amplifier alone on the left from one chain, the DI alone on the right; the
+  right chain sits out and is resynchronised when the split ends.
+- Measured (`tests/di.rs`, 6 tests, and the plugin's split test): with no pedal the pedal
+  tap is the delayed input to 9e-17 at 1x and 8e-6 at 2-8x (the half-band ripple); the
+  circuit tap within 0.5 dB of the input level for the Clean, SVT, REDD.47 and V76 voices,
+  untouched by the Master and the power stage; the block path's DI bit-identical to the
+  sample path's, serial, pipelined and reclaimed; no allocation at any rate; split's right
+  side the delayed input exactly and its left side a mono instance's fully wet output,
+  exactly.
+
 ## 2026-10-01 (night) — The German 76, from the IRT's own drawing
 
 The owner: "go on and trace the V76 to build it."

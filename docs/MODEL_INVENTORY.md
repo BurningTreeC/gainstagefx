@@ -73,6 +73,9 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
    cut and "3 kHz"); every such circuit is built in the second, `centre`, and
    `presets::migrate` gives a preset without them that position (1/3, of four). `far`
    was appended the same day, before the parameter had shipped, so no saved lane moved.
+4c. Two more new parameters (2026-10-01), the DI's: `dry_source` (ids `input, pedal,
+   preamp`) and `dry_route` (ids `mix, split`). The first of each is what the plugin did
+   before; `presets::migrate` gives a preset without them those. See `docs/DI.md`.
 5. Internal IDs requested by the naming policy (`pedal_ts808`, `amp_mark_iic_plus`,
    ...) are recorded below as **proposed engineering IDs**. They are used for new
    parameters/documents only; the existing serialized ids above stay authoritative.
@@ -273,13 +276,13 @@ Bass -- amplifiers, their power stages, and drives:
 |---|---|---|---|
 | `amp_ampeg_svt` | American SVT | **Ampeg SVT** (revision to be chosen; the name covers several amplifiers) | PLANNED, not researched |
 | `power_svt_6550` | American 6550 | the SVT-family power stage | PLANNED. A large part of the model, not an afterthought |
-| `amp_gk_800rb` | American 800RB | **Gallien-Krueger 800RB** | PLANNED. A different architecture, not a cleaner SVT |
-| `power_gk_800rb` | American SS 800 | the 800RB solid-state power stage | PLANNED. Solid-state; no invented tube sag |
-| `amp_darkglass_microtubes_900` | Modern Micro 900 | **Darkglass Microtubes 900** (generation to be chosen) | PLANNED. Model the electronics, not valve equations |
-| `power_modern_bass_900` | Modern Bass Power | the Microtubes 900 power stage | PLANNED. If Class-D, a justified audio-band reduction rather than switching simulation |
-| `pedal_sansamp_bass_driver` | Bass Driver | **Tech 21 SansAmp Bass Driver DI** (generation to be chosen) | PLANNED. Check Blend's real topology for phase; its speaker emulation stacks with the plugin's cabinet |
-| `pedal_darkglass_b3k` | Modern Micro B3 | **Darkglass Microtubes B3K** | PLANNED. Derive the parallel architecture from the circuit rather than assuming it |
-| `pedal_bass_big_muff` | Bass Fuzz Pi | **EHX Bass Big Muff Pi** | PLANNED. Researched separately from the Ram Fuzz; reuse `circuits::bigmuff` where topology is genuinely shared |
+| `amp_gk_800rb` | American 800RB | **Gallien-Krueger 800RB** | CLEARED 2026-10-01 on GK's service manual (drawings with stage voltages, turn-on procedure, specifications, scope photographs); preamp revision to choose. A different architecture, not a cleaner SVT. Log: `docs/models/american_800rb.md` |
+| `power_gk_800rb` | American SS 800 | the 800RB solid-state power stage | CLEARED with it: 406-0044-B, LF353-driven bipolar class AB, three MJ15022/23 pairs on +-85 V. Solid-state; no invented tube sag |
+| `amp_darkglass_microtubes_900` | Modern Micro 900 | **Darkglass Microtubes 900** (generation to be chosen) | NOT CLEARED 2026-10-01: no drawing or trace of any generation. Log: `docs/models/modern_micro_900.md` |
+| `power_modern_bass_900` | Modern Bass Power | the Microtubes 900 power stage | NOT CLEARED, with the amplifier. If Class-D, a justified audio-band reduction rather than switching simulation |
+| `pedal_sansamp_bass_driver` | Bass Driver | **Tech 21 SansAmp Bass Driver DI** (generation to be chosen) | CLEARED 2026-10-01 on kanengomibako's traces of real V1 early, V1 late and V2 units (KiCad, board photographs, measured responses); the old forum schematic is not used. Blend sits before the EQ in every generation. Log: `docs/models/bass_driver.md` |
+| `pedal_darkglass_b3k` | Modern Micro B3 | **Darkglass Microtubes B3K** | NOT CLEARED 2026-10-01: every circulating trace is of a clone kit, with guessed SMD values. Log: `docs/models/modern_micro_b3.md` |
+| `pedal_bass_big_muff` | Bass Fuzz Pi | **EHX Bass Big Muff Pi** | RESEARCHED 2026-10-01: two traces of genuine EC-D40 Rev.A boards (2009), behind a forum login; C31, C32, C38 unmarked. Reuse `circuits::bigmuff` where topology is genuinely shared. Log: `docs/models/bass_fuzz_pi.md` |
 | (none) | Bass Rodent | ProCo RAT, already modelled | **Reuse, do not duplicate**: a bass-oriented configuration of the existing `pedal_rat`, unless research shows the hardware differs |
 
 Bass cabinets (8x10 sealed, 4x10, 1x15) and the DI tap are architectural work rather than
@@ -397,8 +400,11 @@ hard-deadline qualification has been established by this audit.
 | Revv G3, Fortin 33, Generator 120, Generator power | Modern chain | not started | Not yet acquired in repository | Research needed | No netlists | None | Revisions, switching and Depth must be established | None | Not measured |
 | Modern Oversized 4x12 | Cabinet | not started | Not applicable | Geometry research needed | No distinct profile | None | Do not rename existing oversized profile | None | Not measured |
 | Ampeg SVT (6550) / American SVT, American 6550 | Bass amp and power | implemented 2026-10-01 | Ampeg factory D 591719 D and D 591720 H | SVT-VR / SVT-CL manuals; RCA 12BH7-A | Channel 1 with the midrange loop; cathodyne, 12BH7 gain stages and direct-coupled followers, six 6550 | Midrange, idle, boxed AC voltages, AB2 drive, rates | BASS/MIDRANGE SELECT on the panel's low and mid switches; ULTRA LO deeper than the SVT-CL's published figure; toroid L ESTIMATED; V1 short of the boxes by 0.7 dB; supplies and iron ESTIMATED | `american_svt` | Unqualified |
-| GK800RB/SS, Microtubes900/power | Bass amps/power | not started | not started | Not yet acquired in repository | Research needed | No netlists | None | Revision and solid-state/Class-D model scope | None | Not measured |
-| SansAmp Bass Driver, B3K, Bass Big Muff | Bass pedals | not started | Not yet acquired in repository | Research needed | No netlists | None | Blend topology/revision; reuse Muff only where justified | None | Not measured |
+| GK 800RB / American 800RB, SS 800 | Bass amp and power | cleared 2026-10-01 | GK service manual: preamp 406-0045-C and -D/E, power 406-0044-B (635 ppi) | Stage voltages, turn-on procedure, specifications, scope photographs | Not built | None | Preamp revision to choose | none | -- |
+| Darkglass Microtubes 900 / Modern Micro 900, power | Bass amp and power | not cleared 2026-10-01 | None published | -- | Not built | None | No drawing or trace of any generation | none | -- |
+| SansAmp Bass Driver DI / Bass Driver | Bass pedal | cleared 2026-10-01 | kanengomibako's traces of real V1 early, V1 late, V2 units | Tech 21 manual; the tracer's measured responses | Not built | None | Version to choose | none | -- |
+| Darkglass B3K / Modern Micro B3 | Bass pedal | not cleared 2026-10-01 | Traces of clone kits only | -- | Not built | None | No trace of a genuine unit | none | -- |
+| EHX Bass Big Muff Pi / Bass Fuzz Pi | Bass pedal | researched 2026-10-01 | Two traces of genuine EC-D40 Rev.A boards (forum attachments, not obtained) | The thread; ElectroSmash's Big Muff analysis | Not built | None | C31, C32, C38 unmarked | none | -- |
 | Ampeg SVT-810E / American 8x10, Eminence B810 / American Bass 10 | Bass cabinet and speaker | implemented 2026-10-01 | No construction drawing | Ampeg manual dimensions; Eminence B810 sheet | Eight drivers in four sealed chambers (`compartments`), B810 fitted to its sheet | Profile, chamber-mode, closed-box, shape and rate tests | Chambers WIDELY REPORTED; panel thickness ESTIMATED | `svt_cabinet` | Unqualified |
 | 4x10, 1x15; bass DI blend | Bass acoustics/routing | not started | Not applicable | Driver/construction/tap research needed | -- | None | -- | -- | -- |
 | Album-rig blockers from ROADMAP section C | Amps/effects/routing | researching | Per-device status varies | PRESETS rig research | No substitute aliases | None | Modified 1959T, Fish/VHT/Ecstasy/Rockman parallel rig, Sunn Model T, Super Bass, Major, Ampeg VT, Laney/treble boost | None | Not measured |

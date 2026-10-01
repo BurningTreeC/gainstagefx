@@ -12,8 +12,8 @@
 use nice_plug::prelude::Enum;
 
 use crate::params::{
-    Amplifier, CabModel, Cabinet, Circuit, Diode, Iron, Mains, MicModel, Oversampling, PedalModel,
-    PowerAmp, SpeakerModel, Switch, ToneStack,
+    Amplifier, CabModel, Cabinet, Circuit, Diode, DryRoute, DrySource, Iron, Mains, MicModel,
+    Oversampling, PedalModel, PowerAmp, SpeakerModel, Switch, ToneStack,
 };
 
 pub struct Preset {
@@ -96,6 +96,10 @@ pub struct Preset {
     /// MIDRANGE SELECT); centre everywhere else.
     pub low_switch: Switch,
     pub mid_switch: Switch,
+    /// Where the dry signal comes from and where it goes; the input, blended
+    /// by Mix, everywhere unless a preset says otherwise. See `docs/DI.md`.
+    pub dry_source: DrySource,
+    pub dry_route: DryRoute,
     pub reverb: f32,
     pub speed: f32,
     pub intensity: f32,
@@ -175,6 +179,8 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         twin_bright: true,
         low_switch: Switch::Centre,
         mid_switch: Switch::Centre,
+        dry_source: DrySource::Input,
+        dry_route: DryRoute::Mix,
         reverb: 0.0,
         speed: 0.4,
         intensity: 0.0,
@@ -1862,6 +1868,7 @@ impl Preset {
             twin_low_input: self.twin_low_input,
             twin_bright: self.twin_bright,
             low_switch: self.low_switch.voice(),
+            dry_source: self.dry_source.voice(),
             mid_switch: self.mid_switch.voice(),
             reverb: self.reverb as f64,
             speed: self.speed as f64,
@@ -1879,7 +1886,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 59] {
+    pub fn dials(&self) -> [(&'static str, f32); 61] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1891,6 +1898,8 @@ impl Preset {
             ("twin_bright", if self.twin_bright { 1.0 } else { 0.0 }),
             ("low_switch", self.low_switch.to_index() as f32),
             ("mid_switch", self.mid_switch.to_index() as f32),
+            ("dry_source", self.dry_source.to_index() as f32),
+            ("dry_route", self.dry_route.to_index() as f32),
             ("pedal", self.pedal.to_index() as f32),
             ("pedal_drive", self.pedal_drive),
             ("pedal_tone", self.pedal_tone),
@@ -2157,6 +2166,8 @@ fn ids(id: &str) -> Option<&'static [&'static str]> {
         "mic_a" | "mic_b" => MicModel::ids(),
         "oversampling" => Oversampling::ids(),
         "low_switch" | "mid_switch" => Switch::ids(),
+        "dry_source" => DrySource::ids(),
+        "dry_route" => DryRoute::ids(),
         _ => None,
     }
 }
@@ -2255,6 +2266,12 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     // calibrated, and it is a third of the way along a four-entry list.
     for id in ["low_switch", "mid_switch"] {
         preset.values.entry(id.into()).or_insert(1.0 / 3.0);
+    }
+    // The dry signal's source and route arrived on 2026-10-01 with the DI.
+    // The first of each -- the input, blended by Mix -- is what every preset
+    // had before they existed.
+    for id in ["dry_source", "dry_route"] {
+        preset.values.entry(id.into()).or_insert(0.0);
     }
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {

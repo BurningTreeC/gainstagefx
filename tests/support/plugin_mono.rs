@@ -2119,3 +2119,70 @@ fn the_plugin_reports_true_latency_and_follows_the_oversampling() {
         "reported once, not every block"
     );
 }
+
+/// The split: the amplifier alone on the left and the dry signal alone on the
+/// right, from one chain, whatever the right input carries. With the input as
+/// the dry source the right side is the left input delayed by the chain's
+/// latency, exactly; the left side is what a mono instance gives fully wet,
+/// exactly. Leaving the split with a stereo input resynchronises the right
+/// chain, which then plays its own side again.
+#[test]
+fn split_puts_the_amplifier_left_and_the_dry_right() {
+    let wet_only = |plugin: &mut GainStageFx| {
+        let params = Arc::get_mut(&mut plugin.params).unwrap();
+        params.mix = FloatParam::new("Mix", 1.0, FloatRange::Linear { min: 0.0, max: 1.0 });
+        params.mix.smoothed.reset(1.0);
+    };
+    let mut split = initialized(Circuit::Clean, false, 48_000.0);
+    wet_only(&mut split);
+    Arc::get_mut(&mut split.params).unwrap().dry_route =
+        EnumParam::new("Dry Route", DryRoute::Split);
+    split.reset();
+    let mut mono = initialized(Circuit::Clean, true, 48_000.0);
+    wet_only(&mut mono);
+    mono.reset();
+    let n = 64;
+    let mut history: Vec<f32> = Vec::new();
+    for block in 0..40 {
+        let mut left: Vec<f32> = (block * n..(block + 1) * n).map(material).collect();
+        let mut right: Vec<f32> = (block * n..(block + 1) * n)
+            .map(|k| -material(k + 11))
+            .collect();
+        let mut reference = left.clone();
+        history.extend_from_slice(&left);
+        process(&mut split, &mut left, Some(&mut right));
+        process(&mut mono, &mut reference, None);
+        // Read after the block: the first one applies the settings, and with
+        // them the oversampling the latency follows.
+        let latency = split.channels[0].latency() as usize;
+        assert_eq!(
+            left, reference,
+            "block {block}: the left side is not the amplifier"
+        );
+        for (i, r) in right.iter().enumerate() {
+            let k = block * n + i;
+            let want = if k >= latency {
+                history[k - latency]
+            } else {
+                0.0
+            };
+            assert_eq!(
+                *r, want,
+                "sample {k}: the right side is not the delayed input"
+            );
+        }
+    }
+    Arc::get_mut(&mut split.params).unwrap().dry_route = EnumParam::new("Dry Route", DryRoute::Mix);
+    for block in 40..60 {
+        let mut left: Vec<f32> = (block * n..(block + 1) * n).map(material).collect();
+        let mut right: Vec<f32> = (block * n..(block + 1) * n)
+            .map(|k| -material(k + 11))
+            .collect();
+        process(&mut split, &mut left, Some(&mut right));
+        assert!(left
+            .iter()
+            .chain(&right)
+            .all(|v| v.is_finite() && v.abs() < 4.0));
+        assert!(left != right, "both sides the same after leaving the split");
+    }
+}

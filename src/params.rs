@@ -618,6 +618,55 @@ impl Switch {
     }
 }
 
+/// Where the dry signal that Mix blends against the amplifier is taken from:
+/// the input (a DI box between the instrument and the amplifier), the pedal's
+/// output (a DI pedal's balanced output) or the circuit's, ahead of the power
+/// stage (an amplifier's own direct out). Input, the first, is where it always
+/// was. Append new ids only. See `docs/DI.md`.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum DrySource {
+    #[id = "input"]
+    #[name = "Input"]
+    Input,
+    #[id = "pedal"]
+    #[name = "Pedal"]
+    Pedal,
+    #[id = "preamp"]
+    #[name = "Preamp"]
+    Preamp,
+}
+
+impl DrySource {
+    pub const ALL: [Self; 3] = [Self::Input, Self::Pedal, Self::Preamp];
+
+    pub fn voice(self) -> voice::DrySource {
+        match self {
+            Self::Input => voice::DrySource::Input,
+            Self::Pedal => voice::DrySource::Pedal,
+            Self::Preamp => voice::DrySource::Preamp,
+        }
+    }
+}
+
+/// Where the dry signal goes: blended against the amplifier by Mix, as it
+/// always was, or on its own on the right channel with the amplifier alone on
+/// the left -- a split, for recording the two to separate tracks. A split runs
+/// one mono chain, so true stereo and the microphones' pans do not apply.
+/// Append new ids only.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum DryRoute {
+    #[id = "mix"]
+    #[name = "Mix"]
+    Mix,
+    #[id = "split"]
+    #[name = "Split L/R"]
+    Split,
+}
+
+impl DryRoute {
+    pub const ALL: [Self; 2] = [Self::Mix, Self::Split];
+}
+
 /// The pedal slot in front of the circuit. Append new ids only.
 #[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum PedalModel {
@@ -1456,6 +1505,12 @@ pub struct GainStageParams {
     /// How much of the processed signal is heard against the dry one.
     #[id = "mix"]
     pub mix: FloatParam,
+    /// Where the dry signal is taken from. See `DrySource`.
+    #[id = "dry_source"]
+    pub dry_source: EnumParam<DrySource>,
+    /// Where the dry signal goes. See `DryRoute`.
+    #[id = "dry_route"]
+    pub dry_route: EnumParam<DryRoute>,
     #[id = "out_trim"]
     pub output_trim: FloatParam,
 
@@ -1690,6 +1745,8 @@ impl Default for GainStageParams {
             mic_align: BoolParam::new("Mic Phase Align", false),
 
             mix: position("Mix", 1.0),
+            dry_source: EnumParam::new("Dry From", DrySource::Input),
+            dry_route: EnumParam::new("Dry Route", DryRoute::Mix),
             output_trim: decibels("Output", 24.0),
 
             // Off, which is where every shipped preset already sits and where

@@ -1051,6 +1051,21 @@ impl CircuitSwitch {
     }
 }
 
+/// Where the dry signal -- what the Mix knob blends against the amplifier --
+/// is taken from. The input, as it always was: a DI box between the bass and
+/// the amplifier. The pedal's output: a DI pedal's balanced output, while the
+/// amplifier gets the pedal's signal. Or the circuit's output, ahead of the
+/// power stage: an amplifier's own direct out, as the GK 800RB's is. None of
+/// them carries the power stage, the speaker or a microphone, which is what
+/// makes it a DI. See `docs/DI.md`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DrySource {
+    #[default]
+    Input,
+    Pedal,
+    Preamp,
+}
+
 /// Which part does the amplifying, for the channels built around one.
 ///
 /// The axis the hardware actually varies along, and the one the panel has to
@@ -2886,6 +2901,8 @@ pub struct Settings {
     /// See `Gain::low_switch` and `Gain::mid_switch`.
     pub low_switch: Throw,
     pub mid_switch: Throw,
+    /// Where the dry signal is taken from. See `DrySource`.
+    pub dry_source: DrySource,
     /// The three the Twin Reverb has and nothing else does. Ignored by every
     /// other voice; the panel greys them out. See `Gain::extra_controls`.
     pub reverb: f64,
@@ -2931,6 +2948,7 @@ impl Default for Settings {
             twin_bright: true,
             low_switch: Throw::Centre,
             mid_switch: Throw::Centre,
+            dry_source: DrySource::Input,
             reverb: 0.0,
             speed: 0.4,
             intensity: 0.0,
@@ -3370,6 +3388,8 @@ impl SpecBlock {
 /// tremolo, the Mark's graphic and the Neve's line stage.
 struct Front<'a> {
     up: Upsampler<'a>,
+    /// The dry signal's tap, when it is taken inside this half.
+    tap: Option<FrontTap<'a>>,
     pedal: Option<&'a mut Simulation>,
     input_scale: f64,
     hand_off: f64,
@@ -3395,6 +3415,25 @@ struct Front<'a> {
     v4b_grid: usize,
     #[cfg(test)]
     power_traced: bool,
+}
+
+/// The dry signal's tap in the first half: which point, the decimator and
+/// padding that bring it to the host rate in step with the wet path, its
+/// scale, and where its sample goes. Taken here rather than in the second half
+/// because this half runs on the calling thread whether or not the chain is
+/// pipelined, so the sample never has to cross to the worker. See
+/// `DrySource`.
+struct FrontTap<'a> {
+    /// The circuit's output, else the pedal's.
+    preamp: bool,
+    down: Downsampler<'a>,
+    pad: &'a mut Delay,
+    /// The pedal tap's scale: one over the circuit's input volts, which is
+    /// the level a pedal at rest hands on.
+    pedal_scale: f64,
+    scale: &'a mut f64,
+    scale_target: f64,
+    value: &'a mut f64,
 }
 
 /// The power stage (or the speaker it drives) and everything after it: the
@@ -3479,6 +3518,11 @@ impl Front<'_> {
         (self.pedal_ns, self.gain_ns)
     }
 
+    /// The tap's sample for the host sample just processed, if there is a tap.
+    fn tapped(&self) -> Option<f64> {
+        self.tap.as_ref().map(|tap| *tap.value)
+    }
+
     /// One host sample in; the values the power stage is handed at the
     /// oversampled rate out, in order. Returns how many (the factor).
     #[inline]
@@ -3507,7 +3551,16 @@ impl Front<'_> {
         let mut next_tank_drive = *self.drive_previous;
         let mut up = [0.0; MAX_OVERSAMPLING];
         let n = self.up.push(x * self.input_scale, &mut up);
-        for (v, slot) in up[..n].iter().zip(out.iter_mut()) {
+        let (tap_preamp, tap_scale) = match self.tap.as_mut() {
+            Some(tap) if tap.preamp => {
+                *tap.scale += (tap.scale_target - *tap.scale) * 0.02;
+                (Some(true), *tap.scale)
+            }
+            Some(tap) => (Some(false), tap.pedal_scale),
+            None => (None, 0.0),
+        };
+        let mut tapped = [0.0; MAX_OVERSAMPLING];
+        for (k, (v, slot)) in up[..n].iter().zip(out.iter_mut()).enumerate() {
             // The pedal, when there is one, between the guitar and the circuit:
             // a guitar's level in, and out at the level the circuit behind it
             // was calibrated for. See `pedal_hand_off`.
@@ -3520,6 +3573,9 @@ impl Front<'_> {
                 }
                 None => *v,
             };
+            if tap_preamp == Some(false) {
+                tapped[k] = v * tap_scale;
+            }
             // The power amplifier comes next, in volts, *before* the make-up.
             //
             // Not after it, which is where the signal order would otherwise
@@ -3575,10 +3631,17 @@ impl Front<'_> {
                     trace.power_input.push(amplified);
                 }
             }
+            if tap_preamp == Some(true) {
+                tapped[k] = amplified * tap_scale;
+            }
             *slot = amplified;
         }
         if self.twin {
             *self.drive_previous = next_tank_drive;
+        }
+        if let Some(tap) = self.tap.as_mut() {
+            let decimated = tap.down.pull(&tapped[..n]);
+            *tap.value = tap.pad.process(decimated);
         }
         n
     }
@@ -3936,6 +3999,7 @@ fn pipelined(
     handoff: &mut [[f64; 2]],
     left: &mut [f64],
     right: &mut [f64],
+    dry: &mut [f64],
     worker: &StageWorker,
     speculation: &mut Speculation,
 ) -> PipelineUse {
@@ -3989,6 +4053,10 @@ fn pipelined(
         for (i, &x) in chunk.iter().enumerate() {
             let n = front.sample(x, &mut buf);
             debug_assert_eq!(n, factor);
+            // The tap is this thread's alone: the worker never sees `dry`.
+            if let (Some(v), Some(slot)) = (front.tapped(), dry.get_mut(chunk_start + i)) {
+                *slot = v;
+            }
             // SAFETY: stretch `i` of `mid` is not yet published, so the worker
             // is not reading it.
             unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), mid_ptr.add(i * factor), n) };
@@ -4091,6 +4159,7 @@ fn serial(
     mid: &mut [f64],
     left: &mut [f64],
     right: &mut [f64],
+    dry: &mut [f64],
     speculation: &mut Speculation,
     helper: Option<&StageWorker>,
 ) {
@@ -4102,6 +4171,9 @@ fn serial(
             let n = front.sample(x, &mut buf);
             debug_assert_eq!(n, factor);
             mid[i * factor..(i + 1) * factor].copy_from_slice(&buf[..factor]);
+            if let (Some(v), Some(slot)) = (front.tapped(), dry.get_mut(chunk_start + i)) {
+                *slot = v;
+            }
         }
         // The shadow runs here, or on `helper` once the block has shown it
         // needs one, so there is no early start.
@@ -4224,6 +4296,18 @@ pub struct Chain {
     /// Holds the dry signal back by the same amount, so that mixing the two
     /// is a mix rather than a comb filter.
     dry: Delay,
+    /// Where the dry signal comes from, and the tap that takes it when that
+    /// is inside the chain: a decimator of its own, the same filter as the
+    /// wet path's, and the same padding, so the tap lands in step with the
+    /// power stage's output. See `DrySource` and `docs/DI.md`.
+    dry_source: DrySource,
+    tap_over: Oversampler,
+    tap_pad: Delay,
+    /// The tap's latest sample, at the host rate, in the plugin's units.
+    tap_value: f64,
+    /// The circuit tap's scale, glided toward its target as `out_of` is.
+    tap_scale: f64,
+    tap_scale_target: f64,
     /// The reverb tank and the tremolo, which are not circuits and cannot be
     /// in a netlist. See `dsp::spring` and `dsp::tremolo`. Built for every
     /// chain rather than only for the Twin, because building one inside
@@ -4374,6 +4458,12 @@ impl Chain {
         self.deferred_oversample = source.deferred_oversample;
         self.pad.copy_runtime_state_from(&source.pad);
         self.dry.copy_runtime_state_from(&source.dry);
+        debug_assert_eq!(self.dry_source, source.dry_source);
+        self.tap_over.copy_runtime_state_from(&source.tap_over);
+        self.tap_pad.copy_runtime_state_from(&source.tap_pad);
+        self.tap_value = source.tap_value;
+        self.tap_scale = source.tap_scale;
+        self.tap_scale_target = source.tap_scale_target;
         self.true_latency = source.true_latency;
         debug_assert_eq!(self.pedal, source.pedal);
         self.gains[self.gain].copy_runtime_state_from(&source.gains[source.gain]);
@@ -4624,6 +4714,12 @@ impl Chain {
             requested_oversampling: 4,
             pad: Delay::new(1),
             dry: Delay::new(LATENCY as usize),
+            dry_source: DrySource::Input,
+            tap_over: Oversampler::new(4),
+            tap_pad: Delay::new(1),
+            tap_value: 0.0,
+            tap_scale: 1.0,
+            tap_scale_target: 1.0,
             true_latency: false,
             #[cfg(test)]
             twin_reverb_send_plate,
@@ -4942,8 +5038,23 @@ impl Chain {
     /// re-measures it. It is make-up, like the table it corrects, and not part
     /// of any circuit.
     fn power_trim(&self) -> f64 {
+        match self.power_column() {
+            Some(column) => self.trim_for(column),
+            None => 1.0,
+        }
+    }
+
+    /// The make-up correction for power override column `column` (0 is
+    /// Bypass) on this voice. See `POWER_TRIM_DB`.
+    fn trim_for(&self, column: usize) -> f64 {
+        let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
+        10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
+    }
+
+    /// `POWER_TRIM_DB`'s column for the power selection, or none for Matched.
+    fn power_column(&self) -> Option<usize> {
         let column = match self.power_selection {
-            PowerAmp::Matched => return 1.0,
+            PowerAmp::Matched => return None,
             PowerAmp::Bypass => 0,
             PowerAmp::Cali6L6 => 1,
             PowerAmp::American6L6Clean => 2,
@@ -4961,8 +5072,7 @@ impl Chain {
             PowerAmp::Oregon6550 => 14,
             PowerAmp::Svt6550 => 15,
         };
-        let row = Gain::ALL.iter().position(|g| *g == self.voice).unwrap_or(0);
-        10f64.powf(-POWER_TRIM_DB[row][column] / 20.0)
+        Some(column)
     }
 
     pub fn resolved_power_amp(&self) -> Option<PowerModel> {
@@ -5218,10 +5328,16 @@ impl Chain {
         };
         // A gain switch's make-up is its position's, not a line across two.
         let steps = self.gains[self.gain].control_steps(voice_at(self.gain).0.drive_control());
-        self.out_of_target = 10f64.powf(calibration.make_up_db_on(make_up_drive, steps) / 20.0)
-            / self.into
-            * self.master_lift
-            * trim;
+        let make_up = 10f64.powf(calibration.make_up_db_on(make_up_drive, steps) / 20.0);
+        self.out_of_target = make_up / self.into * self.master_lift * trim;
+        // The circuit tap's: ahead of the power stage and the Master, as an
+        // amplifier's direct out is, so neither's trim nor the Master's lift.
+        // But the make-up was measured through the voice's whole path, its
+        // own power stage included -- the SVT's 6550s are 40 dB of it -- so
+        // the tap is levelled as the Bypass power selection is, by that
+        // selection's measured trim: the preamplifier at the level the whole
+        // amplifier has at the calibration drive.
+        self.tap_scale_target = make_up / self.into * self.trim_for(0);
         // What the make-up would be with the Drive control at its reference
         // position. See `iron_drive`.
         self.iron_reference =
@@ -5603,6 +5719,7 @@ impl Chain {
         self.set_twin_input(s.twin_low_input);
         self.set_twin_bright(s.twin_bright);
         self.set_switches(s.low_switch, s.mid_switch);
+        self.set_dry_source(s.dry_source);
         // After `set_voice`, because which control this reaches depends on
         // which circuit is selected, and before `set_drive`, because both
         // touch the same simulation and the order they dirty it in should not
@@ -5689,8 +5806,9 @@ impl Chain {
     /// `latency()`, for the oversampler's current factor.
     fn sync_latency(&mut self) {
         let latency = self.latency();
-        self.pad
-            .set_len((latency - self.over.latency().min(latency)) as usize);
+        let pad = (latency - self.over.latency().min(latency)) as usize;
+        self.pad.set_len(pad);
+        self.tap_pad.set_len(pad);
         self.dry.set_len(latency as usize);
     }
 
@@ -5718,6 +5836,33 @@ impl Chain {
         self.dry.process(x)
     }
 
+    /// The dry signal for the sample `process` just returned: `delayed` --
+    /// what `delayed_dry` gave for the same input -- when it is the input,
+    /// else the tap's sample. See `DrySource`.
+    #[inline]
+    pub fn dry(&self, delayed: f64) -> f64 {
+        match self.dry_source {
+            DrySource::Input => delayed,
+            _ => self.tap_value,
+        }
+    }
+
+    /// Where the dry signal is taken from. A change starts the tap from
+    /// silence: its decimator and padding hold the old point's history.
+    pub fn set_dry_source(&mut self, source: DrySource) {
+        if source != self.dry_source {
+            self.dry_source = source;
+            self.tap_over.reset();
+            self.tap_pad.reset();
+            self.tap_value = 0.0;
+            self.tap_scale = self.tap_scale_target;
+        }
+    }
+
+    pub fn dry_source(&self) -> DrySource {
+        self.dry_source
+    }
+
     /// One sample, with the two cabinet microphones placed in the stereo field.
     ///
     /// Identical to `process` on both sides while the pans are centred, which
@@ -5743,6 +5888,7 @@ impl Chain {
         if self.fade_remaining == FADE_LEN {
             if let Some(factor) = self.deferred_oversample.take() {
                 self.over.set_factor(factor);
+                self.tap_over.set_factor(factor);
                 self.sync_latency();
                 self.sync_oversampled_rates();
             }
@@ -5757,6 +5903,19 @@ impl Chain {
         let inner_rate = self.rate * self.over.factor() as f64;
         let tank_send = self.ab763_tank_send();
         let (up, down) = self.over.split();
+        let (_, tap_down) = self.tap_over.split();
+        let tap = match self.dry_source {
+            DrySource::Input => None,
+            source => Some(FrontTap {
+                preamp: source == DrySource::Preamp,
+                down: tap_down,
+                pad: &mut self.tap_pad,
+                pedal_scale: 1.0 / self.into,
+                scale: &mut self.tap_scale,
+                scale_target: self.tap_scale_target,
+                value: &mut self.tap_value,
+            }),
+        };
         let power_model = self.power_selection.resolved(self.voice);
         let radiating = self.radiating;
         let (power, driven, motional, shadow) = if radiating {
@@ -5804,6 +5963,7 @@ impl Chain {
         let timing = self.realtime_stage_timing_enabled;
         let front = Front {
             up,
+            tap,
             pedal,
             input_scale,
             hand_off: self.pedal_hand_off,
@@ -5938,6 +6098,24 @@ impl Chain {
         worker: Option<&StageWorker>,
         pipeline: bool,
     ) -> PipelineUse {
+        self.process_block_with_dry(input, left, right, &mut [], stereo, worker, pipeline)
+    }
+
+    /// `process_block`, writing into `dry[i]` what `dry` would give for
+    /// sample `i` when the dry signal is taken inside the chain. `dry` holds
+    /// the delayed input on the way in, which is left alone when that is the
+    /// dry signal, or when `dry` is shorter than the block.
+    #[allow(clippy::too_many_arguments)]
+    pub fn process_block_with_dry(
+        &mut self,
+        input: &[f64],
+        left: &mut [f64],
+        right: &mut [f64],
+        dry: &mut [f64],
+        stereo: bool,
+        worker: Option<&StageWorker>,
+        pipeline: bool,
+    ) -> PipelineUse {
         let len = input.len().min(left.len()).min(right.len());
         self.install_deferred_oversampling();
         let mut mid = std::mem::take(&mut self.mid);
@@ -5958,6 +6136,7 @@ impl Chain {
                     &mut handoff,
                     &mut left[..len],
                     &mut right[..len],
+                    dry,
                     worker,
                     &mut speculation,
                 );
@@ -5969,6 +6148,7 @@ impl Chain {
                 &mut mid,
                 &mut left[..len],
                 &mut right[..len],
+                dry,
                 &mut speculation,
                 worker,
             ),
@@ -6449,5 +6629,9 @@ impl Chain {
         self.over.reset();
         self.pad.reset();
         self.dry.reset();
+        self.tap_over.reset();
+        self.tap_pad.reset();
+        self.tap_value = 0.0;
+        self.tap_scale = self.tap_scale_target;
     }
 }

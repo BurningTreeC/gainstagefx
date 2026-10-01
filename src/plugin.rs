@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::dsp::noise_reduction::NoiseReduction;
 use crate::meters::Meters;
-use crate::params::{Amplifier, Circuit, Diode, GainStageParams, Oversampling};
+use crate::params::{Amplifier, Circuit, Diode, DryRoute, GainStageParams, Oversampling};
 use crate::rt_trace::{RtTrace, TraceMode, TraceRecord};
 use crate::stage_worker::StageWorker;
 use crate::stereo_worker::{StereoJob, StereoWorker};
@@ -67,6 +67,10 @@ pub struct GainStageFx {
     /// history (capacitors, transformer flux, spring state, predictor state)
     /// back to mono.
     stereo_seen: bool,
+    /// Whether the last block ran split (`DryRoute::Split`): the amplifier on
+    /// the left from one chain, the dry signal on the right. The right chain
+    /// sits out a split, so leaving one resynchronises it.
+    split_active: bool,
     sample_rate: f64,
     oversampling: Oversampling,
     peak: f64,
@@ -314,6 +318,7 @@ impl Default for GainStageFx {
             meters: Arc::new(Meters::default()),
             channels: Vec::new(),
             stereo_seen: false,
+            split_active: false,
             sample_rate: 48_000.0,
             oversampling: Oversampling::Four,
             peak: 0.0,
@@ -813,6 +818,7 @@ impl Plugin for GainStageFx {
             twin_bright: self.params.twin_bright.value(),
             low_switch: self.params.low_switch.value().voice(),
             mid_switch: self.params.mid_switch.value().voice(),
+            dry_source: self.params.dry_source.value().voice(),
             reverb: self.params.reverb.smoothed.next_step(samples) as f64,
             speed: self.params.speed.smoothed.next_step(samples) as f64,
             intensity: self.params.intensity.smoothed.next_step(samples) as f64,
@@ -938,7 +944,18 @@ impl Plugin for GainStageFx {
         let mut trace_pipeline = PipelineUse::Serial;
         let mut trace_speculated = 0u32;
 
-        let can_parallel_stereo = !duplicated_mono
+        // A split needs two outputs; on one it is the ordinary mix.
+        let split = self.params.dry_route.value() == DryRoute::Split && buffer.channels() == 2;
+        if self.split_active && !split && self.stereo_seen && self.channels.len() == 2 {
+            // The right chain sat the split out: bring it up to the left one
+            // before it carries its own side again, as when stereo first wakes.
+            let (left, right) = self.channels.split_at_mut(1);
+            right[0].copy_runtime_state_from(&left[0]);
+        }
+        self.split_active = split;
+
+        let can_parallel_stereo = !split
+            && !duplicated_mono
             && self.stereo_seen
             && self.channels.len() == 2
             && buffer.channels() == 2
@@ -1001,8 +1018,9 @@ impl Plugin for GainStageFx {
                 let raw = *sample as f64;
                 let trimmed = raw * self.stereo_input_trim[i] as f64;
                 let input = trimmed * self.stereo_noise_gain[i];
-                let dry = left_chain.delayed_dry(input);
+                let delayed = left_chain.delayed_dry(input);
                 let wet = left_chain.process(input);
+                let dry = left_chain.dry(delayed);
                 if !bypassed {
                     *sample = ((dry * (1.0 - self.stereo_mix[i] as f64)
                         + wet * self.stereo_mix[i] as f64)
@@ -1033,7 +1051,7 @@ impl Plugin for GainStageFx {
             if let Some(waited) = waited {
                 trace_worker_wait_ns = crate::rt_trace::monotonic_ns().saturating_sub(waited);
             }
-        } else if (self.channels.len() == 1 || duplicated_mono)
+        } else if (self.channels.len() == 1 || duplicated_mono || split)
             && sample_count <= self.block_input.len()
         {
             // One chain carries every output: a one-channel layout, or a
@@ -1064,11 +1082,12 @@ impl Plugin for GainStageFx {
                 };
             }
             let speculated = chain.speculated_blocks();
-            trace_pipeline = chain.process_block(
+            trace_pipeline = chain.process_block_with_dry(
                 &self.block_input[..sample_count],
                 &mut self.block_left[..sample_count],
                 &mut self.block_right[..sample_count],
-                duplicated_mono,
+                &mut self.block_dry[..sample_count],
+                duplicated_mono && !split,
                 self.stage_worker.as_ref(),
                 self.pipelining,
             );
@@ -1089,14 +1108,21 @@ impl Plugin for GainStageFx {
             let (left_out, rest) = slices
                 .split_first_mut()
                 .expect("a chain is only built for a channel");
-            let mut right_out = rest.first_mut().filter(|_| duplicated_mono);
+            let mut right_out = rest.first_mut().filter(|_| duplicated_mono || split);
             for (i, left) in left_out[..sample_count].iter_mut().enumerate() {
                 let (dry, mix, output_trim) = (
                     self.block_dry[i],
                     self.block_mix[i],
                     self.block_output_trim[i],
                 );
-                if !bypassed {
+                if !bypassed && split {
+                    // The amplifier alone on the left, the dry alone on the
+                    // right; Mix has nothing to blend.
+                    *left = (self.block_left[i] * output_trim) as f32;
+                    if let Some(right) = right_out.as_mut() {
+                        right[i] = (dry * output_trim) as f32;
+                    }
+                } else if !bypassed {
                     *left = ((dry * (1.0 - mix) + self.block_left[i] * mix) * output_trim) as f32;
                     if let Some(right) = right_out.as_mut() {
                         right[i] =
@@ -1131,7 +1157,7 @@ impl Plugin for GainStageFx {
                 let mut frame_peak = 0.0f64;
                 let mut duplicated_output = 0.0f32;
                 for (index, sample) in frame.iter_mut().enumerate() {
-                    if duplicated_mono && index == 1 {
+                    if (duplicated_mono || split) && index == 1 {
                         if !bypassed {
                             // The right side of the one running chain's
                             // microphone pair. Identical to the left while the
@@ -1155,24 +1181,31 @@ impl Plugin for GainStageFx {
                     let trimmed = raw * input_trim;
                     let input = trimmed * noise_gain;
 
-                    let dry = chain.delayed_dry(input);
+                    let delayed = chain.delayed_dry(input);
                     // A mono source on a stereo bus is the one case where one
                     // chain owns both outputs, so it is the case where the two
                     // microphones can actually be placed apart. A genuinely
                     // stereo input is already two independent amplifiers and
                     // each keeps its own side.
-                    let stereo_source = duplicated_mono && index == 0;
+                    let stereo_source = duplicated_mono && !split && index == 0;
                     let (wet, wet_right) = if stereo_source {
                         chain.process_stereo(input)
                     } else {
                         let wet = chain.process(input);
                         (wet, wet)
                     };
-                    let processed = (dry * (1.0 - mix) + wet * mix) * output_trim;
+                    let dry = chain.dry(delayed);
+                    let processed = if split {
+                        wet * output_trim
+                    } else {
+                        (dry * (1.0 - mix) + wet * mix) * output_trim
+                    };
 
                     if !bypassed {
                         *sample = processed as f32;
-                        if stereo_source {
+                        if split {
+                            duplicated_output = (dry * output_trim) as f32;
+                        } else if stereo_source {
                             duplicated_output =
                                 ((dry * (1.0 - mix) + wet_right * mix) * output_trim) as f32;
                         }

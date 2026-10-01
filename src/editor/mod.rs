@@ -1949,10 +1949,36 @@ fn output(cx: &mut Context) {
         |p| format!("{:+.1} dB", p.output_trim.value()),
     );
 
-    let x = body_x() + 340.0;
+    // Where the dry signal comes from and where it goes: the input, the
+    // pedal's output or the circuit's -- a DI box, a DI pedal, an amplifier's
+    // direct out -- blended by Mix or split onto the right channel. See
+    // `docs/DI.md`.
+    let x = body_x() + 180.0;
+    label(cx, "dry from", x + 100.0, top + 10.0, 9.5, 200.0, 0x9aa6b0);
+    selector(
+        cx,
+        x,
+        top + 18.0,
+        200.0,
+        |p| &p.dry_source,
+        vec!["Input", "Pedal", "Preamp"],
+        true,
+    );
+    label(cx, "dry route", x + 100.0, top + 50.0, 9.5, 200.0, 0x9aa6b0);
+    selector(
+        cx,
+        x,
+        top + 58.0,
+        200.0,
+        |p| &p.dry_route,
+        vec!["Mix", "Split L/R"],
+        true,
+    );
+
+    let x = body_x() + 530.0;
     label(
         cx,
-        "The dry signal is delayed to match, so",
+        "The dry signal -- input, pedal or preamp,",
         x,
         top + 26.0,
         9.5,
@@ -1961,9 +1987,18 @@ fn output(cx: &mut Context) {
     );
     label(
         cx,
-        "mixing the two is a mix and not a comb.",
+        "a DI -- is delayed to match the amplifier.",
         x,
         top + 42.0,
+        9.5,
+        250.0,
+        0x86929c,
+    );
+    label(
+        cx,
+        "Split puts the amp left and the DI right.",
+        x,
+        top + 58.0,
         9.5,
         250.0,
         0x86929c,
