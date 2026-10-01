@@ -3861,6 +3861,7 @@ impl Simulation {
             c.voltage = v;
             c.history = c.conductance * v;
         }
+        self.apply_initial_charges();
         for l in &mut self.inductors {
             l.current = INDUCTOR_DC * across(&self.voltage, l.a, l.b);
             l.history = -l.current;
@@ -3881,6 +3882,24 @@ impl Simulation {
 
     pub fn controls(&self) -> usize {
         self.circuit.controls
+    }
+
+    /// The charges a circuit states for its capacitors at power-on, over what
+    /// the operating point gave them. See `Netlist::charged`.
+    fn apply_initial_charges(&mut self) {
+        for &(a, b, volts) in &self.circuit.initial_charges {
+            for c in &mut self.capacitors {
+                let v = if (c.a, c.b) == (a, b) {
+                    volts
+                } else if (c.a, c.b) == (b, a) {
+                    -volts
+                } else {
+                    continue;
+                };
+                c.voltage = v;
+                c.history = c.conductance * v;
+            }
+        }
     }
 
     /// How many positions a control has, if it is a rotary switch. See
@@ -4814,6 +4833,7 @@ impl Simulation {
             c.voltage = v;
             c.history = c.conductance * v;
         }
+        self.apply_initial_charges();
         // An inductor's standing current, which is not readable the way a
         // capacitor's charge is.
         //

@@ -1176,6 +1176,7 @@ pub struct Netlist {
     adjustables: Vec<f64>,
     aux_inputs: usize,
     initial_voltages: Vec<(usize, f64)>,
+    initial_charges: Vec<(usize, usize, f64)>,
     resting: Vec<(usize, f64)>,
 }
 
@@ -1190,6 +1191,7 @@ impl Netlist {
             adjustables: Vec::new(),
             aux_inputs: 0,
             initial_voltages: Vec::new(),
+            initial_charges: Vec::new(),
             resting: Vec::new(),
         }
     }
@@ -1536,6 +1538,26 @@ impl Netlist {
         self
     }
 
+    /// The voltage the capacitor between `a` and `b` starts with, from `a`
+    /// to `b`, instead of the one the operating point implies: SPICE's
+    /// initial condition, and what power-on gives a real circuit.
+    ///
+    /// For an oscillator. A relaxation oscillator's operating point is a
+    /// balance it can only leave by being disturbed -- the op-amp sitting in
+    /// its linear region, its timing capacitor exactly between the
+    /// thresholds -- and a solver that starts there exactly can stay there
+    /// for good, while one that starts a hair away is off in milliseconds.
+    /// Which of the two a given control setting gets is then rounding. The
+    /// hardware is never at the balance: its capacitors start from nothing
+    /// when the battery goes in. A charge stated here is applied every time an
+    /// operating point is taken, so the oscillator starts the same way, from
+    /// the same phase, every time.
+    pub fn charged(&mut self, a: &str, b: &str, volts: f64) -> &mut Self {
+        let (a, b) = (self.pin(a), self.pin(b));
+        self.initial_charges.push((a, b, volts));
+        self
+    }
+
     /// Where a control sits when nothing turns it.
     ///
     /// Not every knob on a front panel reaches the plugin's, and the ones that
@@ -1701,6 +1723,18 @@ impl Netlist {
             .into_iter()
             .map(|(node, volts)| (permutation[node], volts))
             .collect();
+        let renumber = |node: usize| {
+            if node == GROUND {
+                GROUND
+            } else {
+                permutation[node]
+            }
+        };
+        let initial_charges: Vec<(usize, usize, f64)> = self
+            .initial_charges
+            .into_iter()
+            .map(|(a, b, volts)| (renumber(a), renumber(b), volts))
+            .collect();
 
         Ok(Circuit {
             name: self.name,
@@ -1714,6 +1748,7 @@ impl Netlist {
             adjustables: self.adjustables,
             aux_inputs: self.aux_inputs,
             initial_voltages,
+            initial_charges,
             resting: self.resting,
         })
     }
@@ -1766,6 +1801,9 @@ pub struct Circuit {
     pub aux_inputs: usize,
     /// Initial node voltages for the DC solver. (node_index, voltage)
     pub initial_voltages: Vec<(usize, f64)>,
+    /// Capacitors that start charged rather than at the operating point.
+    /// (a, b, volts from a to b); see `Netlist::charged`.
+    pub initial_charges: Vec<(usize, usize, f64)>,
     /// Where the controls nobody turns are left. (control, position)
     pub resting: Vec<(usize, f64)>,
 }

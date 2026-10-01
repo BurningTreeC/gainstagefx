@@ -108,3 +108,40 @@ fn a_good_circuit_builds_and_knows_its_names() {
     assert_eq!(circuit.nodes, 2);
     assert_eq!(circuit.node_name(circuit.output), "out");
 }
+
+/// A capacitor stated as charged starts with that charge, not with what the
+/// operating point implies -- after the DC solve and after an operating point
+/// is handed over from another simulation alike -- and then discharges as the
+/// circuit says. A relaxation oscillator's operating point is a balance it can
+/// stay on for good; this is how one is made to start (`Netlist::charged`).
+#[test]
+fn a_charged_capacitor_starts_with_its_charge() {
+    use gainstagefx::dsp::time::Simulation;
+    let build = || {
+        let mut net = Netlist::new("charged");
+        net.input("in", 1.0)
+            .resistor("in", "x", 1e12)
+            .resistor("x", "gnd", 10_000.0)
+            .capacitor("x", "gnd", 1e-6)
+            .charged("x", "gnd", 1.0)
+            .opamp("out", "x", "out", 10.0);
+        net.build("out").unwrap()
+    };
+    let rate = 48_000.0;
+    // tau = 10 ms: one sample in, the charge is barely touched.
+    let mut s = Simulation::new(build(), rate);
+    s.find_operating_point();
+    let first = s.process(0.0);
+    assert!((first - 1.0).abs() < 0.01, "{first}");
+    // And it discharges by the circuit's own time constant.
+    for _ in 0..479 {
+        s.process(0.0);
+    }
+    let later = s.process(0.0);
+    assert!((later - (-1.0f64).exp()).abs() < 0.02, "{later}");
+    // Handed an operating point, the charge is applied again.
+    let mut other = Simulation::new(build(), rate);
+    other.apply_operating_point(&vec![0.0; s.operating_point().len()]);
+    let handed = other.process(0.0);
+    assert!((handed - 1.0).abs() < 0.01, "{handed}");
+}
