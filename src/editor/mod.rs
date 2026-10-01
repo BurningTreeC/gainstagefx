@@ -1159,6 +1159,12 @@ pub fn describe(circuit: Circuit) -> String {
             "Two op-amp stages into red LEDs, then a bass, middle and treble \
                           stack that all move each other."
         }
+        Circuit::BlueChorus => {
+            "Modeled after a late-70s blue chorus: a bucket-brigade delay swept by an oscillator, mixed with the dry."
+        }
+        Circuit::OrangePhase => {
+            "Modeled after a 70s orange phaser: four JFET stages swept by an oscillator, one knob, script or block."
+        }
         Circuit::American800RB => {
             "Modeled after an 80s solid-state bass head: op-amp preamp, four-band EQ, a boost, 300 W."
         }

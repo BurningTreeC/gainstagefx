@@ -244,25 +244,91 @@ impl Bbd {
 
     /// Four-point Hermite, reading `samples` behind the write pointer.
     fn read(&self, samples: f64) -> f64 {
-        let len = self.line.len();
-        let whole = samples.floor();
-        let frac = samples - whole;
-        let base = self.write as isize - whole as isize;
-        let at = |offset: isize| -> f64 {
-            let mut i = (base + offset) % len as isize;
-            if i < 0 {
-                i += len as isize;
-            }
-            self.line[i as usize]
-        };
-        // Newest to oldest as the offset grows, so `y0` is one *ahead* of the
-        // read point and `y3` two behind it.
-        let (y0, y1, y2, y3) = (at(1), at(0), at(-1), at(-2));
-        let c0 = y1;
-        let c1 = 0.5 * (y2 - y0);
-        let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
-        let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
-        ((c3 * frac + c2) * frac + c1) * frac + c0
+        hermite(&self.line, self.write, samples)
+    }
+}
+
+/// Four-point Hermite on a circular line, reading `samples` behind `write`.
+fn hermite(line: &[f64], write: usize, samples: f64) -> f64 {
+    let len = line.len();
+    let whole = samples.floor();
+    let frac = samples - whole;
+    let base = write as isize - whole as isize;
+    let at = |offset: isize| -> f64 {
+        let mut i = (base + offset) % len as isize;
+        if i < 0 {
+            i += len as isize;
+        }
+        line[i as usize]
+    };
+    // Newest to oldest as the offset grows, so `y0` is one *ahead* of the
+    // read point and `y3` two behind it.
+    let (y0, y1, y2, y3) = (at(1), at(0), at(-1), at(-2));
+    let c0 = y1;
+    let c1 = 0.5 * (y2 - y0);
+    let c2 = y0 - 2.5 * y1 + 2.0 * y2 - 0.5 * y3;
+    let c3 = 0.5 * (y3 - y0) + 1.5 * (y1 - y2);
+    ((c3 * frac + c2) * frac + c1) * frac + c0
+}
+
+/// A bucket brigade's delay and nothing else: an MN3007's 1024 stages at
+/// whatever clock the circuit around it sets.
+///
+/// For a pedal whose oscillator, clock control and filters are all solved in
+/// its own netlist -- the CE-2's -- and which needs from here only the thing a
+/// netlist cannot be: a delay of some milliseconds that moves. The same
+/// four-point Hermite as `Bbd`, for the same reason. Sized up front for the
+/// longest delay at the highest rate it will be run at, so that running,
+/// resetting and changing rate never allocate.
+///
+/// **It delays the signal about the level it sits at**, not the level itself.
+/// A bucket brigade's output stands at the brigade's own bias, not at its
+/// input's, and everything after it is coupled through a capacitor; and the
+/// netlist's operating point is solved with the brigade's return at rest. So
+/// the input's standing level is tracked (a one-pole a hertz wide) and taken
+/// off before the line, primed with the first sample after a reset -- which
+/// is the operating point -- so that nothing steps. Delaying the standing level
+/// instead put the CE-2's -0.78 V into its return as a step five milliseconds
+/// after every reset, and out of it as a thump of 0.45.
+pub struct Brigade {
+    line: Vec<f64>,
+    write: usize,
+    level: f64,
+    primed: bool,
+}
+
+impl Brigade {
+    pub fn new(longest: f64, max_rate: f64) -> Self {
+        Self {
+            line: vec![0.0; (longest * max_rate).ceil() as usize + 8],
+            write: 0,
+            level: 0.0,
+            primed: false,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.line.fill(0.0);
+        self.write = 0;
+        self.level = 0.0;
+        self.primed = false;
+    }
+
+    /// One sample in, and the line read `samples` behind it, at `rate`.
+    pub fn process(&mut self, x: f64, samples: f64, rate: f64) -> f64 {
+        if !self.primed {
+            self.level = x;
+            self.primed = true;
+        }
+        self.level += (std::f64::consts::TAU / rate).min(1.0) * (x - self.level);
+        self.line[self.write] = x - self.level;
+        let out = hermite(
+            &self.line,
+            self.write,
+            samples.clamp(1.0, (self.line.len() - 4) as f64),
+        );
+        self.write = (self.write + 1) % self.line.len();
+        out
     }
 }
 

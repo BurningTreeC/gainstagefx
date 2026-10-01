@@ -44,7 +44,8 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
    pedal_dallas_rangemaster_circuit, amp_marshall_1992, amp_laney_supergroup,
    amp_sunn_model_t, pedal_klon_centaur_circuit, pedal_marshall_guvnor_circuit,
    pedal_mxr_microamp_circuit, amp_ampeg_svt, pre_emi_redd47, pre_telefunken_v76,
-   pedal_sansamp_bass_driver_circuit, amp_gk_800rb`. **Order is also load-bearing**:
+   pedal_sansamp_bass_driver_circuit, amp_gk_800rb, pedal_mxr_phase90_circuit,
+   pedal_boss_ce2_circuit`. **Order is also load-bearing**:
    legacy saved presets store *normalized* values (index / (len-1)).
    - `amp_jcm800_2203` was appended on 2026-09-15 together with that migration:
      `presets::migrate` re-expresses a saved preset without stable ids against
@@ -60,7 +61,7 @@ PUBLISHED-PARAMETER DERIVED, EMPIRICALLY TUNED, APPROXIMATED.
    power_svt_6550, power_gk_800rb`.
    The `pedal` ids gained `pedal_dallas_rangemaster`, then `pedal_klon_centaur`,
    `pedal_marshall_guvnor`, `pedal_mxr_microamp` and `pedal_sansamp_bass_driver`
-   (2026-10-01), appended. Saved presets now also store
+   (2026-10-01), then `pedal_mxr_phase90` and `pedal_boss_ce2` (2026-10-02), appended. Saved presets now also store
    `model_ids`, so this list *can* grow (ids take precedence). Host state stores
    enum ids as strings.
 3. `cabinet` ids `off, combo, stack` are the legacy baked cabinet filter. New physical

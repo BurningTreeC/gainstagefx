@@ -1011,6 +1011,52 @@ pub const PRESETS: &[Preset] = &[
         output_trim: 2.51,
         ..base("Amplifier", "Plexi Cranked")
     },
+    // The same head cranked, with the orange phaser in front at a slow sweep:
+    // the script board (R28 out), the swoosh rather than the pulse, as a phaser
+    // in front of a non-master head was first heard.
+    Preset {
+        drive: 0.8,
+        circuit: Circuit::Plexi,
+        pedal: PedalModel::OrangePhase,
+        // Speed: about a third of a hertz.
+        pedal_drive: 0.3,
+        // The switch down: the script.
+        pedal_tone: 0.0,
+        tone: ToneStack::Off,
+        bass: 0.4,
+        mid: 0.75,
+        treble: 0.55,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.3,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -13.4 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: 0.5,
+        ..base("Amplifier", "Plexi, Orange Phase")
+    },
+    // The blue chorus in front of the American Twin's clean channel, as half
+    // the clean records of the eighties had it: a slow sweep at middle depth.
+    Preset {
+        pedal: PedalModel::BlueChorus,
+        // Rate: about a hertz.
+        pedal_drive: 0.25,
+        // Depth at the middle.
+        pedal_tone: 0.5,
+        circuit: Circuit::Twin,
+        drive: 0.35,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        mid: 0.5,
+        treble: 0.55,
+        cab_model: CabModel::AmericanOpen212,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -8.4 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: -4.4,
+        ..base("Amplifier", "Twin, Blue Chorus")
+    },
     // --- Brit AC30 -------------------------------------------------------------
     // The 30 W British combo: a cathode-biased EL84 stage with no feedback loop,
     // so it compresses rather than tightens as it is pushed. Treble and Bass

@@ -157,6 +157,11 @@ fn intent(gain: Gain) -> f64 {
         Gain::BassDriver => 30.0,
         // A solid-state bass head, stated at an instrument's level like the SVT.
         Gain::American800RB => 25.0,
+        // A phaser: its level is the dry and the shifted summed, whatever the
+        // Speed; the figure documents the intent.
+        Gain::OrangePhase => 1.0,
+        // A chorus, the same: the dry and the delayed summed.
+        Gain::BlueChorus => 1.0,
     }
 }
 
@@ -299,6 +304,9 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // plugin has one input calibration.
         Gain::AmericanSvt => Some(GUITAR_VOLTS),
         Gain::American800RB => Some(GUITAR_VOLTS),
+        // A pedal, fed a guitar like every pedal here.
+        Gain::OrangePhase => Some(GUITAR_VOLTS),
+        Gain::BlueChorus => Some(GUITAR_VOLTS),
         _ => None,
     }
 }

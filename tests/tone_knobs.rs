@@ -179,6 +179,10 @@ fn a_pedal_circuits_tone_has_its_own_knob() {
         (Circuit::Rat, "FILTER"),
         (Circuit::Ds1, "TONE"),
         (Circuit::GoldDrive, "TREBLE"),
+        // Not tone controls, but each pedal's one knob beyond its drive: the
+        // Orange Phase's R28 switch and the Blue Chorus's depth.
+        (Circuit::OrangePhase, "BLOCK"),
+        (Circuit::BlueChorus, "DEPTH"),
     ];
     for circuit in Circuit::ALL {
         let name = expected

@@ -28,13 +28,14 @@ use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerPr
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
     ac30, american312, american_800rb, american_ss800, american_svt, bass_driver, bigmuff,
-    brit2205, brit800, brit_drive, british_47, brum100, cabinet, clean_boost, clipper, console_e,
-    deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive, heavy_metal, iron, jazz120,
-    jc120_power, markiic, metal_zone, neve, orange_dist, oregon_t, plexi, plexi_bass, power,
-    preamp, rectifier, rodent, round_fuzz, studio, tone, treble_boost, ts808, tube610, twin,
+    blue_chorus, brit2205, brit800, brit_drive, british_47, brum100, cabinet, clean_boost, clipper,
+    console_e, deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive, heavy_metal, iron,
+    jazz120, jc120_power, markiic, metal_zone, neve, orange_dist, orange_phase, oregon_t, plexi,
+    plexi_bass, power, preamp, rectifier, rodent, round_fuzz, studio, tone, treble_boost, ts808,
+    tube610, twin,
 };
 use crate::dsp::ac;
-use crate::dsp::bbd::Bbd;
+use crate::dsp::bbd::{Bbd, Brigade};
 use crate::dsp::device::Linearisation;
 use crate::dsp::netlist::{Circuit as Netlist, DiodeSpec, Fault};
 use crate::dsp::oversample::{Downsampler, Oversampler, Upsampler};
@@ -208,12 +209,18 @@ pub enum Gain {
     /// transistor amplifier (`circuits::american_800rb`,
     /// `circuits::american_ss800`).
     American800RB,
+    /// The MXR Phase 90, script logo with the block's R28 on a switch
+    /// (`circuits::orange_phase`).
+    OrangePhase,
+    /// The Boss CE-2, its bucket brigade between two halves of its netlist
+    /// (`circuits::blue_chorus`).
+    BlueChorus,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 44] = [
+    pub const ALL: [Gain; 46] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -258,6 +265,8 @@ impl Gain {
         Gain::German76,
         Gain::BassDriver,
         Gain::American800RB,
+        Gain::OrangePhase,
+        Gain::BlueChorus,
     ];
 
     pub fn name(self) -> &'static str {
@@ -306,6 +315,8 @@ impl Gain {
             Gain::German76 => "Telefunken V76",
             Gain::BassDriver => "Tech 21 SansAmp Bass Driver DI",
             Gain::American800RB => "Gallien-Krueger 800RB",
+            Gain::OrangePhase => "MXR Phase 90",
+            Gain::BlueChorus => "Boss CE-2",
         }
     }
 
@@ -356,6 +367,8 @@ impl Gain {
             Gain::German76 => german_76::GAIN,
             Gain::BassDriver => bass_driver::DRIVE,
             Gain::American800RB => american_800rb::VOLUME,
+            Gain::OrangePhase => orange_phase::SPEED,
+            Gain::BlueChorus => blue_chorus::RATE,
             _ => clipper::GAIN,
         }
     }
@@ -408,6 +421,8 @@ impl Gain {
             Gain::Rat | Gain::DistPlus | Gain::Hm2 => "DISTORTION",
             Gain::FuzzFace => "FUZZ",
             Gain::TrebleBoost => "BOOST",
+            Gain::OrangePhase => "SPEED",
+            Gain::BlueChorus => "RATE",
             Gain::GoldDrive | Gain::BritDrive | Gain::CleanBoost => "GAIN",
             Gain::Mt2 | Gain::Ds1 => "DIST",
             _ => "DRIVE",
@@ -631,6 +646,11 @@ impl Gain {
             Gain::Ds1 => Some((orange_dist::TONE, "TONE", false)),
             // A shelf above 408 Hz, boost and cut: the Klon's TREBLE.
             Gain::GoldDrive => Some((gold_drive::TREBLE, "TREBLE", false)),
+            // Not a tone control but the pedal's one switch, on its one
+            // knob: down the script (R28 out), up the block (R28 in).
+            Gain::OrangePhase => Some((orange_phase::BLOCK, "BLOCK", false)),
+            // The CE-2's other knob, which is its depth rather than a tone.
+            Gain::BlueChorus => Some((blue_chorus::DEPTH, "DEPTH", false)),
             _ => None,
         }
     }
@@ -722,6 +742,8 @@ impl Gain {
                 | Gain::German76
                 | Gain::BassDriver
                 | Gain::American800RB
+                | Gain::OrangePhase
+                | Gain::BlueChorus
         )
     }
 
@@ -1028,9 +1050,39 @@ impl Gain {
     /// shipped presets were trimmed against, so moving them is a separate,
     /// deliberate change with its own re-trimming, not a tidy-up to fold into
     /// this one.
+    ///
+    /// And the Orange Phase and the Blue Chorus, whose Drive knob is their
+    /// Speed and Rate: they change no gain at all, and a make-up measured
+    /// across them would only follow where the sweep happened to be when each
+    /// point was taken.
     pub fn drive_is_channel_volume(self) -> bool {
         self.ab763().is_some()
-            || matches!(self, Gain::Jazz120 | Gain::TrebleBoost | Gain::CleanBoost)
+            || matches!(
+                self,
+                Gain::Jazz120
+                    | Gain::TrebleBoost
+                    | Gain::CleanBoost
+                    | Gain::OrangePhase
+                    | Gain::BlueChorus
+            )
+    }
+
+    /// A bucket brigade the circuit sends to and takes back from, when it has
+    /// one between two halves of its own netlist: the node its input is
+    /// driven at, the auxiliary input its output drives, the node its clock
+    /// follows, and the delay that node's voltage sets. The delay itself is a
+    /// `dsp::bbd::Brigade` held by the chain; everything either side of it is
+    /// solved. See `circuits::blue_chorus`.
+    pub fn bucket_brigade(self) -> Option<BucketBrigade> {
+        match self {
+            Gain::BlueChorus => Some(BucketBrigade {
+                send: blue_chorus::BBD_IN,
+                ret: blue_chorus::BBD_RETURN,
+                control: blue_chorus::CLOCK_CONTROL,
+                delay: blue_chorus::delay_seconds,
+            }),
+            _ => None,
+        }
     }
 
     /// Whether this voice has a bucket-brigade chorus of its own.
@@ -1702,6 +1754,13 @@ pub enum Pedal {
     /// Seven knobs, five of them in the tone row; its two shift switches
     /// stay at 80 Hz and 500 Hz in the slot.
     BassDriver,
+    /// The MXR Phase 90 (`circuits::orange_phase`). One knob, Speed, on the
+    /// slot's drive; R28 on the tone knob as a switch; no level, so the
+    /// slot's level knob is greyed.
+    OrangePhase,
+    /// The Boss CE-2 (`circuits::blue_chorus`). Rate on the slot's drive,
+    /// Depth on its tone knob, no level.
+    BlueChorus,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
@@ -1783,6 +1842,8 @@ impl Pedal {
             Pedal::BritDrive => ("gain", "level"),
             Pedal::CleanBoost => ("gain", "level"),
             Pedal::BassDriver => ("drive", "level"),
+            Pedal::OrangePhase => ("speed", "level"),
+            Pedal::BlueChorus => ("rate", "level"),
         }
     }
 
@@ -1804,10 +1865,12 @@ impl Pedal {
             Pedal::BritDrive => Some(Gain::BritDrive),
             Pedal::CleanBoost => Some(Gain::CleanBoost),
             Pedal::BassDriver => Some(Gain::BassDriver),
+            Pedal::OrangePhase => Some(Gain::OrangePhase),
+            Pedal::BlueChorus => Some(Gain::BlueChorus),
         }
     }
 
-    pub const ALL: [Pedal; 15] = [
+    pub const ALL: [Pedal; 17] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
@@ -1823,9 +1886,11 @@ impl Pedal {
         Pedal::BritDrive,
         Pedal::CleanBoost,
         Pedal::BassDriver,
+        Pedal::OrangePhase,
+        Pedal::BlueChorus,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 14;
+    const SLOTS: usize = 16;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -1844,6 +1909,8 @@ impl Pedal {
             Pedal::BritDrive => Some(11),
             Pedal::CleanBoost => Some(12),
             Pedal::BassDriver => Some(13),
+            Pedal::OrangePhase => Some(14),
+            Pedal::BlueChorus => Some(15),
         }
     }
 
@@ -1930,6 +1997,8 @@ impl Pedal {
             10 => gold_drive::build(10_000.0, 470_000.0),
             11 => brit_drive::build(10_000.0, 470_000.0),
             13 => bass_driver::build(10_000.0, 470_000.0),
+            14 => orange_phase::build(10_000.0, 470_000.0),
+            15 => blue_chorus::build(10_000.0, 470_000.0),
             _ => clean_boost::build(10_000.0, 470_000.0),
         }
     }
@@ -2087,6 +2156,19 @@ impl Pedal {
                     }),
                 ],
                 level: Some(bass_driver::LEVEL),
+            },
+            // One knob and one switch: Speed on the drive, R28 on the tone
+            // knob, and no level control at all.
+            14 => PedalControls {
+                drive: Some(orange_phase::SPEED),
+                tones: one_tone(orange_phase::BLOCK, "block", false),
+                level: None,
+            },
+            // Rate and Depth, and no level control.
+            15 => PedalControls {
+                drive: Some(blue_chorus::RATE),
+                tones: one_tone(blue_chorus::DEPTH, "depth", false),
+                level: None,
             },
             // One knob, GAIN on the box: the drive, and no level.
             _ => PedalControls {
@@ -2377,6 +2459,8 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::German76 => german_76::build(200.0, 300.0),
         Gain::BassDriver => bass_driver::build(10_000.0, 470_000.0),
         Gain::American800RB => american_800rb::build(10_000.0, 1_000_000.0),
+        Gain::OrangePhase => orange_phase::build(10_000.0, 470_000.0),
+        Gain::BlueChorus => blue_chorus::build(10_000.0, 470_000.0),
     }
 }
 
@@ -3568,9 +3652,13 @@ struct Front<'a> {
     /// The dry signal's tap, when it is taken inside this half.
     tap: Option<FrontTap<'a>>,
     pedal: Option<&'a mut Simulation>,
+    /// The pedal's bucket brigade, when it has one.
+    pedal_brigade: Option<BrigadeTap<'a>>,
     input_scale: f64,
     hand_off: f64,
     gain: &'a mut Simulation,
+    /// The circuit's, likewise.
+    gain_brigade: Option<BrigadeTap<'a>>,
     graphic: Option<&'a mut Simulation>,
     line: Option<&'a mut Simulation>,
     twin: bool,
@@ -3592,6 +3680,75 @@ struct Front<'a> {
     v4b_grid: usize,
     #[cfg(test)]
     power_traced: bool,
+}
+
+/// A circuit's bucket brigade, by name: see `Gain::bucket_brigade`.
+#[derive(Clone, Copy, Debug)]
+pub struct BucketBrigade {
+    /// The node the brigade's input is driven at.
+    pub send: &'static str,
+    /// The auxiliary input its output drives.
+    pub ret: usize,
+    /// The node its clock follows.
+    pub control: &'static str,
+    /// The delay, in seconds, for a voltage at `control`.
+    pub delay: fn(f64) -> f64,
+}
+
+/// The same, resolved to one simulation's unknowns once, at construction.
+#[derive(Clone, Copy, Debug)]
+struct BrigadeNodes {
+    send: usize,
+    ret: usize,
+    control: usize,
+    delay: fn(f64) -> f64,
+}
+
+impl BrigadeNodes {
+    fn resolve(netlist: &Netlist, brigade: BucketBrigade) -> Self {
+        Self {
+            send: netlist
+                .unknown_named(brigade.send)
+                .expect("a bucket brigade's send is a node of its circuit"),
+            ret: brigade.ret,
+            control: netlist
+                .unknown_named(brigade.control)
+                .expect("a bucket brigade's clock control is a node of its circuit"),
+            delay: brigade.delay,
+        }
+    }
+}
+
+/// The longest delay any circuit's bucket brigade is given, and the highest
+/// rate it runs at -- the host's highest times the deepest oversampling, since
+/// a pedal runs inside the oversampler -- which together size the lines up
+/// front so that nothing allocates on the audio thread.
+const BRIGADE_LONGEST: f64 = blue_chorus::LONGEST;
+const BRIGADE_MAX_RATE: f64 = 192_000.0 * MAX_OVERSAMPLING as f64;
+
+/// A bucket brigade in the first half: the line, where it sits in the
+/// simulation, and what came out of it last, which drives the simulation's
+/// return on the next sample. One sample's latency in a loop of milliseconds.
+struct BrigadeTap<'a> {
+    line: &'a mut Brigade,
+    nodes: BrigadeNodes,
+    returned: &'a mut f64,
+    rate: f64,
+}
+
+impl BrigadeTap<'_> {
+    /// Before the solve: what the brigade's output is driving.
+    fn drive(&self, sim: &mut Simulation) {
+        sim.set_aux_input(self.nodes.ret, *self.returned);
+    }
+
+    /// After it: the input into the line, read back at the clock's delay.
+    fn advance(&mut self, sim: &Simulation) {
+        let delay = (self.nodes.delay)(sim.voltage_at(self.nodes.control)) * self.rate;
+        *self.returned = self
+            .line
+            .process(sim.voltage_at(self.nodes.send), delay, self.rate);
+    }
 }
 
 /// The dry signal's tap in the first half: which point, the decimator and
@@ -3747,7 +3904,13 @@ impl Front<'_> {
             let v = match self.pedal.as_mut() {
                 Some(sim) => {
                     let started = self.timing.then(Instant::now);
+                    if let Some(brigade) = self.pedal_brigade.as_ref() {
+                        brigade.drive(sim);
+                    }
                     let out = sim.process(*v) * self.hand_off;
+                    if let Some(brigade) = self.pedal_brigade.as_mut() {
+                        brigade.advance(sim);
+                    }
                     self.pedal_ns += lap(started);
                     out
                 }
@@ -3773,7 +3936,13 @@ impl Front<'_> {
             // naming. The power stage itself executes in this callback, so it
             // must use the same effective sample rate as the preamplifier.
             let started = self.timing.then(Instant::now);
+            if let Some(brigade) = self.gain_brigade.as_ref() {
+                brigade.drive(self.gain);
+            }
             let mut amplified = self.gain.process(v);
+            if let Some(brigade) = self.gain_brigade.as_mut() {
+                brigade.advance(self.gain);
+            }
             self.gain_ns += lap(started);
             if self.twin {
                 next_tank_drive = self.gain.voltage_at(self.tank_send);
@@ -4523,6 +4692,16 @@ pub struct Chain {
     /// and may not allocate. It runs whenever the selected voice has one, so
     /// that turning `chorus` up does not start from a line full of silence.
     bbd: Bbd,
+    /// The bucket brigades of the circuits that have one between two halves of
+    /// their netlist (`Gain::bucket_brigade`): the pedal's and the circuit's,
+    /// each with its nodes resolved per pedal slot and per voice, and what
+    /// came out of each last. Built for every chain, as the tank is.
+    pedal_brigade: Brigade,
+    pedal_brigade_nodes: Vec<Option<BrigadeNodes>>,
+    pedal_brigade_return: f64,
+    gain_brigade: Brigade,
+    gain_brigade_nodes: Vec<Option<BrigadeNodes>>,
+    gain_brigade_return: f64,
     /// The panel's Chorus knob, 0..1. Zero is SW3 OFF.
     chorus: f64,
     /// Whether the selected voice has a chorus at all, resolved in `set_voice`
@@ -4849,6 +5028,29 @@ impl Chain {
             .expect("Deluxe catalogue builds")
             .unknown_named(deluxe::SEND)
             .expect("Deluxe has the reverb-transformer secondary");
+        let pedal_brigade_nodes = (0..Pedal::SLOTS)
+            .map(|slot| {
+                let brigade = Pedal::ALL
+                    .into_iter()
+                    .find(|p| p.slot() == Some(slot))
+                    .and_then(Pedal::as_circuit)
+                    .and_then(Gain::bucket_brigade)?;
+                Some(BrigadeNodes::resolve(
+                    &Pedal::build(slot).expect("pedal builds"),
+                    brigade,
+                ))
+            })
+            .collect();
+        let gain_brigade_nodes = (0..VOICES)
+            .map(|i| {
+                let (gain, diode, amplifier) = voice_at(i);
+                let brigade = gain.bucket_brigade()?;
+                Some(BrigadeNodes::resolve(
+                    &build_voice(gain, diode, amplifier).expect("catalogue builds"),
+                    brigade,
+                ))
+            })
+            .collect();
         let direct_outs = (0..VOICES)
             .map(|i| {
                 let (gain, diode, amplifier) = voice_at(i);
@@ -4936,6 +5138,12 @@ impl Chain {
             speed: 0.5,
             intensity: 0.0,
             bbd: Bbd::new(rate),
+            pedal_brigade: Brigade::new(BRIGADE_LONGEST, BRIGADE_MAX_RATE),
+            pedal_brigade_nodes,
+            pedal_brigade_return: 0.0,
+            gain_brigade: Brigade::new(BRIGADE_LONGEST, BRIGADE_MAX_RATE),
+            gain_brigade_nodes,
+            gain_brigade_return: 0.0,
             chorus: 0.0,
             has_chorus: false,
             #[cfg(test)]
@@ -5009,6 +5217,8 @@ impl Chain {
         }
         if index != self.gain {
             self.gain = index;
+            self.gain_brigade.reset();
+            self.gain_brigade_return = 0.0;
             if gain.has_reverb_and_tremolo() {
                 // The unified Twin stores the Reverb pot inside its netlist.
                 // A direct voice selection must apply the chain's stored
@@ -5188,6 +5398,8 @@ impl Chain {
             }
             self.pedal = next;
             self.selected_pedal = s.pedal;
+            self.pedal_brigade.reset();
+            self.pedal_brigade_return = 0.0;
             self.fade_remaining = FADE_LEN;
         }
         if let Some(i) = self.pedal {
@@ -6168,6 +6380,20 @@ impl Chain {
         let power_traced = power.is_some() && !radiating;
         let twin = self.voice.has_reverb_and_tremolo();
         let ab763 = self.voice.ab763();
+        let pedal_nodes = self.pedal.and_then(|i| self.pedal_brigade_nodes[i]);
+        let gain_nodes = self.gain_brigade_nodes[self.gain];
+        let pedal_brigade = pedal_nodes.map(|nodes| BrigadeTap {
+            line: &mut self.pedal_brigade,
+            nodes,
+            returned: &mut self.pedal_brigade_return,
+            rate: inner_rate,
+        });
+        let gain_brigade = gain_nodes.map(|nodes| BrigadeTap {
+            line: &mut self.gain_brigade,
+            nodes,
+            returned: &mut self.gain_brigade_return,
+            rate: inner_rate,
+        });
         let pedal = self.pedal.map(|i| &mut self.pedals[i]);
         let input_scale = if pedal.is_some() {
             self.pedal_into
@@ -6179,9 +6405,11 @@ impl Chain {
             up,
             tap,
             pedal,
+            pedal_brigade,
             input_scale,
             hand_off: self.pedal_hand_off,
             gain: &mut self.gains[self.gain],
+            gain_brigade,
             graphic: self.voice.has_graphic().then_some(&mut self.graphic),
             line: (self.voice == Gain::Neve).then_some(self.line.as_mut()),
             twin,
@@ -6840,6 +7068,10 @@ impl Chain {
         self.tank.reset();
         self.tremolo.reset();
         self.bbd.reset();
+        self.pedal_brigade.reset();
+        self.pedal_brigade_return = 0.0;
+        self.gain_brigade.reset();
+        self.gain_brigade_return = 0.0;
         self.over.reset();
         self.pad.reset();
         self.dry.reset();

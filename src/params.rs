@@ -188,6 +188,12 @@ pub enum Circuit {
     #[id = "amp_gk_800rb"]
     #[name = "American 800RB"]
     American800RB,
+    #[id = "pedal_mxr_phase90_circuit"]
+    #[name = "Orange Phase"]
+    OrangePhase,
+    #[id = "pedal_boss_ce2_circuit"]
+    #[name = "Blue Chorus"]
+    BlueChorus,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -264,9 +270,11 @@ impl Circuit {
             Circuit::German76 => "German 76",
             Circuit::BassDriver => "Bass Driver",
             Circuit::American800RB => "American 800RB",
+            Circuit::OrangePhase => "Orange Phase",
+            Circuit::BlueChorus => "Blue Chorus",
         }
     }
-    pub const ALL: [Circuit; 44] = [
+    pub const ALL: [Circuit; 46] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -311,6 +319,8 @@ impl Circuit {
         Circuit::German76,
         Circuit::BassDriver,
         Circuit::American800RB,
+        Circuit::OrangePhase,
+        Circuit::BlueChorus,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -359,6 +369,8 @@ impl Circuit {
             Circuit::German76 => voice::Gain::German76,
             Circuit::BassDriver => voice::Gain::BassDriver,
             Circuit::American800RB => voice::Gain::American800RB,
+            Circuit::OrangePhase => voice::Gain::OrangePhase,
+            Circuit::BlueChorus => voice::Gain::BlueChorus,
         }
     }
 
@@ -398,7 +410,9 @@ impl Circuit {
             | voice::Gain::GoldDrive
             | voice::Gain::BritDrive
             | voice::Gain::CleanBoost
-            | voice::Gain::BassDriver => Kind::Pedal,
+            | voice::Gain::BassDriver
+            | voice::Gain::OrangePhase
+            | voice::Gain::BlueChorus => Kind::Pedal,
             voice::Gain::Neve
             | voice::Gain::American312
             | voice::Gain::ConsoleE
@@ -738,10 +752,16 @@ pub enum PedalModel {
     #[id = "pedal_sansamp_bass_driver"]
     #[name = "Bass Driver"]
     BassDriver,
+    #[id = "pedal_mxr_phase90"]
+    #[name = "Orange Phase"]
+    OrangePhase,
+    #[id = "pedal_boss_ce2"]
+    #[name = "Blue Chorus"]
+    BlueChorus,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 17] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
@@ -757,6 +777,8 @@ impl PedalModel {
         Self::BritDrive,
         Self::CleanBoost,
         Self::BassDriver,
+        Self::OrangePhase,
+        Self::BlueChorus,
     ];
 
     pub fn name(self) -> &'static str {
@@ -780,6 +802,8 @@ impl PedalModel {
             Self::BritDrive => voice::Pedal::BritDrive,
             Self::CleanBoost => voice::Pedal::CleanBoost,
             Self::BassDriver => voice::Pedal::BassDriver,
+            Self::OrangePhase => voice::Pedal::OrangePhase,
+            Self::BlueChorus => voice::Pedal::BlueChorus,
         }
     }
 }
