@@ -6,10 +6,11 @@ attenuator, and a bi-amp Speakon input. The cabinet GK's own heads are shown and
 with, the 800RB among them. Proposed stable ids `cab_gk_410rbh` (`cab_model`) and
 `spk_gk_p10_200` (`speaker`); proposed display **American 4x10** and **Cast Bass 10**.
 
-Status: **CHECKPOINT 2026-10-01 -- buildable with estimates, not built.** GK documents
-the box, its complement and two performance figures; it publishes nothing about the
-driver beyond its impedance and rating. Building it needs two things the acoustics do not
-have yet (a front vent and a horn branch); see the end.
+Status: **IMPLEMENTED 2026-10-02, the horn attenuated fully** (`CabinetProfile::AMERICAN_410`,
+`SpeakerProfile::CAST_BASS_10`), on the owner's decision to build on estimates. The
+acoustics gained a front vent and a passive crossover on the woofers; the horn branch,
+which needs a second radiator with its own signal through the back half, is the next
+step. Results below.
 
 ## Eight-question checkpoint
 
@@ -69,21 +70,52 @@ have yet (a front vent and a horn branch); see the end.
    the horn above a few kilohertz is half of what the Hi Boost and the Mid Contour are
    for.
 
-## What building it needs
+## Results (2026-10-02)
+
+Measured by `tests/american_410.rs`; `examples/american_410_op.rs` prints the tuning.
+
+- **The vents tune the box**: 143.5 l net, two 3 in tubes (45.6 cm2 each) 52 mm deep,
+  12.3 cm with the ends corrected -- Helmholtz 42 Hz. The four tens' impedance in it has
+  the vented box's two peaks either side of a dip at 40.6 Hz; sealed, the same box has
+  one peak, at 69 Hz.
+- **And radiates as a vented box**: at a metre, what the vents add over the same box
+  sealed is what **Small's theory of the vented box** gives for these drivers and this
+  box, to 0.2 dB from 35 to 120 Hz (+2.2 dB at 40 Hz, +2.5 at 60). That checks the
+  cavity, the ports' acoustic mass and radiation resistance, their radiation from the
+  baffle, and the drivers' motion in the load, together. (The first test of it expected
+  5 dB or more at 40 Hz; that was the expectation's error, not the box's.)
+- **The crossover**: -0.1 dB at 1.5 kHz, -18.3 dB at 6 kHz and -37 dB at 12 kHz against
+  the same tens full range -- a third-order low-pass at 3 kHz.
+- **With these estimated drivers** the cabinet is -3 dB near 57 Hz and -10 dB near 38 Hz,
+  whatever the tuning (Small's function, Qts 0.42, alpha 2.06): GK's "usable response
+  31 Hz" names no level and is not fitted. The estimated drivers' sensitivity is some
+  99 dB at 1 W for the four (DERIVED from the estimates by Small's efficiency
+  formula, not measured), against GK's 106 dB (1999) and 102 (the later Paragon
+  cabinet); 106 is not what four tens of this kind do, and is not fitted either.
+- **Every other cabinet is untouched**, to the bit: no vent and no crossover leave the
+  open-back opening and the pass-through filters exactly as they were (both frozen
+  baselines and every cabinet test pass).
+
+**Approximated**: the P10/200 beyond its 32 ohm, 200 W and 43 Hz (Re, Mms, Qms and Qes
+ESTIMATED; coil and breakup the B810's as priors); the vents' size and depth and the
+layout (ESTIMATED); the crossover's corner (3 kHz, ESTIMATED) and its place -- on the
+cone's motion in the acoustic stage rather than in the amplifier's load, where its
+series inductor would cost every speaker-loaded stage the unknowns for a difference
+only near the corner; **no horn yet** (the cabinet's attenuator fully down).
+
+## What building it needed
 
 Not a profile alone. The acoustics have sealed and open-back boxes and no tweeter:
 
-1. **A vent.** The speaker load already carries the cavity's **opening** as an acoustic
-   mass with radiation resistance (`acoustics::speaker::LoadValues`, the open back's
-   Helmholtz element), and `acoustics::enclosure::CavityRadiation` already radiates its
-   flow. A vent is the same element with a tube length and a position on the **front**
-   rather than an open fraction of the back. Generic: every ported bass cabinet the
-   roadmap names needs it.
-2. **A horn branch.** The crossover's high-pass and attenuator as part of the load the
-   power stage drives, a horn radiator at its baffle position fed from that branch, and
-   the woofers behind the low-pass. Also generic: the modern bass cabinet needs it too.
-3. **The profiles**, `cab_gk_410rbh` and `spk_gk_p10_200`, appended to their enums
+1. **A vent** (`acoustics::cabinet::Vent`): the open back's opening element -- an
+   acoustic mass with radiation resistance in the speaker load, and a radiator in the
+   cavity model -- given a tube's area and length with both ends corrected (flanged
+   outside, free inside), and placed on the **front** at the ports. Generic: every
+   ported bass cabinet the roadmap names can use it.
+2. **A crossover** (`CabinetProfile::crossover_hz`): a third-order Butterworth low-pass
+   on the cone's motion in `acoustics::stage`.
+3. **Still to do: the horn branch** -- the crossover's high-pass and attenuator from the
+   speaker terminal, decimated and padded through the back half beside the cone's
+   signal, radiating from the horn's position. Also generic.
+4. **The profiles**, `cab_gk_410rbh` and `spk_gk_p10_200`, appended to their enums,
    with `migrate()` untouched (a new choice, nobody's default).
-
-Decision for the owner: build on these terms (documented box, estimated driver, vents
-and crossover, all labelled), or wait for a measurement of a P10/200.

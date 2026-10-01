@@ -386,8 +386,44 @@ impl SpeakerProfile {
         },
     };
 
+    /// Gallien-Krueger P10/200, the 410RBH's cast-frame ten, an Eminence
+    /// special for GK (part 082-0000-A): 32 ohm and 200 W DOCUMENTED (GK's
+    /// parts listing), Fs 43 Hz SECONDARY (reseller listings). Nothing else is
+    /// published, so the rest is ESTIMATED inside a 200 W cast-frame ten's
+    /// bounds: Re 27 ohm (the Legend B810's 27.5 for the same nominal), Mms
+    /// 32 g, Qms 6, and Bl for a Qes of 0.45 -- a vented-box driver -- which
+    /// with that Fs gives Vas about 74 l. The coil and the breakup voicing are
+    /// the B810's, fitted to Eminence's plots of a 32 ohm ten of the same
+    /// class: priors, not measurements of this part. Referred to 8 ohm like
+    /// every profile here (impedances a quarter, Bl a half): four in parallel.
+    /// See `docs/models/american_410.md`.
+    pub const CAST_BASS_10: SpeakerProfile = SpeakerProfile {
+        id: "spk_gk_p10_200",
+        name: "Cast Bass 10",
+        inspiration: "Gallien-Krueger P10/200, 32 ohm (referred to 8), Eminence-built",
+        re: 6.75,
+        l1: 0.59374e-3,
+        r1: 64.237,
+        l2: 1.04726e-3,
+        r2: 4.9425,
+        fs: 43.0,
+        qms: 6.0,
+        mms: 32.0e-3,
+        bl: 11.4,
+        sd: 350.1e-4,
+        breakup: Breakup {
+            peaks: [
+                pk(1133.0, 5.32, 1.83),
+                pk(2545.0, 8.84, 4.00),
+                pk(4941.0, 7.28, 5.30),
+            ],
+            lowpass_hz: 4155.0,
+            lowpass_q: 2.50,
+        },
+    };
+
     /// Every implemented driver, in the order stable ids were assigned.
-    pub const ALL: [&'static SpeakerProfile; 10] = [
+    pub const ALL: [&'static SpeakerProfile; 11] = [
         &Self::BRIT_V30,
         &Self::BRIT_GREEN_25,
         &Self::BRIT_T75,
@@ -398,6 +434,7 @@ impl SpeakerProfile {
         &Self::JAZZ_12,
         &Self::BRIT_K85,
         &Self::AMERICAN_BASS_10,
+        &Self::CAST_BASS_10,
     ];
 
     /// The data sets are 8 ohm parts.

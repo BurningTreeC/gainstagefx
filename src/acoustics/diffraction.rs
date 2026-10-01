@@ -47,7 +47,9 @@ fn length(a: [f64; 3]) -> f64 {
 }
 
 /// Sources: opening, front/back, left/right, bottom/top. Coordinates put the
-/// front baffle at z=0 and the rear at z=-depth.
+/// front baffle at z=0 and the rear at z=-depth. The opening is the back's
+/// centre for an open-backed cabinet and the ports' position on the baffle for
+/// a vented one.
 pub fn paths(cab: &CabinetProfile, source: usize, receiver: [f64; 3]) -> [Path; ROUTES] {
     assert!(source < RADIATORS);
     let (w, h, d) = (cab.width / 2.0, cab.height / 2.0, cab.depth);
@@ -59,8 +61,11 @@ pub fn paths(cab: &CabinetProfile, source: usize, receiver: [f64; 3]) -> [Path; 
         [0.0, -h, -d / 2.0],
         [0.0, h, -d / 2.0],
     ];
-    let face = if source == 0 { 1 } else { source - 1 };
-    let origin = faces[face];
+    let (face, origin) = match (source, cab.vent) {
+        (0, Some(vent)) => (0, [vent.position.0, vent.position.1, 0.0]),
+        (0, None) => (1, faces[1]),
+        (s, _) => (s - 1, faces[s - 1]),
+    };
     let edges = [
         Edge {
             point: [-w, 0.0, 0.0],

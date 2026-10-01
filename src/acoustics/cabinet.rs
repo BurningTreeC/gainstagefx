@@ -64,9 +64,38 @@ pub struct CabinetProfile {
     /// Volume lost to an angled top, as a fraction of the straight box.
     pub slant: f64,
     pub leakage_q: f64,
+    /// Ports in the baffle, for a vented box. `None` is sealed (or open-backed,
+    /// by `open_fraction`); a cabinet has one or the other.
+    pub vent: Option<Vent>,
+    /// The woofers' passive crossover, a third-order low-pass at this corner,
+    /// for a cabinet built with one. `None` drives them full range.
+    pub crossover_hz: Option<f64>,
     /// What `Matched` resolves the speaker to. See the research log for which of
     /// these are factory complements and which are voicing choices.
     pub default_speaker: &'static SpeakerProfile,
+}
+
+/// Ports in a vented cabinet's baffle: `count` tubes of `area` each and
+/// `length` deep, opening on the front about `position` (m from the baffle's
+/// centre, +x right, +y up). Together they are one acoustic mass on the box,
+/// `rho L / (count area)` with each tube's ends corrected, and they radiate
+/// from where they are. See `acoustics::enclosure`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Vent {
+    pub count: usize,
+    pub area: f64,
+    pub length: f64,
+    pub position: (f64, f64),
+}
+
+impl Vent {
+    /// The tubes' effective length: the physical one plus an end correction
+    /// for the outer end, flanged by the baffle (0.85 r), and the inner, free
+    /// in the box (0.61 r).
+    pub fn effective_length(&self) -> f64 {
+        let r = (self.area / std::f64::consts::PI).sqrt();
+        self.length + (0.85 + 0.61) * r
+    }
 }
 
 /// The most drivers a cabinet here holds: the American 8x10's.
@@ -110,6 +139,8 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.08,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
@@ -134,6 +165,8 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_V30,
     };
 
@@ -149,6 +182,8 @@ impl CabinetProfile {
         id: "cab_marshall_1960ax",
         name: "Brit Green 4x12",
         inspiration: "Marshall 1960AX angled 4x12, G12M-25 Greenback",
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_GREEN_25,
         ..Self::BRIT_1960
     };
@@ -157,6 +192,8 @@ impl CabinetProfile {
         id: "cab_marshall_1960av",
         name: "Brit V30 4x12",
         inspiration: "Marshall 1960AV angled 4x12, Celestion G12 Vintage",
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_V30,
         ..Self::BRIT_1960
     };
@@ -182,6 +219,8 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
@@ -201,6 +240,8 @@ impl CabinetProfile {
         open_fraction: 0.40,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::AMERICAN_CERAMIC,
     };
 
@@ -226,6 +267,8 @@ impl CabinetProfile {
         open_fraction: 0.45,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::AMERICAN_CERAMIC,
     };
 
@@ -245,6 +288,8 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_V30,
     };
 
@@ -264,6 +309,8 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
@@ -296,6 +343,8 @@ impl CabinetProfile {
         open_fraction: 0.40,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::JAZZ_12,
     };
 
@@ -332,6 +381,8 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::BRIT_K85,
     };
 
@@ -369,10 +420,52 @@ impl CabinetProfile {
         open_fraction: 0.0,
         slant: 0.0,
         leakage_q: 7.0,
+        vent: None,
+        crossover_hz: None,
         default_speaker: &SpeakerProfile::AMERICAN_BASS_10,
     };
 
-    pub const ALL: [&'static CabinetProfile; 13] = [
+    /// Gallien-Krueger 410RBH, the Eminence-built RBH of GK's owner's manual
+    /// (1999): 24 W x 27.5 H x 18 D in, 3/4 in birch with dado joints, four
+    /// P10/200 tens, two front vents and an 18 dB/oct passive crossover, all
+    /// DOCUMENTED; one chamber (none is described). ESTIMATED: the layout --
+    /// the horn's space at the top, the tens in a square below it, the vents
+    /// along the bottom; the vents' size and depth, two 3 in tubes tuned near
+    /// 40 Hz for GK's "usable response 31 Hz" (`examples/american_410_op.rs`);
+    /// the crossover's corner, 3 kHz. **The horn is attenuated fully**, as the
+    /// cabinet's own attenuator allows: the horn branch is not built yet.
+    pub const AMERICAN_410: CabinetProfile = CabinetProfile {
+        id: "cab_gk_410rbh",
+        name: "American 4x10",
+        inspiration: "Gallien-Krueger 410RBH (RBH series), four 32 ohm tens, two front vents",
+        width: 0.6096,
+        height: 0.6985,
+        depth: 0.4572,
+        wall: 0.019,
+        material: PanelMaterial::PLYWOOD,
+        lining_absorption: 0.08,
+        drivers: 4,
+        compartments: 1,
+        positions: four([
+            (-0.145, 0.105),
+            (0.145, 0.105),
+            (-0.145, -0.155),
+            (0.145, -0.155),
+        ]),
+        open_fraction: 0.0,
+        slant: 0.0,
+        leakage_q: 7.0,
+        vent: Some(Vent {
+            count: 2,
+            area: 45.6e-4,
+            length: 0.052,
+            position: (0.0, -0.305),
+        }),
+        crossover_hz: Some(3_000.0),
+        default_speaker: &SpeakerProfile::CAST_BASS_10,
+    };
+
+    pub const ALL: [&'static CabinetProfile; 14] = [
         &Self::BRIT_1960,
         &Self::CALI_OVERSIZED,
         &Self::BRIT_CLOSED,
@@ -386,6 +479,7 @@ impl CabinetProfile {
         &Self::JAZZ_OPEN_212,
         &Self::AMERICAN_CLOSED_412,
         &Self::AMERICAN_810,
+        &Self::AMERICAN_410,
     ];
 
     pub fn internal(&self) -> (f64, f64, f64) {

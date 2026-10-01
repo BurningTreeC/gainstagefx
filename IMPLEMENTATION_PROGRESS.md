@@ -1,5 +1,110 @@
 # Implementation progress
 
+## 2026-10-02 — The Orange Phase (MXR Phase 90), and a capacitor's initial charge
+
+The owner: "To all questions yes" -- build the 410RBH on estimates, the Phase 90 with
+R28 switchable, the CE-2 from its service notes, and the wahs as proposed. This is the
+Phase 90; the CE-2's notes (Boss, first edition, February 1987) are in hand and clear
+its checkpoint.
+
+- **The pedal** (`circuits::orange_phase`; pedal `pedal_mxr_phase90`, circuit
+  `pedal_mxr_phase90_circuit`, display "Orange Phase"), from ElectroSmash's trace of the
+  script logo: the TL061 buffer, four all-pass stages each 24 k and 47 nF with a 2N5952
+  across, the 2N4125 mixer, and the oscillator **solved with the rest of it** -- U1b's
+  Schmitt, C10 charged through Speed, the ramp reaching the gates through R22 against
+  the trimmer's R20. R28 is a two-step rheostat on the tone knob (open, or exactly 24 k):
+  down the script, up the block.
+- **Against ElectroSmash**: the notches at the arithmetic's 58.5 and 340.8 Hz, -46 dB,
+  with the JFETs off; R28's resonance between them (+3.6 dB over the script); the
+  oscillator from 0.14 Hz to 10 Hz ("tenths of Hz to some Hertz"); the trimmer fitted to
+  the bias procedure (0.4442: the swing's bottom at the JFETs' cut-off), and the sweep
+  cutting a 1 kHz tone 23 dB once a cycle.
+- **Referenced to the zener**: every signal stage rides D2's 5.1 V, and a biased
+  follower in this solver can stop following; the zener is the netlist's ground and the
+  battery's negative a supply below it.
+- **The solver gained a capacitor's initial charge** (`Netlist::charged`, SPICE's
+  initial condition, applied whenever an operating point is taken). The oscillator's
+  operating point is the balance between its thresholds, and at the slow end the
+  solver sat on it for good -- faster settings started from rounding. C10 now starts
+  just below the lower threshold, so every setting starts at once and from the same
+  phase. Tested on its own (`tests/netlist.rs`).
+- **Speed changes no gain**, so the circuit's make-up is held at one point across it
+  (`drive_is_channel_volume`), as the Treble Boost's is.
+- **Preset**: *Plexi, Orange Phase* (the script at a slow sweep, in front of the cranked
+  Plexi).
+- **Tables**: calibration and power trim gained the row (every existing figure
+  identical); kernels 181 to 183, the 181 unchanged.
+
+## 2026-10-02 — The Blue Chorus (Boss CE-2), and bucket brigades in the slot
+
+On the owner's service notes (Boss CE-2/CE-2B, first edition, February 1987; downloaded
+by the owner after every copy refused this session's fetches).
+
+- **The pedal** (`circuits::blue_chorus`; pedal `pedal_boss_ce2`, circuit
+  `pedal_boss_ce2_circuit`, display "Blue Chorus"): the input follower, IC1a's
+  pre-emphasis, the three-pole anti-aliasing filter round Q2, the reconstruction filter
+  round Q3, IC1b's mixer with the de-emphasis, and the LFO -- IC2's Schmitt and
+  integrator, RATE, DEPTH, R35 / C21 and Q4 -- all solved. Referenced to the bias line.
+- **The bucket brigade in the slot**: the MN3007's input is a node of the netlist and its
+  output an auxiliary input, as the Twin's tank is sent and returned. A circuit declares
+  it (`Gain::bucket_brigade`); the chain holds a preallocated `dsp::bbd::Brigade` for
+  the pedal and one for the circuit (the JC-120's Hermite delay line, factored out with
+  its arithmetic unchanged), sets the return before each solve and pushes the send
+  after it. The delay comes from Q4's emitter through a clock law fitted to a
+  measurement of a real CE-2 (110 kHz at rest, 28 kHz of sweep at middle depth): 4.65 ms
+  at rest, 4.15-5.35 ms swept.
+- **Against the notes and ElectroSmash**: the dry signal flat through the emphasis pair;
+  the pre-emphasis's 15 dB; the filters' poles near 6.6-6.9 kHz; the oscillator 0.35 to
+  3.8 Hz against 0.32-3.6 from the values ("3.5 Hz"); the comb, depth down -- and no
+  comb in the bass, because the wet signal is high-passed at 102 Hz into the mixer.
+- **A comparator the solver stepped over**: the LFO's Schmitt, a positive-feedback flip
+  far faster than a sample, stopped at its threshold with Newton at its ceiling on
+  every sample (over a millisecond a sample). Its op-amp is built at 5 kHz rather than
+  0.5 MHz, which the solver follows; the flip takes a millisecond, the period moves by a
+  fraction of a per cent. The Orange Phase's Schmitt does not need this: its C7 feeds
+  the jump straight back to the inverting input.
+- **Preset**: *Twin, Blue Chorus* (a slow sweep at middle depth into the Twin's clean
+  channel).
+- **Tables**: calibration and power trim gained the row (every existing figure
+  identical); kernels 183 to 184, the 183 unchanged.
+
+## 2026-10-02 — The American 4x10 (Gallien-Krueger 410RBH): vented boxes and crossovers
+
+On estimates, as the owner decided; the horn attenuated fully, which the cabinet's own
+attenuator allows. Built in a separate worktree while the CE-2's tables were generated,
+then applied.
+
+- **A front vent** (`acoustics::cabinet::Vent`): the open back's opening element -- an
+  acoustic mass with radiation resistance in the speaker load, a radiator in the cavity
+  model -- given a tube's area and its length with both ends corrected, and placed on
+  the baffle at the ports. **Checked against Small's theory of the vented box**: what the
+  vents add over the same box sealed matches his function for these drivers and this
+  box to 0.2 dB from 35 to 120 Hz. (The first test expected 5 dB or more at 40 Hz; Small
+  says 2.4 for this alignment, and so does the model.)
+- **A crossover on the woofers** (`CabinetProfile::crossover_hz`): a third-order
+  Butterworth low-pass on the cone's motion in the acoustic stage, not in the
+  amplifier's load (whose series parts would cost every speaker-loaded stage unknowns
+  for a difference only near the corner): -18.3 dB an octave past 3 kHz, -37 dB two.
+- **The cabinet** (`cab_gk_410rbh`, "American 4x10"): GK's 1999 RBH manual -- 24 x 27.5 x
+  18 in, 3/4 in birch, four tens, two front vents, an 18 dB/oct crossover; vents two 3 in
+  tubes 52 mm deep (42 Hz), layout and corner ESTIMATED. **The driver**
+  (`spk_gk_p10_200`, "Cast Bass 10"): 32 ohm, 200 W and 43 Hz published, the rest
+  estimated inside a 200 W cast-frame ten's bounds (Qes 0.45, Vas about 74 l).
+- **Every other cabinet bit-identical**: no vent, no crossover, and both frozen baselines
+  pass.
+- *American 800RB Clank* now plays through it (re-levelled: -10.2 dB untrimmed).
+- **Still to do: the horn** -- a second radiator fed from the speaker terminal through
+  the crossover's high-pass, with its own decimated stream through the back half.
+
+## 2026-10-02 — The wahs: research and the control design
+
+`docs/models/wahs.md`: the Cry Baby GCB-95 (rev F, buffered) on traces -- Dunlop never
+published a drawing -- and the Vox V847 on Thomas Organ's 1967 V846 drawing once the
+owner has it (asked for, `docs/schematics/vox_v846/`). The owner approved the control
+design: the treadle a smoothed, automatable parameter (MIDI-learnable in the host),
+Manual / Auto with an envelope follower for Auto, and a Wah selector of its own ahead of
+the pedal slot so a wah and a drive can be used together.
+
 ## 2026-10-02 — The American 800RB and American SS 800 (Gallien-Krueger 800RB)
 
 The owner: "Build the GK 800RB and the MXR Phase 90 and the Boss CE-2". This is the first

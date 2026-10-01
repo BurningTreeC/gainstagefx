@@ -298,13 +298,15 @@ stage is behind it; behind any other circuit the Recto stages grey it.
 ## Speaker, cabinet and microphones
 
 **Cabinet:** Legacy (the old resistor load and Combo/Stack filter, the default),
-Bypass (the driver on an open baffle), or one of thirteen cabinets with real
+Bypass (the driver on an open baffle), or one of fourteen cabinets with real
 dimensions and driver layouts: Brit 1960 4x12, Cali Oversized 4x12, Brit Closed
 4x12, Brit Green 4x12, Brit V30 4x12, Oversized 4x12, American Open 2x12,
 American Open 1x12, Closed 1x12, Closed 2x12, Jazz Open 2x12, American Closed 4x12,
-and the American 8x10 -- eight tens in four sealed chambers of two, the American
+the American 8x10 -- eight tens in four sealed chambers of two, the American
 SVT's own box, whose standing waves are a chamber's while its sealed air is the
-whole cabinet's.
+whole cabinet's -- and the American 4x10, the American 800RB's own: four tens in a
+**vented** box, its two ports tuned to 42 Hz and radiating from the baffle, behind
+the cabinet's 18 dB/oct crossover (its horn is attenuated fully for now).
 
 Bypass there means *no box*, not no speaker: the driver still radiates, on an
 open baffle, and a microphone still picks it up, which is why it does not sound
@@ -313,7 +315,7 @@ row's own Bypass, and that is bit-identical to Legacy/Off (a test says so).
 
 **Speaker:** Matched (the cabinet's own driver), Bypass (the power stage's
 output, a DI), or Brit V30, Brit Green 25, Brit T75, American Vintage 12,
-American Vintage 10, American Ceramic, American Alnico, Jazz 12, Brit K85, American Bass 10. Each is a Thiele–Small
+American Vintage 10, American Ceramic, American Alnico, Jazz 12, Brit K85, American Bass 10, Cast Bass 10. Each is a Thiele–Small
 electrical and mechanical model with a lossy voice coil, fitted to the
 manufacturer's impedance and response data where it is published and estimated
 where it is not, and its impedance is solved inside the power
@@ -405,6 +407,8 @@ hardware behind them at all.
 | Brit Drive | Marshall The Guv'nor, the original (1988-92), from ElectroSmash's analysis | [brit_drive.md](docs/models/brit_drive.md) |
 | Clean Boost | MXR M-133 MicroAmp, from ElectroSmash's analysis | [clean_boost.md](docs/models/clean_boost.md) |
 | Bass Driver | Tech 21 SansAmp Bass Driver DI, V2, from a trace of a real unit (kanengomibako, 2022) | [bass_driver.md](docs/models/bass_driver.md) |
+| Orange Phase | MXR Phase 90, script logo (1974-77), from ElectroSmash's trace, with the block logo's R28 switchable | [orange_phase.md](docs/models/orange_phase.md) |
+| Blue Chorus | Boss CE-2, from Boss's CE-2/CE-2B Service Notes, first edition, February 1987 | [blue_chorus.md](docs/models/blue_chorus.md) |
 
 **Power stages**
 | Orange Phase | MXR Phase 90, script logo (1974-77), from ElectroSmash's trace, with the block logo's R28 switchable | [orange_phase.md](docs/models/orange_phase.md) |
@@ -446,8 +450,9 @@ published and estimated where they are not ([cabinets.md](docs/models/cabinets.m
 | Closed 1x12 | Marshall 1912 | Jazz 12 | Roland 30-103D (the JC-120's) |
 | Closed 2x12 | Marshall 1936 | Brit K85 | Celestion G12K-85 (from G12K-100 data) |
 | Jazz Open 2x12 | Roland JC-120 combo | American Bass 10 | Eminence Legend B810, 32 ohm (the SVT 8x10's replacement ten) |
-| American Closed 4x12 | Peavey 412M, late 1980s | | |
+| American Closed 4x12 | Peavey 412M, late 1980s | Cast Bass 10 | Gallien-Krueger P10/200, 32 ohm, Eminence-built (its 410RBH's ten; estimated past 32 ohm, 200 W, 43 Hz) |
 | American 8x10 | Ampeg SVT-810E, four sealed chambers of two | | |
+| American 4x10 | Gallien-Krueger 410RBH (RBH series, 1999 manual), vented, horn off | | |
 | Oversized 4x12 | *generic* | | |
 | Combo / Stack (Legacy) | *generic* filters, kept for old sessions | | |
 

@@ -84,7 +84,17 @@ impl Enclosure {
         let volume = cab.volume();
         let chamber = volume / n as f64;
         let d = volume / (w * h * n as f64);
-        let opening_area = w * whole * cab.open_fraction.clamp(0.0, 1.0);
+        // An open back, or a vented box's ports: either way an opening onto
+        // the air outside, through an acoustic mass.
+        let (opening_area, opening_length) = match cab.vent {
+            Some(vent) => (vent.count as f64 * vent.area, vent.effective_length()),
+            None => {
+                let area = w * whole * cab.open_fraction.clamp(0.0, 1.0);
+                // Two unflanged ends: total low-frequency end correction 1.22*r.
+                (area, cab.wall + 1.22 * (area / PI).sqrt())
+            }
+        };
+        let vent_area = cab.vent.map_or(0.0, |v| v.count as f64 * v.area);
         let chamber_opening = opening_area / n as f64;
         let centre = -whole / 2.0 + h / 2.0;
         let in_chamber: [bool; super::cabinet::MAX_DRIVERS] = std::array::from_fn(|i| {
@@ -109,7 +119,9 @@ impl Enclosure {
         };
         // Perforated baffle and partial back use remaining modal area/mass.
         // Their detailed brace/cutout boundary conditions remain approximate.
-        let front_fraction = (1.0 - chamber_drivers as f64 * speaker.sd / (w * h)).clamp(0.05, 1.0);
+        let front_fraction = (1.0
+            - (chamber_drivers as f64 * speaker.sd + vent_area / n as f64) / (w * h))
+            .clamp(0.05, 1.0);
         let panels = [
             panel(w, h, front_fraction, n),
             panel(w, h, 1.0 - cab.open_fraction, n),
@@ -119,8 +131,7 @@ impl Enclosure {
         let mut result = Self {
             volume,
             opening_area,
-            // Two unflanged ends: total low-frequency end correction 1.22*r.
-            opening_length: cab.wall + 1.22 * (opening_area / PI).sqrt(),
+            opening_length,
             panels,
             modes: [Mode::EMPTY; MODE_COUNT],
         };

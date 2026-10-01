@@ -50,11 +50,8 @@ fn the_cabinet_is_ampegs_8x10() {
             .count();
         assert_eq!(count, 2, "chamber {chamber}");
     }
-    assert_eq!(CabModel::ALL.last(), Some(&CabModel::American810));
-    assert_eq!(
-        SpeakerModel::ALL.last(),
-        Some(&SpeakerModel::AmericanBass10)
-    );
+    assert!(CabModel::ALL.contains(&CabModel::American810));
+    assert!(SpeakerModel::ALL.contains(&SpeakerModel::AmericanBass10));
     // And every other cabinet is one chamber, built as it always was.
     for cab in CabinetProfile::ALL {
         if cab.id != CAB.id {

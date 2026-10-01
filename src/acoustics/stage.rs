@@ -194,6 +194,14 @@ pub struct AcousticStage {
     rear_velocity: [DelayLine; RADIATORS],
     rear_integrate: [OnePole; RADIATORS],
     voicing: [Biquad; 4],
+    /// The cabinet's passive crossover on the woofers, when it has one: a
+    /// third-order Butterworth low-pass, a pole and a pair at Q 1. Applied to
+    /// the cone's motion rather than stamped into the amplifier's load: the
+    /// load the woofers present through the crossover's series inductor
+    /// differs from the bare woofers only near and above the corner, kilohertz
+    /// above where the power stage cares, and the series parts would cost
+    /// every speaker-loaded stage the unknowns. See `CabinetProfile::crossover_hz`.
+    crossover: (OnePole, Biquad),
     voicing_norm: f64,
     calibration: f64,
     mics: [MicChannel; 2],
@@ -237,6 +245,7 @@ impl AcousticStage {
             rear_velocity: std::array::from_fn(|_| DelayLine::new()),
             rear_integrate: [OnePole::open(); RADIATORS],
             voicing: [Biquad::IDENTITY; 4],
+            crossover: (OnePole::open(), Biquad::IDENTITY),
             voicing_norm: 1.0,
             calibration: 1.0,
             mics: [MicChannel::new(), MicChannel::new()],
@@ -341,6 +350,8 @@ impl AcousticStage {
         for bq in &mut self.voicing {
             bq.reset();
         }
+        self.crossover.0.reset();
+        self.crossover.1.reset();
         for mic in &mut self.mics {
             mic.reset();
         }
@@ -428,6 +439,14 @@ impl AcousticStage {
         for integrator in &mut self.rear_integrate {
             integrator.set_leaky_integrator(rate, 0.5, 1.0 / PI);
         }
+        self.crossover = match self.cabinet.and_then(|cab| cab.crossover_hz) {
+            Some(hz) => {
+                let mut pole = OnePole::open();
+                pole.set_lowpass(rate, hz);
+                (pole, Biquad::lowpass(rate, hz, 1.0))
+            }
+            None => (OnePole::open(), Biquad::IDENTITY),
+        };
         self.cavity = CavityRadiation::default();
         if let Some(cab) = self.cabinet {
             self.cavity.configure(rate, cab, self.speaker);
@@ -662,6 +681,10 @@ impl AcousticStage {
     /// Input is the solved cone acceleration in m/s², shared by equal drivers.
     /// Unmeasured family-based saturation has deliberately been removed.
     pub fn pressure(&mut self, acceleration: f64) -> [f64; 2] {
+        let acceleration = self
+            .crossover
+            .1
+            .process(self.crossover.0.process(acceleration));
         let rear = self.cavity.process(acceleration);
         for (i, q) in rear.into_iter().enumerate() {
             self.rear_acceleration[i].write(q);
