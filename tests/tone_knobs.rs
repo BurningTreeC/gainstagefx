@@ -24,7 +24,7 @@ use gainstagefx::presets::PRESETS;
 /// through `own_tone` when the circuit went in, and this list was not told --
 /// so a test asserting the Twin had no tone control of its own was failing
 /// against a Twin that has three.
-const OWN: [(Circuit, [bool; 3]); 18] = [
+const OWN: [(Circuit, [bool; 3]); 19] = [
     (Circuit::Boogie, [true, true, true]),
     (Circuit::Brit800, [true, true, true]),
     // The boost channel's own three; the muted Normal channel's two are not
@@ -59,6 +59,8 @@ const OWN: [(Circuit, [bool; 3]); 18] = [
     (Circuit::BritDrive, [true, true, true]),
     // The SVT's channel 1: BASS, MIDRANGE and TREBLE.
     (Circuit::AmericanSvt, [true, true, true]),
+    // The Bass Driver's active BASS, MID and TREBLE.
+    (Circuit::BassDriver, [true, true, true]),
 ];
 
 #[test]
@@ -83,19 +85,22 @@ fn heavy_metal_colour_mix_is_dedicated_not_generic_bass_treble() {
     }
 }
 
+/// The knob beyond the stack's three is shown only for a circuit that has
+/// such a control of its own: the Metal Zone's MID FREQ and the Bass Driver's
+/// BLEND, and nothing anywhere else.
 #[test]
-fn metal_zone_mid_frequency_is_exposed_only_for_metal_zone() {
+fn the_control_beyond_the_stack_is_exposed_only_where_the_circuit_has_one() {
     for circuit in Circuit::ALL {
         let sweep = ToneKnobs::for_state(circuit, ToneStack::Off).sweep;
-        if circuit == Circuit::Mt2 {
-            assert_eq!(sweep, Some("MID FREQ"));
-        } else {
-            assert_eq!(
+        match circuit {
+            Circuit::Mt2 => assert_eq!(sweep, Some("MID FREQ")),
+            Circuit::BassDriver => assert_eq!(sweep, Some("BLEND")),
+            _ => assert_eq!(
                 sweep,
                 None,
-                "{} must not expose the Metal Zone Mid Frequency control",
+                "{} must not expose a control beyond the stack",
                 circuit.name()
-            );
+            ),
         }
     }
 }
@@ -251,7 +256,7 @@ fn a_pedal_is_named_the_same_in_the_slot_and_as_the_circuit() {
             let lower = name.to_lowercase();
             assert_eq!(
                 pedal.tone_labels(),
-                [Some(lower.as_str()), None, None, None],
+                [Some(lower.as_str()), None, None, None, None],
                 "{pedal:?}"
             );
         }

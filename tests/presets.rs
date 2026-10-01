@@ -97,10 +97,12 @@ fn every_preset_is_within_range() {
 #[test]
 fn circuit_specific_tone_controls_are_neutral_in_other_shipped_presets() {
     for preset in PRESETS {
-        if preset.circuit != Circuit::Mt2 {
+        // The control beyond the stack -- the Metal Zone's Mid Freq, the Bass
+        // Driver's Blend -- is neutral in every preset whose circuit has none.
+        if preset.circuit.voice().own_sweep().is_none() {
             assert_eq!(
                 preset.tone_sweep, 0.5,
-                "'{}' is not a Metal Zone but carries its Mid Frequency value",
+                "'{}' has no control beyond the stack but carries a value for one",
                 preset.name
             );
         }

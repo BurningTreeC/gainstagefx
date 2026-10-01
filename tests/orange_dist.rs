@@ -238,7 +238,7 @@ fn it_is_a_pedal_and_a_circuit() {
 
     assert_eq!(
         Pedal::OrangeDist.tone_labels(),
-        [Some("tone"), None, None, None]
+        [Some("tone"), None, None, None, None]
     );
     assert_eq!(Gain::Ds1.drive_control(), DIST);
     assert!(matches!(

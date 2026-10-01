@@ -1,5 +1,37 @@
 # Implementation progress
 
+## 2026-10-02 — The Bass Driver (SansAmp Bass Driver DI V2)
+
+The owner: "Yes commit this then continue" -- after the DI, the next build of the plan.
+
+- **The circuit** (`circuits::bass_driver`; pedal `pedal_sansamp_bass_driver`, circuit
+  `pedal_sansamp_bass_driver_circuit`, display "Bass Driver"), from kanengomibako's trace
+  of a real V2: the buffer and notch, U1A with Presence, the two drive stages sharing the
+  Drive track (the CH40 module: 12.9 to 48.6 dB), the 3.3 V zener pair, two Sallen-Key
+  low-passes, Blend, Level and U3B, Mid with its 500 / 1000 Hz shift, Bass with its
+  80 / 40 Hz shift and Treble, U6A. Built about the 4.5 V bias as its ground.
+- **Against the tracer's LTspice of the same trace** (an independent simulation, so a
+  check of the transcription; the plots were first written up here as measurements of
+  the units, which they are not -- corrected in the log and above): every stage within
+  a decibel (`examples/bass_driver_op.rs`, `tests/bass_driver.rs`).
+- **The zener**: the first fit, one soft exponential through the data sheet's 5 uA at
+  1 V (a maximum), shunted R903 with 2.5 M at rest and cost the drive stages 0.75 dB at
+  every setting against the trace's arithmetic; rebuilt as a SPICE zener has it, a
+  breakdown behind 50 ohm (3.3 V at 5 mA, 65 ohm), and the stages land to 0.1 dB.
+- **The pedal slot carries five tone knobs** now (`PEDAL_TONES`, a new appended
+  `pedal_tone_e`; `migrate` gives old presets the middle): the Bass Driver's presence,
+  bass, mid, treble and blend. As a circuit, Blend is the circuit's own control beyond
+  the stack (`own_sweep`, the Metal Zone's Mid Freq knob), Presence the panel's, and the
+  shifts the panel's low and mid switches. (First put on the single-tone knob, which
+  `tests/tone_knobs.rs` rightly refused: that one is a pedal's *only* tone control.)
+- **Level rest** 0.1518 for unity with every control at noon, Blend too (the first fit, at
+  Blend up, read 6.5 dB low in the slot's level-match test, which holds every pedal to
+  its knobs at noon). The pedal is loud: U3B adds 10 dB after Level.
+- **Presets**: *American SVT, Bass Driver DI* (the pedal into the SVT with Dry from:
+  Pedal at Mix 50 % -- the DI tap's first use) and *Bass Driver Direct*.
+- **Tables**: calibration and power trim gained the row (every other row identical);
+  kernels 158 to 160, the 158 unchanged.
+
 ## 2026-10-01 (late night) — Bass research, and the DI's design
 
 The owner: "start with the bass research and the DI tap design" -- yes. No code.
@@ -8,7 +40,8 @@ The owner: "start with the bass research and the DI tap design" -- yes. No code.
   (635 ppi drawings with RMS voltages at every stage, the turn-on procedure's levels, the
   specifications, sixteen scope photographs; `american_800rb.md`; preamp rev C of 1991 or
   D/E of 1995 to choose). The **SansAmp Bass Driver DI**, on kanengomibako's traces of
-  real V1 early, V1 late and V2 units, with board photographs and measured responses; the
+  real V1 early, V1 late and V2 units, with board photographs and the tracer's own LTspice
+  of each (first written up as measurements; they are simulations of the trace); the
   old forum schematic, never corroborated against a Tech 21 and suspected to be the
   Behringer BDI21, is not used (`bass_driver.md`; version to choose).
 - **Not cleared**: the **Darkglass B3K** (every trace is of a clone kit) and the

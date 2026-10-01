@@ -29,6 +29,7 @@ pub struct Preset {
     pub pedal_tone_b: f32,
     pub pedal_tone_c: f32,
     pub pedal_tone_d: f32,
+    pub pedal_tone_e: f32,
     pub pedal_level: f32,
     /// A circuit's own fourth control, where it has one; noon otherwise.
     /// See `voice::Gain::own_sweep`.
@@ -139,6 +140,7 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         pedal_tone_b: 0.5,
         pedal_tone_c: 0.5,
         pedal_tone_d: 0.5,
+        pedal_tone_e: 0.5,
         pedal_level: 0.5,
         tone_sweep: 0.5,
         hm2_colour_lo: 0.5,
@@ -1205,6 +1207,43 @@ pub const PRESETS: &[Preset] = &[
         output_trim: 0.0,
         ..base("Amplifier", "American SVT Grind")
     },
+    // The same head with a Bass Driver in front and the pedal's own output as
+    // the DI, blended half and half -- how the pedal is used live and in the
+    // studio: its XLR to the desk, its signal into the amplifier too.
+    Preset {
+        drive: 0.45,
+        circuit: Circuit::AmericanSvt,
+        pedal: PedalModel::BassDriver,
+        pedal_drive: 0.45,
+        // Blend up, all SansAmp, as the box's own sample settings have it.
+        pedal_tone_e: 1.0,
+        tone: ToneStack::Off,
+        bass: 0.55,
+        mid: 0.5,
+        treble: 0.5,
+        twin_bright: false,
+        cab_model: CabModel::American810,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.05,
+        dry_source: DrySource::Pedal,
+        mix: 0.5,
+        oversampling: Oversampling::Off,
+        output_trim: 0.0,
+        ..base("Amplifier", "American SVT, Bass Driver DI")
+    },
+    // The Bass Driver alone, straight to the desk as it is so often recorded:
+    // no amplifier, no cabinet, Blend all the way up.
+    Preset {
+        drive: 0.5,
+        circuit: Circuit::BassDriver,
+        // Blend, the circuit's own control beyond the stack: up, all SansAmp.
+        tone_sweep: 1.0,
+        tone: ToneStack::Off,
+        cabinet: Cabinet::Off,
+        oversampling: Oversampling::Off,
+        output_trim: 0.0,
+        ..base("Preamp", "Bass Driver Direct")
+    },
     // The console microphone preamplifier: two cascaded transistor stages with
     // an input transformer. Clean at low drive, warming into subtle harmonic
     // saturation as the gain increases. No cabinet -- this is a preamplifier,
@@ -1807,6 +1846,7 @@ impl Preset {
                     self.pedal_tone_b as f64,
                     self.pedal_tone_c as f64,
                     self.pedal_tone_d as f64,
+                    self.pedal_tone_e as f64,
                 ],
                 level: self.pedal_level as f64,
             },
@@ -1886,7 +1926,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 61] {
+    pub fn dials(&self) -> [(&'static str, f32); 62] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -1906,6 +1946,7 @@ impl Preset {
             ("pedal_tone_b", self.pedal_tone_b),
             ("pedal_tone_c", self.pedal_tone_c),
             ("pedal_tone_d", self.pedal_tone_d),
+            ("pedal_tone_e", self.pedal_tone_e),
             ("pedal_level", self.pedal_level),
             ("tone_sweep", self.tone_sweep),
             ("hm2_colour_lo", self.hm2_colour_lo),
@@ -2244,7 +2285,13 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     // A pedal's second, third and fourth tone controls arrived with the pedals
     // that have them. A preset saved before that leaves them where a knob
     // nobody has touched belongs, which is the middle.
-    for id in ["pedal_tone_b", "pedal_tone_c", "pedal_tone_d", "tone_sweep"] {
+    for id in [
+        "pedal_tone_b",
+        "pedal_tone_c",
+        "pedal_tone_d",
+        "pedal_tone_e",
+        "tone_sweep",
+    ] {
         preset.values.entry(id.into()).or_insert(0.5);
     }
     // The Jazz 120's chorus arrived with that amplifier. Every preset saved

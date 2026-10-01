@@ -27,11 +27,11 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, american_svt, bigmuff, brit2205, brit800, brit_drive, british_47, brum100,
-    cabinet, clean_boost, clipper, console_e, deluxe, distortion_plus, dr103, evh5150, german_76,
-    gold_drive, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone, neve, orange_dist,
-    oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent, round_fuzz, studio, tone,
-    treble_boost, ts808, tube610, twin,
+    ac30, american312, american_svt, bass_driver, bigmuff, brit2205, brit800, brit_drive,
+    british_47, brum100, cabinet, clean_boost, clipper, console_e, deluxe, distortion_plus, dr103,
+    evh5150, german_76, gold_drive, heavy_metal, iron, jazz120, jc120_power, markiic, metal_zone,
+    neve, orange_dist, oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent, round_fuzz,
+    studio, tone, treble_boost, ts808, tube610, twin,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::Bbd;
@@ -201,12 +201,15 @@ pub enum Gain {
     /// and an E83F between a 1:30 and a 9:1 transformer, its gain a
     /// twelve-step switch. See `circuits::german_76`.
     German76,
+    /// The Tech 21 SansAmp Bass Driver DI, V2, from a trace of a real unit
+    /// (`circuits::bass_driver`).
+    BassDriver,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 42] = [
+    pub const ALL: [Gain; 43] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -249,6 +252,7 @@ impl Gain {
         Gain::AmericanSvt,
         Gain::British47,
         Gain::German76,
+        Gain::BassDriver,
     ];
 
     pub fn name(self) -> &'static str {
@@ -295,6 +299,7 @@ impl Gain {
             Gain::AmericanSvt => "Ampeg SVT",
             Gain::British47 => "EMI REDD.47",
             Gain::German76 => "Telefunken V76",
+            Gain::BassDriver => "Tech 21 SansAmp Bass Driver DI",
         }
     }
 
@@ -343,6 +348,7 @@ impl Gain {
             Gain::AmericanSvt => american_svt::VOLUME,
             Gain::British47 => british_47::GAIN,
             Gain::German76 => german_76::GAIN,
+            Gain::BassDriver => bass_driver::DRIVE,
             _ => clipper::GAIN,
         }
     }
@@ -408,7 +414,7 @@ impl Gain {
             Gain::Screamer | Gain::Green9 | Gain::Hm2 | Gain::Mt2 | Gain::Ds1 => "LEVEL",
             Gain::Muff | Gain::Rat | Gain::FuzzFace => "VOLUME",
             Gain::DistPlus | Gain::GoldDrive => "OUTPUT",
-            Gain::BritDrive => "LEVEL",
+            Gain::BritDrive | Gain::BassDriver => "LEVEL",
             _ => "MASTER",
         }
     }
@@ -471,6 +477,7 @@ impl Gain {
             Gain::OregonT => Some(Level::Circuit(oregon_t::MASTER)),
             Gain::GoldDrive => Some(Level::Circuit(gold_drive::LEVEL)),
             Gain::BritDrive => Some(Level::Circuit(brit_drive::LEVEL)),
+            Gain::BassDriver => Some(Level::Circuit(bass_driver::LEVEL)),
             // The MicroAmp's one knob is its gain, already the Drive knob.
             _ => None,
         }
@@ -518,6 +525,9 @@ impl Gain {
             Gain::Mt2 => Some((metal_zone::LOW, metal_zone::MIDDLE, metal_zone::HIGH)),
             // The Guv'nor's own three, wired as its drawing has them.
             Gain::BritDrive => Some((brit_drive::BASS, brit_drive::MIDDLE, brit_drive::TREBLE)),
+            // Active, +-12 dB each; the bass and mid with their shifts on the
+            // panel's low and mid switches.
+            Gain::BassDriver => Some((bass_driver::BASS, bass_driver::MID, bass_driver::TREBLE)),
             Gain::Neve => None,
             _ => None,
         }
@@ -532,14 +542,17 @@ impl Gain {
     /// A control this circuit has of its own beyond bass, middle and treble,
     /// and what the panel calls it.
     ///
-    /// Only the Metal Zone has one: its **Mid Freq**, which moves where the
-    /// middle band works rather than how much it does. Selected as a pedal it
+    /// The Metal Zone's **Mid Freq**, which moves where the middle band works
+    /// rather than how much it does; and the Bass Driver's **Blend**. Selected as a pedal it
     /// gets a knob in the slot's own row; selected as a circuit it needs one
     /// here, or the control would be reachable from one half of the plugin and
     /// not the other.
     pub fn own_sweep(self) -> Option<(usize, &'static str)> {
         match self {
             Gain::Mt2 => Some((metal_zone::MID_FREQ, "MID FREQ")),
+            // Not a tone control but the box's one control beyond the stack's
+            // three and presence: the blend of dry against the emulation.
+            Gain::BassDriver => Some((bass_driver::BLEND, "BLEND")),
             _ => None,
         }
     }
@@ -568,6 +581,8 @@ impl Gain {
     pub fn own_presence(self) -> Option<usize> {
         match self {
             Gain::Recto => Some(rectifier::PRESENCE),
+            // In U1A's loop, ahead of the drive stages.
+            Gain::BassDriver => Some(bass_driver::PRESENCE),
             _ => None,
         }
     }
@@ -684,6 +699,7 @@ impl Gain {
                 | Gain::AmericanSvt
                 | Gain::British47
                 | Gain::German76
+                | Gain::BassDriver
         )
     }
 
@@ -857,6 +873,12 @@ impl Gain {
             }),
             // The V76's low cut, its flat position second as every circuit's
             // default is: 80 Hz, flat, 300 Hz, 80 + 300 Hz.
+            // BASS SHIFT, the built position second: 40 Hz, 80 Hz.
+            Gain::BassDriver => Some(CircuitSwitch {
+                slots: &bass_driver::BASS_SHIFT_SLOTS,
+                values: &[&bass_driver::BASS_SHIFT[0], &bass_driver::BASS_SHIFT[1]],
+                labels: &["40 Hz", "80 Hz"],
+            }),
             Gain::German76 => Some(CircuitSwitch {
                 slots: &german_76::LOW_CUT_SLOTS,
                 values: &[
@@ -885,6 +907,12 @@ impl Gain {
                 labels: &["220 Hz", "800 Hz", "3 kHz"],
             }),
             // The V76's "Gerade / 3 kHz", flat second.
+            // MID SHIFT, the built position second: 1 kHz, 500 Hz.
+            Gain::BassDriver => Some(CircuitSwitch {
+                slots: &bass_driver::MID_SHIFT_SLOTS,
+                values: &[&bass_driver::MID_SHIFT[0], &bass_driver::MID_SHIFT[1]],
+                labels: &["1 kHz", "500 Hz"],
+            }),
             Gain::German76 => Some(CircuitSwitch {
                 slots: &german_76::TREBLE_CUT_SLOTS,
                 values: &[&german_76::TREBLE_CUT[0], &german_76::TREBLE_CUT[1]],
@@ -1586,19 +1614,24 @@ pub enum Pedal {
     /// The MXR MicroAmp (`circuits::clean_boost`). One knob, its gain: the
     /// slot's level knob is greyed.
     CleanBoost,
+    /// The Tech 21 SansAmp Bass Driver DI, V2 (`circuits::bass_driver`).
+    /// Seven knobs, five of them in the tone row; its two shift switches
+    /// stay at 80 Hz and 500 Hz in the slot.
+    BassDriver,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
 /// with a guitar in front of it is calibrated at (`examples/calibrate.rs`).
 pub const GUITAR_VOLTS: f64 = 0.122;
 
-/// The most tone controls any pedal in the list has: the Metal Zone's four.
+/// The most tone controls any pedal in the list has: the Bass Driver's five
+/// (presence, bass, mid, treble, blend). It was the Metal Zone's four.
 ///
 /// The slot used to carry one, which was fine while every pedal in it had one
 /// tone knob or none. It is not fine for a pedal whose entire point is its
 /// equaliser -- a Metal Zone with three of its six controls missing is not that
 /// pedal -- so the slot carries what the boxes carry.
-pub const PEDAL_TONES: usize = 4;
+pub const PEDAL_TONES: usize = 5;
 
 /// One of a pedal's tone controls.
 #[derive(Clone, Copy, Debug)]
@@ -1639,11 +1672,12 @@ const fn one_tone(
         None,
         None,
         None,
+        None,
     ]
 }
 
 /// A pedal with none.
-const NO_TONES: [Option<ToneKnob>; PEDAL_TONES] = [None, None, None, None];
+const NO_TONES: [Option<ToneKnob>; PEDAL_TONES] = [None, None, None, None, None];
 
 impl Pedal {
     /// What the slot calls this pedal's drive and level knobs: the names its
@@ -1664,6 +1698,7 @@ impl Pedal {
             Pedal::GoldDrive => ("gain", "output"),
             Pedal::BritDrive => ("gain", "level"),
             Pedal::CleanBoost => ("gain", "level"),
+            Pedal::BassDriver => ("drive", "level"),
         }
     }
 
@@ -1684,10 +1719,11 @@ impl Pedal {
             Pedal::GoldDrive => Some(Gain::GoldDrive),
             Pedal::BritDrive => Some(Gain::BritDrive),
             Pedal::CleanBoost => Some(Gain::CleanBoost),
+            Pedal::BassDriver => Some(Gain::BassDriver),
         }
     }
 
-    pub const ALL: [Pedal; 14] = [
+    pub const ALL: [Pedal; 15] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
@@ -1702,9 +1738,10 @@ impl Pedal {
         Pedal::GoldDrive,
         Pedal::BritDrive,
         Pedal::CleanBoost,
+        Pedal::BassDriver,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 13;
+    const SLOTS: usize = 14;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -1722,6 +1759,7 @@ impl Pedal {
             Pedal::GoldDrive => Some(10),
             Pedal::BritDrive => Some(11),
             Pedal::CleanBoost => Some(12),
+            Pedal::BassDriver => Some(13),
         }
     }
 
@@ -1807,6 +1845,7 @@ impl Pedal {
             9 => treble_boost::build(10_000.0, 470_000.0),
             10 => gold_drive::build(10_000.0, 470_000.0),
             11 => brit_drive::build(10_000.0, 470_000.0),
+            13 => bass_driver::build(10_000.0, 470_000.0),
             _ => clean_boost::build(10_000.0, 470_000.0),
         }
     }
@@ -1856,6 +1895,7 @@ impl Pedal {
                     }),
                     None,
                     None,
+                    None,
                 ],
                 level: Some(heavy_metal::LEVEL),
             },
@@ -1884,6 +1924,7 @@ impl Pedal {
                         label: "high",
                         inverted: false,
                     }),
+                    None,
                 ],
                 level: Some(metal_zone::LEVEL),
             },
@@ -1926,8 +1967,42 @@ impl Pedal {
                         inverted: false,
                     }),
                     None,
+                    None,
                 ],
                 level: Some(brit_drive::LEVEL),
+            },
+            // Drive, then the box's knobs right to left -- presence, bass, mid,
+            // treble, blend -- and level.
+            13 => PedalControls {
+                drive: Some(bass_driver::DRIVE),
+                tones: [
+                    Some(ToneKnob {
+                        control: bass_driver::PRESENCE,
+                        label: "presence",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: bass_driver::BASS,
+                        label: "bass",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: bass_driver::MID,
+                        label: "mid",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: bass_driver::TREBLE,
+                        label: "treble",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: bass_driver::BLEND,
+                        label: "blend",
+                        inverted: false,
+                    }),
+                ],
+                level: Some(bass_driver::LEVEL),
             },
             // One knob, GAIN on the box: the drive, and no level.
             _ => PedalControls {
@@ -2213,6 +2288,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::British47 => british_47::build(200.0, 200.0),
         // At the Braunbuch's own: a 200 ohm generator, a 300 ohm load.
         Gain::German76 => german_76::build(200.0, 300.0),
+        Gain::BassDriver => bass_driver::build(10_000.0, 470_000.0),
     }
 }
 

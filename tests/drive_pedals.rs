@@ -231,11 +231,11 @@ fn they_are_pedals_and_circuits_with_their_own_knobs() {
     }
     assert_eq!(
         Pedal::GoldDrive.tone_labels(),
-        [Some("treble"), None, None, None]
+        [Some("treble"), None, None, None, None]
     );
     assert_eq!(
         Pedal::BritDrive.tone_labels(),
-        [Some("bass"), Some("middle"), Some("treble"), None]
+        [Some("bass"), Some("middle"), Some("treble"), None, None]
     );
     assert!(!Pedal::CleanBoost.has_level());
     assert!(Pedal::CleanBoost.has_drive());

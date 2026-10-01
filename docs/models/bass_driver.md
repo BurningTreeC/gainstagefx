@@ -6,7 +6,8 @@ fixed filters, a Blend with the dry signal, an active EQ and both a 1/4" and a b
 output. Proposed stable id `pedal_sansamp_bass_driver` (`pedal`), as the roadmap reserves it,
 and a `_circuit` id if it is offered as a circuit too. Proposed display: **Bass Driver**.
 
-Status: **CLEARED 2026-10-01** on independent traces of real units, with measurements.
+Status: **IMPLEMENTED 2026-10-01** (`circuits::bass_driver`, V2), as a pedal and as a
+circuit, on independent traces of real units.
 Not built; the version is to be chosen (question 1).
 
 ## Eight-question checkpoint
@@ -38,12 +39,14 @@ Not built; the version is to be chosen (question 1).
 3. **Best source.** The tracer's KiCad drawing of the version chosen, read against the
    board photographs where a value matters.
 4. **Cross-check.**
-   - **Measured responses of the real units** on the same pages: the drive stage at
-     several settings, Presence, Bass and Treble at both ends, the V2's Mid at both
-     shifts and both ends -- curves to compare the model against, as the Braunbuch's
-     figures were for the V76.
+   - **The tracer's own LTspice simulation of each trace**, plotted on the same pages:
+     the drive stages at five settings, Presence, the emulation path, Bass at both
+     shifts, Treble, the V2's Mid at both shifts. These are *not* measurements of the
+     units -- this log said so at first, wrongly -- so they check this netlist's reading
+     of the drawing against an independent simulation of the same drawing, not the
+     hardware.
    - Tech 21's owner's manual (v2): Bass, Mid and Treble "cut or boost +-12dB from unity
-     gain (12 o'clock)"; Mid shift 500 / 1000 Hz (the tracer measured 400-450 / 800-900);
+     gain (12 o'clock)"; Mid shift 500 / 1000 Hz (the tracer's figures 400-450 / 800-900);
      Bass shift 80 / 40 Hz; input 1 M; Blend at minimum bypasses the emulation while "the
      Mid, Bass, Treble and Level controls remain active".
 5. **Signal path and values** (V2, from the trace).
@@ -55,7 +58,8 @@ emulation: R5 100 k, C5-C8 22 nF, R6 2.2 k, R7 22 k (a passive twin-T notch)
    -- U1A with PRESENCE (VR58 100 k B, R10 3.3 k, C34 10 nF, C10 100 pF)
    -- R12 10 k, C22 1 uF, R14 22 k -- DRIVE VR13 100 k B -- U901A (CH40), Q2 MMBF4393
    switching it -- U901B with D901 BZB984-C3V3 (a zener pair) and R903 220 k across it
-   -- R47 33 k, C42 10 nF, R16 22 k, R18 33 k, C16 470 pF, C14 47 nF -- U2B (Sallen-Key)
+   -- R47 10 k, C42 10 nF, R16 22 k, R17 10 k / C14 47 nF, R18 33 k, C15 10 nF,
+   C16 470 pF -- U2B (Sallen-Key)
    -- C41, R19 / R20 33 k, C17 2.2 nF, C18 1 nF -- U2A -- C2 1 uF
 BLEND VR50 100 k B between the dry buffer and the emulation
 LEVEL VR51 100 k B -- U3B -- MID (U3A, VR1 100 k B, C19 / C21 10 nF, SW5 shift)
@@ -64,19 +68,59 @@ LEVEL VR51 100 k B -- U3B -- MID (U3A, VR1 100 k B, C19 / C21 10 nF, SW5 shift)
    -- Q4 switching -- U6A 1/4" output (SW1 +10 dB) and U7A / U7B balanced XLR (SW2 -20 dB)
 ```
 
-6. **To be modelled exactly.** The emulation path from the buffer to the Blend, the Blend,
-   Level, the EQ with both shifts, the 1/4" output stage; the switching JFETs held in
-   the effect-on state as fixed resistances.
-7. **To be approximated, and why.**
-   - **The op-amps** (TLC2262 / TLC2264) as the solver's op-amp on the 9 V supply and its
-     4.5 V bias -- the failure mode the project notes for followers on a bias applies,
-     so the sections may need ground-referencing as `rodent` does.
-   - **The zener pair** as two Shockley diodes with a breakdown -- or as the diode model
-     with the part's 3.3 V knee -- to be decided against the measured drive curves.
-   - **The footswitch logic** (HEF4013) is not built; the effect is on.
-   - **The balanced output** is the same signal; not built separately.
-8. **Why.** Three careful traces of real units, with photographs and measurements, by one
-   tracer who also separated the clone from the original.
+6. **Modelled exactly.** The buffer, the notch, U1A with Presence, both drive stages on
+   their shared track, the zener pair, both Sallen-Key low-passes, Blend, Level, U3B, Mid
+   with its shift, Bass and Treble with the bass shift, U6A and the output network.
+7. **Approximated, and why.**
+   - **Built about the 4.5 V bias** as its ground, on +-4.5 V rails: every stage is
+     capacitor-coupled and every op-amp sits at the bias, so this is the same circuit,
+     and it is the project's answer to followers on a bias (failure mode 4).
+   - **The op-amps** (TLC2262) as the solver's ideal op-amp to a rail, rail to rail on a
+     fresh battery (ESTIMATED; on the adapter, behind D12, about 0.3 V less); the buffer
+     and the two Sallen-Key followers, which never reach a rail, as linear op-amps.
+     Their 0.8 MHz and 0.55 V/us are not modelled.
+   - **The zener pair** (BZB984-C3V3, anode to anode) as each zener's forward junction
+     and its breakdown behind 50 ohm of bulk resistance, the way a SPICE zener has it:
+     3.3 V at 5 mA and 65 ohm there against Nexperia's 3.1-3.5 V and at most 95 ohm.
+     APPROXIMATED. The first fit, a single soft exponential through the data sheet's
+     5 uA at 1 V, leaked a 2.5 M shunt across R903 at rest and took 0.75 dB off the
+     drive stages; that figure is a maximum, and the tracer's simulation has the
+     stages' arithmetic exactly.
+   - **The switching** (HEF4013, Q1, Q2, Q4) held in the effect-on state: Q4 as 100 ohm,
+     Q1 and Q2 open. Input clamps D5 / D6 left out: they conduct only past the rails.
+   - **The 1/4" output switch** at -10 dB, the instrument level the manual gives for a
+     stomp box: U6A a follower. **The balanced output** is not built.
+   - **In the pedal slot** the two shift switches stay where the circuit is built,
+     80 Hz and 500 Hz; as a circuit they are the panel's low and mid switches.
+8. **Why.** Three careful traces of real units, with photographs, by one tracer who also
+   separated the clone from the original; and that tracer's own simulation to check the
+   transcription against.
+
+## What the model gives
+
+`cargo run --release --example bass_driver_op`; `tests/bass_driver.rs`. Small-signal,
+between taps, against the tracer's LTspice of the same trace:
+
+| Stage | Tracer's simulation | This model |
+|---|---|---|
+| Drive stages, five settings | 12.9, 21.5, 28.5, 35.5, 48.5 dB | 12.8, 21.6, 28.4, 35.6, 48.5 |
+| Presence, top, 8 kHz | +27.5 dB | +27.7 |
+| Emulation: 85 Hz peak, 700 Hz notch, 2.8 kHz peak | -3 / -35 / -10 dB | -3.2 / -35.6 / -9.2 |
+| Mid, 500 shift at 450 Hz; 1000 shift at 900 Hz | +-18 dB | +18.2 / -18.6; +17.6 / -18.3 |
+| Bass, 40 shift near 45 Hz; 80 shift near 90 Hz | +14 / -17; +11 / -13 dB | +13.9 / -16.7; +11.1 / -13.2 |
+| Treble, top, 3 kHz | +17 dB | +16.7 |
+
+Level rests at **0.1518** for unity through the pedal: a guitar chord in, every other
+control at noon -- Blend too, the project's rule for a pedal's rest and where the slot's
+knobs start. Blend at noon passes half the emulation to Level, so Blend up is about 6 dB
+hotter (the first fit, at Blend up, read 6.5 dB low in front of Crunch in the slot's
+level-match test). Level at noon is loud regardless: U3B adds 10 dB after it.
+Calibration at full drive: 21 % distortion from a guitar's level.
+
+**In the panel**: as a pedal, the slot's tone row is presence, bass, mid, treble, blend
+(the slot grew to five tone knobs for it); as a circuit, Bass, Mid and Treble are the
+stack's knobs, Presence the panel's, **Blend** the circuit's own control beyond the stack
+(the knob the Metal Zone's Mid Freq uses), and the shifts the low and mid switches.
 
 ## As a DI
 

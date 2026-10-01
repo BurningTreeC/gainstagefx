@@ -2,7 +2,9 @@
 #[path = "support/allocations.rs"]
 mod allocations;
 use allocations::assert_no_heap;
-use gainstagefx::voice::{Chain, Gain, Pedal, PedalSettings, Settings, Tone, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, Pedal, PedalSettings, Settings, Tone, NOMINAL_DBFS, PEDAL_TONES,
+};
 
 fn guitar(k: usize) -> f64 {
     let a = 10f64.powf(NOMINAL_DBFS / 20.0);
@@ -33,7 +35,7 @@ fn no_pedal_is_exactly_the_old_path() {
         pedal: PedalSettings {
             pedal: Pedal::None,
             drive: 0.9,
-            tone: [0.1; 4],
+            tone: [0.1; PEDAL_TONES],
             level: 0.9,
         },
         ..base
@@ -55,7 +57,7 @@ fn a_pedal_is_really_in_front_of_the_amplifier() {
         pedal: PedalSettings {
             pedal: Pedal::Green808,
             drive: 0.2,
-            tone: [0.5; 4],
+            tone: [0.5; PEDAL_TONES],
             level: 0.9,
         },
         ..base
@@ -92,7 +94,7 @@ fn the_same_circuit_can_be_both_pedal_and_voice() {
         pedal: PedalSettings {
             pedal: Pedal::Green808,
             drive: 0.7,
-            tone: [0.4; 4],
+            tone: [0.4; PEDAL_TONES],
             level: 0.6,
         },
         ..Settings::default()
@@ -113,7 +115,7 @@ fn pedal_level_turns_the_pedal_up_and_down() {
             pedal: PedalSettings {
                 pedal: Pedal::BigMuff,
                 drive: 0.5,
-                tone: [0.5; 4],
+                tone: [0.5; PEDAL_TONES],
                 level,
             },
             ..Settings::default()
@@ -131,7 +133,7 @@ fn a_pedal_survives_rates_blocks_and_a_stereo_wake() {
         pedal: PedalSettings {
             pedal: Pedal::Green808,
             drive: 0.5,
-            tone: [0.6; 4],
+            tone: [0.6; PEDAL_TONES],
             level: 0.7,
         },
         ..Settings::default()
@@ -231,7 +233,7 @@ fn every_pedal_runs_in_front_of_an_amplifier() {
             pedal: PedalSettings {
                 pedal,
                 drive: 0.6,
-                tone: [0.5; 4],
+                tone: [0.5; PEDAL_TONES],
                 level: 0.6,
             },
             ..base
@@ -277,7 +279,7 @@ fn the_pedal_slot_is_level_matched_in_front_of_any_circuit() {
             pedal: PedalSettings {
                 pedal,
                 drive: 0.5,
-                tone: [0.5; 4],
+                tone: [0.5; PEDAL_TONES],
                 level: 0.5,
             },
             ..Settings::default()

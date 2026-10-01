@@ -3,6 +3,7 @@
 pub mod ac30;
 pub mod american312;
 pub mod american_svt;
+pub mod bass_driver;
 pub mod bigmuff;
 pub mod brit2205;
 pub mod brit800;

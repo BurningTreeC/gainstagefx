@@ -685,7 +685,8 @@ fn input(cx: &mut Context) {
                     0 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone, live, percent),
                     1 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_b, live, percent),
                     2 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_c, live, percent),
-                    _ => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_d, live, percent),
+                    3 => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_d, live, percent),
+                    _ => placement_knob(cx, x, y, 11.0, label, |p| &p.pedal_tone_e, live, percent),
                 }
             }
             let last = x0 + step * (count - 1) as f32;
@@ -1157,6 +1158,9 @@ pub fn describe(circuit: Circuit) -> String {
         Circuit::BritDrive => {
             "Two op-amp stages into red LEDs, then a bass, middle and treble \
                           stack that all move each other."
+        }
+        Circuit::BassDriver => {
+            "A bass preamp and DI in a pedal: drive into a zener pair, two filters, a dry blend, an active EQ."
         }
         Circuit::German76 => {
             "Modeled after a late-50s German broadcast valve amplifier: four \

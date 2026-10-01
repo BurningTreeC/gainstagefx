@@ -755,6 +755,7 @@ impl Plugin for GainStageFx {
                 p.pedal_tone_b.smoothed.next_step(samples) as f64,
                 p.pedal_tone_c.smoothed.next_step(samples) as f64,
                 p.pedal_tone_d.smoothed.next_step(samples) as f64,
+                p.pedal_tone_e.smoothed.next_step(samples) as f64,
             ],
             level: p.pedal_level.smoothed.next_step(samples) as f64,
         };

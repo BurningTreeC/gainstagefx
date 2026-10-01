@@ -7,7 +7,9 @@
 //! does?
 //!
 //! `cargo run --release --example pedallevel`
-use gainstagefx::voice::{Chain, Gain, Pedal, PedalSettings, Settings, Tone, NOMINAL_DBFS};
+use gainstagefx::voice::{
+    Chain, Gain, Pedal, PedalSettings, Settings, Tone, NOMINAL_DBFS, PEDAL_TONES,
+};
 
 const RATE: f64 = 48_000.0;
 
@@ -18,7 +20,7 @@ fn level(pedal: Pedal, drive: f64, level: f64, gain: Gain) -> f64 {
         pedal: PedalSettings {
             pedal,
             drive,
-            tone: [0.5; 4],
+            tone: [0.5; PEDAL_TONES],
             level,
         },
         tone: Tone::Off,

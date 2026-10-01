@@ -135,8 +135,9 @@ sources, where they disagree and what was approximated.
 | Gold Drive | An overdrive whose germanium-clipped path is summed with two clean ones | none |
 | Brit Drive | Two op-amp stages into red LEDs, then a bass, middle and treble stack | none |
 | Clean Boost | One op-amp, one knob, up to 26 dB | none |
+| Bass Driver | A bass preamp and DI in a pedal: two drive stages into a zener pair, two low-passes, a blend with the dry bass, an active mid (500 / 1000 Hz shift), bass (80 / 40 Hz shift) and treble | none |
 
-**Every pedal is also a circuit.** The thirteen in the pedal slot can each be
+**Every pedal is also a circuit.** The fourteen in the pedal slot can each be
 selected on their own, with nothing behind them — which is how a pedal into a
 desk was always recorded, and how an HM-2 into an MT-2 becomes expressible: one
 in the slot, the other as the circuit. Selected as the circuit, a pedal keeps
@@ -202,8 +203,10 @@ the op-amp and diodes do, with the bass cut ahead of both), **Treble Boost**
 slot's level -- its drive knob is greyed, because it has no drive), **Gold
 Drive** (a germanium-clipped gain stage summed with two clean paths, and a
 treble shelf), **Brit Drive** (two op-amp stages into red LEDs and a
-three-knob stack) and **Clean Boost** (one op-amp and one knob, its gain: the
-level knob is greyed),
+three-knob stack), **Clean Boost** (one op-amp and one knob, its gain: the
+level knob is greyed) and **Bass Driver** (a bass preamp and DI: drive, presence,
+bass, mid, treble, blend and level -- seven knobs, five of them in the tone row --
+its two shift switches on the panel's low and mid switches when it is the circuit),
 each with the knobs that pedal actually has, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
@@ -373,7 +376,7 @@ hardware behind them at all.
 | Brum 100 | Laney Supergroup 100 Mk I, a 1969 build, from a traced drawing | [brum_100.md](docs/models/brum_100.md) |
 | Oregon T | Sunn Model T, drawing D-1029 A, 1973, BRITE channel | [oregon_t.md](docs/models/oregon_t.md) |
 | American SVT | Ampeg SVT (6550), "SVT PREAMP" D 591719 rev D, 1975, channel 1, NORMAL input | [american_svt.md](docs/models/american_svt.md) |
-| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost | the pedals above, selectable as circuits in their own right | as listed under Pedals |
+| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost, Bass Driver | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
 **Pedals** (the slot in front of whatever is selected)
 
@@ -392,6 +395,7 @@ hardware behind them at all.
 | Gold Drive | Klon Centaur, from ElectroSmash's analysis (the board was potted; no Klon drawing exists) | [gold_drive.md](docs/models/gold_drive.md) |
 | Brit Drive | Marshall The Guv'nor, the original (1988-92), from ElectroSmash's analysis | [brit_drive.md](docs/models/brit_drive.md) |
 | Clean Boost | MXR M-133 MicroAmp, from ElectroSmash's analysis | [clean_boost.md](docs/models/clean_boost.md) |
+| Bass Driver | Tech 21 SansAmp Bass Driver DI, V2, from a trace of a real unit (kanengomibako, 2022) | [bass_driver.md](docs/models/bass_driver.md) |
 
 **Power stages**
 

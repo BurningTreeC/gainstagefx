@@ -182,6 +182,9 @@ pub enum Circuit {
     #[id = "pre_telefunken_v76"]
     #[name = "German 76"]
     German76,
+    #[id = "pedal_sansamp_bass_driver_circuit"]
+    #[name = "Bass Driver"]
+    BassDriver,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -256,9 +259,10 @@ impl Circuit {
             Circuit::AmericanSvt => "American SVT",
             Circuit::British47 => "British 47",
             Circuit::German76 => "German 76",
+            Circuit::BassDriver => "Bass Driver",
         }
     }
-    pub const ALL: [Circuit; 42] = [
+    pub const ALL: [Circuit; 43] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -301,6 +305,7 @@ impl Circuit {
         Circuit::AmericanSvt,
         Circuit::British47,
         Circuit::German76,
+        Circuit::BassDriver,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -347,6 +352,7 @@ impl Circuit {
             Circuit::AmericanSvt => voice::Gain::AmericanSvt,
             Circuit::British47 => voice::Gain::British47,
             Circuit::German76 => voice::Gain::German76,
+            Circuit::BassDriver => voice::Gain::BassDriver,
         }
     }
 
@@ -385,7 +391,8 @@ impl Circuit {
             | voice::Gain::TrebleBoost
             | voice::Gain::GoldDrive
             | voice::Gain::BritDrive
-            | voice::Gain::CleanBoost => Kind::Pedal,
+            | voice::Gain::CleanBoost
+            | voice::Gain::BassDriver => Kind::Pedal,
             voice::Gain::Neve
             | voice::Gain::American312
             | voice::Gain::ConsoleE
@@ -717,10 +724,13 @@ pub enum PedalModel {
     #[id = "pedal_mxr_microamp"]
     #[name = "Clean Boost"]
     CleanBoost,
+    #[id = "pedal_sansamp_bass_driver"]
+    #[name = "Bass Driver"]
+    BassDriver,
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
@@ -735,6 +745,7 @@ impl PedalModel {
         Self::GoldDrive,
         Self::BritDrive,
         Self::CleanBoost,
+        Self::BassDriver,
     ];
 
     pub fn name(self) -> &'static str {
@@ -757,6 +768,7 @@ impl PedalModel {
             Self::GoldDrive => voice::Pedal::GoldDrive,
             Self::BritDrive => voice::Pedal::BritDrive,
             Self::CleanBoost => voice::Pedal::CleanBoost,
+            Self::BassDriver => voice::Pedal::BassDriver,
         }
     }
 }
@@ -1325,6 +1337,9 @@ pub struct GainStageParams {
     pub pedal_tone_c: FloatParam,
     #[id = "pedal_tone_d"]
     pub pedal_tone_d: FloatParam,
+    /// The fifth, for the Bass Driver's blend; appended 2026-10-01.
+    #[id = "pedal_tone_e"]
+    pub pedal_tone_e: FloatParam,
     #[id = "pedal_level"]
     pub pedal_level: FloatParam,
     /// A fourth control for a circuit that has one of its own past bass, middle
@@ -1682,6 +1697,7 @@ impl Default for GainStageParams {
             pedal_tone_b: position("Pedal Tone 2", 0.5),
             pedal_tone_c: position("Pedal Tone 3", 0.5),
             pedal_tone_d: position("Pedal Tone 4", 0.5),
+            pedal_tone_e: position("Pedal Tone 5", 0.5),
             pedal_level: position("Pedal Level", 0.5),
             tone_sweep: position("Mid Freq", 0.5),
             hm2_colour_lo: position("HM-2 Colour Low", 0.5),
