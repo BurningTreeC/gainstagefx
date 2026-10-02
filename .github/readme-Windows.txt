@@ -51,6 +51,7 @@ If your DAW does not list CLAP plugins, see
 https://github.com/free-audio/clap#hosts
 
 This program comes with ABSOLUTELY NO WARRANTY. It is free software under the
-GNU General Public License version 3 or later; see LICENSE. The licences of
-the libraries it uses are in THIRD-PARTY-NOTICES.md.
+MIT License or the Apache License 2.0, at your option; see LICENSE-MIT and
+LICENSE-APACHE. The licences of the libraries it uses are in
+THIRD-PARTY-NOTICES.md.
 Source: https://github.com/BurningTreeC/gainstagefx

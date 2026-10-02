@@ -39,8 +39,9 @@ SUFFIX_TO_ID = {
 # A real copyright notice names a year and a holder. Licence bodies are full of
 # lines that mention copyright without being one, so those are filtered out.
 # Where a crate offers a choice of licence, this is the order this
-# distribution takes them in. Every entry is compatible with the GPL, which the
-# plugin as a whole is under.
+# distribution takes them in. Every entry is permissive, or (MPL-2.0) applies
+# only to that crate's own files, so none of them changes the plugin's own
+# MIT OR Apache-2.0.
 PREFERENCE = [
     "MIT",
     "Apache-2.0",
@@ -298,8 +299,9 @@ def main():
     out = [
         "# Third party notices",
         "",
-        "The GainStageFx plugin is distributed under the GNU General Public",
-        "License version 3 or later, whose text is in `LICENSE`. It links the",
+        "The GainStageFx plugin is distributed under the MIT License or the",
+        "Apache License 2.0, at your option, whose texts are in `LICENSE-MIT`",
+        "and `LICENSE-APACHE`. It links the",
         f"{len(packages)} crates listed below, whose own licences and copyright notices",
         "are reproduced here as those licences require.",
         "",
@@ -348,14 +350,7 @@ def main():
         needed_now.update(bundled(package, licence_texts(package)))
     out.append("## License texts")
     out.append("")
-    out.append("The GPLv3, which covers this plugin, is in `LICENSE` rather than")
-    out.append("repeated here.")
-    out.append("")
-    # The GPL text lives in LICENSE, so it is not repeated here.
-    skip = {"GPLv3", "GPL-3.0", "GPL-3.0-or-later"}
-    for licence_id in sorted(
-        body for body in bodies if body in needed_now and body not in skip
-    ):
+    for licence_id in sorted(body for body in bodies if body in needed_now):
         out.append(f"### {licence_id}")
         out.append("")
         out.append("```")
@@ -366,12 +361,19 @@ def main():
     needed = {licence for taken in elected.values() for licence in taken}
     for package in packages:
         needed.update(bundled(package, licence_texts(package)))
-    in_license_file = {"GPLv3", "GPL-3.0", "GPL-3.0-or-later"}
-    missing = sorted(
-        licence
-        for licence in needed
-        if licence not in bodies and licence not in in_license_file
+    missing = sorted(licence for licence in needed if licence not in bodies)
+    # The plugin is MIT OR Apache-2.0 only while nothing it links is taken
+    # under a GPL: one such crate would make the whole binary GPL.
+    copyleft = sorted(
+        f"{package['name']} ({', '.join(elected[normalise(package.get('license') or 'unspecified')])})"
+        for package in packages
+        if any("GPL" in licence for licence in elected[normalise(package.get("license") or "unspecified")])
     )
+    if copyleft:
+        raise SystemExit(
+            "these crates are taken under a GPL, which would make the plugin GPL: "
+            + ", ".join(copyleft)
+        )
 
     OUTPUT.write_text("\n".join(out), encoding="utf-8")
     print(f"wrote {OUTPUT.relative_to(PROJECT)}: {len(packages)} crates, "

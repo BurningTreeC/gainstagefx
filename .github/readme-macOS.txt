@@ -41,6 +41,7 @@ Note that Logic and GarageBand only load Audio Units, and this plugin is CLAP
 and VST3, so use a host that supports those.
 
 This program comes with ABSOLUTELY NO WARRANTY. It is free software under the
-GNU General Public License version 3 or later; see LICENSE. The licences of
-the libraries it uses are in THIRD-PARTY-NOTICES.md.
+MIT License or the Apache License 2.0, at your option; see LICENSE-MIT and
+LICENSE-APACHE. The licences of the libraries it uses are in
+THIRD-PARTY-NOTICES.md.
 Source: https://github.com/BurningTreeC/gainstagefx

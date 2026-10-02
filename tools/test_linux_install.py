@@ -22,7 +22,7 @@ class LinuxInstallerTests(unittest.TestCase):
         binary = self.source / "GainStageFx.vst3/Contents/x86_64-linux/GainStageFx.so"
         binary.parent.mkdir(parents=True)
         binary.write_bytes(b"new plugin")
-        for name in ("LICENSE", "THIRD-PARTY-NOTICES.md"):
+        for name in ("LICENSE-MIT", "LICENSE-APACHE", "THIRD-PARTY-NOTICES.md"):
             (self.source / name).write_text("test notice")
         self.clap = self.root / "clap plugins/BurningTreeC"
         self.vst3 = self.root / "vst3 plugins/BurningTreeC"
@@ -53,7 +53,8 @@ class LinuxInstallerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.clap / "GainStageFx.clap").read_bytes(), b"new plugin")
         self.assertEqual((self.vst3 / "GainStageFx.vst3/Contents/x86_64-linux/GainStageFx.so").read_bytes(), b"new plugin")
-        self.assertTrue((self.clap / "LICENSE").is_file())
+        self.assertTrue((self.clap / "LICENSE-MIT").is_file())
+        self.assertTrue((self.vst3 / "LICENSE-APACHE").is_file())
         self.assertTrue((self.vst3 / "THIRD-PARTY-NOTICES.md").is_file())
         self.assertIn("Restart REAPER", result.stdout)
 

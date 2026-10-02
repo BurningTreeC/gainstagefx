@@ -23,7 +23,7 @@ gainstagefx_install() (
         echo "install.sh: both GainStageFx.clap and GainStageFx.vst3 are required in $source_dir" >&2
         exit 1
     fi
-    for name in LICENSE THIRD-PARTY-NOTICES.md; do
+    for name in LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md; do
         if [[ ! -f "$docs_dir/$name" ]]; then
             echo "install.sh: missing $docs_dir/$name" >&2
             exit 1
@@ -36,7 +36,7 @@ gainstagefx_install() (
     vst3_stage=$(mktemp -d "$vst3_dir/.gainstagefx.XXXXXX")
     cp -R -- "$source_dir/GainStageFx.clap" "$clap_stage/"
     cp -R -- "$source_dir/GainStageFx.vst3" "$vst3_stage/"
-    for name in LICENSE THIRD-PARTY-NOTICES.md; do
+    for name in LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md; do
         cp -- "$docs_dir/$name" "$clap_stage/"
         cp -- "$docs_dir/$name" "$vst3_stage/"
     done
@@ -60,7 +60,7 @@ gainstagefx_install() (
         fi
         exit 1
     fi
-    for name in LICENSE THIRD-PARTY-NOTICES.md; do
+    for name in LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md; do
         mv -fT -- "$clap_stage/$name" "$clap_dir/$name"
         mv -fT -- "$vst3_stage/$name" "$vst3_dir/$name"
     done

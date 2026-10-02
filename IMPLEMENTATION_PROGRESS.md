@@ -1,5 +1,26 @@
 # Implementation progress
 
+## 2026-10-02 — MIT OR Apache-2.0
+
+The owner, on hearing that Steinberg's VST3 SDK is MIT now: "Change to the most
+appropriate license!"
+
+- The plugin was GPL-3.0-or-later because the VST3 bindings it once linked
+  (`vst3-sys`) were. It links the MIT/Apache `vst3` crate now, and every crate in the
+  tree is permissive or MPL-2.0 (file-level, cssparser and friends under vizia's
+  styling); the only GPL packages were GainStageFx and its installer. One commit in
+  the history is a CI bot's; everything else is the owner's, so the owner can
+  relicense alone.
+- Now **MIT OR Apache-2.0**, the Rust ecosystem's usual pair, matching the stack it
+  is built on (nice-plug ISC, vizia MIT, vst3 MIT/Apache): `LICENSE` replaced by
+  `LICENSE-MIT` and `LICENSE-APACHE`; the `license` fields of the plugin, installer
+  and xtask; the README's licence section, which records that v0.41.0 and earlier
+  were published under GPL-3.0-or-later and stay so; the three packaged readmes; the
+  release archives, the Linux installer and its test ship both files.
+- `tools/third-party-notices.py` writes the new header and now refuses to run if any
+  crate is taken under a GPL, which would make the whole binary GPL again.
+  Regenerated; the local registry's Skia checkout adds a line CI never sees, left out.
+
 ## 2026-10-02 — The wahs
 
 The owner, on the control design: "To all questions yes"; then "continue with the horn

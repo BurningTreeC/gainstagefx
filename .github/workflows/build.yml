@@ -383,7 +383,7 @@ jobs:
           cp -R target/bundled/* "$staged/"
 
           # Ship licensing information with every binary package.
-          cp LICENSE THIRD-PARTY-NOTICES.md "$staged/"
+          cp LICENSE-MIT LICENSE-APACHE THIRD-PARTY-NOTICES.md "$staged/"
           cp ".github/readme-${{ runner.os }}.txt" "$staged/README.txt"
 
           case '${{ runner.os }}' in
@@ -501,7 +501,8 @@ jobs:
           Download the archive for your platform and run the installer inside
           it: `install.sh` on Linux, `install.exe` on Windows,
           `Install.command` on macOS. `README.txt` covers installing by hand.
-          Every archive also contains `LICENSE` and `THIRD-PARTY-NOTICES.md`.
+          Every archive also contains `LICENSE-MIT`, `LICENSE-APACHE` and
+          `THIRD-PARTY-NOTICES.md`.
 
           **macOS:** the package contains universal Apple Silicon (`arm64`) and
           Intel (`x86_64`) CLAP, VST3 and Audio Unit v2 (`.component`) plugins.

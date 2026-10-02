@@ -1,7 +1,8 @@
 # Third party notices
 
-The GainStageFx plugin is distributed under the GNU General Public
-License version 3 or later, whose text is in `LICENSE`. It links the
+The GainStageFx plugin is distributed under the MIT License or the
+Apache License 2.0, at your option, whose texts are in `LICENSE-MIT`
+and `LICENSE-APACHE`. It links the
 265 crates listed below, whose own licences and copyright notices
 are reproduced here as those licences require.
 
@@ -618,9 +619,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   - Copyright (c) 2019 Daniel "Lokathor" Gee
 
 ## License texts
-
-The GPLv3, which covers this plugin, is in `LICENSE` rather than
-repeated here.
 
 ### Apache-2.0
 

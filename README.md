@@ -719,7 +719,16 @@ measurement, and several times it was me:
 
 ## Licence
 
-GPL-3.0-or-later — the full text is in [`LICENSE`](LICENSE).
+Licensed under either of the [MIT License](LICENSE-MIT) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option. Unless you say
+otherwise, a contribution you submit for inclusion is licensed the same way,
+without any additional terms or conditions.
+
+Releases up to and including v0.41.0 were published under GPL-3.0-or-later, and
+copies of those releases remain under it. The plugin was GPL because the VST3
+bindings it once linked were; Steinberg's VST3 SDK is MIT licensed now, and
+every crate the plugin links today is permissive (or MPL-2.0, which applies only
+to that crate's own files).
 
 Every crate it links is listed with its own licence and copyright notice in
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md); regenerate that with
