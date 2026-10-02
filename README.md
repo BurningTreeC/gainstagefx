@@ -427,6 +427,10 @@ hardware behind them at all.
 | Orange Phase | MXR Phase 90, script logo (1974-77), from ElectroSmash's trace, with the block logo's R28 switchable | [orange_phase.md](docs/models/orange_phase.md) |
 | Blue Chorus | Boss CE-2, from Boss's CE-2/CE-2B Service Notes, first edition, February 1987 | [blue_chorus.md](docs/models/blue_chorus.md) |
 
+**Wahs** (their own slot, ahead of the pedal)
+
+| Panel | Modelled from | Log |
+|---|---|---|
 | Black Wah | Dunlop Cry Baby GCB-95, the buffered board (rev F, 1991 on), from ElectroSmash's trace | [wahs.md](docs/models/wahs.md) |
 | Chrome Wah | Vox V847, from ElectroSmash's trace (Thomas Organ's 1967 V846 drawing still to be checked against) | [wahs.md](docs/models/wahs.md) |
 
