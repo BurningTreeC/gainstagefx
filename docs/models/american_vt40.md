@@ -9,8 +9,9 @@ with a 12AX7 input per channel, the passive bass and treble of a packaged networ
 **American V-4B**, after the American SVT.
 
 Status: **RESEARCHED 2026-10-02, CLEARED** (question 2 on Ampeg's own factory
-drawings), **with one gap**: the packaged tone network's parts are known but not their
-positions. Not built.
+drawings). The gap first recorded here -- the packaged tone network's positions -- is
+closed by Ampeg's own SVT drawing (below). Not built yet; the valves it needs are
+fitted or shown to be fits the solver has.
 
 ## Eight-question checkpoint
 
@@ -67,3 +68,33 @@ VT-40 only: V202 6CG7 and V203 12AX7, the reverb's driver and recovery
    - **The reverb** (VT-40): the plugin's spring tank, as the Twin's.
 8. **Why.** The album preset *Desert Deaf '02* is blocked on them (`docs/ROADMAP.md`,
    section C).
+
+## Settled since the checkpoint (2026-10-02)
+
+- **The P.E.C. 6470000 is the SVT's James stack.** Ampeg's own SVT drawing (D 591719
+  rev D, built here as `american_svt::james_stack`) draws its tone module, P.E.C.
+  250762-1, with every part placed: 220 k / 1 M log BASS / 22 k, .001 across the bass
+  pot's upper half and .01 across its lower, .00047 / 1 M log TREBLE / .0047, 120 k from
+  the bass wiper to the treble's. Those six parts are exactly the six reported for the
+  6470000 (220 k, 22 k; 470 pF, 4.7 nF, 1 nF, 10 nF), around the same 1 M log pots, and
+  the 120 k sits outside the package on both 1971 drawings (R101 on the VT-40, R109 on
+  the V-4B). DOCUMENTED by Ampeg for the SVT's part; the same network in the 6470000 is
+  PLAUSIBLE to the point of near certainty (six of six parts and the topology).
+- **The 6K11 needs no fit.** RCA's and GE's sheets give its medium-mu unit the 12AU7's
+  published characteristics (mu 17, 7.7 kohm, 2.2 mA/V, 10.5 mA at 250 V / -8.5 V) and
+  its two high-mu units the 12AX7's (mu 100, 62.5 kohm, 1.6 mA/V, 1.2 mA at 250 V /
+  -2 V): it is built from the solver's ECC82 and ECC83. Pins (RCA): unit 1 (medium-mu)
+  4 / 9 / 10, unit 2 5 / 6 / 7, unit 3 2 / 3 / 11.
+- **The 6CG7 is fitted** (`TriodeSpec::T6CG7`, `tools/tube_fit/fit_6cg7.py`), to
+  Tung-Sol's sheet of 1 December 1959: six targets within 1.1 %.
+- **The 6K11 is the SVT's midrange loop in one bulb**: unit 3 (220 k plate, 560 R +
+  7.5 k cathode, 1 M grid return), unit 2 (470 k, 3.3 k), unit 1 a follower at 196 V on
+  47 k + 6.8 k with 56 k back to unit 3's cathode, and the MIDRANGE pot, toroid and
+  selector between them -- the SVT's V3b, V4a and V4b with the same values but .33 uF
+  (C203, C204) where the SVT has .68, and a 12AU7-like follower where the SVT's is a
+  12AX7. The toroid is a different part (8910001; the SVT's is 320821-1), and its
+  selector frequencies are not on the VT-40's drawings: to find, or ESTIMATED.
+- **Two 7027As or four**: the VT-40's specification page prints "(4) 7027A", its
+  schematic (DWG 06500, rev B, 4-71) draws two, V5-6, at 586 V, and its heater string
+  and valve voltage table carry V5 and V6 only. The schematic is followed: two.
+

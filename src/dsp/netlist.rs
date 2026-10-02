@@ -978,6 +978,22 @@ impl TriodeSpec {
         kp: 101.45,
         kvb: 300.0,
     };
+    /// 6CG7, the medium-mu noval twin (a 6SN7 in a smaller bulb): the Ampeg
+    /// VT-40's reverb driver.
+    ///
+    /// Fitted by `tools/tube_fit/fit_6cg7.py` against Tung-Sol's "Tentative
+    /// Data" of 1 December 1959 -- 10 mA and 3000 micromho at 90 V and 0 V;
+    /// 9 mA, 2600 micromho and 7700 ohm at 250 V and -8 V; 1.3 mA at -12.5 V:
+    /// six targets for four constants (`kvb` held at 300), all met within
+    /// 1.1 %. Held out: 7071 ohm against the sheet's 6700 at 90 V; the
+    /// amplification factor comes out at 20.3 against 20.
+    pub const T6CG7: TriodeSpec = TriodeSpec {
+        mu: 21.5659,
+        ex: 1.273,
+        kg1: 1233.33,
+        kp: 141.263,
+        kvb: 300.0,
+    };
 }
 
 impl Part {
