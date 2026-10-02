@@ -1211,6 +1211,9 @@ pub fn describe(circuit: Circuit) -> String {
             "Two op-amp stages into red LEDs, then a bass, middle and treble \
                           stack that all move each other."
         }
+        Circuit::Brit45 => {
+            "Modeled after a mid-60s British 45 W head: two ECC83 channels, a follower, two KT66s, a GZ34."
+        }
         Circuit::ModernPurple => {
             "Modeled after a modern high-gain pedal: six op-amps, diode and LED clipping, active mid, Aggression."
         }

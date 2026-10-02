@@ -1,5 +1,25 @@
 # Implementation progress
 
+## 2026-10-02 — The Brit 45 (Marshall JTM45) and the KT66
+
+The owner: "yes" -- commit the research and start the KT66 fit and the JTM45.
+
+- **`PentodeSpec::KT66`** (`tools/tube_fit/fit_kt66.py`): fitted to Marconi's KT66
+  sheet, whose cathode-biased rows hold together (every one within 3 %, 6.3 mA/V), with
+  GEC's 22.5 kohm for the knee; GEC's later 1977 rows disagree and are reported. The
+  first attempt misread the 1977 sheet's gm test current as the current at -15 V.
+- **`circuits/jtm45.rs`** and **`power::PowerSpec::JTM45_KT66`**: Marshall's period
+  drawing and voltage chart, read against its CAD JTM45 diagram -- the preamp within
+  4 % of the chart, the inverter within 4 %, the plates at 434 V (430); the bias -48 V
+  DERIVED from the drawn bias supply (the drawing's circled "105V" would cut the KT66s
+  off); the output transformer ESTIMATED. Registered as the circuit **Brit 45**
+  (`amp_marshall_jtm45`) and the power stage **Brit 45 KT66** (`power_jtm45_kt66`),
+  appended; the power-trim table gains a column.
+- One preset, *Brit 45 Blues*, levelled by `presetlevel` (+7.4); tests in
+  `tests/brit_jtm45.rs`. Calibration and power trim generated (only the new row and
+  column moved; `examples/powertrim.rs`'s column names gained the stage). Kernel table
+  regenerated: 199 to 202, none dropped.
+
 ## 2026-10-02 — The JTM45 and the VT-40 / V-4B researched
 
 The fallback the owner agreed for the Generator 120 ("Yes"): research the two amplifiers

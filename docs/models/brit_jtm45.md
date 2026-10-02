@@ -6,8 +6,8 @@ Marshall tone stack, an ECC83 long-tailed pair, two KT66s, a GZ34. The circuit M
 built on Fender's 5F6-A Bassman. Proposed stable ids `amp_marshall_jtm45` and
 `power_jtm45_kt66`. Proposed display **Brit 45** and **Brit 45 KT66**.
 
-Status: **RESEARCHED 2026-10-02, CLEARED** (question 2 on Marshall's own drawings).
-Not built: the KT66 needs a fit from its data sheet first.
+Status: **IMPLEMENTED 2026-10-02** (`circuits/jtm45.rs`, `power::PowerSpec::JTM45_KT66`,
+`PentodeSpec::KT66`), on Marshall's own drawings. Results below.
 
 ## Eight-question checkpoint
 
@@ -67,3 +67,55 @@ GZ34 (V7) rectifier, 32 + 16 uF, 20 H choke, 8.2 k 1 W and 10 k 1 W dropping to 
      DERIVED.
 8. **Why.** The album preset *Californicated '99* is blocked on it (`docs/ROADMAP.md`,
    section C); the Super Bass it pairs with is built (Brit Plexi Bass).
+
+## What was settled in building it
+
+- **V1A's plate resistor is 100 k**, as Marshall's CAD drawing prints it and as the
+  Bassman has it; the period drawing's lettering reads "180K".
+- **The bright channel**: the period drawing's legible 100 pF across the volume
+  (Marshall's later CAD sheet has 500 pF there), and 500 pF across its 270 k mixer --
+  the CAD prints 500, and the period drawing's "5[00]pF" is half under the capacitor's
+  symbol.
+- **47 pF across the inverter's plates**: both drawings draw it.
+- **No grid stoppers** on the KT66s: neither drawing has them (the builder takes one
+  ohm of wire).
+- **The bias, -48 V, DERIVED**: the period drawing's half-wave bias supply -- 150 k from
+  the 350 V winding (the chart's "350 AC" at the rectifier), 8 uF, 15 k and 56 k --
+  gives about 48 V (the CAD's 180 k would give 41). The drawing circles "105V" in that
+  network; as a grid voltage it would cut the KT66s off (they stop near -57 V at 440 V
+  of screen), and it is not used.
+- **The KT66 fit** (`tools/tube_fit/fit_kt66.py`): two sheets disagree. Marconi's rows
+  are cathode-biased with their resistors given, so each row's grid voltage is its
+  resistor times its current, and they hold together under one law: the fit meets
+  every one within 3 % (85 mA and 6.3 mA at 250 V / -15.5 V; 81 mA at 258 V / -17.4 V;
+  62.5 mA at 400 V / 300 V / -26 V; 6.3 mA/V), with GEC's 22.5 kohm for the knee. GEC's
+  later sheet (M-O Valve, 1977) gives 52 mA where the fit gives 59 at 415 V / 300 V /
+  -27 V, and its ultra-linear row at 425 V asks for twice the amplification factor its
+  own AB1 row allows; it is reported, not fitted. **A first attempt misread the 1977
+  sheet's gm test current (85 mA, at which the grid is adjusted) as the current at
+  -15 V**, and fought the rows for it.
+
+## Results (`tests/brit_jtm45.rs`, `examples/jtm45_op.rs`)
+
+| | model | chart |
+|---|---|---|
+| V1 plates, cathode | 221.6 V, 1.64 V | 220, 1.6 |
+| gain stage plate, cathode | 187.0 V, 1.10 V | 190, 1.1 |
+| follower's cathode | 187.4 V | 190 |
+| supply nodes | 373.8 V, 321.6 V | 380, 310 |
+| inverter plates, cathodes | 256.1 / 247.9 V, 41.6 V | 250, 40 |
+| KT66 plates | 434.4 V | 430 |
+| KT66 screens | 426.8 V (node) | 440 |
+
+Each KT66 idles at 46 mA, 20 W, under GEC's 25 W design maximum. The model's output
+transformer is ideal at DC, so its plates sit at the rail: the chart's 20 V of primary
+copper between the rectifier (450 V) and the plates (430 V) is not dropped, and its
+screens -- above the plates on the chart, behind the choke and a 1 k here -- come out
+13 V low. The unloaded rail behind the GZ34 is ESTIMATED to put the plates on the chart.
+The bright cap lifts 5 kHz against 200 Hz by 14.5 dB at a quarter volume against 5.0 at
+full. The same at 44.1 to 192 kHz; realtime-safe; one preset, *Brit 45 Blues*.
+
+**Approximated, beyond the KT66 and the bias**: the output transformer (a 6.6 k plate to
+plate primary into 16 ohm, ESTIMATED from the Radio Spares / Drake part's class; copper,
+inductance and leakage scaled from the Brit EL34's), the windings' resistance and the
+choke's copper (ESTIMATED).

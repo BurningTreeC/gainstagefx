@@ -31,7 +31,7 @@ use crate::circuits::{
     ac30, american312, american_800rb, american_ss800, american_svt, bass_driver, bigmuff,
     blue_chorus, brit2205, brit800, brit_drive, british_47, brum100, cabinet, clean_boost, clipper,
     console_e, deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive, heavy_metal, iron,
-    jazz120, jc120_power, markiic, metal_zone, modern_33, modern_purple, neve, orange_dist,
+    jazz120, jc120_power, jtm45, markiic, metal_zone, modern_33, modern_purple, neve, orange_dist,
     orange_phase, oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent, round_fuzz,
     studio, tone, treble_boost, ts808, tube610, twin, wah,
 };
@@ -221,12 +221,15 @@ pub enum Gain {
     /// The Revv G3, the original, from a trace of a genuine unit
     /// (`circuits::modern_purple`).
     ModernPurple,
+    /// The Marshall JTM45 of 1965, from Marshall's own drawings
+    /// (`circuits::jtm45`), into its two KT66s.
+    Brit45,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 48] = [
+    pub const ALL: [Gain; 49] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -275,6 +278,7 @@ impl Gain {
         Gain::BlueChorus,
         Gain::Modern33,
         Gain::ModernPurple,
+        Gain::Brit45,
     ];
 
     pub fn name(self) -> &'static str {
@@ -327,6 +331,7 @@ impl Gain {
             Gain::BlueChorus => "Boss CE-2",
             Gain::Modern33 => "Fortin 33",
             Gain::ModernPurple => "Revv G3",
+            Gain::Brit45 => "JTM45",
         }
     }
 
@@ -382,6 +387,7 @@ impl Gain {
             // Its one pot, a level after a fixed gain, as the Treble Boost's.
             Gain::Modern33 => modern_33::LEVEL,
             Gain::ModernPurple => modern_purple::GAIN,
+            Gain::Brit45 => jtm45::VOLUME,
             _ => clipper::GAIN,
         }
     }
@@ -423,6 +429,7 @@ impl Gain {
             | Gain::AC30
             | Gain::DR103
             | Gain::PlexiBass
+            | Gain::Brit45
             | Gain::OregonT
             | Gain::AmericanSvt
             | Gain::American800RB => "VOLUME",
@@ -549,6 +556,7 @@ impl Gain {
             Gain::Recto => Some((rectifier::BASS, rectifier::MIDDLE, rectifier::TREBLE)),
             Gain::Brit2205 => Some((brit2205::BASS, brit2205::MIDDLE, brit2205::TREBLE)),
             Gain::PlexiBass => Some((plexi_bass::BASS, plexi_bass::MIDDLE, plexi_bass::TREBLE)),
+            Gain::Brit45 => Some((jtm45::BASS, jtm45::MIDDLE, jtm45::TREBLE)),
             Gain::Brum100 => Some((brum100::BASS, brum100::MIDDLE, brum100::TREBLE)),
             Gain::OregonT => Some((oregon_t::BASS, oregon_t::MIDDLE, oregon_t::TREBLE)),
             // BASS, MIDRANGE (inside the V3b-V4 loop) and TREBLE.
@@ -716,6 +724,7 @@ impl Gain {
             Gain::Recto => Some(&power::PowerSpec::RECTO_6L6),
             Gain::Brit2205 => Some(&power::PowerSpec::BRIT_2205_EL34),
             Gain::PlexiBass => Some(&power::PowerSpec::PLEXI_BASS_EL34),
+            Gain::Brit45 => Some(&power::PowerSpec::JTM45_KT66),
             Gain::Brum100 => Some(&power::PowerSpec::BRUM_EL34),
             Gain::OregonT => Some(&power::PowerSpec::OREGON_6550),
             Gain::AmericanSvt => Some(&power::PowerSpec::SVT_6550),
@@ -756,6 +765,7 @@ impl Gain {
                 | Gain::Ds1
                 | Gain::TrebleBoost
                 | Gain::PlexiBass
+                | Gain::Brit45
                 | Gain::Brum100
                 | Gain::OregonT
                 | Gain::GoldDrive
@@ -1498,10 +1508,12 @@ pub enum PowerModel {
     Svt6550,
     /// The GK 800RB's 300 W transistor amplifier. See `circuits::american_ss800`.
     AmericanSS800,
+    /// The JTM45's two KT66s behind a GZ34. See `power::PowerSpec::JTM45_KT66`.
+    Brit45KT66,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 19] = [
+    pub const ALL: [PowerModel; 20] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -1521,6 +1533,7 @@ impl PowerModel {
         PowerModel::Oregon6550,
         PowerModel::Svt6550,
         PowerModel::AmericanSS800,
+        PowerModel::Brit45KT66,
     ];
 
     /// The valve stage this model is, where it is one.
@@ -1549,6 +1562,7 @@ impl PowerModel {
             Self::BrumEL34 => &power::PowerSpec::BRUM_EL34,
             Self::Oregon6550 => &power::PowerSpec::OREGON_6550,
             Self::Svt6550 => &power::PowerSpec::SVT_6550,
+            Self::Brit45KT66 => &power::PowerSpec::JTM45_KT66,
             Self::Jazz120SS | Self::British73Out | Self::AmericanSS800 => return None,
         })
     }
@@ -1621,6 +1635,7 @@ impl PowerModel {
             Self::Oregon6550 => 16,
             Self::Svt6550 => 17,
             Self::AmericanSS800 => 18,
+            Self::Brit45KT66 => 19,
         }
     }
 
@@ -1654,6 +1669,7 @@ impl PowerModel {
             Self::AmericanSS800 => {
                 voice_index(Gain::American800RB, Diode::Silicon, Amplifier::Valve)
             }
+            Self::Brit45KT66 => voice_index(Gain::Brit45, Diode::Silicon, Amplifier::Valve),
         }
     }
 }
@@ -1680,10 +1696,11 @@ pub enum PowerAmp {
     Oregon6550,
     Svt6550,
     AmericanSS800,
+    Brit45KT66,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -1702,6 +1719,7 @@ impl PowerAmp {
         Self::Oregon6550,
         Self::Svt6550,
         Self::AmericanSS800,
+        Self::Brit45KT66,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -1724,6 +1742,7 @@ impl PowerAmp {
                 Gain::OregonT => Some(PowerModel::Oregon6550),
                 Gain::AmericanSvt => Some(PowerModel::Svt6550),
                 Gain::American800RB => Some(PowerModel::AmericanSS800),
+                Gain::Brit45 => Some(PowerModel::Brit45KT66),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1749,6 +1768,7 @@ impl PowerAmp {
             Self::Oregon6550 => Some(PowerModel::Oregon6550),
             Self::Svt6550 => Some(PowerModel::Svt6550),
             Self::AmericanSS800 => Some(PowerModel::AmericanSS800),
+            Self::Brit45KT66 => Some(PowerModel::Brit45KT66),
         }
     }
 }
@@ -2593,6 +2613,8 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::BlueChorus => blue_chorus::build(10_000.0, 470_000.0),
         Gain::Modern33 => modern_33::build(10_000.0, 470_000.0),
         Gain::ModernPurple => modern_purple::build(10_000.0, 470_000.0),
+        // Loaded by the inverter's 1 M leak behind its .02, as the Plexis are.
+        Gain::Brit45 => jtm45::build(10_000.0, 1_000_000.0),
     }
 }
 
@@ -5842,6 +5864,7 @@ impl Chain {
             PowerAmp::Oregon6550 => 14,
             PowerAmp::Svt6550 => 15,
             PowerAmp::AmericanSS800 => 16,
+            PowerAmp::Brit45KT66 => 17,
         };
         Some(column)
     }

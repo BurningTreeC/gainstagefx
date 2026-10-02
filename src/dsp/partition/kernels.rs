@@ -13557,6 +13557,690 @@ fn kernel_33(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
 }
 
 fn kernel_34(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[32];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[2];
+    r[2] -= f * pr;
+    let d = m[17];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[17] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[18];
+    m[38] -= f * m[22];
+    m[40] -= f * m[24];
+    r[2] -= f * pr;
+    let e = m[49];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[50] -= f * m[18];
+    m[54] -= f * m[22];
+    m[56] -= f * m[24];
+    r[3] -= f * pr;
+    let e = m[129];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[130] -= f * m[18];
+    m[134] -= f * m[22];
+    m[136] -= f * m[24];
+    r[8] -= f * pr;
+    let d = m[34];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[34] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[50];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[51] -= f * m[35];
+    m[52] -= f * m[36];
+    m[53] -= f * m[37];
+    m[54] -= f * m[38];
+    m[55] -= f * m[39];
+    m[56] -= f * m[40];
+    r[3] -= f * pr;
+    let e = m[66];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[67] -= f * m[35];
+    m[68] -= f * m[36];
+    m[69] -= f * m[37];
+    m[70] -= f * m[38];
+    m[71] -= f * m[39];
+    m[72] -= f * m[40];
+    r[4] -= f * pr;
+    let e = m[82];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[83] -= f * m[35];
+    m[84] -= f * m[36];
+    m[85] -= f * m[37];
+    m[86] -= f * m[38];
+    m[87] -= f * m[39];
+    m[88] -= f * m[40];
+    r[5] -= f * pr;
+    let e = m[114];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[115] -= f * m[35];
+    m[116] -= f * m[36];
+    m[117] -= f * m[37];
+    m[118] -= f * m[38];
+    m[119] -= f * m[39];
+    m[120] -= f * m[40];
+    r[7] -= f * pr;
+    let e = m[130];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[131] -= f * m[35];
+    m[132] -= f * m[36];
+    m[133] -= f * m[37];
+    m[134] -= f * m[38];
+    m[135] -= f * m[39];
+    m[136] -= f * m[40];
+    r[8] -= f * pr;
+    m.swap(51, 67);
+    m.swap(52, 68);
+    m.swap(53, 69);
+    m.swap(54, 70);
+    m.swap(55, 71);
+    m.swap(56, 72);
+    m.swap(57, 73);
+    r.swap(3, 4);
+    let d = m[51];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[51] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[67];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[68] -= f * m[52];
+    m[69] -= f * m[53];
+    m[70] -= f * m[54];
+    m[71] -= f * m[55];
+    m[72] -= f * m[56];
+    m[73] -= f * m[57];
+    r[4] -= f * pr;
+    let e = m[83];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[84] -= f * m[52];
+    m[85] -= f * m[53];
+    m[86] -= f * m[54];
+    m[87] -= f * m[55];
+    m[88] -= f * m[56];
+    m[89] -= f * m[57];
+    r[5] -= f * pr;
+    let e = m[115];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[116] -= f * m[52];
+    m[117] -= f * m[53];
+    m[118] -= f * m[54];
+    m[119] -= f * m[55];
+    m[120] -= f * m[56];
+    m[121] -= f * m[57];
+    r[7] -= f * pr;
+    let e = m[131];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[132] -= f * m[52];
+    m[133] -= f * m[53];
+    m[134] -= f * m[54];
+    m[135] -= f * m[55];
+    m[136] -= f * m[56];
+    m[137] -= f * m[57];
+    r[8] -= f * pr;
+    m.swap(68, 148);
+    m.swap(69, 149);
+    m.swap(70, 150);
+    m.swap(71, 151);
+    m.swap(72, 152);
+    m.swap(73, 153);
+    m.swap(76, 156);
+    m.swap(77, 157);
+    m.swap(79, 159);
+    r.swap(4, 9);
+    let d = m[68];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[68] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[84];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[69];
+    m[89] -= f * m[73];
+    m[92] -= f * m[76];
+    m[93] -= f * m[77];
+    m[95] -= f * m[79];
+    r[5] -= f * pr;
+    let e = m[116];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[117] -= f * m[69];
+    m[121] -= f * m[73];
+    m[124] -= f * m[76];
+    m[125] -= f * m[77];
+    m[127] -= f * m[79];
+    r[7] -= f * pr;
+    let e = m[132];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[133] -= f * m[69];
+    m[137] -= f * m[73];
+    m[140] -= f * m[76];
+    m[141] -= f * m[77];
+    m[143] -= f * m[79];
+    r[8] -= f * pr;
+    let e = m[148];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[149] -= f * m[69];
+    m[153] -= f * m[73];
+    m[156] -= f * m[76];
+    m[157] -= f * m[77];
+    m[159] -= f * m[79];
+    r[9] -= f * pr;
+    m.swap(85, 149);
+    m.swap(86, 150);
+    m.swap(87, 151);
+    m.swap(88, 152);
+    m.swap(89, 153);
+    m.swap(92, 156);
+    m.swap(93, 157);
+    m.swap(95, 159);
+    r.swap(5, 9);
+    let d = m[85];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[85] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[117];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[118] -= f * m[86];
+    m[119] -= f * m[87];
+    m[120] -= f * m[88];
+    m[121] -= f * m[89];
+    m[124] -= f * m[92];
+    m[125] -= f * m[93];
+    m[127] -= f * m[95];
+    r[7] -= f * pr;
+    let e = m[133];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[134] -= f * m[86];
+    m[135] -= f * m[87];
+    m[136] -= f * m[88];
+    m[137] -= f * m[89];
+    m[140] -= f * m[92];
+    m[141] -= f * m[93];
+    m[143] -= f * m[95];
+    r[8] -= f * pr;
+    let e = m[149];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[150] -= f * m[86];
+    m[151] -= f * m[87];
+    m[152] -= f * m[88];
+    m[153] -= f * m[89];
+    m[156] -= f * m[92];
+    m[157] -= f * m[93];
+    m[159] -= f * m[95];
+    r[9] -= f * pr;
+    let d = m[102];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[102] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[118];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[122] -= f * m[106];
+    m[123] -= f * m[107];
+    m[126] -= f * m[110];
+    r[7] -= f * pr;
+    let e = m[134];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[138] -= f * m[106];
+    m[139] -= f * m[107];
+    m[142] -= f * m[110];
+    r[8] -= f * pr;
+    let e = m[150];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[154] -= f * m[106];
+    m[155] -= f * m[107];
+    m[158] -= f * m[110];
+    r[9] -= f * pr;
+    let e = m[166];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[170] -= f * m[106];
+    m[171] -= f * m[107];
+    m[174] -= f * m[110];
+    r[10] -= f * pr;
+    let e = m[182];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[186] -= f * m[106];
+    m[187] -= f * m[107];
+    m[190] -= f * m[110];
+    r[11] -= f * pr;
+    let e = m[230];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[234] -= f * m[106];
+    m[235] -= f * m[107];
+    m[238] -= f * m[110];
+    r[14] -= f * pr;
+    m.swap(119, 151);
+    m.swap(120, 152);
+    m.swap(121, 153);
+    m.swap(122, 154);
+    m.swap(123, 155);
+    m.swap(124, 156);
+    m.swap(125, 157);
+    m.swap(126, 158);
+    m.swap(127, 159);
+    r.swap(7, 9);
+    let d = m[119];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[119] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[135];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[136] -= f * m[120];
+    m[137] -= f * m[121];
+    m[138] -= f * m[122];
+    m[139] -= f * m[123];
+    m[140] -= f * m[124];
+    m[141] -= f * m[125];
+    m[142] -= f * m[126];
+    m[143] -= f * m[127];
+    r[8] -= f * pr;
+    let e = m[151];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[152] -= f * m[120];
+    m[153] -= f * m[121];
+    m[154] -= f * m[122];
+    m[155] -= f * m[123];
+    m[156] -= f * m[124];
+    m[157] -= f * m[125];
+    m[158] -= f * m[126];
+    m[159] -= f * m[127];
+    r[9] -= f * pr;
+    let d = m[136];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[136] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[152];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[153] -= f * m[137];
+    m[154] -= f * m[138];
+    m[155] -= f * m[139];
+    m[156] -= f * m[140];
+    m[157] -= f * m[141];
+    m[158] -= f * m[142];
+    m[159] -= f * m[143];
+    r[9] -= f * pr;
+    let d = m[153];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[153] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[201];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[202] -= f * m[154];
+    m[203] -= f * m[155];
+    m[204] -= f * m[156];
+    m[205] -= f * m[157];
+    m[206] -= f * m[158];
+    m[207] -= f * m[159];
+    r[12] -= f * pr;
+    let e = m[217];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[218] -= f * m[154];
+    m[219] -= f * m[155];
+    m[220] -= f * m[156];
+    m[221] -= f * m[157];
+    m[222] -= f * m[158];
+    m[223] -= f * m[159];
+    r[13] -= f * pr;
+    let e = m[249];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[250] -= f * m[154];
+    m[251] -= f * m[155];
+    m[252] -= f * m[156];
+    m[253] -= f * m[157];
+    m[254] -= f * m[158];
+    m[255] -= f * m[159];
+    r[15] -= f * pr;
+    let d = m[170];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[170] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[186];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[187] -= f * m[171];
+    m[190] -= f * m[174];
+    r[11] -= f * pr;
+    let e = m[202];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[203] -= f * m[171];
+    m[206] -= f * m[174];
+    r[12] -= f * pr;
+    let e = m[218];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[219] -= f * m[171];
+    m[222] -= f * m[174];
+    r[13] -= f * pr;
+    let e = m[234];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[235] -= f * m[171];
+    m[238] -= f * m[174];
+    r[14] -= f * pr;
+    let e = m[250];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[251] -= f * m[171];
+    m[254] -= f * m[174];
+    r[15] -= f * pr;
+    let d = m[187];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[187] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[203];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[204] -= f * m[188];
+    m[205] -= f * m[189];
+    m[206] -= f * m[190];
+    r[12] -= f * pr;
+    let e = m[219];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[220] -= f * m[188];
+    m[221] -= f * m[189];
+    m[222] -= f * m[190];
+    r[13] -= f * pr;
+    let e = m[235];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[236] -= f * m[188];
+    m[237] -= f * m[189];
+    m[238] -= f * m[190];
+    r[14] -= f * pr;
+    let e = m[251];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[252] -= f * m[188];
+    m[253] -= f * m[189];
+    m[254] -= f * m[190];
+    r[15] -= f * pr;
+    let d = m[204];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[204] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[220];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[221] -= f * m[205];
+    m[222] -= f * m[206];
+    m[223] -= f * m[207];
+    r[13] -= f * pr;
+    let e = m[236];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[237] -= f * m[205];
+    m[238] -= f * m[206];
+    m[239] -= f * m[207];
+    r[14] -= f * pr;
+    let e = m[252];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[253] -= f * m[205];
+    m[254] -= f * m[206];
+    m[255] -= f * m[207];
+    r[15] -= f * pr;
+    let d = m[221];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[221] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[237];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[238] -= f * m[222];
+    m[239] -= f * m[223];
+    r[14] -= f * pr;
+    let e = m[253];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[254] -= f * m[222];
+    m[255] -= f * m[223];
+    r[15] -= f * pr;
+    let d = m[238];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[238] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[254];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[255] -= f * m[239];
+    r[15] -= f * pr;
+    let d = m[255];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[255] = inv;
+    let v = r[15];
+    let d = m[255];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[239] * r[15];
+    let d = m[238];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[222] * r[14];
+    v -= m[223] * r[15];
+    let d = m[221];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[205] * r[13];
+    v -= m[206] * r[14];
+    v -= m[207] * r[15];
+    let d = m[204];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[188] * r[12];
+    v -= m[189] * r[13];
+    v -= m[190] * r[14];
+    let d = m[187];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[171] * r[11];
+    v -= m[174] * r[14];
+    let d = m[170];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[154] * r[10];
+    v -= m[155] * r[11];
+    v -= m[156] * r[12];
+    v -= m[157] * r[13];
+    v -= m[158] * r[14];
+    v -= m[159] * r[15];
+    let d = m[153];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[137] * r[9];
+    v -= m[138] * r[10];
+    v -= m[139] * r[11];
+    v -= m[140] * r[12];
+    v -= m[141] * r[13];
+    v -= m[142] * r[14];
+    v -= m[143] * r[15];
+    let d = m[136];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[120] * r[8];
+    v -= m[121] * r[9];
+    v -= m[122] * r[10];
+    v -= m[123] * r[11];
+    v -= m[124] * r[12];
+    v -= m[125] * r[13];
+    v -= m[126] * r[14];
+    v -= m[127] * r[15];
+    let d = m[119];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[106] * r[10];
+    v -= m[107] * r[11];
+    v -= m[110] * r[14];
+    let d = m[102];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[86] * r[6];
+    v -= m[87] * r[7];
+    v -= m[88] * r[8];
+    v -= m[89] * r[9];
+    v -= m[92] * r[12];
+    v -= m[93] * r[13];
+    v -= m[95] * r[15];
+    let d = m[85];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[69] * r[5];
+    v -= m[73] * r[9];
+    v -= m[76] * r[12];
+    v -= m[77] * r[13];
+    v -= m[79] * r[15];
+    let d = m[68];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[52] * r[4];
+    v -= m[53] * r[5];
+    v -= m[54] * r[6];
+    v -= m[55] * r[7];
+    v -= m[56] * r[8];
+    v -= m[57] * r[9];
+    let d = m[51];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[35] * r[3];
+    v -= m[36] * r[4];
+    v -= m[37] * r[5];
+    v -= m[38] * r[6];
+    v -= m[39] * r[7];
+    v -= m[40] * r[8];
+    let d = m[34];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[18] * r[2];
+    v -= m[22] * r[6];
+    v -= m[24] * r[8];
+    let d = m[17];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_35(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -13672,7 +14356,7 @@ fn kernel_34(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_35(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_36(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -14179,7 +14863,7 @@ fn kernel_35(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_36(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_37(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 9]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..3).map(<&mut [f64; 3]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -14236,7 +14920,7 @@ fn kernel_36(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_37(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_38(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -14990,7 +15674,7 @@ fn kernel_37(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_38(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_39(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -15652,7 +16336,7 @@ fn kernel_38(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_39(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_40(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -16433,7 +17117,7 @@ fn kernel_39(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_40(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_41(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -17239,7 +17923,7 @@ fn kernel_40(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_41(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_42(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 8);
@@ -17474,7 +18158,7 @@ fn kernel_41(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_42(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_43(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -17889,7 +18573,7 @@ fn kernel_42(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_43(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_44(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 26);
@@ -18555,7 +19239,7 @@ fn kernel_43(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_44(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_45(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -19452,7 +20136,7 @@ fn kernel_44(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_45(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_46(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 784]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..28).map(<&mut [f64; 28]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -20717,7 +21401,7 @@ fn kernel_45(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_46(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_47(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -20853,7 +21537,7 @@ fn kernel_46(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_47(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_48(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 26);
@@ -21517,7 +22201,7 @@ fn kernel_47(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_48(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_49(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -22178,7 +22862,7 @@ fn kernel_48(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_49(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_50(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 27);
@@ -22383,7 +23067,7 @@ fn kernel_49(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_50(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_51(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -22823,7 +23507,358 @@ fn kernel_50(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_51(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_52(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 100]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..10).map(<&mut [f64; 10]>::try_from) else { return Err(Bail::Tail(0)); };
+    m.swap(0, 10);
+    m.swap(1, 11);
+    m.swap(6, 16);
+    m.swap(7, 17);
+    r.swap(0, 1);
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[10];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[11] -= f * m[1];
+    m[16] -= f * m[6];
+    r[1] -= f * pr;
+    let e = m[60];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[61] -= f * m[1];
+    m[66] -= f * m[6];
+    r[6] -= f * pr;
+    let e = m[70];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[71] -= f * m[1];
+    m[76] -= f * m[6];
+    r[7] -= f * pr;
+    m.swap(11, 61);
+    m.swap(15, 65);
+    m.swap(16, 66);
+    m.swap(17, 67);
+    m.swap(19, 69);
+    r.swap(1, 6);
+    let d = m[11];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[11] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[61];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[65] -= f * m[15];
+    m[66] -= f * m[16];
+    m[69] -= f * m[19];
+    r[6] -= f * pr;
+    let e = m[71];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[75] -= f * m[15];
+    m[76] -= f * m[16];
+    m[79] -= f * m[19];
+    r[7] -= f * pr;
+    m.swap(22, 32);
+    m.swap(23, 33);
+    m.swap(24, 34);
+    m.swap(27, 37);
+    m.swap(28, 38);
+    r.swap(2, 3);
+    let d = m[22];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[22] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[32];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[33] -= f * m[23];
+    m[34] -= f * m[24];
+    m[37] -= f * m[27];
+    m[38] -= f * m[28];
+    r[3] -= f * pr;
+    let e = m[72];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[73] -= f * m[23];
+    m[74] -= f * m[24];
+    m[77] -= f * m[27];
+    m[78] -= f * m[28];
+    r[7] -= f * pr;
+    m.swap(33, 73);
+    m.swap(34, 74);
+    m.swap(35, 75);
+    m.swap(36, 76);
+    m.swap(37, 77);
+    m.swap(38, 78);
+    m.swap(39, 79);
+    r.swap(3, 7);
+    let d = m[33];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[33] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[43];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[44] -= f * m[34];
+    m[45] -= f * m[35];
+    m[46] -= f * m[36];
+    m[47] -= f * m[37];
+    m[48] -= f * m[38];
+    m[49] -= f * m[39];
+    r[4] -= f * pr;
+    let e = m[73];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[74] -= f * m[34];
+    m[75] -= f * m[35];
+    m[76] -= f * m[36];
+    m[77] -= f * m[37];
+    m[78] -= f * m[38];
+    m[79] -= f * m[39];
+    r[7] -= f * pr;
+    let e = m[83];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[84] -= f * m[34];
+    m[85] -= f * m[35];
+    m[86] -= f * m[36];
+    m[87] -= f * m[37];
+    m[88] -= f * m[38];
+    m[89] -= f * m[39];
+    r[8] -= f * pr;
+    m.swap(44, 84);
+    m.swap(45, 85);
+    m.swap(46, 86);
+    m.swap(47, 87);
+    m.swap(48, 88);
+    m.swap(49, 89);
+    r.swap(4, 8);
+    let d = m[44];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[44] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[74];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[75] -= f * m[45];
+    m[76] -= f * m[46];
+    m[77] -= f * m[47];
+    m[78] -= f * m[48];
+    m[79] -= f * m[49];
+    r[7] -= f * pr;
+    let e = m[84];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[45];
+    m[86] -= f * m[46];
+    m[87] -= f * m[47];
+    m[88] -= f * m[48];
+    m[89] -= f * m[49];
+    r[8] -= f * pr;
+    let d = m[55];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[55] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[65];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[66] -= f * m[56];
+    m[69] -= f * m[59];
+    r[6] -= f * pr;
+    let e = m[75];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[76] -= f * m[56];
+    m[79] -= f * m[59];
+    r[7] -= f * pr;
+    let e = m[85];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[86] -= f * m[56];
+    m[89] -= f * m[59];
+    r[8] -= f * pr;
+    let e = m[95];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[96] -= f * m[56];
+    m[99] -= f * m[59];
+    r[9] -= f * pr;
+    m.swap(66, 96);
+    m.swap(67, 97);
+    m.swap(68, 98);
+    m.swap(69, 99);
+    r.swap(6, 9);
+    let d = m[66];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[66] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[76];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[77] -= f * m[67];
+    m[78] -= f * m[68];
+    m[79] -= f * m[69];
+    r[7] -= f * pr;
+    let e = m[86];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[87] -= f * m[67];
+    m[88] -= f * m[68];
+    m[89] -= f * m[69];
+    r[8] -= f * pr;
+    let e = m[96];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[97] -= f * m[67];
+    m[98] -= f * m[68];
+    m[99] -= f * m[69];
+    r[9] -= f * pr;
+    m.swap(77, 97);
+    m.swap(78, 98);
+    m.swap(79, 99);
+    r.swap(7, 9);
+    let d = m[77];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[77] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[87];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[88] -= f * m[78];
+    m[89] -= f * m[79];
+    r[8] -= f * pr;
+    let e = m[97];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[98] -= f * m[78];
+    m[99] -= f * m[79];
+    r[9] -= f * pr;
+    let d = m[88];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[88] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[98];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[99] -= f * m[89];
+    r[9] -= f * pr;
+    let d = m[99];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[99] = inv;
+    let v = r[9];
+    let d = m[99];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[89] * r[9];
+    let d = m[88];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[78] * r[8];
+    v -= m[79] * r[9];
+    let d = m[77];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[67] * r[7];
+    v -= m[68] * r[8];
+    v -= m[69] * r[9];
+    let d = m[66];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[56] * r[6];
+    v -= m[59] * r[9];
+    let d = m[55];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[45] * r[5];
+    v -= m[46] * r[6];
+    v -= m[47] * r[7];
+    v -= m[48] * r[8];
+    v -= m[49] * r[9];
+    let d = m[44];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[34] * r[4];
+    v -= m[35] * r[5];
+    v -= m[36] * r[6];
+    v -= m[37] * r[7];
+    v -= m[38] * r[8];
+    v -= m[39] * r[9];
+    let d = m[33];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[23] * r[3];
+    v -= m[24] * r[4];
+    v -= m[27] * r[7];
+    v -= m[28] * r[8];
+    let d = m[22];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[15] * r[5];
+    v -= m[16] * r[6];
+    v -= m[19] * r[9];
+    let d = m[11];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[1] * r[1];
+    v -= m[6] * r[6];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_53(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -23537,7 +24572,7 @@ fn kernel_51(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_52(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_54(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 100]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..10).map(<&mut [f64; 10]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -23828,7 +24863,7 @@ fn kernel_52(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_53(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_55(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 16]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..4).map(<&mut [f64; 4]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -23914,7 +24949,7 @@ fn kernel_53(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_54(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_56(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 576]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..24).map(<&mut [f64; 24]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -25126,7 +26161,7 @@ fn kernel_54(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_55(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_57(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 25]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..5).map(<&mut [f64; 5]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -25254,7 +26289,7 @@ fn kernel_55(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_56(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_58(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -25662,7 +26697,7 @@ fn kernel_56(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_57(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_59(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 9]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..3).map(<&mut [f64; 3]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -25722,7 +26757,7 @@ fn kernel_57(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_58(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_60(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 100]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..10).map(<&mut [f64; 10]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 10);
@@ -26068,7 +27103,7 @@ fn kernel_58(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_59(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_61(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 441]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..21).map(<&mut [f64; 21]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -27114,7 +28149,7 @@ fn kernel_59(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_60(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_62(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -27465,7 +28500,7 @@ fn kernel_60(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_61(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_63(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -27880,7 +28915,7 @@ fn kernel_61(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_62(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_64(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -28605,7 +29640,7 @@ fn kernel_62(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_63(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_65(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 100]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..10).map(<&mut [f64; 10]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -28906,7 +29941,7 @@ fn kernel_63(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_64(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_66(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -29839,7 +30874,7 @@ fn kernel_64(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_65(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_67(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -30053,7 +31088,7 @@ fn kernel_65(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_66(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_68(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -30258,7 +31293,7 @@ fn kernel_66(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_67(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_69(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -30619,7 +31654,7 @@ fn kernel_67(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_68(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_70(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -30846,7 +31881,7 @@ fn kernel_68(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_69(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_71(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -31530,7 +32565,7 @@ fn kernel_69(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_70(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_72(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -32324,7 +33359,7 @@ fn kernel_70(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_71(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_73(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -33125,7 +34160,7 @@ fn kernel_71(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_72(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_74(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 576]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..24).map(<&mut [f64; 24]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -34337,7 +35372,7 @@ fn kernel_72(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_73(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_75(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -34538,7 +35573,7 @@ fn kernel_73(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_74(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_76(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -35229,7 +36264,7 @@ fn kernel_74(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_75(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_77(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -36126,7 +37161,7 @@ fn kernel_75(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_76(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_78(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -36618,7 +37653,7 @@ fn kernel_76(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_77(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_79(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -37521,7 +38556,7 @@ fn kernel_77(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_78(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_80(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -37975,7 +39010,7 @@ fn kernel_78(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_79(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_81(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 529]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..23).map(<&mut [f64; 23]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 46);
@@ -38573,7 +39608,7 @@ fn kernel_79(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_80(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_82(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -39573,7 +40608,7 @@ fn kernel_80(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_81(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_83(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 529]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..23).map(<&mut [f64; 23]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 46);
@@ -40173,7 +41208,7 @@ fn kernel_81(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_82(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_84(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -41142,7 +42177,7 @@ fn kernel_82(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_83(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_85(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -42038,7 +43073,7 @@ fn kernel_83(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_84(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_86(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -42975,7 +44010,7 @@ fn kernel_84(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_85(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_87(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -43919,7 +44954,7 @@ fn kernel_85(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_86(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_88(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -44892,7 +45927,7 @@ fn kernel_86(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_87(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_89(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -45888,7 +46923,7 @@ fn kernel_87(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_88(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_90(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -47471,7 +48506,7 @@ fn kernel_88(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_89(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_91(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -48567,7 +49602,7 @@ fn kernel_89(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_90(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_92(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -49659,7 +50694,7 @@ fn kernel_90(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_91(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_93(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -50540,7 +51575,7 @@ fn kernel_91(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_92(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_94(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -51327,7 +52362,7 @@ fn kernel_92(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_93(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_95(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -51770,7 +52805,7 @@ fn kernel_93(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_94(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_96(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -52680,7 +53715,7 @@ fn kernel_94(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_95(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_97(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -53602,7 +54637,7 @@ fn kernel_95(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_96(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_98(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 29);
@@ -54306,7 +55341,7 @@ fn kernel_96(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_97(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_99(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 121]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..11).map(<&mut [f64; 11]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 11);
@@ -54598,7 +55633,7 @@ fn kernel_97(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_98(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_100(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 121]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..11).map(<&mut [f64; 11]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -54866,7 +55901,7 @@ fn kernel_98(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_99(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_101(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -56450,7 +57485,7 @@ fn kernel_99(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail>
     Ok(())
 }
 
-fn kernel_100(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_102(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 29);
@@ -57163,7 +58198,7 @@ fn kernel_100(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_101(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_103(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 576]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..24).map(<&mut [f64; 24]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -58381,7 +59416,7 @@ fn kernel_101(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_102(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_104(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -58840,7 +59875,7 @@ fn kernel_102(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_103(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_105(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -59762,7 +60797,7 @@ fn kernel_103(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_104(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_106(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -61190,7 +62225,7 @@ fn kernel_104(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_105(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_107(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -62115,7 +63150,7 @@ fn kernel_105(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_106(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_108(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -62743,7 +63778,7 @@ fn kernel_106(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_107(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_109(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -63090,7 +64125,7 @@ fn kernel_107(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_108(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_110(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -64655,7 +65690,7 @@ fn kernel_108(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_109(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_111(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -65104,7 +66139,7 @@ fn kernel_109(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_110(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_112(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -65215,7 +66250,7 @@ fn kernel_110(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_111(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_113(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -65848,7 +66883,7 @@ fn kernel_111(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_112(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_114(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -67200,7 +68235,7 @@ fn kernel_112(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_113(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_115(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -67708,7 +68743,7 @@ fn kernel_113(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_114(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_116(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -68195,7 +69230,7 @@ fn kernel_114(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_115(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_117(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -68819,7 +69854,7 @@ fn kernel_115(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_116(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_118(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 8);
@@ -69020,7 +70055,7 @@ fn kernel_116(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_117(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_119(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -70606,7 +71641,7 @@ fn kernel_117(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_118(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_120(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -71045,7 +72080,7 @@ fn kernel_118(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_119(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_121(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -72470,7 +73505,7 @@ fn kernel_119(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_120(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_122(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 64]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..8).map(<&mut [f64; 8]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 8);
@@ -72682,7 +73717,7 @@ fn kernel_120(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_121(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_123(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -73145,7 +74180,7 @@ fn kernel_121(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_122(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_124(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -73876,7 +74911,7 @@ fn kernel_122(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_123(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_125(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -74755,7 +75790,7 @@ fn kernel_123(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_124(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_126(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -76301,7 +77336,7 @@ fn kernel_124(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_125(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_127(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -77077,7 +78112,7 @@ fn kernel_125(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_126(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_128(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -78501,7 +79536,7 @@ fn kernel_126(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_127(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_129(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -79149,7 +80184,7 @@ fn kernel_127(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_128(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_130(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -80738,7 +81773,7 @@ fn kernel_128(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_129(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_131(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -81156,7 +82191,7 @@ fn kernel_129(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_130(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_132(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -82516,7 +83551,7 @@ fn kernel_130(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_131(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_133(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -83013,7 +84048,7 @@ fn kernel_131(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_132(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_134(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -84037,7 +85072,7 @@ fn kernel_132(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_133(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_135(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -84678,7 +85713,7 @@ fn kernel_133(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_134(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_136(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -85593,7 +86628,7 @@ fn kernel_134(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_135(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_137(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -86915,7 +87950,7 @@ fn kernel_135(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_136(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_138(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 121]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..11).map(<&mut [f64; 11]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 11);
@@ -87199,7 +88234,7 @@ fn kernel_136(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_137(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_139(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 29);
@@ -87890,7 +88925,7 @@ fn kernel_137(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_138(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_140(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -88514,7 +89549,7 @@ fn kernel_138(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_139(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_141(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -89312,7 +90347,7 @@ fn kernel_139(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_140(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_142(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -90239,7 +91274,7 @@ fn kernel_140(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_141(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_143(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -90919,7 +91954,7 @@ fn kernel_141(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_142(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_144(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -91799,7 +92834,7 @@ fn kernel_142(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_143(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_145(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -92718,7 +93753,7 @@ fn kernel_143(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_144(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_146(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -93610,7 +94645,7 @@ fn kernel_144(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_145(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_147(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -94645,7 +95680,7 @@ fn kernel_145(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_146(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_148(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -95434,7 +96469,7 @@ fn kernel_146(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_147(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_149(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -95935,7 +96970,7 @@ fn kernel_147(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_148(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_150(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 121]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..11).map(<&mut [f64; 11]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 11);
@@ -96231,7 +97266,7 @@ fn kernel_148(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_149(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_151(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -97150,7 +98185,7 @@ fn kernel_149(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_150(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_152(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -98767,7 +99802,7 @@ fn kernel_150(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_151(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_153(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -99870,7 +100905,7 @@ fn kernel_151(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_152(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_154(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -100973,7 +102008,7 @@ fn kernel_152(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_153(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_155(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -101897,7 +102932,7 @@ fn kernel_153(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_154(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_156(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -103222,7 +104257,7 @@ fn kernel_154(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_155(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_157(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -104053,7 +105088,7 @@ fn kernel_155(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_156(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_158(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -105598,7 +106633,7 @@ fn kernel_156(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_157(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_159(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -106857,7 +107892,7 @@ fn kernel_157(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_158(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_160(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -107968,7 +109003,7 @@ fn kernel_158(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_159(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_161(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 576]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..24).map(<&mut [f64; 24]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -109192,7 +110227,7 @@ fn kernel_159(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_160(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_162(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 90);
@@ -110171,7 +111206,7 @@ fn kernel_160(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_161(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_163(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 576]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..24).map(<&mut [f64; 24]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -111385,7 +112420,7 @@ fn kernel_161(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_162(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_164(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -112322,7 +113357,7 @@ fn kernel_162(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_163(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_165(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -112824,7 +113859,7 @@ fn kernel_163(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_164(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_166(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -113309,7 +114344,7 @@ fn kernel_164(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_165(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_167(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -114187,7 +115222,7 @@ fn kernel_165(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_166(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_168(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -114975,7 +116010,7 @@ fn kernel_166(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_167(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_169(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -116080,7 +117115,7 @@ fn kernel_167(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_168(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_170(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 29);
@@ -116780,7 +117815,7 @@ fn kernel_168(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_169(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_171(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 1089]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..33).map(<&mut [f64; 33]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -117714,7 +118749,7 @@ fn kernel_169(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_170(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_172(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 576]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..24).map(<&mut [f64; 24]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -118740,7 +119775,7 @@ fn kernel_170(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_171(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_173(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -119515,7 +120550,7 @@ fn kernel_171(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_172(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_174(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -119671,7 +120706,7 @@ fn kernel_172(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_173(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_175(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -119965,7 +121000,7 @@ fn kernel_173(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_174(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_176(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 36]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..6).map(<&mut [f64; 6]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -120113,7 +121148,7 @@ fn kernel_174(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_175(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_177(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -121642,7 +122677,7 @@ fn kernel_175(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_176(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_178(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 841]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..29).map(<&mut [f64; 29]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -122420,7 +123455,7 @@ fn kernel_176(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_177(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_179(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -123217,7 +124252,7 @@ fn kernel_177(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_178(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_180(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 361]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..19).map(<&mut [f64; 19]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -123762,7 +124797,7 @@ fn kernel_178(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_179(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_181(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -124259,7 +125294,7 @@ fn kernel_179(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_180(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_182(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 70);
@@ -124686,7 +125721,7 @@ fn kernel_180(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_181(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_183(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 81]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..9).map(<&mut [f64; 9]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 27);
@@ -124886,7 +125921,7 @@ fn kernel_181(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_182(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_184(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -125255,7 +126290,7 @@ fn kernel_182(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_183(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_185(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -125790,7 +126825,660 @@ fn kernel_183(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_184(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_186(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+    let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
+    let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
+    let d = m[0];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(0)); }
+    let inv = 1.0 / d;
+    m[0] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[0];
+    let e = m[32];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[2];
+    r[2] -= f * pr;
+    let d = m[17];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(1)); }
+    let inv = 1.0 / d;
+    m[17] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[1];
+    let e = m[33];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[34] -= f * m[18];
+    m[38] -= f * m[22];
+    m[40] -= f * m[24];
+    r[2] -= f * pr;
+    let e = m[49];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[50] -= f * m[18];
+    m[54] -= f * m[22];
+    m[56] -= f * m[24];
+    r[3] -= f * pr;
+    let e = m[129];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[130] -= f * m[18];
+    m[134] -= f * m[22];
+    m[136] -= f * m[24];
+    r[8] -= f * pr;
+    m.swap(34, 66);
+    m.swap(35, 67);
+    m.swap(36, 68);
+    m.swap(37, 69);
+    m.swap(38, 70);
+    m.swap(39, 71);
+    m.swap(40, 72);
+    m.swap(41, 73);
+    r.swap(2, 4);
+    let d = m[34];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(2)); }
+    let inv = 1.0 / d;
+    m[34] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[2];
+    let e = m[50];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[51] -= f * m[35];
+    m[57] -= f * m[41];
+    r[3] -= f * pr;
+    let e = m[66];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[67] -= f * m[35];
+    m[73] -= f * m[41];
+    r[4] -= f * pr;
+    let e = m[82];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[83] -= f * m[35];
+    m[89] -= f * m[41];
+    r[5] -= f * pr;
+    let e = m[114];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[115] -= f * m[35];
+    m[121] -= f * m[41];
+    r[7] -= f * pr;
+    let e = m[130];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[131] -= f * m[35];
+    m[137] -= f * m[41];
+    r[8] -= f * pr;
+    m.swap(51, 115);
+    m.swap(52, 116);
+    m.swap(53, 117);
+    m.swap(54, 118);
+    m.swap(55, 119);
+    m.swap(56, 120);
+    m.swap(57, 121);
+    m.swap(58, 122);
+    r.swap(3, 7);
+    let d = m[51];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(3)); }
+    let inv = 1.0 / d;
+    m[51] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[3];
+    let e = m[67];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[69] -= f * m[53];
+    m[71] -= f * m[55];
+    m[72] -= f * m[56];
+    m[73] -= f * m[57];
+    m[74] -= f * m[58];
+    r[4] -= f * pr;
+    let e = m[83];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[85] -= f * m[53];
+    m[87] -= f * m[55];
+    m[88] -= f * m[56];
+    m[89] -= f * m[57];
+    m[90] -= f * m[58];
+    r[5] -= f * pr;
+    let e = m[115];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[117] -= f * m[53];
+    m[119] -= f * m[55];
+    m[120] -= f * m[56];
+    m[121] -= f * m[57];
+    m[122] -= f * m[58];
+    r[7] -= f * pr;
+    let e = m[131];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[133] -= f * m[53];
+    m[135] -= f * m[55];
+    m[136] -= f * m[56];
+    m[137] -= f * m[57];
+    m[138] -= f * m[58];
+    r[8] -= f * pr;
+    m.swap(68, 148);
+    m.swap(69, 149);
+    m.swap(70, 150);
+    m.swap(71, 151);
+    m.swap(72, 152);
+    m.swap(73, 153);
+    m.swap(74, 154);
+    m.swap(76, 156);
+    m.swap(77, 157);
+    m.swap(79, 159);
+    r.swap(4, 9);
+    let d = m[68];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(4)); }
+    let inv = 1.0 / d;
+    m[68] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[4];
+    let e = m[116];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[117] -= f * m[69];
+    m[121] -= f * m[73];
+    m[124] -= f * m[76];
+    m[125] -= f * m[77];
+    m[127] -= f * m[79];
+    r[7] -= f * pr;
+    let e = m[148];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[149] -= f * m[69];
+    m[153] -= f * m[73];
+    m[156] -= f * m[76];
+    m[157] -= f * m[77];
+    m[159] -= f * m[79];
+    r[9] -= f * pr;
+    m.swap(85, 117);
+    m.swap(86, 118);
+    m.swap(87, 119);
+    m.swap(88, 120);
+    m.swap(89, 121);
+    m.swap(90, 122);
+    m.swap(92, 124);
+    m.swap(93, 125);
+    m.swap(95, 127);
+    r.swap(5, 7);
+    let d = m[85];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(5)); }
+    let inv = 1.0 / d;
+    m[85] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[5];
+    let e = m[117];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[118] -= f * m[86];
+    m[119] -= f * m[87];
+    m[120] -= f * m[88];
+    m[121] -= f * m[89];
+    m[122] -= f * m[90];
+    m[124] -= f * m[92];
+    m[125] -= f * m[93];
+    m[127] -= f * m[95];
+    r[7] -= f * pr;
+    let e = m[133];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[134] -= f * m[86];
+    m[135] -= f * m[87];
+    m[136] -= f * m[88];
+    m[137] -= f * m[89];
+    m[138] -= f * m[90];
+    m[140] -= f * m[92];
+    m[141] -= f * m[93];
+    m[143] -= f * m[95];
+    r[8] -= f * pr;
+    let e = m[149];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[150] -= f * m[86];
+    m[151] -= f * m[87];
+    m[152] -= f * m[88];
+    m[153] -= f * m[89];
+    m[154] -= f * m[90];
+    m[156] -= f * m[92];
+    m[157] -= f * m[93];
+    m[159] -= f * m[95];
+    r[9] -= f * pr;
+    m.swap(102, 150);
+    m.swap(103, 151);
+    m.swap(104, 152);
+    m.swap(105, 153);
+    m.swap(106, 154);
+    m.swap(108, 156);
+    m.swap(109, 157);
+    m.swap(111, 159);
+    r.swap(6, 9);
+    let d = m[102];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(6)); }
+    let inv = 1.0 / d;
+    m[102] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[6];
+    let e = m[118];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[119] -= f * m[103];
+    m[120] -= f * m[104];
+    m[121] -= f * m[105];
+    m[122] -= f * m[106];
+    m[124] -= f * m[108];
+    m[125] -= f * m[109];
+    m[127] -= f * m[111];
+    r[7] -= f * pr;
+    let e = m[134];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[135] -= f * m[103];
+    m[136] -= f * m[104];
+    m[137] -= f * m[105];
+    m[138] -= f * m[106];
+    m[140] -= f * m[108];
+    m[141] -= f * m[109];
+    m[143] -= f * m[111];
+    r[8] -= f * pr;
+    let e = m[150];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[151] -= f * m[103];
+    m[152] -= f * m[104];
+    m[153] -= f * m[105];
+    m[154] -= f * m[106];
+    m[156] -= f * m[108];
+    m[157] -= f * m[109];
+    m[159] -= f * m[111];
+    r[9] -= f * pr;
+    let e = m[166];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[167] -= f * m[103];
+    m[168] -= f * m[104];
+    m[169] -= f * m[105];
+    m[170] -= f * m[106];
+    m[172] -= f * m[108];
+    m[173] -= f * m[109];
+    m[175] -= f * m[111];
+    r[10] -= f * pr;
+    m.swap(119, 135);
+    m.swap(120, 136);
+    m.swap(121, 137);
+    m.swap(122, 138);
+    m.swap(124, 140);
+    m.swap(125, 141);
+    m.swap(127, 143);
+    r.swap(7, 8);
+    let d = m[119];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(7)); }
+    let inv = 1.0 / d;
+    m[119] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[7];
+    let e = m[135];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[136] -= f * m[120];
+    m[137] -= f * m[121];
+    m[138] -= f * m[122];
+    m[140] -= f * m[124];
+    m[141] -= f * m[125];
+    m[143] -= f * m[127];
+    r[8] -= f * pr;
+    let e = m[151];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[152] -= f * m[120];
+    m[153] -= f * m[121];
+    m[154] -= f * m[122];
+    m[156] -= f * m[124];
+    m[157] -= f * m[125];
+    m[159] -= f * m[127];
+    r[9] -= f * pr;
+    let e = m[167];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[168] -= f * m[120];
+    m[169] -= f * m[121];
+    m[170] -= f * m[122];
+    m[172] -= f * m[124];
+    m[173] -= f * m[125];
+    m[175] -= f * m[127];
+    r[10] -= f * pr;
+    m.swap(136, 152);
+    m.swap(137, 153);
+    m.swap(138, 154);
+    m.swap(140, 156);
+    m.swap(141, 157);
+    m.swap(143, 159);
+    r.swap(8, 9);
+    let d = m[136];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(8)); }
+    let inv = 1.0 / d;
+    m[136] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[8];
+    let e = m[152];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[153] -= f * m[137];
+    m[154] -= f * m[138];
+    m[156] -= f * m[140];
+    m[157] -= f * m[141];
+    m[159] -= f * m[143];
+    r[9] -= f * pr;
+    let e = m[168];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[169] -= f * m[137];
+    m[170] -= f * m[138];
+    m[172] -= f * m[140];
+    m[173] -= f * m[141];
+    m[175] -= f * m[143];
+    r[10] -= f * pr;
+    let d = m[153];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(9)); }
+    let inv = 1.0 / d;
+    m[153] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[9];
+    let e = m[169];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[170] -= f * m[154];
+    m[172] -= f * m[156];
+    m[173] -= f * m[157];
+    m[175] -= f * m[159];
+    r[10] -= f * pr;
+    let e = m[201];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[202] -= f * m[154];
+    m[204] -= f * m[156];
+    m[205] -= f * m[157];
+    m[207] -= f * m[159];
+    r[12] -= f * pr;
+    let e = m[217];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[218] -= f * m[154];
+    m[220] -= f * m[156];
+    m[221] -= f * m[157];
+    m[223] -= f * m[159];
+    r[13] -= f * pr;
+    let e = m[249];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[250] -= f * m[154];
+    m[252] -= f * m[156];
+    m[253] -= f * m[157];
+    m[255] -= f * m[159];
+    r[15] -= f * pr;
+    let d = m[170];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(10)); }
+    let inv = 1.0 / d;
+    m[170] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[10];
+    let e = m[202];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[204] -= f * m[172];
+    m[205] -= f * m[173];
+    m[207] -= f * m[175];
+    r[12] -= f * pr;
+    let e = m[218];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[220] -= f * m[172];
+    m[221] -= f * m[173];
+    m[223] -= f * m[175];
+    r[13] -= f * pr;
+    let e = m[250];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[252] -= f * m[172];
+    m[253] -= f * m[173];
+    m[255] -= f * m[175];
+    r[15] -= f * pr;
+    let d = m[187];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(11)); }
+    let inv = 1.0 / d;
+    m[187] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[11];
+    let e = m[219];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[220] -= f * m[188];
+    m[221] -= f * m[189];
+    r[13] -= f * pr;
+    m.swap(204, 220);
+    m.swap(205, 221);
+    m.swap(206, 222);
+    m.swap(207, 223);
+    r.swap(12, 13);
+    let d = m[204];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(12)); }
+    let inv = 1.0 / d;
+    m[204] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[12];
+    let e = m[220];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[221] -= f * m[205];
+    m[222] -= f * m[206];
+    m[223] -= f * m[207];
+    r[13] -= f * pr;
+    let e = m[252];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[253] -= f * m[205];
+    m[254] -= f * m[206];
+    m[255] -= f * m[207];
+    r[15] -= f * pr;
+    m.swap(221, 237);
+    m.swap(222, 238);
+    m.swap(223, 239);
+    r.swap(13, 14);
+    let d = m[221];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(13)); }
+    let inv = 1.0 / d;
+    m[221] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[13];
+    let e = m[237];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[238] -= f * m[222];
+    m[239] -= f * m[223];
+    r[14] -= f * pr;
+    let e = m[253];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[254] -= f * m[222];
+    m[255] -= f * m[223];
+    r[15] -= f * pr;
+    let d = m[238];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(14)); }
+    let inv = 1.0 / d;
+    m[238] = inv;
+    let ceiling = d.abs() * 16.0;
+    let pr = r[14];
+    let e = m[254];
+    if e.abs() > ceiling { *sound = false; }
+    let f = e * inv;
+    m[255] -= f * m[239];
+    r[15] -= f * pr;
+    let d = m[255];
+    if d.abs() < 1e-30 || !d.is_finite() { return Err(Bail::Tail(15)); }
+    let inv = 1.0 / d;
+    m[255] = inv;
+    let v = r[15];
+    let d = m[255];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[15] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[14];
+    v -= m[239] * r[15];
+    let d = m[238];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[14] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[13];
+    v -= m[222] * r[14];
+    v -= m[223] * r[15];
+    let d = m[221];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[13] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[12];
+    v -= m[205] * r[13];
+    v -= m[206] * r[14];
+    v -= m[207] * r[15];
+    let d = m[204];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[12] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[11];
+    v -= m[188] * r[12];
+    v -= m[189] * r[13];
+    let d = m[187];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[11] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[10];
+    v -= m[172] * r[12];
+    v -= m[173] * r[13];
+    v -= m[175] * r[15];
+    let d = m[170];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[10] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[9];
+    v -= m[154] * r[10];
+    v -= m[156] * r[12];
+    v -= m[157] * r[13];
+    v -= m[159] * r[15];
+    let d = m[153];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[9] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[8];
+    v -= m[137] * r[9];
+    v -= m[138] * r[10];
+    v -= m[140] * r[12];
+    v -= m[141] * r[13];
+    v -= m[143] * r[15];
+    let d = m[136];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[8] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[7];
+    v -= m[120] * r[8];
+    v -= m[121] * r[9];
+    v -= m[122] * r[10];
+    v -= m[124] * r[12];
+    v -= m[125] * r[13];
+    v -= m[127] * r[15];
+    let d = m[119];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[7] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[6];
+    v -= m[103] * r[7];
+    v -= m[104] * r[8];
+    v -= m[105] * r[9];
+    v -= m[106] * r[10];
+    v -= m[108] * r[12];
+    v -= m[109] * r[13];
+    v -= m[111] * r[15];
+    let d = m[102];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[6] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[5];
+    v -= m[86] * r[6];
+    v -= m[87] * r[7];
+    v -= m[88] * r[8];
+    v -= m[89] * r[9];
+    v -= m[90] * r[10];
+    v -= m[92] * r[12];
+    v -= m[93] * r[13];
+    v -= m[95] * r[15];
+    let d = m[85];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[5] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[4];
+    v -= m[69] * r[5];
+    v -= m[73] * r[9];
+    v -= m[76] * r[12];
+    v -= m[77] * r[13];
+    v -= m[79] * r[15];
+    let d = m[68];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[4] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[3];
+    v -= m[53] * r[5];
+    v -= m[55] * r[7];
+    v -= m[56] * r[8];
+    v -= m[57] * r[9];
+    v -= m[58] * r[10];
+    let d = m[51];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[3] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[2];
+    v -= m[35] * r[3];
+    v -= m[41] * r[9];
+    let d = m[34];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[2] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[1];
+    v -= m[18] * r[2];
+    v -= m[22] * r[6];
+    v -= m[24] * r[8];
+    let d = m[17];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[1] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    let mut v = r[0];
+    v -= m[2] * r[2];
+    let d = m[0];
+    if !d.is_finite() || d == 0.0 { return Err(Bail::Failed); }
+    let x = v * d;
+    r[0] = x;
+    if !x.is_finite() { return Err(Bail::Failed); }
+    Ok(())
+}
+
+fn kernel_187(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -127360,7 +129048,7 @@ fn kernel_184(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_185(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_188(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 676]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..26).map(<&mut [f64; 26]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 52);
@@ -128101,7 +129789,7 @@ fn kernel_185(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_186(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_189(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 13);
@@ -128821,7 +130509,7 @@ fn kernel_186(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_187(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_190(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 196]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..14).map(<&mut [f64; 14]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 70);
@@ -129261,7 +130949,7 @@ fn kernel_187(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_188(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_191(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 60);
@@ -129747,7 +131435,7 @@ fn kernel_188(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_189(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_192(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 162);
@@ -131311,7 +132999,7 @@ fn kernel_189(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_190(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_193(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -131974,7 +133662,7 @@ fn kernel_190(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_191(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_194(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 289]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..17).map(<&mut [f64; 17]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 17);
@@ -132370,7 +134058,7 @@ fn kernel_191(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_192(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_195(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -132701,7 +134389,7 @@ fn kernel_192(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_193(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_196(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -133202,7 +134890,7 @@ fn kernel_193(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_194(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_197(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 256]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..16).map(<&mut [f64; 16]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -133674,7 +135362,7 @@ fn kernel_194(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_195(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_198(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 169]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..13).map(<&mut [f64; 13]>::try_from) else { return Err(Bail::Tail(0)); };
     m.swap(0, 39);
@@ -134011,7 +135699,7 @@ fn kernel_195(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_196(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_199(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 144]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..12).map(<&mut [f64; 12]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -134293,7 +135981,7 @@ fn kernel_196(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_197(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_200(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 324]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..18).map(<&mut [f64; 18]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -135127,7 +136815,7 @@ fn kernel_197(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail
     Ok(())
 }
 
-fn kernel_198(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
+fn kernel_201(m: &mut [f64], r: &mut [f64], sound: &mut bool) -> Result<(), Bail> {
     let Ok(m) = <&mut [f64; 729]>::try_from(m) else { return Err(Bail::Tail(0)); };
     let Some(Ok(r)) = r.get_mut(..27).map(<&mut [f64; 27]>::try_from) else { return Err(Bail::Tail(0)); };
     let d = m[0];
@@ -136743,169 +138431,172 @@ pub(super) static KERNELS: &[Kernel] = &[
     Kernel { plan: &[0, 1, 5, 3, 4, 6, 6, 7, 10, 11, 10, 11, 13, 13], pattern: &[29, 174, 111, 143, 113, 118, 1012, 1482, 3008, 8000, 5760, 15104, 15872, 14336], run: kernel_31 },
     Kernel { plan: &[1, 4, 6, 3, 7, 5, 6, 7], pattern: &[35, 19, 68, 152, 155, 229, 228, 248], run: kernel_32 },
     Kernel { plan: &[0, 1, 2, 3, 6, 6, 6, 7, 8, 9, 11, 11, 13, 13], pattern: &[13, 1174, 1247, 25, 1278, 2272, 372, 4022, 960, 1792, 7830, 7328, 14336, 12288], run: kernel_33 },
-    Kernel { plan: &[0, 3, 2, 3, 5, 5], pattern: &[5, 6, 15, 22, 48, 48], run: kernel_34 },
-    Kernel { plan: &[3, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_35 },
-    Kernel { plan: &[0, 2, 2], pattern: &[7, 2, 7], run: kernel_36 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 7, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_37 },
-    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_38 },
-    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_39 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 9, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_40 },
-    Kernel { plan: &[1, 4, 6, 3, 7, 5, 7, 7], pattern: &[35, 19, 68, 152, 155, 229, 228, 248], run: kernel_41 },
-    Kernel { plan: &[0, 2, 7, 4, 8, 6, 9, 7, 8, 9, 10, 11, 12], pattern: &[521, 1926, 134, 25, 280, 1120, 608, 1926, 1946, 2019, 8098, 7168, 6144], run: kernel_42 },
-    Kernel { plan: &[1, 1, 5, 3, 4, 5, 14, 8, 11, 9, 14, 11, 12, 16, 18, 18, 16, 18, 18, 20, 20, 21, 23, 23, 24, 25], pattern: &[3, 5, 36, 152, 536, 17508, 1056, 6280, 2176, 2576, 17440, 16780160, 77952, 69632, 443424, 147456, 2166784, 409600, 1982464, 18087936, 1310720, 14745600, 6291456, 39845888, 16779264, 33554432], run: kernel_43 },
-    Kernel { plan: &[0, 1, 5, 5, 5, 8, 7, 11, 8, 9, 12, 14, 15, 15, 17, 15, 17, 21, 18, 19, 24, 21, 22, 24, 24, 25, 27, 27, 28], pattern: &[9, 10, 40, 283, 48, 4456756, 2624, 6208, 4456736, 38464, 41472, 84160, 266752, 794624, 280576, 2654720, 2164736, 2179072, 4456736, 18391040, 25690112, 35880960, 38011168, 75759616, 84410368, 106954752, 260046848, 335544320, 268435456], run: kernel_44 },
-    Kernel { plan: &[0, 1, 6, 3, 4, 6, 6, 7, 13, 12, 10, 11, 14, 13, 14, 15, 18, 18, 26, 19, 20, 24, 25, 23, 24, 25, 26, 27], pattern: &[33, 34, 96, 520, 528, 2083, 3140, 8576, 8320, 1560, 17472, 18496, 16896, 565376, 2120704, 134062080, 425984, 131072, 67403776, 133734400, 133726208, 133742592, 133726208, 133726208, 133726208, 267943936, 268206080, 234881024], run: kernel_45 },
-    Kernel { plan: &[0, 4, 2, 3, 4, 5, 6, 7], pattern: &[17, 48, 36, 40, 83, 236, 80, 128], run: kernel_46 },
-    Kernel { plan: &[1, 1, 5, 3, 4, 5, 14, 8, 11, 9, 14, 11, 12, 16, 18, 18, 16, 18, 18, 20, 20, 21, 23, 23, 24, 25], pattern: &[3, 5, 36, 152, 536, 17508, 1056, 6280, 2176, 2576, 17440, 2944, 77952, 69632, 443424, 147456, 2166784, 409600, 1982464, 18087936, 1310720, 14745600, 6291456, 39845888, 16779264, 33554432], run: kernel_47 },
-    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_48 },
-    Kernel { plan: &[3, 1, 2, 3, 4, 6, 6, 7, 8], pattern: &[24, 18, 20, 105, 182, 488, 360, 416, 480], run: kernel_49 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_50 },
-    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_51 },
-    Kernel { plan: &[0, 3, 2, 4, 4, 5, 8, 7, 8, 9], pattern: &[11, 163, 28, 31, 188, 370, 320, 914, 992, 768], run: kernel_52 },
-    Kernel { plan: &[0, 1, 2, 3], pattern: &[7, 15, 15, 14], run: kernel_53 },
-    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 9, 10, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_54 },
-    Kernel { plan: &[0, 3, 3, 4, 4], pattern: &[27, 21, 4, 25, 25], run: kernel_55 },
-    Kernel { plan: &[0, 1, 2, 3, 7, 5, 6, 7, 11, 9, 10, 11, 12, 13, 14, 15, 17, 17], pattern: &[7, 7, 518, 152, 56, 368, 352, 2200, 6464, 3588, 3584, 7552, 30976, 28672, 57344, 245760, 196608, 229376], run: kernel_56 },
-    Kernel { plan: &[0, 1, 2], pattern: &[7, 7, 7], run: kernel_57 },
-    Kernel { plan: &[1, 5, 6, 4, 8, 8, 6, 7, 9, 9], pattern: &[3, 103, 6, 56, 280, 619, 614, 896, 920, 992], run: kernel_58 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 7, 14, 9, 15, 16, 11, 17, 13, 14, 15, 16, 17, 18, 19, 20], pattern: &[516099, 516119, 22, 163848, 8212, 26656, 192, 16576, 74496, 100096, 1536, 145440, 268288, 518451, 516323, 516875, 517891, 522251, 2093059, 1835008, 1572864], run: kernel_59 },
-    Kernel { plan: &[3, 1, 3, 3, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 45, 2448, 237, 194, 2448, 3984, 5632, 7936, 7568, 5632], run: kernel_60 },
-    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 45, 2448, 237, 194, 2448, 3984, 5632, 7936, 7568, 5632], run: kernel_61 },
-    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_62 },
-    Kernel { plan: &[0, 1, 4, 3, 6, 5, 6, 7, 9, 9], pattern: &[81, 30, 62, 62, 255, 508, 497, 496, 832, 768], run: kernel_63 },
-    Kernel { plan: &[0, 1, 2, 3, 11, 5, 6, 7, 10, 9, 13, 15, 12, 15, 14, 16, 17, 18, 18], pattern: &[387, 259, 131076, 137240, 536, 1120, 8800, 18305, 387, 425712, 425888, 458264, 425496, 425568, 425856, 100352, 491520, 523788, 523776], run: kernel_64 },
-    Kernel { plan: &[0, 3, 3, 5, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_65 },
-    Kernel { plan: &[0, 3, 3, 3, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_66 },
-    Kernel { plan: &[0, 1, 2, 4, 7, 6, 7, 7, 8, 9, 10, 11], pattern: &[11, 67, 100, 217, 248, 372, 766, 728, 1824, 4032, 3840, 3584], run: kernel_67 },
-    Kernel { plan: &[0, 1, 4, 3, 7, 5, 6, 7], pattern: &[13, 54, 55, 41, 182, 254, 224, 240], run: kernel_68 },
-    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_69 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_70 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 12, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_71 },
-    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 10, 9, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_72 },
-    Kernel { plan: &[0, 1, 4, 4, 4, 5, 6, 7], pattern: &[13, 22, 31, 41, 118, 248, 240, 192], run: kernel_73 },
-    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_74 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 5, 7, 8, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_75 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_76 },
-    Kernel { plan: &[0, 1, 7, 3, 7, 7, 8, 7, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_77 },
-    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_78 },
-    Kernel { plan: &[2, 2, 3, 4, 5, 6, 7, 8, 10, 9, 13, 12, 12, 16, 15, 15, 19, 18, 18, 21, 20, 22, 22], pattern: &[9, 2, 11, 221, 216, 80, 248, 216, 1664, 1536, 12032, 11264, 10240, 97280, 90112, 81920, 778240, 720896, 655360, 3080192, 7340032, 2621440, 7340032], run: kernel_79 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_80 },
-    Kernel { plan: &[2, 2, 3, 4, 5, 6, 7, 8, 10, 9, 13, 12, 13, 16, 15, 15, 19, 18, 18, 19, 20, 22, 22], pattern: &[9, 2, 11, 221, 216, 80, 248, 216, 1664, 1536, 12032, 11264, 10240, 97280, 90112, 81920, 778240, 720896, 655360, 3080192, 7340032, 2621440, 7340032], run: kernel_81 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_82 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_83 },
-    Kernel { plan: &[0, 1, 2, 3, 11, 6, 6, 7, 10, 9, 11, 15, 12, 13, 14, 16, 17, 18, 18], pattern: &[387, 259, 131076, 137240, 536, 1120, 8800, 18305, 387, 425712, 425888, 458264, 425496, 425568, 425856, 100352, 491520, 523788, 523776], run: kernel_84 },
-    Kernel { plan: &[0, 1, 2, 3, 11, 6, 6, 7, 10, 9, 13, 15, 12, 15, 14, 16, 17, 18, 18], pattern: &[387, 259, 131076, 137240, 536, 1120, 8800, 18305, 387, 425712, 425888, 458264, 425496, 425568, 425856, 100352, 491520, 523788, 523776], run: kernel_85 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_86 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_87 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 17, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_88 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_89 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_90 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_91 },
-    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_92 },
-    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 10, 12, 12, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_93 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 24, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_94 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 20, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_95 },
-    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 22, 21, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_96 },
-    Kernel { plan: &[1, 4, 2, 3, 4, 6, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_97 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 6, 6, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_98 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 16, 12, 13, 14, 15, 22, 17, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_99 },
-    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 12, 14, 14, 15, 18, 18, 19, 25, 22, 21, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_100 },
-    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 10, 9, 16, 16, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_101 },
-    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_102 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 27, 27, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_103 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 8, 9, 11, 8, 16, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_104 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 26, 26, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_105 },
-    Kernel { plan: &[5, 5, 5, 3, 4, 5, 6, 7, 8, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_106 },
-    Kernel { plan: &[3, 1, 3, 3, 4, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[44, 82, 63, 45, 2448, 237, 194, 2448, 3984, 5632, 7936, 7568, 5632], run: kernel_107 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 17, 8, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_108 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_109 },
-    Kernel { plan: &[0, 1, 3, 3, 4, 5], pattern: &[3, 7, 46, 52, 16, 36], run: kernel_110 },
-    Kernel { plan: &[5, 5, 5, 3, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_111 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 7, 11, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_112 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 6, 6, 7, 8, 9, 11, 11, 13, 13], pattern: &[13, 1174, 1247, 25, 1278, 2272, 372, 4022, 960, 1792, 7830, 7328, 14336, 12288], run: kernel_113 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_114 },
-    Kernel { plan: &[5, 1, 5, 3, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_115 },
-    Kernel { plan: &[1, 4, 2, 3, 4, 5, 6, 7], pattern: &[3, 19, 28, 76, 151, 224, 236, 240], run: kernel_116 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 8, 9, 11, 8, 10, 22, 16, 12, 13, 14, 15, 17, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_117 },
-    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 9, 10, 11, 13, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_118 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 11, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_119 },
-    Kernel { plan: &[1, 4, 2, 3, 6, 5, 7, 7], pattern: &[3, 19, 28, 76, 151, 224, 236, 240], run: kernel_120 },
-    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_121 },
-    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_122 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_123 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 17, 10, 8, 17, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_124 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_125 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 11, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_126 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 12, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_127 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 16, 12, 13, 14, 15, 17, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_128 },
-    Kernel { plan: &[0, 6, 2, 3, 5, 8, 6, 7, 11, 10, 12, 11, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_129 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 11, 11, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_130 },
-    Kernel { plan: &[5, 1, 2, 5, 4, 5, 6, 7, 8, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_131 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_132 },
-    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_133 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_134 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 11, 16, 7, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_135 },
-    Kernel { plan: &[1, 4, 2, 3, 4, 5, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_136 },
-    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 20, 22, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_137 },
-    Kernel { plan: &[1, 6, 2, 6, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_138 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_139 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 26, 24, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_140 },
-    Kernel { plan: &[1, 6, 2, 6, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_141 },
-    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_142 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 27, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_143 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 20, 19, 21, 22, 23, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_144 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 7, 7, 10, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_145 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 9, 7, 8, 12, 10, 13, 14, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_146 },
-    Kernel { plan: &[5, 1, 2, 3, 5, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_147 },
-    Kernel { plan: &[1, 4, 2, 3, 7, 6, 6, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_148 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 26, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_149 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 8, 17, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_150 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 7, 6, 10, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_151 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 12, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_152 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 27, 24, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_153 },
-    Kernel { plan: &[6, 3, 2, 5, 4, 11, 16, 8, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_154 },
-    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 9, 8, 14, 10, 13, 14, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_155 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 17, 10, 8, 17, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_156 },
-    Kernel { plan: &[0, 3, 2, 5, 4, 11, 16, 7, 8, 9, 10, 22, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_157 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 12, 15, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_158 },
-    Kernel { plan: &[0, 1, 8, 3, 9, 5, 6, 9, 9, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_159 },
-    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 11, 9, 10, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_160 },
-    Kernel { plan: &[0, 1, 8, 3, 4, 5, 10, 10, 8, 16, 16, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_161 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 26, 25, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_162 },
-    Kernel { plan: &[5, 1, 2, 5, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_163 },
-    Kernel { plan: &[0, 1, 6, 4, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 136, 246, 161, 5718, 136, 1792, 5696, 8000, 7168, 5696], run: kernel_164 },
-    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_165 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 15, 11, 15, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_166 },
-    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 12, 15, 13, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_167 },
-    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 12, 14, 14, 15, 18, 18, 19, 25, 20, 22, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_168 },
-    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 27, 25, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_169 },
-    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 10, 9, 16, 11, 13, 12, 14, 14, 15, 16, 17, 18, 19, 21, 22, 22, 23], pattern: &[407, 455, 135, 280, 17, 352, 66, 135, 10671, 67096, 67168, 47360, 38912, 157952, 155648, 36864, 4261376, 147456, 1835008, 3932160, 1310720, 15204352, 14745600, 12582912], run: kernel_170 },
-    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_171 },
-    Kernel { plan: &[0, 2, 2, 3, 4, 5], pattern: &[15, 15, 39, 59, 56, 60], run: kernel_172 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], pattern: &[7, 7, 7, 120, 24, 104, 104, 1920, 384, 1664, 1664, 14336, 14336, 14336], run: kernel_173 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5], pattern: &[15, 15, 39, 59, 56, 60], run: kernel_174 },
-    Kernel { plan: &[0, 1, 2, 3, 10, 5, 10, 8, 8, 9, 22, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 22, 24, 26, 26, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_175 },
-    Kernel { plan: &[0, 1, 5, 5, 5, 8, 7, 11, 8, 9, 11, 15, 12, 15, 17, 15, 17, 21, 18, 19, 21, 24, 22, 24, 24, 25, 27, 27, 28], pattern: &[9, 10, 40, 283, 48, 262452, 2624, 6208, 262432, 34368, 41472, 67776, 266240, 270336, 278528, 2654720, 2164736, 2179072, 4456736, 18382848, 25690112, 35880960, 38010880, 8650752, 84410368, 106954752, 251658240, 335544320, 268435456], run: kernel_176 },
-    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_177 },
-    Kernel { plan: &[0, 1, 6, 4, 5, 5, 6, 7, 8, 12, 10, 13, 14, 15, 14, 15, 16, 17, 18], pattern: &[41, 95, 82, 136, 246, 161, 4182, 136, 4864, 12800, 11264, 10240, 54080, 44544, 53248, 45056, 458752, 458752, 393216], run: kernel_178 },
-    Kernel { plan: &[0, 1, 6, 4, 5, 5, 6, 7, 8, 12, 10, 13, 14, 15, 14, 15], pattern: &[41, 95, 82, 136, 246, 161, 4182, 136, 4864, 12800, 11264, 10240, 54080, 44544, 53248, 45056], run: kernel_179 },
-    Kernel { plan: &[5, 6, 2, 3, 5, 5, 10, 7, 8, 9, 10, 11, 12, 13], pattern: &[1045, 6, 71, 56, 25, 1049, 1542, 3456, 2432, 1536, 9857, 14720, 14336, 15360], run: kernel_180 },
-    Kernel { plan: &[3, 1, 2, 3, 6, 6, 6, 7, 8], pattern: &[24, 18, 20, 73, 182, 480, 360, 416, 480], run: kernel_181 },
-    Kernel { plan: &[0, 1, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 136, 246, 161, 5718, 136, 1792, 5696, 8000, 7168, 5696], run: kernel_182 },
-    Kernel { plan: &[0, 3, 3, 4, 4, 5, 6, 9, 8, 10, 10, 11, 12, 14, 15, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 640, 3892, 4064, 3652, 2560, 28672, 90112, 126976, 114688, 90112], run: kernel_183 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 16, 12, 13, 14, 15, 17, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_184 },
-    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 23, 15, 13, 16, 23, 16, 19, 18, 19, 21, 23, 22, 23, 24, 25], pattern: &[3, 11, 11, 14, 48, 304, 4672, 24704, 288, 8396352, 8424960, 8424960, 4672, 90240, 24704, 4230144, 4251648, 655360, 4456448, 4587520, 15728640, 11534336, 47480832, 66063872, 58720256, 37748736], run: kernel_185 },
-    Kernel { plan: &[1, 6, 6, 3, 4, 5, 11, 11, 8, 10, 11, 11, 12], pattern: &[95, 73, 132, 2555, 2428, 2552, 8059, 132, 3960, 5696, 8000, 7544, 5696], run: kernel_186 },
-    Kernel { plan: &[5, 6, 2, 3, 5, 5, 10, 8, 11, 9, 10, 11, 12, 13], pattern: &[1045, 6, 71, 56, 25, 1049, 1542, 3456, 2432, 1536, 9857, 14720, 14336, 15360], run: kernel_187 },
-    Kernel { plan: &[5, 5, 5, 3, 4, 5, 6, 7, 9, 10, 10, 11], pattern: &[63, 63, 68, 123, 123, 2875, 68, 896, 2848, 4000, 3584, 2848], run: kernel_188 },
-    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 17, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_189 },
-    Kernel { plan: &[0, 1, 2, 7, 5, 5, 8, 7, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[17, 594, 350, 148, 831, 400, 1088, 45224, 1844, 1554, 1088, 14336, 45184, 63616, 57344, 45184], run: kernel_190 },
-    Kernel { plan: &[1, 1, 2, 3, 5, 5, 7, 11, 8, 9, 12, 14, 14, 13, 14, 15, 16], pattern: &[35, 17, 20, 24, 572, 33, 2240, 2240, 8448, 8704, 29696, 18624, 21504, 91904, 130048, 114688, 122880], run: kernel_191 },
-    Kernel { plan: &[3, 1, 2, 3, 5, 6, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 45, 144, 237, 194, 144, 1792, 5632, 7936, 7168, 5632], run: kernel_192 },
-    Kernel { plan: &[0, 5, 2, 5, 8, 6, 8, 8, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[9, 56, 652, 863, 414, 98, 296, 1152, 1880, 1548, 1152, 14336, 45056, 63488, 57344, 45056], run: kernel_193 },
-    Kernel { plan: &[0, 5, 2, 3, 6, 5, 6, 8, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[17, 52, 414, 664, 863, 98, 304, 1152, 1876, 1560, 1152, 14336, 45056, 63488, 57344, 45056], run: kernel_194 },
-    Kernel { plan: &[3, 1, 2, 3, 5, 6, 6, 7, 8, 10, 11, 11, 12], pattern: &[42, 63, 84, 43, 144, 235, 196, 144, 1792, 5632, 7936, 7168, 5632], run: kernel_195 },
-    Kernel { plan: &[0, 1, 2, 4, 7, 6, 6, 7, 8, 9, 10, 11], pattern: &[3, 3, 100, 216, 152, 100, 748, 728, 1792, 4032, 3840, 3584], run: kernel_196 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 9272, 8243, 68422, 3212, 2880, 2880, 56472, 40896, 56320, 90160, 128000, 252928, 254016, 229376], run: kernel_197 },
-    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 22, 24, 24, 26, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_198 },
+    Kernel { plan: &[0, 1, 2, 4, 9, 9, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[5, 326, 447, 222, 524, 644, 19520, 1452, 1286, 45616, 19520, 31808, 45568, 64000, 60480, 45568], run: kernel_34 },
+    Kernel { plan: &[0, 3, 2, 3, 5, 5], pattern: &[5, 6, 15, 22, 48, 48], run: kernel_35 },
+    Kernel { plan: &[3, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_36 },
+    Kernel { plan: &[0, 2, 2], pattern: &[7, 2, 7], run: kernel_37 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 7, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_38 },
+    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 5677, 2448, 237, 194, 2448, 3984, 5640, 7944, 7568, 5640], run: kernel_39 },
+    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_40 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 9, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_41 },
+    Kernel { plan: &[1, 4, 6, 3, 7, 5, 7, 7], pattern: &[35, 19, 68, 152, 155, 229, 228, 248], run: kernel_42 },
+    Kernel { plan: &[0, 2, 7, 4, 8, 6, 9, 7, 8, 9, 10, 11, 12], pattern: &[521, 1926, 134, 25, 280, 1120, 608, 1926, 1946, 2019, 8098, 7168, 6144], run: kernel_43 },
+    Kernel { plan: &[1, 1, 5, 3, 4, 5, 14, 8, 11, 9, 14, 11, 12, 16, 18, 18, 16, 18, 18, 20, 20, 21, 23, 23, 24, 25], pattern: &[3, 5, 36, 152, 536, 17508, 1056, 6280, 2176, 2576, 17440, 16780160, 77952, 69632, 443424, 147456, 2166784, 409600, 1982464, 18087936, 1310720, 14745600, 6291456, 39845888, 16779264, 33554432], run: kernel_44 },
+    Kernel { plan: &[0, 1, 5, 5, 5, 8, 7, 11, 8, 9, 12, 14, 15, 15, 17, 15, 17, 21, 18, 19, 24, 21, 22, 24, 24, 25, 27, 27, 28], pattern: &[9, 10, 40, 283, 48, 4456756, 2624, 6208, 4456736, 38464, 41472, 84160, 266752, 794624, 280576, 2654720, 2164736, 2179072, 4456736, 18391040, 25690112, 35880960, 38011168, 75759616, 84410368, 106954752, 260046848, 335544320, 268435456], run: kernel_45 },
+    Kernel { plan: &[0, 1, 6, 3, 4, 6, 6, 7, 13, 12, 10, 11, 14, 13, 14, 15, 18, 18, 26, 19, 20, 24, 25, 23, 24, 25, 26, 27], pattern: &[33, 34, 96, 520, 528, 2083, 3140, 8576, 8320, 1560, 17472, 18496, 16896, 565376, 2120704, 134062080, 425984, 131072, 67403776, 133734400, 133726208, 133742592, 133726208, 133726208, 133726208, 267943936, 268206080, 234881024], run: kernel_46 },
+    Kernel { plan: &[0, 4, 2, 3, 4, 5, 6, 7], pattern: &[17, 48, 36, 40, 83, 236, 80, 128], run: kernel_47 },
+    Kernel { plan: &[1, 1, 5, 3, 4, 5, 14, 8, 11, 9, 14, 11, 12, 16, 18, 18, 16, 18, 18, 20, 20, 21, 23, 23, 24, 25], pattern: &[3, 5, 36, 152, 536, 17508, 1056, 6280, 2176, 2576, 17440, 2944, 77952, 69632, 443424, 147456, 2166784, 409600, 1982464, 18087936, 1310720, 14745600, 6291456, 39845888, 16779264, 33554432], run: kernel_48 },
+    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_49 },
+    Kernel { plan: &[3, 1, 2, 3, 4, 6, 6, 7, 8], pattern: &[24, 18, 20, 105, 182, 488, 360, 416, 480], run: kernel_50 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_51 },
+    Kernel { plan: &[1, 6, 3, 7, 8, 5, 9, 9, 8, 9], pattern: &[131, 67, 12, 412, 24, 608, 611, 653, 792, 992], run: kernel_52 },
+    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_53 },
+    Kernel { plan: &[0, 3, 2, 4, 4, 5, 8, 7, 8, 9], pattern: &[11, 163, 28, 31, 188, 370, 320, 914, 992, 768], run: kernel_54 },
+    Kernel { plan: &[0, 1, 2, 3], pattern: &[7, 15, 15, 14], run: kernel_55 },
+    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 9, 10, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_56 },
+    Kernel { plan: &[0, 3, 3, 4, 4], pattern: &[27, 21, 4, 25, 25], run: kernel_57 },
+    Kernel { plan: &[0, 1, 2, 3, 7, 5, 6, 7, 11, 9, 10, 11, 12, 13, 14, 15, 17, 17], pattern: &[7, 7, 518, 152, 56, 368, 352, 2200, 6464, 3588, 3584, 7552, 30976, 28672, 57344, 245760, 196608, 229376], run: kernel_58 },
+    Kernel { plan: &[0, 1, 2], pattern: &[7, 7, 7], run: kernel_59 },
+    Kernel { plan: &[1, 5, 6, 4, 8, 8, 6, 7, 9, 9], pattern: &[3, 103, 6, 56, 280, 619, 614, 896, 920, 992], run: kernel_60 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 7, 14, 9, 15, 16, 11, 17, 13, 14, 15, 16, 17, 18, 19, 20], pattern: &[516099, 516119, 22, 163848, 8212, 26656, 192, 16576, 74496, 100096, 1536, 145440, 268288, 518451, 516323, 516875, 517891, 522251, 2093059, 1835008, 1572864], run: kernel_61 },
+    Kernel { plan: &[3, 1, 3, 3, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 45, 2448, 237, 194, 2448, 3984, 5632, 7936, 7568, 5632], run: kernel_62 },
+    Kernel { plan: &[3, 1, 3, 3, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 45, 2448, 237, 194, 2448, 3984, 5632, 7936, 7568, 5632], run: kernel_63 },
+    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_64 },
+    Kernel { plan: &[0, 1, 4, 3, 6, 5, 6, 7, 9, 9], pattern: &[81, 30, 62, 62, 255, 508, 497, 496, 832, 768], run: kernel_65 },
+    Kernel { plan: &[0, 1, 2, 3, 11, 5, 6, 7, 10, 9, 13, 15, 12, 15, 14, 16, 17, 18, 18], pattern: &[387, 259, 131076, 137240, 536, 1120, 8800, 18305, 387, 425712, 425888, 458264, 425496, 425568, 425856, 100352, 491520, 523788, 523776], run: kernel_66 },
+    Kernel { plan: &[0, 3, 3, 5, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_67 },
+    Kernel { plan: &[0, 3, 3, 3, 6, 5, 6, 8, 8], pattern: &[11, 13, 4, 57, 56, 120, 176, 384, 384], run: kernel_68 },
+    Kernel { plan: &[0, 1, 2, 4, 7, 6, 7, 7, 8, 9, 10, 11], pattern: &[11, 67, 100, 217, 248, 372, 766, 728, 1824, 4032, 3840, 3584], run: kernel_69 },
+    Kernel { plan: &[0, 1, 4, 3, 7, 5, 6, 7], pattern: &[13, 54, 55, 41, 182, 254, 224, 240], run: kernel_70 },
+    Kernel { plan: &[0, 3, 2, 3, 4, 5, 6, 9, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_71 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_72 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 7, 8, 12, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_73 },
+    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 10, 9, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_74 },
+    Kernel { plan: &[0, 1, 4, 4, 4, 5, 6, 7], pattern: &[13, 22, 31, 41, 118, 248, 240, 192], run: kernel_75 },
+    Kernel { plan: &[0, 3, 2, 3, 8, 8, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 39552, 3892, 4064, 3652, 39552, 63616, 90112, 126976, 120960, 90112], run: kernel_76 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 5, 7, 8, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_77 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_78 },
+    Kernel { plan: &[0, 1, 7, 3, 7, 7, 8, 7, 8, 9, 10, 12, 12, 13, 14, 15], pattern: &[9, 586, 152, 831, 350, 392, 19520, 45220, 1848, 1546, 19520, 31808, 45184, 63616, 60480, 45184], run: kernel_79 },
+    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_80 },
+    Kernel { plan: &[2, 2, 3, 4, 5, 6, 7, 8, 10, 9, 13, 12, 12, 16, 15, 15, 19, 18, 18, 21, 20, 22, 22], pattern: &[9, 2, 11, 221, 216, 80, 248, 216, 1664, 1536, 12032, 11264, 10240, 97280, 90112, 81920, 778240, 720896, 655360, 3080192, 7340032, 2621440, 7340032], run: kernel_81 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_82 },
+    Kernel { plan: &[2, 2, 3, 4, 5, 6, 7, 8, 10, 9, 13, 12, 13, 16, 15, 15, 19, 18, 18, 19, 20, 22, 22], pattern: &[9, 2, 11, 221, 216, 80, 248, 216, 1664, 1536, 12032, 11264, 10240, 97280, 90112, 81920, 778240, 720896, 655360, 3080192, 7340032, 2621440, 7340032], run: kernel_83 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_84 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_85 },
+    Kernel { plan: &[0, 1, 2, 3, 11, 6, 6, 7, 10, 9, 11, 15, 12, 13, 14, 16, 17, 18, 18], pattern: &[387, 259, 131076, 137240, 536, 1120, 8800, 18305, 387, 425712, 425888, 458264, 425496, 425568, 425856, 100352, 491520, 523788, 523776], run: kernel_86 },
+    Kernel { plan: &[0, 1, 2, 3, 11, 6, 6, 7, 10, 9, 13, 15, 12, 15, 14, 16, 17, 18, 18], pattern: &[387, 259, 131076, 137240, 536, 1120, 8800, 18305, 387, 425712, 425888, 458264, 425496, 425568, 425856, 100352, 491520, 523788, 523776], run: kernel_87 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_88 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_89 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 17, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_90 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_91 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_92 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_93 },
+    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_94 },
+    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 10, 12, 12, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_95 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 24, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_96 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 20, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_97 },
+    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 22, 21, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_98 },
+    Kernel { plan: &[1, 4, 2, 3, 4, 6, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_99 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 6, 6, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_100 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 16, 12, 13, 14, 15, 22, 17, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_101 },
+    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 12, 14, 14, 15, 18, 18, 19, 25, 22, 21, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_102 },
+    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 10, 9, 16, 16, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_103 },
+    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_104 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 27, 27, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_105 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 8, 9, 11, 8, 16, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_106 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 26, 26, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_107 },
+    Kernel { plan: &[5, 5, 5, 3, 4, 5, 6, 7, 8, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_108 },
+    Kernel { plan: &[3, 1, 3, 3, 4, 5, 6, 7, 8, 10, 10, 11, 12], pattern: &[44, 82, 63, 45, 2448, 237, 194, 2448, 3984, 5632, 7936, 7568, 5632], run: kernel_109 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 17, 8, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_110 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_111 },
+    Kernel { plan: &[0, 1, 3, 3, 4, 5], pattern: &[3, 7, 46, 52, 16, 36], run: kernel_112 },
+    Kernel { plan: &[5, 5, 5, 3, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_113 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 7, 11, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_114 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 6, 6, 7, 8, 9, 11, 11, 13, 13], pattern: &[13, 1174, 1247, 25, 1278, 2272, 372, 4022, 960, 1792, 7830, 7328, 14336, 12288], run: kernel_115 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_116 },
+    Kernel { plan: &[5, 1, 5, 3, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_117 },
+    Kernel { plan: &[1, 4, 2, 3, 4, 5, 6, 7], pattern: &[3, 19, 28, 76, 151, 224, 236, 240], run: kernel_118 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 8, 9, 11, 8, 10, 22, 16, 12, 13, 14, 15, 17, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_119 },
+    Kernel { plan: &[0, 6, 3, 7, 5, 8, 6, 7, 11, 9, 10, 11, 13, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_120 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 11, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_121 },
+    Kernel { plan: &[1, 4, 2, 3, 6, 5, 7, 7], pattern: &[3, 19, 28, 76, 151, 224, 236, 240], run: kernel_122 },
+    Kernel { plan: &[0, 2, 6, 3, 6, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 2440, 246, 161, 5718, 2440, 3976, 5696, 8000, 7560, 5696], run: kernel_123 },
+    Kernel { plan: &[1, 6, 6, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_124 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_125 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 17, 10, 8, 17, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_126 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_127 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 11, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_128 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 12, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_129 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 16, 12, 13, 14, 15, 17, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_130 },
+    Kernel { plan: &[0, 6, 2, 3, 5, 8, 6, 7, 11, 10, 12, 11, 12, 13], pattern: &[67, 3, 268, 140, 112, 304, 2131, 2700, 2356, 1664, 5632, 14784, 15872, 14336], run: kernel_131 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 8, 16, 11, 11, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_132 },
+    Kernel { plan: &[5, 1, 2, 5, 4, 5, 6, 7, 8, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_133 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 10, 7, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_134 },
+    Kernel { plan: &[0, 2, 6, 3, 4, 5, 6, 7, 8, 9, 10, 13, 12, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_135 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 22, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_136 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 11, 16, 7, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_137 },
+    Kernel { plan: &[1, 4, 2, 3, 4, 5, 7, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_138 },
+    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 14, 13, 14, 15, 18, 18, 19, 25, 20, 22, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_139 },
+    Kernel { plan: &[1, 6, 2, 6, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 73, 2436, 2555, 2428, 2552, 8059, 2436, 4092, 5696, 8000, 7676, 5696], run: kernel_140 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_141 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 26, 24, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_142 },
+    Kernel { plan: &[1, 6, 2, 6, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[2431, 2425, 2436, 2555, 2429, 2553, 8059, 2436, 4093, 5696, 8000, 7677, 5696], run: kernel_143 },
+    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 22, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_144 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 27, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_145 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 13, 16, 16, 18, 19, 20, 19, 21, 22, 23, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_146 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 7, 7, 10, 11, 10, 10, 11, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_147 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 9, 7, 8, 12, 10, 13, 14, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_148 },
+    Kernel { plan: &[5, 1, 2, 3, 5, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_149 },
+    Kernel { plan: &[1, 4, 2, 3, 7, 6, 6, 7, 8, 9, 10], pattern: &[67, 19, 100, 152, 155, 292, 485, 472, 2016, 1792, 1536], run: kernel_150 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 25, 26, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_151 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 8, 17, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_152 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 7, 6, 10, 10, 11, 11, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_153 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 12, 12, 16, 14, 16, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_154 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 27, 24, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_155 },
+    Kernel { plan: &[6, 3, 2, 5, 4, 11, 16, 8, 8, 9, 10, 22, 12, 13, 14, 15, 17, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_156 },
+    Kernel { plan: &[0, 2, 6, 6, 4, 5, 6, 9, 8, 14, 10, 13, 14, 15, 14, 16, 16, 17, 18], pattern: &[41, 95, 82, 16776, 246, 161, 70230, 16776, 21384, 78400, 11264, 10240, 119616, 44544, 53640, 110592, 496192, 458752, 393216], run: kernel_157 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 17, 10, 8, 17, 9, 22, 11, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_158 },
+    Kernel { plan: &[0, 3, 2, 5, 4, 11, 16, 7, 8, 9, 10, 22, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 22, 24, 24, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4199003, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059264, 109838336, 87031808, 37748736, 83886080], run: kernel_159 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 12, 15, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_160 },
+    Kernel { plan: &[0, 1, 8, 3, 9, 5, 6, 9, 9, 16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_161 },
+    Kernel { plan: &[5, 1, 2, 3, 4, 5, 6, 7, 11, 9, 10, 11, 12, 16, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_162 },
+    Kernel { plan: &[0, 1, 8, 3, 4, 5, 10, 10, 8, 16, 16, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23], pattern: &[10647, 10695, 10375, 280, 17, 352, 66, 10375, 10671, 67096, 67168, 47495, 38912, 158087, 155648, 299008, 4261376, 671744, 1867776, 4063232, 3407872, 16252928, 14745600, 12582912], run: kernel_163 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 26, 25, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_164 },
+    Kernel { plan: &[5, 1, 2, 5, 4, 5, 6, 7, 9, 9, 10, 11], pattern: &[63, 63, 1220, 123, 123, 2875, 1220, 1988, 2848, 4000, 3780, 2848], run: kernel_165 },
+    Kernel { plan: &[0, 1, 6, 4, 5, 5, 6, 7, 8, 10, 11, 11, 12], pattern: &[41, 95, 82, 136, 246, 161, 5718, 136, 1792, 5696, 8000, 7168, 5696], run: kernel_166 },
+    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 22, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_167 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 15, 11, 15, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_168 },
+    Kernel { plan: &[0, 1, 2, 4, 10, 10, 6, 7, 10, 11, 11, 12, 15, 13, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 74872, 73843, 76662, 3212, 2880, 2880, 56472, 57280, 56320, 90224, 130048, 252928, 254064, 229376], run: kernel_169 },
+    Kernel { plan: &[1, 2, 4, 3, 6, 5, 10, 8, 8, 9, 17, 11, 12, 14, 14, 15, 18, 18, 19, 25, 20, 22, 22, 23, 24, 25, 26, 27, 28], pattern: &[5, 13, 23, 520, 52, 1072, 1072, 65920, 2176, 4616, 134240, 658432, 29184, 12288, 45056, 2129920, 65664, 658432, 720896, 34473984, 3145728, 7372800, 11534336, 142606336, 117440512, 386400256, 520093696, 478150656, 369098752], run: kernel_170 },
+    Kernel { plan: &[0, 1, 2, 6, 21, 21, 6, 10, 22, 22, 10, 13, 23, 13, 16, 24, 16, 19, 25, 19, 20, 21, 22, 27, 25, 25, 26, 27, 29, 29, 30, 31, 32], pattern: &[16897, 393218, 393220, 88, 24, 160, 2097160, 1440, 384, 513, 4194432, 276480, 6144, 8390656, 114689, 180224, 16793600, 950278, 395270, 33685504, 537919488, 203423792, 205521664, 210767872, 218136576, 235143168, 1205862400, 1272971264, 1610612736, 2953838592, 7717519360, 2684354560, 4294967296], run: kernel_171 },
+    Kernel { plan: &[0, 1, 8, 3, 9, 5, 10, 10, 9, 16, 11, 13, 12, 14, 14, 15, 16, 17, 18, 19, 21, 22, 22, 23], pattern: &[407, 455, 135, 280, 17, 352, 66, 135, 10671, 67096, 67168, 47360, 38912, 157952, 155648, 36864, 4261376, 147456, 1835008, 3932160, 1310720, 15204352, 14745600, 12582912], run: kernel_172 },
+    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_173 },
+    Kernel { plan: &[0, 2, 2, 3, 4, 5], pattern: &[15, 15, 39, 59, 56, 60], run: kernel_174 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13], pattern: &[7, 7, 7, 120, 24, 104, 104, 1920, 384, 1664, 1664, 14336, 14336, 14336], run: kernel_175 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5], pattern: &[15, 15, 39, 59, 56, 60], run: kernel_176 },
+    Kernel { plan: &[0, 1, 2, 3, 10, 5, 10, 8, 8, 9, 22, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 22, 24, 26, 26, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_177 },
+    Kernel { plan: &[0, 1, 5, 5, 5, 8, 7, 11, 8, 9, 11, 15, 12, 15, 17, 15, 17, 21, 18, 19, 21, 24, 22, 24, 24, 25, 27, 27, 28], pattern: &[9, 10, 40, 283, 48, 262452, 2624, 6208, 262432, 34368, 41472, 67776, 266240, 270336, 278528, 2654720, 2164736, 2179072, 4456736, 18382848, 25690112, 35880960, 38010880, 8650752, 84410368, 106954752, 251658240, 335544320, 268435456], run: kernel_178 },
+    Kernel { plan: &[0, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 15, 15, 16, 14, 15, 16, 19, 18, 19, 21, 21, 22, 23, 24, 25], pattern: &[131075, 11, 11, 5242894, 8240, 304, 4672, 24704, 262432, 8396352, 8424960, 8424960, 16781888, 90256, 24704, 4230144, 4251648, 655360, 4456704, 4587520, 15728648, 11534336, 47480840, 66063872, 58724352, 37748736], run: kernel_179 },
+    Kernel { plan: &[0, 1, 6, 4, 5, 5, 6, 7, 8, 12, 10, 13, 14, 15, 14, 15, 16, 17, 18], pattern: &[41, 95, 82, 136, 246, 161, 4182, 136, 4864, 12800, 11264, 10240, 54080, 44544, 53248, 45056, 458752, 458752, 393216], run: kernel_180 },
+    Kernel { plan: &[0, 1, 6, 4, 5, 5, 6, 7, 8, 12, 10, 13, 14, 15, 14, 15], pattern: &[41, 95, 82, 136, 246, 161, 4182, 136, 4864, 12800, 11264, 10240, 54080, 44544, 53248, 45056], run: kernel_181 },
+    Kernel { plan: &[5, 6, 2, 3, 5, 5, 10, 7, 8, 9, 10, 11, 12, 13], pattern: &[1045, 6, 71, 56, 25, 1049, 1542, 3456, 2432, 1536, 9857, 14720, 14336, 15360], run: kernel_182 },
+    Kernel { plan: &[3, 1, 2, 3, 6, 6, 6, 7, 8], pattern: &[24, 18, 20, 73, 182, 480, 360, 416, 480], run: kernel_183 },
+    Kernel { plan: &[0, 1, 6, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], pattern: &[41, 95, 82, 136, 246, 161, 5718, 136, 1792, 5696, 8000, 7168, 5696], run: kernel_184 },
+    Kernel { plan: &[0, 3, 3, 4, 4, 5, 6, 9, 8, 10, 10, 11, 12, 14, 15, 15, 16], pattern: &[5, 44, 1399, 26, 268, 998, 1732, 640, 3892, 4064, 3652, 2560, 28672, 90112, 126976, 114688, 90112], run: kernel_185 },
+    Kernel { plan: &[0, 1, 4, 7, 9, 7, 9, 8, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[5, 326, 447, 222, 524, 644, 1088, 1452, 1286, 45616, 1088, 14336, 45568, 64000, 57344, 45568], run: kernel_186 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 16, 12, 13, 14, 15, 17, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_187 },
+    Kernel { plan: &[2, 1, 3, 3, 4, 5, 6, 7, 8, 9, 11, 23, 15, 13, 16, 23, 16, 19, 18, 19, 21, 23, 22, 23, 24, 25], pattern: &[3, 11, 11, 14, 48, 304, 4672, 24704, 288, 8396352, 8424960, 8424960, 4672, 90240, 24704, 4230144, 4251648, 655360, 4456448, 4587520, 15728640, 11534336, 47480832, 66063872, 58720256, 37748736], run: kernel_188 },
+    Kernel { plan: &[1, 6, 6, 3, 4, 5, 11, 11, 8, 10, 11, 11, 12], pattern: &[95, 73, 132, 2555, 2428, 2552, 8059, 132, 3960, 5696, 8000, 7544, 5696], run: kernel_189 },
+    Kernel { plan: &[5, 6, 2, 3, 5, 5, 10, 8, 11, 9, 10, 11, 12, 13], pattern: &[1045, 6, 71, 56, 25, 1049, 1542, 3456, 2432, 1536, 9857, 14720, 14336, 15360], run: kernel_190 },
+    Kernel { plan: &[5, 5, 5, 3, 4, 5, 6, 7, 9, 10, 10, 11], pattern: &[63, 63, 68, 123, 123, 2875, 68, 896, 2848, 4000, 3584, 2848], run: kernel_191 },
+    Kernel { plan: &[6, 3, 2, 5, 10, 8, 10, 11, 8, 9, 22, 17, 12, 13, 14, 15, 16, 22, 18, 19, 20, 24, 22, 24, 25, 25, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_192 },
+    Kernel { plan: &[0, 1, 2, 7, 5, 5, 8, 7, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[17, 594, 350, 148, 831, 400, 1088, 45224, 1844, 1554, 1088, 14336, 45184, 63616, 57344, 45184], run: kernel_193 },
+    Kernel { plan: &[1, 1, 2, 3, 5, 5, 7, 11, 8, 9, 12, 14, 14, 13, 14, 15, 16], pattern: &[35, 17, 20, 24, 572, 33, 2240, 2240, 8448, 8704, 29696, 18624, 21504, 91904, 130048, 114688, 122880], run: kernel_194 },
+    Kernel { plan: &[3, 1, 2, 3, 5, 6, 6, 7, 8, 10, 11, 11, 12], pattern: &[44, 82, 63, 45, 144, 237, 194, 144, 1792, 5632, 7936, 7168, 5632], run: kernel_195 },
+    Kernel { plan: &[0, 5, 2, 5, 8, 6, 8, 8, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[9, 56, 652, 863, 414, 98, 296, 1152, 1880, 1548, 1152, 14336, 45056, 63488, 57344, 45056], run: kernel_196 },
+    Kernel { plan: &[0, 5, 2, 3, 6, 5, 6, 8, 9, 9, 10, 11, 13, 14, 14, 15], pattern: &[17, 52, 414, 664, 863, 98, 304, 1152, 1876, 1560, 1152, 14336, 45056, 63488, 57344, 45056], run: kernel_197 },
+    Kernel { plan: &[3, 1, 2, 3, 5, 6, 6, 7, 8, 10, 11, 11, 12], pattern: &[42, 63, 84, 43, 144, 235, 196, 144, 1792, 5632, 7936, 7168, 5632], run: kernel_198 },
+    Kernel { plan: &[0, 1, 2, 4, 7, 6, 6, 7, 8, 9, 10, 11], pattern: &[3, 3, 100, 216, 152, 100, 748, 728, 1792, 4032, 3840, 3584], run: kernel_199 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17], pattern: &[39, 103, 199, 1176, 9272, 8243, 68422, 3212, 2880, 2880, 56472, 40896, 56320, 90160, 128000, 252928, 254016, 229376], run: kernel_200 },
+    Kernel { plan: &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 22, 24, 24, 26, 26], pattern: &[75, 75, 396, 16879, 67152, 133416, 4699, 1048972, 4196780, 4195920, 4204048, 4229408, 4206656, 4207616, 4243464, 4245504, 4390928, 4390944, 8650752, 8912896, 22020224, 25165824, 39059200, 109838336, 87031808, 37748736, 83886080], run: kernel_201 },
 ];

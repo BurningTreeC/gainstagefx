@@ -145,6 +145,7 @@ sources, where they disagree and what was approximated.
 | Orange Dist | A transistor that clips first and a diode pair that clips what is left, with the bass cut before either and a scoop after | none |
 | Treble Boost | One germanium transistor behind a 5 nF capacitor; its one knob is a volume after a fixed gain | none |
 | Brit Plexi Bass | The Brit Plexi's late-60s bass sibling of the same drawing set: V1's halves on one cathode, nothing throwing the bottom away, an unbypassed second stage, a 250 pF / 56 k stack and no master | Brit Plexi Bass EL34 |
+| Brit 45 | The mid-60s British 45 W head its maker started with: two ECC83 channels on one cathode, the bright one's 100 pF across its volume, an unbypassed gain stage into a follower, a 270 pF / 56 k stack and no master | Brit 45 KT66 |
 | Brum 100 | A late-60s Midlands 100 W head, Marshall-like and not a Marshall: split V1 cathodes, a 270 pF / 56 k / 22 k stack and no master, into four EL34s on 600 V | Brum EL34 |
 | Oregon T | An early-70s American 150 W head: a tweed-style preamp with a master, into four 6550s in ultra-linear | Oregon 6550 |
 | American SVT | A 70s American 300 W bass head's first channel: a James stack, a midrange whose toroid resonance sits inside a two-stage feedback loop, its three-way midrange frequency and Bass Cut / Ultra Lo switches, and Ultra Hi on the Bright switch | American 6550 |
@@ -289,6 +290,7 @@ nearest setting to the 90 volts that player is reported to have used.
 | Recto 6L6 Tube | The same stage with its rectifier switch on valve: two 5U4GB, so the rail sits lower and sags under a chord |
 | American Deluxe 6V6 | Two 6V6s behind a 12AT7 inverter on a GZ34 valve rectifier, with the AB763's light feedback and no presence; the American Deluxe's own |
 | Brit Plexi Bass EL34 | The Brit Plexi EL34 with the 1992's .1 uF couplings into the output valves, where the 1959 has .022: the corner moves from 33 Hz to 7 Hz; the Brit Plexi Bass's own |
+| Brit 45 KT66 | Two KT66s, one a side, behind a GZ34 valve rectifier, the 1959's inverter and presence, 27 k of feedback from the 16 ohm tap; the Brit 45's own |
 | Brum EL34 | Four EL34s on 600 V and -54 V, as the trace prints them, with 10 k grid stoppers, 470 ohm screens and a 3.3 k presence whose track is the inverter's tail; the Brum 100's own |
 | Oregon 6550 | Four 6550s in **ultra-linear** -- each side's screens on a tap of its own half of the primary -- behind a 12AX7 long-tailed pair, with 22 k of feedback from the 16 ohm tap and a reverse-log presence; the Oregon T's own |
 | American SS 800 | **Transistors**, 300 W: an op-amp driving a common-base stage and a VAS, three complementary pairs a side on unregulated +-85 V rails that sag under a held note, with current limiters; the American 800RB's own |
@@ -407,6 +409,7 @@ hardware behind them at all.
 | British 47 | EMI REDD.47 line amplifier, drawing REDD.47/C1 (1959) and description REDD.M47 | [british_47.md](docs/models/british_47.md) |
 | German 76 | Telefunken/TAB V76/80 microphone amplifier, IRT drawing S 1176 and Braunbuch description (1959) | [german_76.md](docs/models/german_76.md) |
 | Brit Plexi Bass | Marshall JMP 1992 Super Bass 100 W, Unicord drawing 70-13-11, July 1970 | [brit_plexi_bass.md](docs/models/brit_plexi_bass.md) |
+| Brit 45 | Marshall JTM45 of 1965, the lead head, from Marshall's period drawing and voltage chart and its CAD JTM45 diagram | [brit_jtm45.md](docs/models/brit_jtm45.md) |
 | Brum 100 | Laney Supergroup 100 Mk I, a 1969 build, from a traced drawing | [brum_100.md](docs/models/brum_100.md) |
 | Oregon T | Sunn Model T, drawing D-1029 A, 1973, BRITE channel | [oregon_t.md](docs/models/oregon_t.md) |
 | American SVT | Ampeg SVT (6550), "SVT PREAMP" D 591719 rev D, 1975, channel 1, NORMAL input | [american_svt.md](docs/models/american_svt.md) |
@@ -459,6 +462,7 @@ hardware behind them at all.
 | American Deluxe 6V6 | Deluxe Reverb AB763: 12AT7 inverter, two 6V6GT, GZ34 rectifier | [american_deluxe.md](docs/models/american_deluxe.md) |
 | Recto 6L6 / Recto 6L6 Tube | Dual Rectifier: four 6L6 on the silicon setting, or two 5U4GB valve rectifiers; the loop lifted, as in RD NORM | [cali_rectifier.md](docs/models/cali_rectifier.md) |
 | Brit Plexi Bass EL34 | 1992 Super Bass: the 1959's stage of the same drawing set with .1 uF output couplings | [brit_plexi_bass.md](docs/models/brit_plexi_bass.md) |
+| Brit 45 KT66 | JTM45, 1965: two KT66 (fitted to Marconi's sheet), a GZ34, 27 k from the 16 ohm tap, -48 V of bias derived from its own supply | [brit_jtm45.md](docs/models/brit_jtm45.md) |
 | Brum EL34 | Laney Supergroup 100 Mk I: four EL34 on 600 V, 3.3 k presence on the tail | [brum_100.md](docs/models/brum_100.md) |
 | Oregon 6550 | Sunn Model T: four 6550 ultra-linear (GE 6550-A fit), 22 k feedback from 16 ohm, chart-fitted supply | [oregon_t.md](docs/models/oregon_t.md) |
 | American 6550 | Ampeg SVT "SVT POWER AMP SCHEMATIC" D 591720 rev H: six 6550, 12BH7 (RCA fit) gain stages and followers, a cathodyne, 47 k from 4 ohm; idle at the calibration procedure's 24 mA a valve | [american_svt.md](docs/models/american_svt.md) |

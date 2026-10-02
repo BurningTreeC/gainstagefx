@@ -1298,6 +1298,26 @@ pub const PRESETS: &[Preset] = &[
         output_trim: 0.0,
         ..base("Amplifier", "Bass Head Crunch")
     },
+    // --- Brit 45 ---------------------------------------------------------------
+    // The mid-60s British 45 W head, its maker's first: two KT66s behind a GZ34,
+    // no master, the volume past half where the rectifier starts to give. Into
+    // a 4x12 of the era's Greenbacks.
+    Preset {
+        drive: 0.7,
+        circuit: Circuit::Brit45,
+        tone: ToneStack::Off,
+        bass: 0.4,
+        mid: 0.6,
+        treble: 0.6,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.025,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -20.2 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: 7.4,
+        ..base("Amplifier", "Brit 45 Blues")
+    },
     // --- Brum 100 --------------------------------------------------------------
     // The late-60s Midlands 100 W head: Marshall-like and not a Marshall, 600 V
     // on four EL34s, no master. The volume is what decides how hard they work.

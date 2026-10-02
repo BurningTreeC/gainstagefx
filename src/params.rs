@@ -200,6 +200,9 @@ pub enum Circuit {
     #[id = "pedal_revv_g3_circuit"]
     #[name = "Modern Purple"]
     ModernPurple,
+    #[id = "amp_marshall_jtm45"]
+    #[name = "Brit 45"]
+    Brit45,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -280,9 +283,10 @@ impl Circuit {
             Circuit::BlueChorus => "Blue Chorus",
             Circuit::Modern33 => "Modern 33",
             Circuit::ModernPurple => "Modern Purple",
+            Circuit::Brit45 => "Brit 45",
         }
     }
-    pub const ALL: [Circuit; 48] = [
+    pub const ALL: [Circuit; 49] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -331,6 +335,7 @@ impl Circuit {
         Circuit::BlueChorus,
         Circuit::Modern33,
         Circuit::ModernPurple,
+        Circuit::Brit45,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -383,6 +388,7 @@ impl Circuit {
             Circuit::BlueChorus => voice::Gain::BlueChorus,
             Circuit::Modern33 => voice::Gain::Modern33,
             Circuit::ModernPurple => voice::Gain::ModernPurple,
+            Circuit::Brit45 => voice::Gain::Brit45,
         }
     }
 
@@ -553,10 +559,13 @@ pub enum PowerAmp {
     #[id = "power_gk_800rb"]
     #[name = "American SS 800"]
     AmericanSS800,
+    #[id = "power_jtm45_kt66"]
+    #[name = "Brit 45 KT66"]
+    Brit45KT66,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -575,6 +584,7 @@ impl PowerAmp {
         Self::Oregon6550,
         Self::Svt6550,
         Self::AmericanSS800,
+        Self::Brit45KT66,
     ];
 
     pub fn name(self) -> &'static str {
@@ -601,6 +611,7 @@ impl PowerAmp {
             Self::Oregon6550 => voice::PowerAmp::Oregon6550,
             Self::Svt6550 => voice::PowerAmp::Svt6550,
             Self::AmericanSS800 => voice::PowerAmp::AmericanSS800,
+            Self::Brit45KT66 => voice::PowerAmp::Brit45KT66,
         }
     }
 }

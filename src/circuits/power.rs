@@ -1686,6 +1686,106 @@ impl PowerSpec {
         ..Self::PLEXI_EL34
     };
 
+    /// The Marshall JTM45's, 1965: the matched power stage of the Brit 45
+    /// preamplifier (`circuits::jtm45`). From Marshall's period drawing and its
+    /// valve voltage chart, read against Marshall's CAD JTM45 diagram. See
+    /// `docs/models/brit_jtm45.md`.
+    ///
+    /// The 1959's inverter and presence, part for part -- 82 k / 100 k, 47 pF,
+    /// 470 ohm and 10 k in the tail, the 5 k presence as its return with .1 uF
+    /// on the wiper, 1 M legs, .1 uF to the second grid -- and a smaller
+    /// amplifier behind them:
+    ///
+    /// - **Two KT66s**, one a side (`PentodeSpec::KT66`), .1 uF couplings into
+    ///   220 k leaks and no grid stoppers drawn; 470 ohm in each screen behind
+    ///   a shared 1 k 2 W.
+    /// - **A GZ34** in front of a 32 uF reservoir, the screens behind the 20 H
+    ///   choke: the chart's 450 V at the rectifier, 440 V at the choke, 430 V
+    ///   on the plates.
+    /// - **27 k of feedback from the 16 ohm tap**, and the stage built at that
+    ///   tap.
+    /// - **Fixed bias of -48 V**, DERIVED from the drawing's half-wave bias
+    ///   supply (150 k from the 350 V winding, 8 uF, 15 k and 56 k): the
+    ///   drawing circles "105V" in that network, which as a grid voltage would
+    ///   cut the KT66s off, and is not used. At -48 V the fit idles a KT66 at
+    ///   about 50 mA, hot, as these amplifiers are known to run.
+    ///
+    /// ESTIMATED: the output transformer (a 6.6 k plate-to-plate primary into
+    /// 16 ohm, the Radio Spares / Drake part's published class; copper,
+    /// inductance and leakage scaled from the Brit EL34's data), the windings'
+    /// resistance and the choke's copper.
+    pub const JTM45_KT66: PowerSpec = PowerSpec {
+        name: "Brit 45 KT66 (JTM45, 1965)",
+        // No master: the treble wiper drives the inverter's .02 directly.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        pi_couple: 0.02e-6,
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 470.0,
+        pi_tail: 10_000.0,
+        pi_tail_lower: 5_000.0,
+        pi_cross: 0.1e-6,
+        pi_plate_driven: 82_000.0,
+        pi_plate_other: 100_000.0,
+        pi_supply: crate::circuits::jtm45::INVERTER_NODE,
+        pi_tube: TriodeSpec::ECC83,
+        pi_plate_cap: 47e-12,
+        couple: 0.1e-6,
+        grid_leak: 220_000.0,
+        // None drawn: the wire, which the builder needs as a resistor.
+        stopper: 1.0,
+        screen_resistor: 470.0,
+        tubes_per_side: 1.0,
+        tube: PentodeSpec::KT66,
+        bias: -48.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        // ESTIMATED to the chart: the rail the GZ34 and the windings take down
+        // to 434 V at the plates under the KT66s' idle (the chart's 430;
+        // `examples/jtm45_op.rs`). The model's ideal transformer puts the
+        // plates at the rail, so the chart's 20 V of primary copper between
+        // its rectifier (450) and its plates (430) is not dropped, and its
+        // screens (440, above the plates) come out at 427 behind the choke and
+        // the 1 k. With a valve rectifier the screens hang from the rail and
+        // `screen_supply` is not used.
+        plate_supply: 460.0,
+        screen_supply: 460.0,
+        // ESTIMATED: the winding's resistance.
+        supply_resistance: 100.0,
+        rectifier: Some(RectifierSpec::GZ34),
+        reservoir: 32e-6,
+        // The 20 H choke's copper (ESTIMATED) and the drawn 1 k 2 W.
+        screen_resistance: 1_150.0,
+        screen_reservoir: 32e-6,
+        // 6.6 k plate to plate into 16 ohm.
+        ratio: 20.310_096_011_589_9,
+        primary_resistance: 100.0,
+        primary_inductance: 20.0,
+        leakage: 7.97e-3 / 425.0 * 4.0,
+        // 45 W into 16 ohm is 37.9 V peak.
+        saturation_volts: 37.947_331_922_020_55,
+        saturation_hz: 70.0,
+        core_sharpness: 6.0,
+        speaker: 16.0,
+        feedback: 27_000.0,
+        presence_pot: 5_000.0,
+        presence_cap: 0.1e-6,
+        presence_taper: Taper::Linear,
+        presence_on_tail: true,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
+        series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
+    };
+
     /// The Laney Supergroup 100 Mk I's, from the traced drawing of a 1969 build
     /// ("SUPERGROUP 100 mk I build '69", vddj, 2008, sheets 1 and 2): the
     /// matched power stage of the Brum 100 (`circuits::brum100`). See

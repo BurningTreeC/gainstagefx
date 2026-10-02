@@ -28,6 +28,7 @@ pub mod iron;
 pub mod jazz120;
 pub mod jc120_power;
 pub mod jfet;
+pub mod jtm45;
 pub mod markiic;
 pub mod metal_zone;
 pub mod modern_33;

@@ -140,7 +140,7 @@ fn intent(gain: Gain) -> f64 {
         // The Brit Plexi's two siblings and the Model T, stated at a guitar's
         // level like the other non-master heads; these figures document the
         // intent rather than driving the search.
-        Gain::PlexiBass | Gain::Brum100 => 25.0,
+        Gain::PlexiBass | Gain::Brum100 | Gain::Brit45 => 25.0,
         Gain::OregonT => 25.0,
         // The three newer pedals, stated at a guitar's level like the rest.
         Gain::GoldDrive => 20.0,
@@ -303,7 +303,7 @@ fn stated_level(gain: Gain) -> Option<f64> {
         Gain::Brit2205 => Some(GUITAR_VOLTS),
         // And into a British bass head, a Midlands head, and the BRITE input of
         // an American 150 W head.
-        Gain::PlexiBass | Gain::Brum100 | Gain::OregonT => Some(GUITAR_VOLTS),
+        Gain::PlexiBass | Gain::Brum100 | Gain::OregonT | Gain::Brit45 => Some(GUITAR_VOLTS),
         // And a bass into the NORMAL input of channel 1 of an American 300 W
         // head: a bass's passive pickups are at a guitar's level, and the
         // plugin has one input calibration.

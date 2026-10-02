@@ -815,6 +815,33 @@ impl PentodeSpec {
         kvb: 49.0405,
         kg2: 3726.51,
     };
+    /// The KT66, the British beam tetrode in the Marshall JTM45.
+    ///
+    /// Fitted by `tools/tube_fit/fit_kt66.py` against Marconi's "KT66 Output
+    /// Tetrode" sheet, whose rows are all cathode-biased with their resistors
+    /// given, so each row's grid voltage is its resistor times its current:
+    /// class A at 250 V on plate and screen, 85 mA and 6.3 mA (-15.5 V); AB1 at
+    /// 258 V, 81 mA and 6 mA (-17.4 V); AB1 at 400 V / 300 V, 62.5 mA (-26 V);
+    /// 6.3 mA/V at 250 V / 250 V / -15 V -- every one within 3 % -- and GEC's
+    /// 22.5 kohm of internal resistance, which sets the knee. `kp`, which only
+    /// softens the cut-off and which no row reaches, is held at the 6L6GC's.
+    ///
+    /// GEC's later sheet (M-O Valve, Issue 5, April 1977) disagrees: its AB1
+    /// row at 415 V / 300 V / -27 V gives 52 mA (the fit 59), and its
+    /// ultra-linear row at 425 V / -35 V, 62.5 mA, asks for twice the
+    /// amplification factor its own AB1 row allows (the fit 124). The screen,
+    /// with the plate well above it (the 400 V / 300 V row), draws 4.7 mA
+    /// against Marconi's 2.5: Koren's screen law has no plate term, and the
+    /// JTM45 runs its screens at its plates' voltage, where the fit holds
+    /// 6.34 mA against 6.3.
+    pub const KT66: PentodeSpec = PentodeSpec {
+        mu: 7.7003,
+        ex: 1.35,
+        kg1: 772.728,
+        kp: 48.0,
+        kvb: 45.9822,
+        kg2: 7306.34,
+    };
     /// The EF86, the low-noise small pentode at the EMI REDD.47's input.
     ///
     /// Fitted by `tools/tube_fit/fit_ef86.py` against Philips's "EF86" of
