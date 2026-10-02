@@ -772,11 +772,7 @@ impl Plugin for GainStageFx {
             // every other circuit. This makes the DSP state itself isolated,
             // not merely the UI: a hidden MT-2/HM-2 value can never reach an
             // unrelated model during preset or circuit changes.
-            tone_sweep: if circuit == Circuit::Mt2 {
-                self.params.tone_sweep.smoothed.next_step(samples) as f64
-            } else {
-                0.5
-            },
+            tone_sweep: circuit.sweep(self.params.tone_sweep.smoothed.next_step(samples) as f64),
             hm2_colour_lo: if circuit == Circuit::Hm2 {
                 self.params.hm2_colour_lo.smoothed.next_step(samples) as f64
             } else {

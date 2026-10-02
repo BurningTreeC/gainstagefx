@@ -374,6 +374,21 @@ impl Circuit {
         }
     }
 
+    /// What the chain is given for the fourth tone knob: the knob, for a
+    /// circuit with a control of its own past the three (`Gain::own_sweep`),
+    /// and its neutral middle for every other, so a hidden value never
+    /// reaches an unrelated model. The plugin and the presets both build
+    /// their settings through this; it was the Metal Zone alone in both, and
+    /// the Bass Driver's Blend and the 800RB's Hi Mid drew a knob that
+    /// reached nothing.
+    pub fn sweep(self, knob: f64) -> f64 {
+        if self.voice().own_sweep().is_some() {
+            knob
+        } else {
+            0.5
+        }
+    }
+
     /// Whether the choice of amplifying part reaches this circuit.
     pub fn has_amplifier(self) -> bool {
         self.voice().has_amplifier()

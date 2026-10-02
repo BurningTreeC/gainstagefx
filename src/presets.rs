@@ -1346,7 +1346,10 @@ pub const PRESETS: &[Preset] = &[
         tone: ToneStack::Off,
         cabinet: Cabinet::Off,
         oversampling: Oversampling::Off,
-        output_trim: 0.0,
+        // Set by `examples/presetlevel.rs`: -6.8 dB untrimmed. It was 0.0
+        // while the plugin sent the fourth knob to the Metal Zone alone and
+        // this preset played at half Blend; at its full Blend it is 6.3 dB up.
+        output_trim: -6.3,
         ..base("Preamp", "Bass Driver Direct")
     },
     // --- American 800RB -----------------------------------------------------------
@@ -1369,9 +1372,10 @@ pub const PRESETS: &[Preset] = &[
         mic_a_position: 0.3,
         mic_a_distance: 0.05,
         oversampling: Oversampling::Off,
-        // Set by `examples/presetlevel.rs`: -10.2 dB untrimmed through the 4x10,
-        // against the catalogue's -12.8.
-        output_trim: -2.6,
+        // Set by `examples/presetlevel.rs`: -10.0 dB untrimmed through the 4x10,
+        // its Hi Mid at 0.6 since the fourth knob reaches it, against the
+        // catalogue's -12.8.
+        output_trim: -2.8,
         ..base("Amplifier", "American 800RB Clank")
     },
     // The console microphone preamplifier: two cascaded transistor stages with
@@ -2022,11 +2026,7 @@ impl Preset {
             bass: self.bass as f64,
             mid: self.mid as f64,
             treble: self.treble as f64,
-            tone_sweep: if self.circuit == Circuit::Mt2 {
-                self.tone_sweep as f64
-            } else {
-                0.5
-            },
+            tone_sweep: self.circuit.sweep(self.tone_sweep as f64),
             hm2_colour_lo: if self.circuit == Circuit::Hm2 {
                 self.hm2_colour_lo as f64
             } else {

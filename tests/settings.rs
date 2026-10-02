@@ -416,3 +416,38 @@ fn twin_only_controls_are_inert_on_mark_iic() {
         d * 100.0
     );
 }
+
+/// The fourth tone knob reaches every circuit with a control of its own past
+/// the three, as the plugin and the presets build their settings, and no
+/// other. It reached the Metal Zone alone until 2026-10-02: the Bass Driver's
+/// Blend and the 800RB's Hi Mid drew a knob that did nothing.
+#[test]
+fn the_fourth_knob_reaches_every_circuit_that_has_one() {
+    use gainstagefx::params::Circuit;
+    for circuit in Circuit::ALL {
+        let has = circuit.voice().own_sweep().is_some();
+        assert_eq!(circuit.sweep(0.9) == 0.9, has, "{circuit:?}");
+        assert_eq!(
+            circuit.sweep(0.9),
+            if has { 0.9 } else { 0.5 },
+            "{circuit:?}"
+        );
+    }
+    for circuit in [Circuit::BassDriver, Circuit::American800RB, Circuit::Mt2] {
+        let at = |knob: f64| {
+            render(&Settings {
+                gain: circuit.voice(),
+                tone: Tone::Off,
+                cabinet: Cabinet::Off,
+                tone_sweep: circuit.sweep(knob),
+                ..Settings::default()
+            })
+        };
+        let d = difference(&at(0.1), &at(0.9));
+        println!(
+            "{circuit:?}: the fourth knob moves the output by {:.1} %",
+            d * 100.0
+        );
+        assert!(d > 0.01, "{circuit:?}");
+    }
+}
