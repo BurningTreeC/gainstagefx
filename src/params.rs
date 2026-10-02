@@ -203,6 +203,9 @@ pub enum Circuit {
     #[id = "amp_marshall_jtm45"]
     #[name = "Brit 45"]
     Brit45,
+    #[id = "amp_ampeg_vt40"]
+    #[name = "American VT-40"]
+    AmericanVt40,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -284,9 +287,10 @@ impl Circuit {
             Circuit::Modern33 => "Modern 33",
             Circuit::ModernPurple => "Modern Purple",
             Circuit::Brit45 => "Brit 45",
+            Circuit::AmericanVt40 => "American VT-40",
         }
     }
-    pub const ALL: [Circuit; 49] = [
+    pub const ALL: [Circuit; 50] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -336,6 +340,7 @@ impl Circuit {
         Circuit::Modern33,
         Circuit::ModernPurple,
         Circuit::Brit45,
+        Circuit::AmericanVt40,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -389,6 +394,7 @@ impl Circuit {
             Circuit::Modern33 => voice::Gain::Modern33,
             Circuit::ModernPurple => voice::Gain::ModernPurple,
             Circuit::Brit45 => voice::Gain::Brit45,
+            Circuit::AmericanVt40 => voice::Gain::AmericanVt40,
         }
     }
 
@@ -562,10 +568,13 @@ pub enum PowerAmp {
     #[id = "power_jtm45_kt66"]
     #[name = "Brit 45 KT66"]
     Brit45KT66,
+    #[id = "power_ampeg_7027a"]
+    #[name = "American 7027A"]
+    American7027A,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -585,6 +594,7 @@ impl PowerAmp {
         Self::Svt6550,
         Self::AmericanSS800,
         Self::Brit45KT66,
+        Self::American7027A,
     ];
 
     pub fn name(self) -> &'static str {
@@ -612,6 +622,7 @@ impl PowerAmp {
             Self::Svt6550 => voice::PowerAmp::Svt6550,
             Self::AmericanSS800 => voice::PowerAmp::AmericanSS800,
             Self::Brit45KT66 => voice::PowerAmp::Brit45KT66,
+            Self::American7027A => voice::PowerAmp::American7027A,
         }
     }
 }

@@ -7,11 +7,13 @@ source *contents* of `src/`, `tests/`, `examples/`, `docs/`, root documentation,
 git-ignored `docs/schematics/` folder. **The repository is the inventory; the target
 lists in the task prompts are a minimum, not a boundary.**
 
-**Current reconciliation: 2026-10-01** (the Treble Boost, Brit Plexi Bass, Brum 100 and
+**Current reconciliation: 2026-10-02** (the wahs, the Modern 33 and Modern Purple, the
+Brit 45 with its Brit 45 KT66 stage, and the American VT-40 with its American 7027A stage
+implemented). Before that, 2026-10-01 (the Treble Boost, Brit Plexi Bass, Brum 100 and
 Oregon T implemented; four microphone preamplifiers researched; then the Gold Drive, Brit
 Drive, Clean Boost, the American SVT with its American 6550 stage, the British 47, the
 German 76, the Bass Driver, and the American 800RB with its American SS 800 stage
-implemented). Before that, 2026-09-20. Section 9 records the current implementation,
+implemented), and 2026-09-20. Section 9 records the current implementation,
 validation and performance gaps; older implementation dates identify historical work,
 not the date of a complete hardware or realtime qualification.
 
@@ -302,7 +304,7 @@ Researched 2026-10-02 at the owner's requests, and since built (each log holds i
 | `pedal_boss_ce2` / `pedal_boss_ce2_circuit` | Blue Chorus | **Boss CE-2** | IMPLEMENTED 2026-10-02 (`blue_chorus.rs`), pedal and circuit, on Boss's own CE-2 / CE-2B Service Notes (first edition, February 1987): the emphasis pair flat for the dry, both three-pole filters, the oscillator 0.35-3.8 Hz, the delay 4.65 ms at rest on a measured clock; the bucket brigade a `dsp::bbd::Brigade` between a send node and an auxiliary return (`Gain::bucket_brigade`). Log: `docs/models/blue_chorus.md` |
 | `wah_dunlop_gcb95` / `wah_vox_v847` (the new `wah` parameter, with `wah_treadle`, `wah_mode`, `wah_sense`) | Black Wah / Chrome Wah | **Dunlop Cry Baby GCB-95** (rev F, buffered) / **Vox V847** | IMPLEMENTED 2026-10-02 (`wah.rs`), a slot of its own ahead of the pedal, from ElectroSmash's traces of both (no Dunlop drawing exists; Thomas Organ's 1967 V846 drawing is listed but not yet in hand, a cross-check still owed for the Vox). The treadle is the pot's two halves as realtime resistors; its law FITTED to ElectroSmash's 450 Hz / 750 Hz / 1.6 kHz (holds within 1 %); the Vox's 69.5 k input reproduced to 0.1 dB; Manual or Auto (an envelope follower, ESTIMATED timing). Inductor linear (15 ohm winding, ESTIMATED). Two presets use one. |
 | `amp_marshall_jtm45` / `power_jtm45_kt66` | Brit 45 / Brit 45 KT66 | **Marshall JTM45**, the 1965 lead head (KT66, GZ34) | IMPLEMENTED 2026-10-02 (`jtm45.rs`, `PowerSpec::JTM45_KT66`, `PentodeSpec::KT66`) on Marshall's own drawings: the preamp within 4 % of the period chart, the inverter within 4 %, the plates at 434 V against 430; the KT66 fitted to Marconi's sheet, -48 V bias DERIVED from the drawn supply ([brit_jtm45.md](models/brit_jtm45.md)) |
-| `amp_ampeg_vt40` / `amp_ampeg_v4b` / `power_ampeg_7027a` | American VT-40 / American V-4B | **Ampeg VT-40** (60 W 4x10 combo) and **V-4B** (100 W head), 1971 | RESEARCHED 2026-10-02, **CLEARED** on Ampeg's own factory drawings with voltages, one gap: the P.E.C. 6470000 tone network's parts are known (WIDELY REPORTED) but not their positions. Not built: the 6K11 and 6CG7 need fits ([american_vt40.md](models/american_vt40.md)) |
+| `amp_ampeg_vt40` / `power_ampeg_7027a` / `amp_ampeg_v4b` | American VT-40 / American 7027A / American V-4B | **Ampeg VT-40** (60 W 4x10 combo) and **V-4B** (100 W head), 1971 | VT-40 IMPLEMENTED 2026-10-02 (`american_vt40.rs`, `PowerSpec::VT40_7027A`, `ParaphaseFront`, `PentodeSpec::T7027A`) on Ampeg's drawing DWG 06500 B and its service data: every preamp stage from V1b within 1 dB of Ampeg's A.C. voltage readings and the inverter within 1.5 dB, the output valves 2 dB hot; the 7027A fitted to RCA's sheet; the toroid ESTIMATED from the published 300 / 800 / 3000 Hz; the reverb tank not built. The V-4B cleared, not built ([american_vt40.md](models/american_vt40.md)) |
 
 ## 7. Gaps between repository and targets
 

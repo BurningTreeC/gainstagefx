@@ -270,6 +270,13 @@ pub struct PowerSpec {
     /// drives its side's grids through, and `feedback` lands on the gain
     /// stage's cathode. `None` everywhere but the SVT's. See `FollowerFront`.
     pub follower_front: Option<&'static FollowerFront>,
+    /// A front end of the other Ampeg kind in place of the long-tailed pair: a
+    /// gain stage with the loop on its cathode, then a floating paraphase
+    /// inverter whose second grid is fed from a divider between the two
+    /// plates. The output grids are capacitor coupled as everywhere else. With
+    /// it the `pi_*` fields are unused and `feedback` lands on the gain stage's
+    /// cathode. `None` everywhere but the VT-40's. See `ParaphaseFront`.
+    pub paraphase_front: Option<&'static ParaphaseFront>,
 }
 
 /// The Mark IIC+'s inverter and loop as both redraws have them (RP10 and
@@ -646,6 +653,92 @@ impl FollowerFront {
     };
 }
 
+/// The Ampeg VT-40's power amplifier ahead of its output valves, from Ampeg's
+/// schematic DWG 06500 revision B (4-71). See `docs/models/american_vt40.md`.
+///
+/// ```text
+/// in -- R21 10k -- V3b grid (the 12DW7's 12AX7 half)
+/// V3b: R22 220k plate from the 354 V rail, R23 3k3 cathode, then R24 33 to
+///   ground with the loop (R48 4k7 || C13 500 pF from the 8 ohm tap) between
+/// V3b plate -- C9 .01 -- V4 (12AU7) driven grid, R27 1M leak
+/// V4 plates R28 / R31 47k from 393 V, both cathodes on R26 1k5, unbypassed
+/// R29 820k from the driven plate and R30 1M from the other to a junction,
+///   C11 0.1 from there to the other grid, R25 1M leak
+/// each plate -- C12 / C10 .33 -- R32 / R33 100k to -65 V, R35 / R34 47k to
+///   its 7027A's grid
+/// ```
+///
+/// **A floating paraphase, with a common cathode.** The undriven unit is fed
+/// from the divider between the two plates: what it amplifies is the
+/// difference between them, so if its own output falls short its grid sees
+/// more of the driven side's and it catches up. The shared unbypassed 1.5 k
+/// couples the two the way a long tail would, a little.
+#[derive(Clone, Copy, Debug)]
+pub struct ParaphaseFront {
+    /// V3b's valve, R21, and V3b's plate supply: R22 from the preamplifier's
+    /// rail, which this stage shares, as a stiff voltage.
+    pub tube: TriodeSpec,
+    pub input_series: f64,
+    pub gain_rail: f64,
+    pub gain_plate: f64,
+    /// R23, and R24 below the loop's node.
+    pub gain_cathode: f64,
+    pub feedback_foot: f64,
+    /// C13, across `PowerSpec::feedback` (R48).
+    pub feedback_cap: f64,
+    /// C9.
+    pub interstage: f64,
+    pub inverter_tube: TriodeSpec,
+    /// R27 / R25, R28 / R31, R26.
+    pub inverter_leak: f64,
+    pub inverter_plate: f64,
+    pub inverter_cathode: f64,
+    /// R29 from the driven plate, R30 from the other, C11 to the other grid.
+    pub divider_driven: f64,
+    pub divider_other: f64,
+    pub divider_couple: f64,
+    /// The inverter's rail, the 393 V node: an upstream voltage behind R41,
+    /// with C16's section.
+    pub rail_upstream: f64,
+    pub rail_dropper: f64,
+    pub rail_reservoir: f64,
+}
+
+/// The VT-40's 393 V node as an open-circuit voltage behind R41's 3 k, fitted
+/// so that the node idles at the drawing's 393 V with this model's inverter and
+/// nothing else on it (`examples/vt40_op.rs`). The drawing's own chain above it
+/// does not add up, so the voltage, not the chain, is what is kept.
+pub const VT40_PI_OPEN: f64 = 413.8;
+/// The 594 V rail and the 589 V screen node, the same way: open-circuit
+/// voltages behind an ESTIMATED 100 ohm, and R43's 1 k plus that for the
+/// screens, fitted to the drawing's no-signal readings by `examples/vt40_op.rs`.
+pub const VT40_HT_OPEN: f64 = 602.4;
+pub const VT40_SCREEN_OPEN: f64 = 595.0;
+
+impl ParaphaseFront {
+    /// DWG 06500 B's, value for value.
+    pub const VT40: ParaphaseFront = ParaphaseFront {
+        tube: TriodeSpec::ECC83,
+        input_series: 10_000.0, // R21
+        gain_rail: 354.0,
+        gain_plate: 220_000.0, // R22
+        gain_cathode: 3_300.0, // R23
+        feedback_foot: 33.0,   // R24
+        feedback_cap: 500e-12, // C13
+        interstage: 0.01e-6,   // C9
+        inverter_tube: TriodeSpec::ECC82,
+        inverter_leak: 1_000_000.0, // R27, R25
+        inverter_plate: 47_000.0,   // R28, R31
+        inverter_cathode: 1_500.0,  // R26
+        divider_driven: 820_000.0,  // R29
+        divider_other: 1_000_000.0, // R30
+        divider_couple: 0.1e-6,     // C11
+        rail_upstream: VT40_PI_OPEN,
+        rail_dropper: 3_000.0, // R41
+        rail_reservoir: 40e-6, // C16
+    };
+}
+
 impl PowerSpec {
     /// 1981 2203 EL34 circuit with Hammond replacement-iron data. The matched
     /// power stage of the Brit 800 preamplifier (`circuits::brit800`), whose
@@ -709,6 +802,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The 1959 Super Lead's, as Unicord drew it in July 1970 (70-6-11 issue B):
@@ -796,6 +890,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The JCM800 2205's, from Marshall's "2205 STD Output Stage & PSU", issue 2
@@ -894,6 +989,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The AC30/6 Top Boost's, from the 1974 Dallas drawing Sc/V/1313, checked
@@ -987,6 +1083,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The DR103's, from Hiwatt's own output-stage (Issue 1, 1994) and power
@@ -1076,6 +1173,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The DR103's power stage as another preamplifier meets it: the Hiwatt's
@@ -1177,6 +1275,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The same amplifier with its rectifier switch on VALVE rather than SILICON
@@ -1265,6 +1364,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The Peavey EVH 5150's, read off page 5 of Peavey's drawing at 200 dpi.
@@ -1334,6 +1434,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The Mesa Boogie Mark IIC+'s.
@@ -1426,6 +1527,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The Fender Twin Reverb AB763's, off the manufacturer's schematic.
@@ -1573,6 +1675,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     pub const TWIN: PowerSpec = PowerSpec {
@@ -1662,6 +1765,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The 1992 Super Bass's, as Unicord drew it in July 1970 (70-13-11): the
@@ -1784,6 +1888,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The Laney Supergroup 100 Mk I's, from the traced drawing of a 1969 build
@@ -1880,6 +1985,7 @@ impl PowerSpec {
         screen_tap: 0.0,
         plate_resistor: 0.0,
         follower_front: None,
+        paraphase_front: None,
     };
 
     /// The Sunn Model T's, from Sunn's own drawing D-1029 revision A, ECN 441,
@@ -1990,6 +2096,7 @@ impl PowerSpec {
         // 47 ohm 5 W per valve.
         plate_resistor: 23.5,
         follower_front: None,
+        paraphase_front: None,
     };
     /// The Ampeg SVT's, from Ampeg's "SVT POWER AMP SCHEMATIC" D 591720
     /// revision H (1975): the matched power stage of the American SVT
@@ -2087,6 +2194,98 @@ impl PowerSpec {
         // 5.1 ohm 5 W a valve.
         plate_resistor: 5.1 / 3.0,
         follower_front: Some(&FollowerFront::SVT),
+        paraphase_front: None,
+    };
+    /// The Ampeg VT-40's, from its schematic DWG 06500 revision B (4-71) and
+    /// the service section's transformer data: the matched power stage of the
+    /// American VT-40 (`circuits::american_vt40`). See
+    /// `docs/models/american_vt40.md`.
+    ///
+    /// - **Two 7027As**, as the schematic draws them and the heater string and
+    ///   valve table carry them (the specification page says four). Fixed bias,
+    ///   -65 V through 100 k; 47 k grid stoppers; 470 ohm 2 W screen resistors
+    ///   from the 589 V node. The 7027A is the 6L6GC in another base with
+    ///   higher ratings, fitted to RCA's own 7027-A sheet
+    ///   (`PentodeSpec::T7027A`): it idles here near 43 mA, 25 W.
+    /// - Everything ahead of them is `ParaphaseFront::VT40`.
+    /// - **4.7 k with 500 pF across it from the 8 ohm tap** (R48, C13) to the
+    ///   gain stage's cathode foot.
+    /// - **The transformer is Ampeg's own figure**: 89500300, 6 k plate to
+    ///   plate into 2, 4 or 8 ohm, 300 ohm of primary copper (150 a half).
+    ///
+    /// ESTIMATED: the transformer's inductance, leakage and core, and the
+    /// supplies' source resistance (`VT40_HT_OPEN`, `VT40_SCREEN_OPEN`).
+    pub const VT40_7027A: PowerSpec = PowerSpec {
+        name: "American 7027A (Ampeg VT-40, DWG 06500 B, 1971)",
+        // No master: the channel volumes are the only level controls.
+        master: 1_000_000.0,
+        master_rest: 1.0,
+        // Unused: `paraphase_front` replaces the long-tailed pair. Stated as
+        // the front's own values where there is one.
+        pi_couple: 0.01e-6,
+        driver_volts: 0.0,
+        pi_stopper: 0.0,
+        pi_leak_upper: 1_000_000.0,
+        pi_leak_lower: 1_000_000.0,
+        pi_cathode: 1_500.0,
+        pi_tail: 0.0,
+        pi_tail_lower: 0.0,
+        pi_cross: 0.1e-6,
+        pi_plate_driven: 47_000.0,
+        pi_plate_other: 47_000.0,
+        pi_supply: 393.0,
+        pi_tube: TriodeSpec::ECC82,
+        pi_plate_cap: 0.0,
+        couple: 0.33e-6,        // C12, C10
+        grid_leak: 100_000.0,   // R32, R33
+        stopper: 47_000.0,      // R35, R34
+        screen_resistor: 470.0, // R36, R37
+        tubes_per_side: 1.0,
+        tube: PentodeSpec::T7027A,
+        bias: -65.0,
+        cathode_bias: 0.0,
+        cathode_bypass: 0.0,
+        plate_supply: VT40_HT_OPEN,
+        screen_supply: VT40_SCREEN_OPEN,
+        supply_resistance: 100.0,
+        rectifier: None,
+        // C18 (40 + 20 + 20 uF) in series with C19 (40 + 70 uF) on the 594 V
+        // rail; C17's 40 uF with C19 on the screens' node. The cans' sections
+        // share one middle node; taken apart here. ESTIMATED reading.
+        reservoir: 46e-6,
+        // R43, 1 k 10 W, from the rail, and the rail's own 100 ohm.
+        screen_resistance: 1_100.0,
+        screen_reservoir: 29e-6,
+        // 6 k plate to plate into the 8 ohm tap: Ampeg's 89500300.
+        ratio: 27.386_127_875_258_307,
+        // 300 ohm the whole primary, Ampeg's figure.
+        primary_resistance: 150.0,
+        // ESTIMATED, as the JTM45's.
+        primary_inductance: 20.0,
+        // APPROXIMATED: the Brit EL34's leakage scaled to the 8 ohm tap, so its
+        // top corner against the load is where that one's is.
+        leakage: 7.97e-3 / 425.0 * 2.0,
+        // ESTIMATED: sized to hold its 60 W (31 V peak at 8 ohm) at 50 Hz -- a
+        // combo played with a guitar and with a bass.
+        saturation_volts: 30.983_866_769_659_336,
+        saturation_hz: 50.0,
+        core_sharpness: 6.0,
+        speaker: 8.0,
+        feedback: 4_700.0, // R48, from the 8 ohm tap
+        presence_pot: 0.0,
+        presence_cap: 0.0,
+        presence_taper: Taper::Linear,
+        presence_on_tail: false,
+        cut_pot: 0.0,
+        cut_cap: 0.0,
+        cut_rest: 0.0,
+        driver: None,
+        feedback_network: None,
+        series_loop: None,
+        screen_tap: 0.0,
+        plate_resistor: 0.0,
+        follower_front: None,
+        paraphase_front: Some(&ParaphaseFront::VT40),
     };
 }
 
@@ -2330,6 +2529,40 @@ fn follower_front(net: &mut Netlist, f: &FollowerFront, master_node: &'static st
     "f_fb"
 }
 
+/// The VT-40's front end: V3b with the loop on its cathode foot, and the
+/// floating paraphase inverter, its plates left as `pi_p1` / `pi_p2` for the
+/// output valves' coupling. Returns the loop's node. See `ParaphaseFront`.
+///
+/// The driven unit's plate is side 2's. V3b inverts once more than a
+/// long-tailed pair's driven side does, so with the driven plate on side 1 the
+/// loop would come back in phase; the amplifier's secondary is wired for a
+/// negative loop, and this is that wiring.
+fn paraphase_front(
+    net: &mut Netlist,
+    f: &ParaphaseFront,
+    master_node: &'static str,
+) -> &'static str {
+    net.resistor(master_node, "f_g1", f.input_series) // R21
+        .supply("f_p1", f.gain_plate, f.gain_rail) // R22
+        .triode("f_p1", "f_g1", "f_k1", f.tube)
+        .resistor("f_k1", "f_fb", f.gain_cathode) // R23
+        .resistor("f_fb", "gnd", f.feedback_foot) // R24
+        .supply("f_c", f.rail_dropper, f.rail_upstream) // R41
+        .capacitor("f_c", "gnd", f.rail_reservoir) // C16
+        .capacitor("f_p1", "f_g2", f.interstage) // C9
+        .resistor("f_g2", "gnd", f.inverter_leak) // R27
+        .resistor("f_c", "pi_p2", f.inverter_plate) // R28
+        .triode("pi_p2", "f_g2", "f_kp", f.inverter_tube)
+        .resistor("f_kp", "gnd", f.inverter_cathode) // R26
+        .resistor("pi_p2", "f_d", f.divider_driven) // R29
+        .resistor("f_d", "pi_p1", f.divider_other) // R30
+        .capacitor("f_d", "f_g3", f.divider_couple) // C11
+        .resistor("f_g3", "gnd", f.inverter_leak) // R25
+        .resistor("f_c", "pi_p1", f.inverter_plate) // R31
+        .triode("pi_p1", "f_g3", "f_kp", f.inverter_tube);
+    "f_fb"
+}
+
 pub fn build(spec: &PowerSpec, source: f64) -> Result<Circuit, Fault> {
     tap(spec, source, "spk")
 }
@@ -2450,12 +2683,14 @@ fn assemble(
     } else {
         master_node
     };
-    // The inverter: a long-tailed pair everywhere but the SVT, whose front end
-    // stands in its place and in place of the output grids' coupling. Either
-    // way `tail` is where the loop comes back.
-    let tail = match spec.follower_front {
-        Some(front) => follower_front(&mut net, front, master_node),
-        None => long_tailed_pair(&mut net, spec, master_node, twin_supply),
+    // The inverter: a long-tailed pair everywhere but the two Ampegs. The SVT's
+    // front end stands in its place and in place of the output grids'
+    // coupling; the VT-40's in its place alone. Either way `tail` is where the
+    // loop comes back.
+    let tail = match (spec.follower_front, spec.paraphase_front) {
+        (Some(front), _) => follower_front(&mut net, front, master_node),
+        (None, Some(front)) => paraphase_front(&mut net, front, master_node),
+        (None, None) => long_tailed_pair(&mut net, spec, master_node, twin_supply),
     };
 
     // --- the supplies ------------------------------------------------------
@@ -2778,8 +3013,11 @@ fn assemble(
         .capacitor("fb_r", tail, l.shelf_cap); // C61
     } else if spec.feedback > 0.0 {
         net.resistor("spk", tail, spec.feedback);
-        // The SVT's C7 across R46.
+        // The SVT's C7 across R46, the VT-40's C13 across R48.
         if let Some(f) = spec.follower_front {
+            net.capacitor("spk", tail, f.feedback_cap);
+        }
+        if let Some(f) = spec.paraphase_front {
             net.capacitor("spk", tail, f.feedback_cap);
         }
         // Not every amplifier with a loop puts a presence control in it. The

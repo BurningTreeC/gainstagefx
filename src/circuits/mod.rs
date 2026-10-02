@@ -5,6 +5,7 @@ pub mod american312;
 pub mod american_800rb;
 pub mod american_ss800;
 pub mod american_svt;
+pub mod american_vt40;
 pub mod bass_driver;
 pub mod bigmuff;
 pub mod blue_chorus;

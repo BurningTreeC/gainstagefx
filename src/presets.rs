@@ -1444,6 +1444,29 @@ pub const PRESETS: &[Preset] = &[
         output_trim: -2.8,
         ..base("Amplifier", "American 800RB Clank")
     },
+    // --- American VT-40 -----------------------------------------------------------
+    // The early-70s 4x10 combo with the SVT's tone section in it, played as a
+    // guitar amplifier: channel one's volume well up, the midrange lifted at
+    // 800 Hz, Ultra Hi off, into its two 7027As. The 4x10 is a bass cabinet's,
+    // its horn off, standing in for the combo's own, which is not built.
+    Preset {
+        drive: 0.7,
+        circuit: Circuit::AmericanVt40,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        mid: 0.65,
+        treble: 0.6,
+        twin_bright: false,
+        cab_model: CabModel::American410,
+        cab_horn: 0.0,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -13.6 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: 0.8,
+        ..base("Amplifier", "American VT-40 Crunch")
+    },
     // The console microphone preamplifier: two cascaded transistor stages with
     // an input transformer. Clean at low drive, warming into subtle harmonic
     // saturation as the gain increases. No cabinet -- this is a preamplifier,

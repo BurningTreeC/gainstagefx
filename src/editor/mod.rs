@@ -1214,6 +1214,9 @@ pub fn describe(circuit: Circuit) -> String {
         Circuit::Brit45 => {
             "Modeled after a mid-60s British 45 W head: two ECC83 channels, a follower, two KT66s, a GZ34."
         }
+        Circuit::AmericanVt40 => {
+            "Modeled after an early-70s American 4x10 combo: a bass amp's tone section, active midrange, two 7027As."
+        }
         Circuit::ModernPurple => {
             "Modeled after a modern high-gain pedal: six op-amps, diode and LED clipping, active mid, Aggression."
         }

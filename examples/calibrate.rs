@@ -148,6 +148,8 @@ fn intent(gain: Gain) -> f64 {
         Gain::CleanBoost => 1.0,
         // A bass head, stated at the same instrument level as the guitar heads.
         Gain::AmericanSvt => 25.0,
+        // Its 4x10 sibling, the same: a guitar's level into channel one.
+        Gain::AmericanVt40 => 25.0,
         // A microphone amplifier, like the Console and the 73P: barely working
         // at nominal with the gain switched all the way up.
         Gain::British47 => 3.0,
@@ -308,6 +310,8 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // head: a bass's passive pickups are at a guitar's level, and the
         // plugin has one input calibration.
         Gain::AmericanSvt => Some(GUITAR_VOLTS),
+        // And a guitar into channel one's BRIGHT input of its 4x10 sibling.
+        Gain::AmericanVt40 => Some(GUITAR_VOLTS),
         Gain::American800RB => Some(GUITAR_VOLTS),
         // A pedal, fed a guitar like every pedal here.
         Gain::OrangePhase => Some(GUITAR_VOLTS),

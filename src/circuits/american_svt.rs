@@ -257,8 +257,9 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
 /// fixed parts at `CHANNEL_2_KNOBS`. `pot(a, wiper, b)` puts `R f(p)` between
 /// the wiper and `b`, so turned up each wiper is at `a`, its input end, which
 /// is where the sheet's arrows put clockwise; the log track's short end is
-/// `b`, the grounded end.
-fn james_stack(
+/// `b`, the grounded end. The VT-40's P.E.C. 6470000 is the same network
+/// (`circuits::american_vt40`).
+pub(crate) fn james_stack(
     net: &mut Netlist,
     input: &str,
     output: &str,

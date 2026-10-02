@@ -1,5 +1,41 @@
 # Implementation progress
 
+## 2026-10-02 — The American VT-40 (Ampeg VT-40) and the 7027A
+
+The owner: "Yes" -- commit the checkpoint and carry on with the VT-40 build.
+
+- **`circuits/american_vt40.rs`**: Ampeg's DWG 06500 B read part by part at 400 dpi with
+  the service section's parts lists, transformer data and A.C. voltage readings. The
+  SVT's James stack and 6K11-borne midrange loop (`american_svt::james_stack`, now
+  shared), V1b and V2b mixed on one plate, the reverb return network the dry signal
+  passes through (the tank is not built), V3a the 12DW7's 12AU7 half as a bootstrapped
+  follower (Tung-Sol's 12DW7 sheet settles which half is which). SENSITIVITY built at
+  its middle position, the one Ampeg's A.C. table was taken in; ULTRA HI on the Bright
+  switch; MIDRANGE SELECT on the mid switch at 300 Hz, 800 Hz and 3 kHz (the toroid
+  ESTIMATED from those published frequencies).
+- **`power::ParaphaseFront`** and **`PowerSpec::VT40_7027A`**: a new front -- V3b's gain
+  stage with the loop on its cathode foot, a floating paraphase 12AU7 with a shared
+  cathode -- into capacitor-coupled 7027As at -65 V; Ampeg's own 6 k / 300 ohm output
+  transformer figures. The driven inverter plate goes to side 2 so the loop is
+  negative. Other stages' netlists are unchanged (the new field is `None` there).
+- **`PentodeSpec::T7027A`** (`tools/tube_fit/fit_7027a.py`), fitted to RCA's 7027-A
+  sheet: the class A row within 2.5 %, gm and rp to 1 %, the fixed-bias rows within
+  13 %. `T6L6GC` (frozen by the baselines) runs cold against this sheet and barely
+  conducts at the VT-40's -65 V with 589 V screens.
+- **Against Ampeg's A.C. readings**, every stage from V1b's grid to V3a's cathode within
+  a decibel, V3b and the inverter within 1.5 dB; the output valves hot, the speaker
+  2.1 dB over the table (recorded, not tuned). The drawing's
+  supply chain (594 / 436 / 393 / 354 V across 3 k / 3 k / 2.2 k) does not add up; the
+  node voltages are kept.
+- Registered as the circuit **American VT-40** (`amp_ampeg_vt40`) and the power stage
+  **American 7027A** (`power_ampeg_7027a`), appended; the power-trim table gains a
+  column. One preset, *American VT-40 Crunch*, into the American 4x10 with its horn off,
+  levelled by `presetlevel` (+0.8). Tests in `tests/american_vt40.rs` (12);
+  `examples/vt40_op.rs` prints the comparison.
+- Calibration and power trim generated: only the new row and column moved. Kernel table
+  regenerated: 202 to 214, 200 unchanged, 13 new, one 27-unknown plan no longer
+  compiled (a speed cache: that plan now runs on the masked path).
+
 ## 2026-10-02 — The Brit 45 (Marshall JTM45) and the KT66
 
 The owner: "yes" -- commit the research and start the KT66 fit and the JTM45.

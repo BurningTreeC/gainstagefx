@@ -8,10 +8,10 @@ with a 12AX7 input per channel, the passive bass and treble of a packaged networ
 `amp_ampeg_v4b`, `power_ampeg_7027a`. Proposed display **American VT-40** and
 **American V-4B**, after the American SVT.
 
-Status: **RESEARCHED 2026-10-02, CLEARED** (question 2 on Ampeg's own factory
-drawings). The gap first recorded here -- the packaged tone network's positions -- is
-closed by Ampeg's own SVT drawing (below). Not built yet; the valves it needs are
-fitted or shown to be fits the solver has.
+Status: **VT-40 IMPLEMENTED 2026-10-02** (`circuits/american_vt40.rs`,
+`power::PowerSpec::VT40_7027A` with `power::ParaphaseFront`, `PentodeSpec::T7027A`), on
+Ampeg's own drawing and service data; results below. The V-4B is cleared on the same
+family of drawings and not built.
 
 ## Eight-question checkpoint
 
@@ -98,3 +98,136 @@ VT-40 only: V202 6CG7 and V203 12AX7, the reverb's driver and recovery
   schematic (DWG 06500, rev B, 4-71) draws two, V5-6, at 586 V, and its heater string
   and valve voltage table carry V5 and V6 only. The schematic is followed: two.
 
+
+## What was settled in building it (2026-10-02)
+
+Read part by part off DWG 06500 B at 400 dpi, with the service section's parts lists
+(12/71-196, -199), transformer data (-197) and A.C. voltage readings (-198):
+
+- **The input.** C1 .005 in series from J1, R1 220 k to ground: a 145 Hz corner against
+  the leak -- channel one is the BRIGHT input. V1a: R5 390 k, R4 6.8 k to ground (the
+  bias), R3 33 k with C2 10 uF and the **SENSITIVITY** rocker (a DP3T, the parts list):
+  High shorts R3, Middle puts R2 6.8 k across it, Low leaves R3 alone (drawn). **Built
+  at Middle**: with it V1a turns the A.C. table's 0.3 V at 400 Hz into 9.4 V against the
+  table's 10; Low gives 7.3 and High 15.6. The table, not the drawn position, decides.
+- **ULTRA HI** is a DP3T too: up bridges C102 120 pF across VOL 1's upper half; the
+  centre leaves C102 and C101 in series from the wiper back to the wiper, nothing;
+  down puts C101 .001 from the wiper to ground, a treble cut (drawn). The panel's Bright
+  switch offers up and centre; the cut is not built. APPROXIMATED.
+- **The mixer.** V1b and V2b share R6 68 k (cathodes R7 / R13 3.3 k, unbypassed): the two
+  inputs are mixed on one plate. Channel two's volume at zero, V2b is built with its
+  grid at ground, as the load it is.
+- **The 6K11 loop** is the SVT's exactly, R209 / C203 in the other order: unit 3 grid
+  pin 11, plate 2, cathode 3; unit 2 grid 7, plate 5, cathode 6 (R206 3.3 k
+  unbypassed); unit 1 grid 9, plate 10, cathode 4. R208 56 k from the follower to unit
+  3's cathode, R211 47 k / R210 6.8 k, C205 .1 off their junction. MIDRANGE SELECT
+  (SW5, DP3T): the wiper on L101's top, tap 1 to ground, tap 2 through C107 .15, tap 3
+  through C106 .033, R103 / R102 220 k from taps 2 and 3. **The toroid's sections**
+  (8910001) are ESTIMATED from the VT-40's WIDELY REPORTED "+/-20 dB at 300, 800 or
+  3,000 Hz" (dealer listings quoting Ampeg's specification) and the drawn capacitors:
+  0.853, 0.384 and 0.0938 H.
+- **The reverb send** is the treble wiper itself: V202's grid hangs on the P.E.C.'s
+  output beside C201, so the send loads the dry path only by a grid. **The return**:
+  V203's plate, C212 .005 into VR106's wiper (500 k linear REVERB), C105 .0022 off its
+  top, the bottom grounded, R104 150 k from C105's far side to ground -- and **R15
+  270 k from there to the mix**. The dry signal reaches the mix through C205 and R14
+  180 k and returns through R15 and the return network: a horizontal line across the
+  whole sheet (a fold or rule in the scan) runs through C205, C7 and R19 and looks like
+  a wire; it is not one, and R14's top reaches C205 round the top of the board.
+- **V3**, the 12DW7: Tung-Sol's sheet (1 July 1960) gives section 1 (pins 6 / 7 / 8)
+  the 12AX7's figures and section 2 (1 / 2 / 3) the 12AU7's. V3a (pins 1-3) is the
+  bootstrapped follower (C7 .01 in, R16 1 M to the R17 1 k / R18 47 k junction, cathode
+  224 V), the drawing's 4.7 mA asking for the 12AU7 half; V3b (6-8) the gain stage
+  (R22 220 k, R23 3.3 k, R24 33), 0.59 mA. C8 .47, R19 10 k, the EXT AMP jacks J3 / J4
+  on R20 100 k, R21 10 k to V3b's grid.
+- **The inverter is a floating paraphase with a shared cathode.** V3b's plate through C9
+  .01 to V4's pin 2 (R27 1 M); both cathodes on R26 1.5 k, unbypassed, to ground;
+  R29 820 k from the driven plate and R30 1 M from the other to a junction, C11 0.1 from
+  it to pin 7, R25 1 M leak. R28 / R31 47 k 1 W from the 393 V node.
+- **The output stage**: C12 / C10 .33, R32 / R33 100 k 5 % to -65 V, R35 / R34 47 k
+  stoppers, 7027A pin 4 screens through R36 / R37 470 2 W, pins 8 to ground. D7-D10
+  from the plates to the supply are protection and are not built. The loop: R48 4.7 k
+  with C13 500 pF from the ORANGE (8 ohm) secondary to the R23 / R24 junction. The
+  four 10" CTS speakers (8 ohm each) make 8 ohm on that tap; J5 moves them to the GRN
+  (4 ohm) tap with an extension in.
+- **Ampeg's output transformer data** (89500300): 6 k plate to plate, 2-4-8 ohm,
+  **300 ohm of primary copper**, 0.418 ohm on the 8 ohm secondary. DOCUMENTED; the
+  ratio and copper are built (the secondary's copper is not), the inductance, leakage
+  and core ESTIMATED. The power transformer: 594 V at 150 mA, 6.3 V at 4 A.
+- **The supply chain does not add up on the drawing.** 594 V -- R42 3 k -- 436 V -- R41
+  3 k -- 393 V -- R40 2.2 k -- 354 V, the resistors confirmed by the parts list (3 k
+  10 W wire-wound, 2.2 k). R41's 43 V is 14 mA, less than the 17.7 mA R40's 39 V passes
+  on from the same node, with the inverter's 7.4 mA still to come off it. The model keeps
+  the node voltages: the preamplifier hangs from a stiff 393 V through R40 (with the
+  valves not built as one 102 k draw, DERIVED from the drawing's plate voltages), which
+  puts its rail at 356.7 V against 354; the power stage's 393 V node is an open-circuit
+  voltage behind R41, fitted.
+- **The 7027A** got a fit of its own (`tools/tube_fit/fit_7027a.py`) from RCA's 7027-A
+  sheet (8-59), whose class A row is the 6L6GC's to the figure: that row within 2.5 %,
+  6.04 mA/V and 22.5 kohm, the three fixed-bias rows within 13 % (they disagree with
+  each other), the 300 V / 300 V curve held out within 10 % from -30 to -10 V. The
+  solver's `T6L6GC`, made for the amplifiers before this one and held by the frozen
+  baselines, gives 23 mA where the sheet gives 50 at 540 / 400 / -38 and barely conducts
+  at -65 V with 589 V of screen. **Two 7027As**, as the schematic draws them.
+
+## Results (`tests/american_vt40.rs`, `examples/vt40_op.rs`)
+
+No-signal DC, model against the drawing:
+
+| | model | drawing |
+|---|---|---|
+| preamp rail | 356.7 V | 354 |
+| V1a plate, cathode | 229.0 V, 2.23 V | 205, 2.2 |
+| V1b plate, cathode | 262.4 V, 2.29 V | 250, 2.9 |
+| 6K11 unit 3 plate, cathode | 231.3 V, 25.3 V | 209, 24 |
+| unit 2 plate, cathode | 162.1 V, 1.37 V | 194, 1.37 |
+| unit 1 (follower) cathode | 169.2 V | 196 |
+| V3a cathode | 221.9 V | 224 |
+| V3b plate, cathode | 225.4 V, 1.95 V | 223, 1.96 |
+| V4 plates, cathodes | 230.0 V, 10.40 V | 218, 10.5 |
+| 7027A grids, screens | -65.0 V, 587.7 V | -65, 589 |
+
+The 12AX7 plates run 5-12 % high: the solver's 12AX7 (Koren's) is a little under the
+published current, as everywhere in the catalogue. **Unit 2's plate is the drawing's
+inconsistency, not the model's**: the drawing's own 1.37 V on its 3.3 k cathode is
+0.42 mA, which through R207's 470 k puts the plate near 160 V -- where the model has it
+-- not at the 194 V printed; the follower's cathode follows. Each 7027A idles at 42 mA,
+25 W, under the 35 W rating; the drawing's 8 V between the rail and the plates is 53 mA
+through 150 ohm of half primary, so the real valves idle hot too.
+
+Ampeg's A.C. voltage readings, 0.3 V at 400 Hz in, treble, bass, midrange and reverb at
+the middle, channel one's volume set (0.049) to put the table's 0.5 V on V1b's grid:
+
+| pin | model | table |
+|---|---|---|
+| V1a plate (volume full) | 9.44 V | 10 |
+| V1b plate | 5.54 V | 5.8 |
+| 6K11 pin 11 / pin 3 / pin 2 | 0.477 / 0.470 / 0.102 V | .47 / .5 / .1 |
+| 6K11 pin 5 / pin 4 | 5.06 / 4.71 V | 5.2 / 5 |
+| V3 pin 2 / pin 3 | 0.324 / 0.302 V | .32 / .3 |
+| V3 pin 7 / pin 6 | 0.27 / 3.15 V | .28 / 3.5 |
+| V4 grids | 3.15 / 2.87 V | 3.4 / 3.4 |
+| V4 plates | 34.1 / 32.4 V | 38 / 38 |
+| V5 grid / plate | 32.4 / 314 V | 38 / 250 |
+| 8 ohm | 22.9 V | 17.9 (three-quarter power) |
+
+**Every stage from V1b's grid to V3a's cathode within a decibel of Ampeg's table** --
+the tone network, the 6K11's loop, the mix through the reverb return, the follower --
+**and V3b and the paraphase within 1.5 dB**, low, because the loop hands them back
+more of a hotter output. **The output valves are hotter than the table**: 314 V on a plate for
+32 V on its grid, where the table has 250 V for 38 V, so the loop gives the inverter a
+little less and the speaker ends 2.1 dB above the table's 17.9 V. The transformer is not
+the difference: the table's own plate-to-speaker ratio is Ampeg's 6 k into 8 ohm. Not
+settled; candidates are the 7027A's knee, which in Koren's law does not rise with the
+screen voltage as a real beam tetrode's does at 589 V, and the screen supply under
+signal. Recorded, not tuned. The midrange lifts 21-22 dB at 300 Hz, 800 Hz and 3 kHz
+(Ampeg: +/-20 dB). The same at 44.1 to 192 kHz; realtime-safe; one preset, *American
+VT-40 Crunch*.
+
+**Approximated, beyond the toroid and the output valves' gain**: the reverb tank (not
+built: its return network is, with REVERB at the middle and V203 as its plate
+impedance, so the dry path is the drawing's and the tank is silent); channel two's
+input stage; ULTRA HI's cut position; the stiff 393 V node; the transformer's
+inductance, leakage and core and the secondary's copper; the supply's source
+resistance (ESTIMATED, 100 ohm); D7-D10. The cabinet: the plugin has no 4x10 combo of
+its own; the preset uses the American 4x10 (a bass cabinet) with its horn off.

@@ -149,6 +149,7 @@ sources, where they disagree and what was approximated.
 | Brum 100 | A late-60s Midlands 100 W head, Marshall-like and not a Marshall: split V1 cathodes, a 270 pF / 56 k / 22 k stack and no master, into four EL34s on 600 V | Brum EL34 |
 | Oregon T | An early-70s American 150 W head: a tweed-style preamp with a master, into four 6550s in ultra-linear | Oregon 6550 |
 | American SVT | A 70s American 300 W bass head's first channel: a James stack, a midrange whose toroid resonance sits inside a two-stage feedback loop, its three-way midrange frequency and Bass Cut / Ultra Lo switches, and Ultra Hi on the Bright switch | American 6550 |
+| American VT-40 | An early-70s American 4x10 combo with that head's tone section inside it: a 12AX7 input (its Sensitivity switch built in the middle), the two inputs mixed on one plate, the same James stack and midrange loop in a single 6K11 compactron with its three-way midrange frequency (300 Hz, 800 Hz, 3 kHz), a bootstrapped follower, and Ultra Hi on the Bright switch | American 7027A |
 | Gold Drive | An overdrive whose germanium-clipped path is summed with two clean ones | none |
 | Brit Drive | Two op-amp stages into red LEDs, then a bass, middle and treble stack | none |
 | Clean Boost | One op-amp, one knob, up to 26 dB | none |
@@ -295,6 +296,7 @@ nearest setting to the 90 volts that player is reported to have used.
 | Oregon 6550 | Four 6550s in **ultra-linear** -- each side's screens on a tap of its own half of the primary -- behind a 12AX7 long-tailed pair, with 22 k of feedback from the 16 ohm tap and a reverse-log presence; the Oregon T's own |
 | American SS 800 | **Transistors**, 300 W: an op-amp driving a common-base stage and a VAS, three complementary pairs a side on unregulated +-85 V rails that sag under a held note, with current limiters; the American 800RB's own |
 | American 6550 | Six 6550s held by two **direct-coupled cathode followers** -- the output grids are driven into grid current with no coupling capacitor of their own to charge -- behind a 12BH7 gain stage a side and a cathodyne, on 660 V with the drivers on the screens' sagging rail; the American SVT's own |
+| American 7027A | Two 7027As, one a side, on 594 V with 589 V screens and -65 V of bias, behind a 12AX7 gain stage that carries the loop on its cathode and a **floating paraphase** inverter, whose second half is fed from a divider between the two plates; 4.7 k from the 8 ohm tap; the American VT-40's own |
 
 A power stage is a complete netlist: master, inverter, bias, grid coupling,
 output valves with their screen supplies, a centre-tapped transformer with a
@@ -413,6 +415,7 @@ hardware behind them at all.
 | Brum 100 | Laney Supergroup 100 Mk I, a 1969 build, from a traced drawing | [brum_100.md](docs/models/brum_100.md) |
 | Oregon T | Sunn Model T, drawing D-1029 A, 1973, BRITE channel | [oregon_t.md](docs/models/oregon_t.md) |
 | American SVT | Ampeg SVT (6550), "SVT PREAMP" D 591719 rev D, 1975, channel 1, NORMAL input | [american_svt.md](docs/models/american_svt.md) |
+| American VT-40 | Ampeg VT-40, schematic DWG 06500 rev B (4-71) with its 1971 service section's parts lists, transformer data and A.C. voltage readings, channel one, BRIGHT input | [american_vt40.md](docs/models/american_vt40.md) |
 | American 800RB | Gallien-Krueger 800RB, preamp 406-0045-C, 1991 | [american_800rb.md](docs/models/american_800rb.md) |
 | Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost, Bass Driver, Orange Phase, Blue Chorus, Modern 33, Modern Purple | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
@@ -466,6 +469,7 @@ hardware behind them at all.
 | Brum EL34 | Laney Supergroup 100 Mk I: four EL34 on 600 V, 3.3 k presence on the tail | [brum_100.md](docs/models/brum_100.md) |
 | Oregon 6550 | Sunn Model T: four 6550 ultra-linear (GE 6550-A fit), 22 k feedback from 16 ohm, chart-fitted supply | [oregon_t.md](docs/models/oregon_t.md) |
 | American 6550 | Ampeg SVT "SVT POWER AMP SCHEMATIC" D 591720 rev H: six 6550, 12BH7 (RCA fit) gain stages and followers, a cathodyne, 47 k from 4 ohm; idle at the calibration procedure's 24 mA a valve | [american_svt.md](docs/models/american_svt.md) |
+| American 7027A | Ampeg VT-40, DWG 06500 rev B: two 7027A (fitted to RCA's sheet), a 12AU7 floating paraphase, 4.7 k from 8 ohm, Ampeg's own 6 k output transformer | [american_vt40.md](docs/models/american_vt40.md) |
 | American SS 800 | Gallien-Krueger 800RB's 300 W amplifier, 406-0044-B, 1991: LF353, MJ15023 VAS, three MJ15022 / MJ15023 pairs on +-85 V; bias at GK's 15 mA a device | [american_800rb.md](docs/models/american_800rb.md) |
 
 **Cabinets, speakers and microphones** — dimensions from the manufacturers,

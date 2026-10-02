@@ -842,6 +842,33 @@ impl PentodeSpec {
         kvb: 45.9822,
         kg2: 7306.34,
     };
+    /// The 7027A, the 6L6GC in an octal base with two screen pins and higher
+    /// ratings, for the Ampeg VT-40, whose drawing runs it at 586 V on the
+    /// plate and 589 V on the screen.
+    ///
+    /// Fitted by `tools/tube_fit/fit_7027a.py` against RCA's "7027-A" (8-59):
+    /// its class A row (250 V on plate and screen, -14 V: 72 mA, 6000 umho,
+    /// 22.5 kohm -- the 6L6GC's to the figure) within 2.5 %, the transconductance
+    /// and plate resistance to 1 %, and its three fixed-bias push-pull rows'
+    /// no-signal currents (51, 47.5 and 50 mA a valve at 400 / 300 / -25,
+    /// 450 / 350 / -30 and 540 / 400 / -38) within 13 % -- the rows do not
+    /// agree with each other, the 450 V one drawing less than the 400 V one at
+    /// more drive. Held out, the sheet's curve at 300 V / 300 V: within 10 %
+    /// from -30 V to -10 V, 11 % low at zero bias, and half the curve's 9.5 mA
+    /// at -40 V, where `kp` (held at the 6L6GC's) shapes the cut-off.
+    ///
+    /// Not `T6L6GC`: that fit, made to a different pair of points for the
+    /// amplifiers before this one and held by the frozen baselines, gives 23 mA
+    /// where this sheet gives 50 at 540 / 400 / -38, and at the VT-40's -65 V
+    /// with 589 V of screen it barely conducts.
+    pub const T7027A: PentodeSpec = PentodeSpec {
+        mu: 8.7832,
+        ex: 1.35,
+        kg1: 729.777,
+        kp: 48.0,
+        kvb: 56.0481,
+        kg2: 7585.76,
+    };
     /// The EF86, the low-noise small pentode at the EMI REDD.47's input.
     ///
     /// Fitted by `tools/tube_fit/fit_ef86.py` against Philips's "EF86" of
