@@ -161,22 +161,123 @@ fn the_treadle_moves_the_peak_in_the_chain() {
     assert!(low > 10.0, "{low}");
 }
 
-/// Auto: picked softly, the follower leaves the treadle near the heel; picked
-/// hard, it reaches the knob's position at the toe. A tone at 1.6 kHz is far
-/// louder, relative to its input, played hard.
+/// Auto: the treadle rests where the knob is, and picking pushes it toward
+/// the toe. Picked softly it hardly leaves the heel; picked hard it reaches
+/// the toe. A tone at 1.6 kHz is far louder, relative to its input, played
+/// hard.
 #[test]
 fn auto_opens_the_wah_with_the_playing() {
     let mut chain = Chain::new(RATE);
     let auto = WahSettings {
         wah: Some(Build::CryBaby),
-        treadle: 1.0,
+        treadle: 0.0,
         auto: true,
         sense: 0.5,
     };
-    let soft = through_chain(&mut chain, auto, 0.005, 1_600.0, RATE) - 20.0 * 0.005f64.log10();
+    let soft = through_chain(&mut chain, auto, 0.002, 1_600.0, RATE) - 20.0 * 0.002f64.log10();
     let hard = through_chain(&mut chain, auto, 0.2, 1_600.0, RATE) - 20.0 * 0.2f64.log10();
     println!("1.6 kHz relative to its input: {soft:+.1} dB soft, {hard:+.1} dB hard");
     assert!(hard - soft > 10.0, "{soft} {hard}");
+}
+
+/// The fixture take, mono PCM24 at 48 kHz, at its recorded level: a guitar
+/// whose peaks reach the plugin's nominal level (-18.9 dBFS).
+fn take() -> Vec<f64> {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/01-260912_1044.wav"
+    );
+    let bytes = std::fs::read(path).expect("read the take");
+    assert!(&bytes[..4] == b"RIFF" && &bytes[8..12] == b"WAVE");
+    let mut at = 12;
+    let mut data = None;
+    while at + 8 <= bytes.len() {
+        let len = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        let body = &bytes[at + 8..(at + 8 + len).min(bytes.len())];
+        if &bytes[at..at + 4] == b"data" {
+            data = Some(body);
+        }
+        at += 8 + len + (len & 1);
+    }
+    data.expect("a data chunk")
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|b| ((b[0] as i32 | (b[1] as i32) << 8 | (b[2] as i32) << 16) << 8 >> 8) as f64)
+        .map(|v| v / 8_388_608.0)
+        .collect()
+}
+
+/// What "Auto does not work" was: on a real guitar at the nominal level the
+/// follower, set for a sine's reading, never got the treadle past half way --
+/// and that half was of the distance to the knob, 450 to 570 Hz at the
+/// defaults. Now, at the default Sense and the knob at the heel, the take's
+/// attacks open the wah to the toe and its decays let it fall back: it spends
+/// time near both ends rather than parked at either.
+#[test]
+fn auto_sweeps_the_whole_travel_on_a_guitar_at_the_nominal_level() {
+    let mut chain = Chain::new(RATE);
+    chain.apply(&Settings {
+        wah: WahSettings {
+            wah: Some(Build::CryBaby),
+            treadle: 0.0,
+            auto: true,
+            ..WahSettings::default()
+        },
+        gain: Gain::Clean,
+        drive: 0.3,
+        tone: Stack::Off,
+        oversampling: 1,
+        ..Settings::default()
+    });
+    chain.settle();
+    chain.reset();
+    chain.find_operating_point();
+    let mut positions: Vec<f64> = take()
+        .iter()
+        .map(|&x| {
+            chain.process(x);
+            chain.wah_position().unwrap()
+        })
+        .collect();
+    positions.sort_by(f64::total_cmp);
+    let at = |q: f64| positions[((positions.len() - 1) as f64 * q) as usize];
+    println!(
+        "treadle over the take: p10 {:.2}, median {:.2}, p90 {:.2}, max {:.2}",
+        at(0.1),
+        at(0.5),
+        at(0.9),
+        at(1.0)
+    );
+    assert!(at(1.0) > 0.95, "never reaches the toe: {}", at(1.0));
+    assert!(at(0.1) < 0.3, "never falls back: {}", at(0.1));
+    assert!((0.2..0.8).contains(&at(0.5)), "{}", at(0.5));
+}
+
+/// In Auto with nothing played, the treadle sits where the knob is -- as an
+/// auto-wah's Manual knob sets where its sweep starts -- not at the heel.
+#[test]
+fn auto_rests_at_the_knob() {
+    let mut chain = Chain::new(RATE);
+    chain.apply(&Settings {
+        wah: WahSettings {
+            wah: Some(Build::V847),
+            treadle: 0.4,
+            auto: true,
+            ..WahSettings::default()
+        },
+        gain: Gain::Clean,
+        tone: Stack::Off,
+        ..Settings::default()
+    });
+    chain.settle();
+    chain.reset();
+    chain.find_operating_point();
+    for _ in 0..4_800 {
+        chain.process(0.0);
+    }
+    let rest = chain.wah_position().unwrap();
+    assert!((rest - 0.4).abs() < 1e-6, "{rest}");
 }
 
 /// The wah at every rate, its treadle swept at audio rate in Auto, finite and

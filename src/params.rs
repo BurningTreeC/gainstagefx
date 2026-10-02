@@ -1606,8 +1606,9 @@ pub struct GainStageParams {
     #[id = "cab_horn"]
     pub cab_horn: FloatParam,
     /// The wah ahead of the pedal, its treadle (0 heel, 1 toe: automate it,
-    /// or link an expression pedal's controller to it), what moves it, and
-    /// how hard Auto has to be played for full travel. Appended 2026-10-02;
+    /// or link an expression pedal's controller to it; in Auto, where it
+    /// rests), what moves it, and how hard Auto has to be played for full
+    /// travel. Appended 2026-10-02;
     /// `presets::migrate` gives an older preset no wah.
     #[id = "wah"]
     pub wah: EnumParam<WahModel>,

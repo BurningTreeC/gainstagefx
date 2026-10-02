@@ -110,11 +110,12 @@ famous interaction, and is not modelled -- the input's loading is).
 **In the chain.** A wah is fed a guitar's level, like a pedal, and hands on at what
 follows it. The treadle glides with a 20 ms one-pole at the oversampled rate, and the
 pot's two halves are set with `Simulation::set_realtime_value` whenever it moves. Auto's
-follower is 5 ms attack, 150 ms release on the input at the host rate; full travel at
-the follower's reading of a -18 dBFS sine (about 0.08) with Sense in the middle, ten
-times either way across the knob. Realtime-safe and allocation-free at every rate, the
-treadle swept by the follower. Two presets use one: *Plexi, Cocked Wah* (the Black
-Wah at 60 %, Manual) and *Chime, Auto Wah* (the Chrome Wah in Auto on the AC30), the
+follower is 5 ms attack, 150 ms release on the input at the host rate. In Auto the
+treadle rests where the knob is and the follower pushes it toward the toe; full travel,
+with Sense in the middle, at a quarter of the nominal level (0.032), ten times either
+way across the knob. Realtime-safe and allocation-free at every rate, the treadle swept
+by the follower. Two presets use one: *Plexi, Cocked Wah* (the Black Wah at 60 %,
+Manual) and *Chime, Auto Wah* (the Chrome Wah in Auto on the AC30, resting at 10 %), the
 second trimmed +14.4 dB, the wah's loss below its peak passing straight through a
 clean amplifier.
 
@@ -127,8 +128,9 @@ The plugin has no pedal input, so the treadle is a **parameter**:
   in REAPER an expression pedal's MIDI CC is linked to it with MIDI learn (or
   parameter modulation) and plays it live, or it is drawn as automation.
 - **Mode** (`wah_mode`): **Manual** -- the treadle is where the parameter is; **Auto** --
-  an envelope follower on the input moves it from the heel toward the parameter's
-  position as the player picks harder, an auto-wah. Its attack and release (a few
+  the treadle rests where the parameter is and an envelope follower on the input pushes
+  it toward the toe as the player picks harder, an auto-wah (the parameter doing what
+  an auto-wah's Manual knob does; see the correction below). Its attack and release (a few
   milliseconds, some hundred and fifty) are a choice, not hardware: ESTIMATED and
   labelled. A fixed, "cocked" wah is Manual with the treadle left where it is.
 - **Sensitivity** (`wah_sense`), for Auto: how much input reaches full travel.
@@ -138,3 +140,25 @@ The plugin has no pedal input, so the treadle is a **parameter**:
   place in the one slot. Appended parameters, `migrate()` giving Off and the middle.
 
 Plugin-internal MIDI (a CC mapped without the host) can come later.
+
+## Correction, 2026-10-02: Auto barely moved
+
+Reported by the owner the same day: "The wah 'auto' mode seems not to work". Two faults,
+both in the control design rather than the circuit:
+
+- **Sense was calibrated on a sine.** Full travel at the middle of Sense was set at the
+  follower's reading of a sine at the nominal -18 dBFS, 0.08. A guitar never reads that:
+  the fixture take, whose peaks reach -18.9 dBFS, gives 0.031 at its 90th percentile
+  and 0.039 at its loudest, so the treadle never passed half its travel. Full travel is
+  now a quarter of the nominal level, 0.032 -- the take's attacks.
+- **Auto opened from the heel only as far as the knob.** At the knob's default middle
+  that halved what was left, 450 to 570 Hz in all; with the knob at the heel it did
+  nothing. The knob is now where the treadle rests, and the follower pushes it toward
+  the toe, as an auto-wah's Manual knob sets where its sweep starts.
+
+On the take, at the default Sense with the knob at the heel, the treadle now spends a
+tenth of the time below 0.01 and a tenth above 0.95, its median 0.43
+(`auto_sweeps_the_whole_travel_on_a_guitar_at_the_nominal_level`). The test that passed
+before drove a 0.2 sine, ten times a guitar's follower reading, which is how it missed
+this. v0.42.0 shipped with the old behaviour; the *Chime, Auto Wah* preset's knob moved
+from 0.85 (the old top of its sweep) to 0.1 (the new resting point), its level unchanged.

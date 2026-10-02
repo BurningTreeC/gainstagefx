@@ -706,8 +706,8 @@ fn input(cx: &mut Context) {
     };
 
     // The wah, ahead of the pedal: which one, its treadle -- the knob to
-    // automate, or to link an expression pedal's controller to -- and in Auto
-    // how hard it has to be played to reach the treadle's position.
+    // automate, or to link an expression pedal's controller to; in Auto, where
+    // it rests -- and in Auto how hard it has to be played to open it.
     label(cx, "wah", body_x() + 30.0, top + 138.0, 9.5, 76.0, 0x7e8a96);
     selector(
         cx,

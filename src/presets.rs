@@ -1129,13 +1129,13 @@ pub const PRESETS: &[Preset] = &[
         ..base("Amplifier", "Chime Edge")
     },
     // The chrome wah in front of the AC30 on the edge of breaking up, in
-    // Auto: the follower opens it as the strings are hit, an envelope filter
-    // with the Vox's own circuit.
+    // Auto: resting near the heel, the follower opens it toward the toe as
+    // the strings are hit, an envelope filter with the Vox's own circuit.
     Preset {
         drive: 0.5,
         circuit: Circuit::AC30,
         wah: WahModel::ChromeWah,
-        wah_treadle: 0.85,
+        wah_treadle: 0.1,
         wah_mode: WahMode::Auto,
         wah_sense: 0.5,
         tone: ToneStack::Off,

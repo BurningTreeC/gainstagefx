@@ -1,5 +1,28 @@
 # Implementation progress
 
+## 2026-10-02 — The wah's Auto, and CI's editor smoke test
+
+The owner: "The wah 'auto' mode seems not to work", then "Also fix the failing CI".
+
+- **Auto barely moved.** Sense's middle wanted the follower reading of a -18 dBFS
+  sine (0.08) for full travel; the fixture take, peaking at -18.9 dBFS, never reads
+  more than 0.039, so the treadle never passed half way -- and Auto opened only from
+  the heel to the knob, 450 to 570 Hz at the defaults, nothing with the knob at the
+  heel. Now full travel is a quarter of the nominal level (0.032, the take's attacks)
+  and the knob is where the treadle rests, the follower pushing it toward the toe (an
+  auto-wah's Manual knob). On the take the treadle now sweeps 0.01 to 0.95 between its
+  10th and 90th percentiles. New tests drive the take itself and check Auto rests at
+  the knob; `Chain::wah_position` reads the treadle. *Chime, Auto Wah* rests at 0.1
+  (was 0.85, the old top), its level unchanged. `docs/models/wahs.md` has the
+  correction.
+- `WahSettings` had been inserted between `PedalSettings`' doc comment and its struct,
+  taking the pedal's doc; moved.
+- **CI**: the Linux CLAP editor smoke test pins the panel's default size, which the
+  wah's row grew from 780 x 306 to 780 x 360 (1170 x 540 at the fixed 1.5).
+  `tools/linux_gui_smoke.py` updated; its note of the all-open size, already stale
+  (968), now 1050. The runs since the horn and wah push had all been cancelled by the
+  next push before reaching that step, until the version bump's.
+
 ## 2026-10-02 — MIT OR Apache-2.0
 
 The owner, on hearing that Steinberg's VST3 SDK is MIT now: "Change to the most

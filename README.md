@@ -75,8 +75,10 @@ two halves moved at audio rate. There is no pedal input on a plugin, so the trea
 is a parameter: **Manual** puts it where the Treadle knob is -- automate it, or link
 an expression pedal's MIDI controller to it in the host (REAPER's MIDI learn or
 parameter modulation) and play it live; leave it still for a cocked wah. **Auto**
-moves it from the heel toward the knob's position as the strings are hit, an
-envelope filter, with **Sense** for how hard that takes. Off removes it. A wah cuts
+leaves it resting where the Treadle knob is and pushes it toward the toe as the
+strings are hit, an envelope filter -- the knob doing what an auto-wah's Manual
+knob does -- with **Sense** for how hard that takes: at its middle, a guitar whose
+peaks reach the input meter's zero opens it fully on a firm pick. Off removes it. A wah cuts
 a guitar's fundamentals well below its peak, as ElectroSmash's curves show, so on a
 clean amplifier it is quieter than without it; the two presets that use one are
 trimmed for that.

@@ -2206,18 +2206,14 @@ impl Pedal {
     }
 }
 
-/// The pedal and its knobs. Level's middle is the pedal's calibrated resting
-/// position, exactly as the Master knob's is. See `Chain::master_position`.
-///
-/// `tone` carries as many as the pedal has, in the order its panel has them;
-/// entries past that are ignored. See `PEDAL_TONES`.
 /// The wah ahead of the pedal: which one, if any, where its treadle is, and
 /// whether an envelope follower moves it.
 ///
 /// Manual puts the pot where `treadle` says -- a host-automated lane, or an
-/// expression pedal's controller linked to the parameter. Auto moves it from
-/// the heel toward `treadle` as the player picks harder, an auto-wah, with
-/// `sense` saying how hard full travel takes. See `docs/models/wahs.md`.
+/// expression pedal's controller linked to the parameter. Auto leaves it
+/// resting at `treadle` and pushes it toward the toe as the player picks
+/// harder, as an auto-wah's Manual knob sets where its sweep starts; `sense`
+/// says how hard full travel takes. See `docs/models/wahs.md`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WahSettings {
     pub wah: Option<wah::Build>,
@@ -2237,6 +2233,11 @@ impl Default for WahSettings {
     }
 }
 
+/// The pedal and its knobs. Level's middle is the pedal's calibrated resting
+/// position, exactly as the Master knob's is. See `Chain::master_position`.
+///
+/// `tone` carries as many as the pedal has, in the order its panel has them;
+/// entries past that are ignored. See `PEDAL_TONES`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PedalSettings {
     pub pedal: Pedal,
@@ -3761,11 +3762,17 @@ impl WahTap<'_> {
         };
         *self.envelope += k * (level - *self.envelope);
         if self.auto {
-            // Full travel at the follower's reading of a sine at the nominal
-            // -18 dBFS (some 0.08) with Sense in the middle; ten times quieter
-            // with it up, ten times louder with it down.
-            let full = 0.08 * 10f64.powf(-2.0 * (self.sense - 0.5));
-            self.treadle * (*self.envelope / full).min(1.0)
+            // Full travel, with Sense in the middle, at a quarter of the
+            // nominal level: what this follower reads on the attacks of a
+            // guitar whose peaks reach it. Measured on the fixture take, which
+            // peaks at -18.9 dBFS: its follower reads 0.031 at the 90th
+            // percentile and 0.036 at the 99th (`tests/wah.rs`). Ten times
+            // quieter with Sense up, ten times louder with it down. This was
+            // first set from a sine's reading at the nominal level, 0.08, which
+            // a guitar never reaches: the wah barely moved.
+            let full =
+                0.25 * 10f64.powf(NOMINAL_DBFS / 20.0) * 10f64.powf(-2.0 * (self.sense - 0.5));
+            self.treadle + (1.0 - self.treadle) * (*self.envelope / full).min(1.0)
         } else {
             self.treadle
         }
@@ -5635,14 +5642,20 @@ impl Chain {
     }
 
     /// The selected wah's pot put where its treadle rests: the knob's place,
-    /// or in Auto the heel, where an envelope at rest leaves it.
+    /// in Auto as in Manual, the follower at rest adding nothing to it.
     fn place_wah_treadle(&mut self) {
-        self.wah_position = if self.wah_auto { 0.0 } else { self.wah_treadle };
+        self.wah_position = self.wah_treadle;
         if let Some(i) = self.wah {
             let (top, bottom) = wah::treadle_halves(self.wah_position);
             self.wahs[i].set_realtime_value(wah::TREADLE_TOP, top);
             self.wahs[i].set_realtime_value(wah::TREADLE_BOTTOM, bottom);
         }
+    }
+
+    /// Where the selected wah's treadle is now, 0 heel to 1 toe, after the
+    /// follower and the glide; `None` with no wah in.
+    pub fn wah_position(&self) -> Option<f64> {
+        self.wah.map(|_| self.wah_position)
     }
 
     pub fn set_pedal(&mut self, s: &PedalSettings) {
