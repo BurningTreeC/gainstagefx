@@ -1,5 +1,56 @@
 # Implementation progress
 
+## 2026-10-02 — The wahs
+
+The owner, on the control design: "To all questions yes"; then "continue with the horn
+and the wahs".
+
+- **`circuits/wah.rs`**: the Dunlop Cry Baby GCB-95 (rev F, buffered) and the Vox V847,
+  one netlist with two builds, from ElectroSmash's traces (no Dunlop drawing exists;
+  Thomas Organ's 1967 V846 drawing is still to be checked against). The treadle is the
+  pot's two halves as realtime resistors, set whenever it moves.
+- **Against ElectroSmash**: the Cry Baby's peak at 450 Hz, 746 Hz and 1586 Hz heel,
+  middle and toe (their 450 / 750 / 1.6 k -- the treadle's law was fitted to these,
+  so this holds the fit), 19 to 21 dB high; the Vox's 69.5 k input reproduced exactly
+  (-7.7 dB from a 100 k source); the sweep within 1 % at every rate.
+- **A slot of its own ahead of the pedal** (`WahSettings`, `Chain::set_wah`, `WahTap` in
+  the first half): fed a guitar, handing on at whatever follows. Manual (the Treadle
+  parameter, glided over 20 ms; automate it or link an expression pedal's controller)
+  or Auto (an envelope follower, 5 / 150 ms, Sense for how hard). Appended parameters
+  `wah`, `wah_treadle`, `wah_mode`, `wah_sense`; `migrate` gives an older preset no
+  wah. The panel's input section gained a row for it (178 px, the window 1050 with
+  everything open).
+- **Two presets**: *Plexi, Cocked Wah* and *Chime, Auto Wah*, levelled by
+  `presetlevel`; the second needs +14.4 dB, a wah below its peak taking a guitar's
+  fundamentals down by more than ten decibels (ElectroSmash's curves agree).
+- The kernel table regenerated: 184 kernels to 188, 180 of them unchanged; seven new
+  and three dropped, all of the churn
+  at the census's 5,000-solve floor out of 720 million replayed solves.
+- README: the Phase 90 and CE-2 name rows had been pasted a second time under
+  "Power stages", and a comma was missing in the pedal paragraph; both fixed.
+
+## 2026-10-02 — The 410RBH's horn
+
+The owner: "commit, then continue with the horn and the wahs".
+
+- **A horn branch** (`acoustics::cabinet::Horn`): the speaker terminal's voltage, read
+  from the loaded power stage (`PowerModel::speaker_terminal`), through the crossover's
+  third-order high-pass and the cabinet's attenuator at the oversampled rate; decimated
+  by its own decimator and padded by its own pad, so it stays in step with the cone's
+  stream, and carried across the pipelined hand-over beside it (now three values a
+  sample); radiated in the acoustic stage from the horn's mouth as a point source with a
+  cos^2 coverage, read by each capsule at its own distance and angle.
+- **The attenuator** is a new appended parameter, `cab_horn` ("Horn", the end of the
+  microphone row, live only for a cabinet with a horn); `migrate` gives an old preset
+  the middle. Its law is square in the knob (ESTIMATED).
+- **Against the cabinet**: a metre out the horn puts 6 kHz back level with the tens'
+  band (-44.9 dB against -46.4 at 1 kHz, the tens alone 40 dB down there); on a close
+  microphone it adds 3 dB; attenuated fully, the output is the hornless cabinet's to
+  the bit. Realtime-safe at every rate and oversampling; the pipelined test now includes
+  the 800RB's preset through it.
+- The 410RBH's own comment had kept the vents' first tuning ("near 40 Hz for GK's 31 Hz")
+  after the retune to 42 Hz; corrected.
+
 ## 2026-10-02 — The Orange Phase (MXR Phase 90), and a capacitor's initial charge
 
 The owner: "To all questions yes" -- build the 410RBH on estimates, the Phase 90 with

@@ -48,3 +48,4 @@ pub mod ts808;
 pub mod tube610;
 pub mod twin;
 pub mod valve;
+pub mod wah;

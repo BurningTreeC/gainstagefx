@@ -760,6 +760,46 @@ pub enum PedalModel {
     BlueChorus,
 }
 
+/// The wah ahead of the pedal slot. Append new ids only. See
+/// `docs/models/wahs.md`.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum WahModel {
+    #[id = "none"]
+    #[name = "Off"]
+    Off,
+    #[id = "wah_dunlop_gcb95"]
+    #[name = "Black Wah"]
+    BlackWah,
+    #[id = "wah_vox_v847"]
+    #[name = "Chrome Wah"]
+    ChromeWah,
+}
+
+impl WahModel {
+    pub const ALL: [Self; 3] = [Self::Off, Self::BlackWah, Self::ChromeWah];
+
+    pub fn voice(self) -> Option<crate::circuits::wah::Build> {
+        match self {
+            Self::Off => None,
+            Self::BlackWah => Some(crate::circuits::wah::Build::CryBaby),
+            Self::ChromeWah => Some(crate::circuits::wah::Build::V847),
+        }
+    }
+}
+
+/// What moves the wah's treadle: the Treadle parameter itself (Manual), or an
+/// envelope follower on the input reaching toward it (Auto). Append new ids
+/// only.
+#[derive(Enum, PartialEq, Eq, Clone, Copy, Debug)]
+pub enum WahMode {
+    #[id = "manual"]
+    #[name = "Manual"]
+    Manual,
+    #[id = "auto"]
+    #[name = "Auto"]
+    Auto,
+}
+
 impl PedalModel {
     pub const ALL: [Self; 17] = [
         Self::None,
@@ -1560,6 +1600,23 @@ pub struct GainStageParams {
     pub mic_b_invert: BoolParam,
     #[id = "mic_align"]
     pub mic_align: BoolParam,
+    /// A cabinet's horn attenuator, for a cabinet with a horn (the American
+    /// 4x10). Appended 2026-10-02; `presets::migrate` gives an older preset
+    /// the middle.
+    #[id = "cab_horn"]
+    pub cab_horn: FloatParam,
+    /// The wah ahead of the pedal, its treadle (0 heel, 1 toe: automate it,
+    /// or link an expression pedal's controller to it), what moves it, and
+    /// how hard Auto has to be played for full travel. Appended 2026-10-02;
+    /// `presets::migrate` gives an older preset no wah.
+    #[id = "wah"]
+    pub wah: EnumParam<WahModel>,
+    #[id = "wah_treadle"]
+    pub wah_treadle: FloatParam,
+    #[id = "wah_mode"]
+    pub wah_mode: EnumParam<WahMode>,
+    #[id = "wah_sense"]
+    pub wah_sense: FloatParam,
 
     // --- 6 Output --------------------------------------------------------
     /// How much of the processed signal is heard against the dry one.
@@ -1804,6 +1861,21 @@ impl Default for GainStageParams {
             mic_b_pan: pan("Mic B Pan"),
             mic_b_invert: BoolParam::new("Mic B Polarity Invert", false),
             mic_align: BoolParam::new("Mic Phase Align", false),
+            cab_horn: position("Horn", 0.5),
+            wah: EnumParam::new("Wah", WahModel::Off),
+            // Smoothed in the chain, at the oversampled rate, rather than here.
+            wah_treadle: FloatParam::new(
+                "Wah Treadle",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit(" %")
+            .with_value_to_string(Arc::new(|v| format!("{:.0}", v * 100.0)))
+            .with_string_to_value(Arc::new(|s| {
+                s.trim().parse::<f32>().ok().map(|v| v / 100.0)
+            })),
+            wah_mode: EnumParam::new("Wah Mode", WahMode::Manual),
+            wah_sense: position("Wah Sense", 0.5),
 
             mix: position("Mix", 1.0),
             dry_source: EnumParam::new("Dry From", DrySource::Input),

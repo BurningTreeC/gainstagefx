@@ -47,7 +47,7 @@ what is in it.
 
 | | | |
 |---|---|---|
-| **1 Input** | Trim, meter, noise reduction, pedal with its own knobs, named as its box names them | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
+| **1 Input** | Trim, meter, noise reduction, pedal with its own knobs, named as its box names them, and the wah ahead of it | The meter reads against the level the circuits were voiced at. Its zero is where the rest of the panel means what it says. |
 | **2 Circuit** | Topology or modelled circuit, clipping, amplifier, iron, power amp, mains; the blackface amplifiers' input jack, the bright switch (the JC-120's and the SVT's Ultra Hi too), and a circuit's own low and mid switches of two to four positions (the SVT's BASS and MIDRANGE SELECT, the German 76's low cut and "3 kHz") | What does the work. Clipping applies to the diode circuits, the amplifier choice to the preamplifier channels, iron to everything. Lists that do not apply grey out rather than vanish. |
 | **3 Drive** | Drive and master, named as the circuit names them (on a pedal, its drive and level), presence, and the Cali IIC+'s five-band graphic | All the way up is the sound the circuit is named for. Down from there only cleans up. |
 | **4 Tone** | Stack, bass, mid, treble; reverb, speed, intensity, chorus | A passive stack, so it only ever cuts. A modelled amplifier's own stack takes these knobs, and so do the Metal Zone's three bands; a pedal's single tone control (TONE, or the Rodent's FILTER) has a knob of its own beside them, as do the Metal Zone's swept middle and the Heavy Metal's Colour Mix pair. The second row is the blackface amplifiers' reverb and tremolo and the Jazz 120's chorus. |
@@ -66,6 +66,20 @@ so the louder side keeps both open. Below the soft knee it expands 2:1, with at 
 40 dB attenuation, a fast opening and a slow release. Switching it adds no latency.
 It precedes the pedal and amp, preserving their reverb and cabinet decays; it does
 not remove hum or hiss underneath a sustained note.
+
+**The wah** sits ahead of the pedal -- guitar, wah, pedal, circuit -- so that a wah
+and a drive can be used together. **Black Wah** is the Cry Baby GCB-95 with its input
+buffer, **Chrome Wah** the Vox V847 without one, whose 69.5 k input loads a pickup
+as the original does. Both are the whole circuit solved, the treadle being the pot's
+two halves moved at audio rate. There is no pedal input on a plugin, so the treadle
+is a parameter: **Manual** puts it where the Treadle knob is -- automate it, or link
+an expression pedal's MIDI controller to it in the host (REAPER's MIDI learn or
+parameter modulation) and play it live; leave it still for a cocked wah. **Auto**
+moves it from the heel toward the knob's position as the strings are hit, an
+envelope filter, with **Sense** for how hard that takes. Off removes it. A wah cuts
+a guitar's fundamentals well below its peak, as ElectroSmash's curves show, so on a
+clean amplifier it is quieter than without it; the two presets that use one are
+trimmed for that.
 
 ## The circuits
 
@@ -209,7 +223,7 @@ treble shelf), **Brit Drive** (two op-amp stages into red LEDs and a
 three-knob stack), **Clean Boost** (one op-amp and one knob, its gain: the
 level knob is greyed), **Bass Driver** (a bass preamp and DI: drive, presence,
 bass, mid, treble, blend and level -- seven knobs, five of them in the tone row --
-its two shift switches on the panel's low and mid switches when it is the circuit)
+its two shift switches on the panel's low and mid switches when it is the circuit),
 **Orange Phase** (a phaser whose oscillator is solved with the rest of it:
 Speed on the drive knob, the script / block switch on the tone knob, no level) and
 **Blue Chorus** (a bucket-brigade chorus: everything either side of the delay solved,
@@ -306,7 +320,10 @@ the American 8x10 -- eight tens in four sealed chambers of two, the American
 SVT's own box, whose standing waves are a chamber's while its sealed air is the
 whole cabinet's -- and the American 4x10, the American 800RB's own: four tens in a
 **vented** box, its two ports tuned to 42 Hz and radiating from the baffle, behind
-the cabinet's 18 dB/oct crossover (its horn is attenuated fully for now).
+the cabinet's 18 dB/oct crossover, with a **horn** above them for the treble the
+crossover takes from the tens. The Horn knob, at the end of the microphone row, is
+the cabinet's attenuator; a close microphone on a ten hears little of the horn, as
+in a room.
 
 Bypass there means *no box*, not no speaker: the driver still radiates, on an
 open baffle, and a microphone still picks it up, which is why it does not sound
@@ -410,9 +427,10 @@ hardware behind them at all.
 | Orange Phase | MXR Phase 90, script logo (1974-77), from ElectroSmash's trace, with the block logo's R28 switchable | [orange_phase.md](docs/models/orange_phase.md) |
 | Blue Chorus | Boss CE-2, from Boss's CE-2/CE-2B Service Notes, first edition, February 1987 | [blue_chorus.md](docs/models/blue_chorus.md) |
 
+| Black Wah | Dunlop Cry Baby GCB-95, the buffered board (rev F, 1991 on), from ElectroSmash's trace | [wahs.md](docs/models/wahs.md) |
+| Chrome Wah | Vox V847, from ElectroSmash's trace (Thomas Organ's 1967 V846 drawing still to be checked against) | [wahs.md](docs/models/wahs.md) |
+
 **Power stages**
-| Orange Phase | MXR Phase 90, script logo (1974-77), from ElectroSmash's trace, with the block logo's R28 switchable | [orange_phase.md](docs/models/orange_phase.md) |
-| Blue Chorus | Boss CE-2, from Boss's CE-2/CE-2B Service Notes, first edition, February 1987 | [blue_chorus.md](docs/models/blue_chorus.md) |
 
 | Panel | Modelled from | Log |
 |---|---|---|
@@ -452,7 +470,7 @@ published and estimated where they are not ([cabinets.md](docs/models/cabinets.m
 | Jazz Open 2x12 | Roland JC-120 combo | American Bass 10 | Eminence Legend B810, 32 ohm (the SVT 8x10's replacement ten) |
 | American Closed 4x12 | Peavey 412M, late 1980s | Cast Bass 10 | Gallien-Krueger P10/200, 32 ohm, Eminence-built (its 410RBH's ten; estimated past 32 ohm, 200 W, 43 Hz) |
 | American 8x10 | Ampeg SVT-810E, four sealed chambers of two | | |
-| American 4x10 | Gallien-Krueger 410RBH (RBH series, 1999 manual), vented, horn off | | |
+| American 4x10 | Gallien-Krueger 410RBH (RBH series, 1999 manual), vented, with its horn | | |
 | Oversized 4x12 | *generic* | | |
 | Combo / Stack (Legacy) | *generic* filters, kept for old sessions | | |
 

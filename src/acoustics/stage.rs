@@ -100,9 +100,19 @@ struct BreakupPath {
     far: bool,
 }
 
+/// The horn's path to one capsule: its delay and its gain, pascals for a
+/// volt at the horn's driver, for where the capsule is.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct HornPath {
+    delay: Ramped,
+    tap: DelayTap,
+    gain: Ramped,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct MicChannel {
     slot: MicSlot,
+    horn: HornPath,
     field: PressureField,
     front_panel: PressureField,
     breakup_paths: [BreakupPath; MAX_DRIVERS],
@@ -131,6 +141,7 @@ impl MicChannel {
     fn new() -> Self {
         Self {
             slot: MicSlot::Off,
+            horn: HornPath::default(),
             field: PressureField::default(),
             front_panel: PressureField::default(),
             breakup_paths: [BreakupPath::default(); MAX_DRIVERS],
@@ -202,6 +213,12 @@ pub struct AcousticStage {
     /// above where the power stage cares, and the series parts would cost
     /// every speaker-loaded stage the unknowns. See `CabinetProfile::crossover_hz`.
     crossover: (OnePole, Biquad),
+    /// The cabinet's horn, when it has one: its driver's signal (volts, the
+    /// crossover's high-pass and the attenuator already applied, by `Chain`)
+    /// through the band the horn passes, and the line every capsule reads it
+    /// back from at its own distance.
+    horn_band: (Biquad, Biquad),
+    horn_line: DelayLine,
     voicing_norm: f64,
     calibration: f64,
     mics: [MicChannel; 2],
@@ -246,6 +263,8 @@ impl AcousticStage {
             rear_integrate: [OnePole::open(); RADIATORS],
             voicing: [Biquad::IDENTITY; 4],
             crossover: (OnePole::open(), Biquad::IDENTITY),
+            horn_band: (Biquad::IDENTITY, Biquad::IDENTITY),
+            horn_line: DelayLine::new(),
             voicing_norm: 1.0,
             calibration: 1.0,
             mics: [MicChannel::new(), MicChannel::new()],
@@ -352,6 +371,9 @@ impl AcousticStage {
         }
         self.crossover.0.reset();
         self.crossover.1.reset();
+        self.horn_band.0.reset();
+        self.horn_band.1.reset();
+        self.horn_line.reset();
         for mic in &mut self.mics {
             mic.reset();
         }
@@ -439,6 +461,13 @@ impl AcousticStage {
         for integrator in &mut self.rear_integrate {
             integrator.set_leaky_integrator(rate, 0.5, 1.0 / PI);
         }
+        self.horn_band = match self.cabinet.and_then(|cab| cab.horn) {
+            Some(horn) => (
+                Biquad::highpass(rate, horn.low_hz, std::f64::consts::FRAC_1_SQRT_2),
+                Biquad::lowpass(rate, horn.high_hz, std::f64::consts::FRAC_1_SQRT_2),
+            ),
+            None => (Biquad::IDENTITY, Biquad::IDENTITY),
+        };
         self.crossover = match self.cabinet.and_then(|cab| cab.crossover_hz) {
             Some(hz) => {
                 let mut pole = OnePole::open();
@@ -529,6 +558,26 @@ impl AcousticStage {
             let tilt = self.placements[m].angle.to_radians();
             let axis = [-outward * tilt.sin(), 0.0, -tilt.cos()];
             let base = if self.align { minima[m] } else { common };
+            // The horn: a point source at its mouth, on the baffle, falling
+            // off its axis as cos^coverage; pascals for a volt at its driver
+            // from its 2.83 V sensitivity, spread as 1 / r.
+            let (horn_gain, horn_delay) = match self.cabinet.and_then(|cab| cab.horn) {
+                Some(horn) => {
+                    let to = [at[0] - horn.position.0, at[1] - horn.position.1, at[2]];
+                    let r = (to[0] * to[0] + to[1] * to[1] + to[2] * to[2])
+                        .sqrt()
+                        .max(0.01);
+                    let facing = (to[2] / r).max(0.0).powf(horn.coverage);
+                    let per_volt = 20e-6 * 10f64.powf(horn.sensitivity_db / 20.0) / 2.83;
+                    (
+                        per_volt * facing / r,
+                        (r - base).max(0.0) / SPEED_OF_SOUND * self.rate,
+                    )
+                }
+                None => (0.0, 0.0),
+            };
+            mic.horn.gain.aim(horn_gain, snap);
+            mic.horn.delay.aim(horn_delay, snap);
             let mut longest = minima[m];
             mic.driver_count = drivers.len();
             for (i, &(x, y)) in drivers.iter().enumerate() {
@@ -681,6 +730,13 @@ impl AcousticStage {
     /// Input is the solved cone acceleration in m/s², shared by equal drivers.
     /// Unmeasured family-based saturation has deliberately been removed.
     pub fn pressure(&mut self, acceleration: f64) -> [f64; 2] {
+        self.pressure_with_horn(acceleration, 0.0)
+    }
+
+    /// The same, with the horn's driver at `horn` volts as well.
+    pub fn pressure_with_horn(&mut self, acceleration: f64, horn: f64) -> [f64; 2] {
+        let horn = self.horn_band.1.process(self.horn_band.0.process(horn));
+        self.horn_line.write(horn);
         let acceleration = self
             .crossover
             .1
@@ -759,6 +815,14 @@ impl AcousticStage {
                     + path.velocity.now * self.rear_velocity[i].read_tap(&tap);
                 p += path.diffraction.process(q);
             }
+            if ramping {
+                mic.horn.delay.advance(last);
+                mic.horn.gain.advance(last);
+            }
+            if mic.horn.gain.now != 0.0 || mic.horn.gain.target != 0.0 {
+                let tap = mic.horn.tap.follow(mic.horn.delay.now);
+                p += mic.horn.gain.now * self.horn_line.read_tap(&tap);
+            }
             p = mic.off_axis.process(mic.baffle.process(p));
             for eq in &mut mic.eq {
                 p = eq.process(p);
@@ -768,7 +832,12 @@ impl AcousticStage {
     }
 
     pub fn process(&mut self, acceleration: f64) -> f64 {
-        let [a, b] = self.pressure(acceleration);
+        self.process_with_horn(acceleration, 0.0)
+    }
+
+    /// `process`, with the horn's driver at `horn` volts as well.
+    pub fn process_with_horn(&mut self, acceleration: f64, horn: f64) -> f64 {
+        let [a, b] = self.pressure_with_horn(acceleration, horn);
         let b = if self.invert { -b } else { b };
         self.calibration
             * match (
@@ -783,7 +852,12 @@ impl AcousticStage {
     }
 
     pub fn process_stereo(&mut self, acceleration: f64) -> (f64, f64) {
-        let [a, b] = self.pressure(acceleration);
+        self.process_stereo_with_horn(acceleration, 0.0)
+    }
+
+    /// `process_stereo`, with the horn's driver at `horn` volts as well.
+    pub fn process_stereo_with_horn(&mut self, acceleration: f64, horn: f64) -> (f64, f64) {
+        let [a, b] = self.pressure_with_horn(acceleration, horn);
         let b = if self.invert { -b } else { b };
         let (la, ra) = pan_gains(self.pan[0].now);
         let (lb, rb) = pan_gains(self.pan[1].now);

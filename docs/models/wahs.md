@@ -4,12 +4,15 @@ Engineering identity: the **Dunlop Cry Baby GCB-95** (1982 on; the buffered boar
 rev F, mid-1991) and the **Vox V847** (the reissue of Thomas Organ's V846 of 1967): a
 transistor common-emitter stage with an LC network in its feedback, tuned by the
 treadle's 100 k pot, into an emitter follower. Proposed stable ids `wah_dunlop_gcb95` and
-`wah_vox_v847` (a new `wah` parameter, see below); proposed display **Black Wah** and
+`wah_vox_v847` (a new `wah` parameter, see below); display **Black Wah** and
 **Chrome Wah**.
 
-Status: **CHECKPOINT 2026-10-02 -- the Vox clears on Thomas Organ's own drawing once it
-is in hand; the Cry Baby on traces, as there is no Dunlop drawing. Not built.** The
-owner approved the control design (2026-10-02, "To all questions yes").
+Status: **IMPLEMENTED 2026-10-02** (`circuits/wah.rs`, the `wah` slot ahead of the
+pedal), both from ElectroSmash's traces. The owner approved the control design
+(2026-10-02, "To all questions yes"). **Owed:** Thomas Organ's 1967 V846 drawing, to
+check the Vox against when it is in `docs/schematics/vox_v846/` (the folder is empty
+as of this entry). ElectroSmash's V847 drawing was read part by part against the
+netlist and agrees with it, so the drawing is a cross-check, not a missing source.
 
 ## Eight-question checkpoint
 
@@ -21,7 +24,8 @@ owner approved the control design (2026-10-02, "To all questions yes").
 2. **Original schematic found?**
    - **Vox: yes, to be obtained.** Thomas Organ's V846 schematic of 1967 is listed on
      elektrotanya ("VOX V846 WAH 1967 SCH", free with an account) -- the factory
-     drawing of the circuit the V847 reissues. Not yet in `docs/schematics/`.
+     drawing of the circuit the V847 reissues. Not yet in `docs/schematics/`. Built
+     meanwhile from ElectroSmash's trace of a V847, the Cry Baby's standing.
    - **Cry Baby: no.** Dunlop has never published one; the schematic that circulates
      carries designators that do not match the board, and a corrected trace from a real
      PCB is on TDPRI ("Crybaby GCB-95 schematic with correct component designators").
@@ -64,6 +68,55 @@ Vox V847: the same without the buffer; R1 68 k is the input; R4 510, R8 100 k.
      750 Hz middle, 1.6 kHz toe), ESTIMATED.
    - **The true-bypass switch** under the toe is not built: off is the wah removed.
 8. **Why.** Asked for by the owner, with the question of how to play one.
+
+## What was built, and against what (2026-10-02)
+
+Both circuits are one netlist with two builds (`wah::Build`): the Cry Baby with its
+buffer (the MPSA13 built as the Darlington pair it is), R4 390 and R8 82 k; the Vox
+without, R4 510 and R8 100 k. ElectroSmash's two drawings were read part by part:
+the tank node is L1, R7, C3 and R8; the loop is L1's and R7's other ends, R2 and C2;
+the output is C5's far side, VR1's top, which is why the treadle moves the peak and not
+the level. `tests/wah.rs`, `examples/wah_op.rs`:
+
+| | Cry Baby | Vox | ElectroSmash |
+|---|---|---|---|
+| peak, heel down | 450 Hz, +21.3 dB | 495 Hz, +19.1 dB | ~450 Hz |
+| peak, treadle in the middle | 746 Hz, +19.6 dB | 809 Hz, +17.4 dB | ~750 Hz |
+| peak, toe down | 1586 Hz, +18.8 dB | 1658 Hz, +16.7 dB | ~1.6 kHz |
+| 100 k source against 1 k, at 3 kHz | -0.9 dB | **-7.7 dB** | Vox input 69.5 k: -7.7 dB |
+| below the peak (80 to 100 Hz) | about -13 dB | about -13 dB | about -12 dB (their curves) |
+
+The sweep holds within 1 % at 44.1, 88.2, 96 and 192 kHz against 48. ElectroSmash's
+own response plots show the same shape: peaks of 18 to 22 dB, a guitar's fundamentals
+some 12 dB down below them, the highs falling past the peak.
+
+**Fitted, and what that means.** The treadle's law -- a logarithmic track of span 10,
+travelled from 92 % of its rotation at the heel to 9.5 % at the toe -- was fitted so the
+Cry Baby's three peaks land on ElectroSmash's three figures. That holds the fit; it
+does not test it. The plain audio track put the middle at 1.1 kHz. The Vox takes the
+same law (its own pot's taper is unpublished too), APPROXIMATED, and so lands a little
+higher; ElectroSmash's Vox curves stop near 1.15 kHz at their highest step, but their
+steps are arbitrary pot positions and say nothing about the treadle's travel.
+
+**Approximated, beyond the treadle:** the inductor is linear, 500 mH with a 15 ohm
+winding (ESTIMATED; a Fasel's saturation on a very hot input is not modelled -- the
+saturating-core idea above was not needed for the published figures and is left for
+when a measurement asks for it); the MPSA18 at hFE 800, the middle of its sheet, and
+the MPSA13 as two of them (ESTIMATED); the 9 V supply ideal (the zener and the
+filter capacitors set its DC, which is all the circuit sees); the guitar a 10 k
+resistive source (a pickup's inductance against the Vox's 69.5 k input is the
+famous interaction, and is not modelled -- the input's loading is).
+
+**In the chain.** A wah is fed a guitar's level, like a pedal, and hands on at what
+follows it. The treadle glides with a 20 ms one-pole at the oversampled rate, and the
+pot's two halves are set with `Simulation::set_realtime_value` whenever it moves. Auto's
+follower is 5 ms attack, 150 ms release on the input at the host rate; full travel at
+the follower's reading of a -18 dBFS sine (about 0.08) with Sense in the middle, ten
+times either way across the knob. Realtime-safe and allocation-free at every rate, the
+treadle swept by the follower. Two presets use one: *Plexi, Cocked Wah* (the Black
+Wah at 60 %, Manual) and *Chime, Auto Wah* (the Chrome Wah in Auto on the AC30), the
+second trimmed +14.4 dB, the wah's loss below its peak passing straight through a
+clean amplifier.
 
 ## Playing one: the controls (approved 2026-10-02)
 

@@ -151,6 +151,16 @@ impl Biquad {
     }
 
     /// First-order low shelf: `gain_db` below `fc`, unity above; `(s + g) / (s + 1)`.
+    /// A new high-pass response, keeping the filter's state.
+    pub fn set_highpass(&mut self, rate: f64, fc: f64, q: f64) {
+        let fresh = Self::highpass(rate, fc, q);
+        self.b0 = fresh.b0;
+        self.b1 = fresh.b1;
+        self.b2 = fresh.b2;
+        self.a1 = fresh.a1;
+        self.a2 = fresh.a2;
+    }
+
     pub fn set_low_shelf(&mut self, rate: f64, fc: f64, gain_db: f64) {
         let g = 10f64.powf(gain_db / 20.0);
         let fc = fc.max(1.0);

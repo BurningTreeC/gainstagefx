@@ -9,6 +9,9 @@ use gainstagefx::acoustics::stage::{AcousticStage, MicSlot};
 use gainstagefx::dsp::complex::C;
 use gainstagefx::params::{CabModel, SpeakerModel};
 use gainstagefx::voice::{AcousticSettings, CabinetChoice, Chain, Gain, Settings, Tone};
+#[path = "support/allocations.rs"]
+mod allocations;
+use allocations::assert_no_heap;
 use nice_plug::prelude::Enum;
 
 const CAB: CabinetProfile = CabinetProfile::AMERICAN_410;
@@ -237,5 +240,137 @@ fn the_800rb_plays_through_it_at_every_rate() {
             peak = peak.max(y.abs());
         }
         assert!(peak > 1e-3, "{rate}: silent");
+    }
+}
+
+/// A clean amplifier through `cab` with an ideal omni `distance` in front of
+/// the first ten and the horn at `horn`, a tone at `hz`: its level, dB.
+fn played(cab: &'static CabinetProfile, distance: f64, horn: f64, hz: f64, rate: f64) -> f64 {
+    let mut chain = Chain::new(rate);
+    chain.apply(&Settings {
+        gain: Gain::Clean,
+        drive: 0.3,
+        tone: Tone::Off,
+        oversampling: 1,
+        acoustic: AcousticSettings {
+            cabinet: CabinetChoice::Model(cab),
+            mic_a: MicSlot::Ideal,
+            place_a: MicPlacement {
+                position: 0.0,
+                distance,
+                angle: 0.0,
+            },
+            horn,
+            ..AcousticSettings::default()
+        },
+        ..Settings::default()
+    });
+    chain.settle();
+    chain.reset();
+    chain.find_operating_point();
+    let n = (rate * 0.3) as usize;
+    let mut sum = 0.0;
+    for k in 0..n {
+        let y = chain.process(0.05 * (std::f64::consts::TAU * hz * k as f64 / rate).sin());
+        if k > n / 2 {
+            sum += y * y;
+        }
+    }
+    10.0 * (sum / (n - n / 2 - 1) as f64).log10()
+}
+
+/// The horn carries the treble the crossover takes from the tens. A metre
+/// out, where the horn is nearly on its axis, it puts 6 kHz back level with
+/// the tens' own band (a kilohertz, horn off) -- the tens alone are some 40 dB
+/// down there behind the crossover. On a close microphone at a ten's cone the
+/// horn is far off its axis and adds a few decibels at most. Nothing in the
+/// bass.
+#[test]
+fn the_horn_carries_the_treble_where_it_points() {
+    let cab = &CabinetProfile::AMERICAN_410;
+    let band = played(cab, 1.0, 0.0, 1_000.0, RATE);
+    let (off, full) = (
+        played(cab, 1.0, 0.0, 6_000.0, RATE),
+        played(cab, 1.0, 1.0, 6_000.0, RATE),
+    );
+    let near = played(cab, 0.025, 1.0, 6_000.0, RATE) - played(cab, 0.025, 0.0, 6_000.0, RATE);
+    let bass = played(cab, 1.0, 1.0, 100.0, RATE) - played(cab, 1.0, 0.0, 100.0, RATE);
+    println!(
+        "a metre out: the tens' band {band:+.1} dB at 1 kHz; at 6 kHz {off:+.1} horn off, {full:+.1} horn full; close: horn adds {near:+.1}; bass {bass:+.2}"
+    );
+    assert!(full - off > 20.0, "{off} {full}");
+    assert!((full - band).abs() < 6.0, "{full} against {band}");
+    assert!(near < 6.0, "{near}");
+    assert!(bass.abs() < 0.1, "{bass}");
+}
+
+/// With the attenuator down the horn is gone: the chain's output is the same
+/// cabinet's without a horn, to the bit.
+#[test]
+fn the_horn_attenuated_fully_is_no_horn() {
+    let cab = &CabinetProfile::AMERICAN_410;
+    let hornless = leaked(CabinetProfile { horn: None, ..CAB });
+    let run = |cab: &'static CabinetProfile| {
+        let mut chain = Chain::new(RATE);
+        chain.apply(&Settings {
+            gain: Gain::American800RB,
+            drive: 0.5,
+            tone: Tone::Off,
+            oversampling: 1,
+            acoustic: AcousticSettings {
+                cabinet: CabinetChoice::Model(cab),
+                horn: 0.0,
+                ..AcousticSettings::default()
+            },
+            ..Settings::default()
+        });
+        chain.settle();
+        chain.reset();
+        chain.find_operating_point();
+        (0..4_096)
+            .map(|k| chain.process(0.3 * (k as f64 * 0.07).sin()).to_bits())
+            .collect::<Vec<u64>>()
+    };
+    assert!(run(cab) == run(hornless));
+}
+
+/// The horn's stream at every rate and every oversampling it can run at --
+/// its own decimator and padding included -- finite and without allocating.
+#[test]
+fn the_horn_is_realtime_safe_at_every_rate() {
+    let mut chain = Chain::new(44_100.0);
+    for (rate, oversampling) in [
+        (44_100.0, 1),
+        (48_000.0, 2),
+        (88_200.0, 4),
+        (96_000.0, 2),
+        (192_000.0, 1),
+    ] {
+        chain.set_rate(rate);
+        chain.apply(&Settings {
+            gain: Gain::Clean,
+            drive: 0.5,
+            tone: Tone::Off,
+            oversampling,
+            acoustic: AcousticSettings {
+                cabinet: CabinetChoice::Model(&CabinetProfile::AMERICAN_410),
+                horn: 1.0,
+                ..AcousticSettings::default()
+            },
+            ..Settings::default()
+        });
+        chain.settle();
+        chain.reset();
+        chain.find_operating_point();
+        let mut peak: f64 = 0.0;
+        assert_no_heap(|| {
+            for k in 0..4_096 {
+                let x = 0.2 * (k as f64 * std::f64::consts::TAU * 3_500.0 / rate).sin();
+                let y = chain.process(x);
+                assert!(y.is_finite(), "{rate}");
+                peak = peak.max(y.abs());
+            }
+        });
+        assert!(peak > 1e-4, "{rate}: silent");
     }
 }

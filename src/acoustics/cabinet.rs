@@ -70,6 +70,9 @@ pub struct CabinetProfile {
     /// The woofers' passive crossover, a third-order low-pass at this corner,
     /// for a cabinet built with one. `None` drives them full range.
     pub crossover_hz: Option<f64>,
+    /// A horn tweeter behind the crossover's high-pass, for a cabinet with
+    /// one. `None` is woofers alone.
+    pub horn: Option<Horn>,
     /// What `Matched` resolves the speaker to. See the research log for which of
     /// these are factory complements and which are voicing choices.
     pub default_speaker: &'static SpeakerProfile,
@@ -96,6 +99,21 @@ impl Vent {
         let r = (self.area / std::f64::consts::PI).sqrt();
         self.length + (0.85 + 0.61) * r
     }
+}
+
+/// A cabinet's horn tweeter: where its mouth is on the baffle (m from the
+/// centre), how loud it is for 2.83 V at a metre on its axis, the band its
+/// driver and flare pass, and how fast it falls off its axis (`cos^coverage`).
+/// It is fed from the speaker's terminals through the crossover's high-pass,
+/// third order at `CabinetProfile::crossover_hz`, and the cabinet's
+/// attenuator; see `acoustics::stage` and `Chain`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Horn {
+    pub position: (f64, f64),
+    pub sensitivity_db: f64,
+    pub low_hz: f64,
+    pub high_hz: f64,
+    pub coverage: f64,
 }
 
 /// The most drivers a cabinet here holds: the American 8x10's.
@@ -141,6 +159,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
@@ -167,6 +186,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_V30,
     };
 
@@ -184,6 +204,7 @@ impl CabinetProfile {
         inspiration: "Marshall 1960AX angled 4x12, G12M-25 Greenback",
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_GREEN_25,
         ..Self::BRIT_1960
     };
@@ -194,6 +215,7 @@ impl CabinetProfile {
         inspiration: "Marshall 1960AV angled 4x12, Celestion G12 Vintage",
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_V30,
         ..Self::BRIT_1960
     };
@@ -221,6 +243,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
@@ -242,6 +265,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::AMERICAN_CERAMIC,
     };
 
@@ -269,6 +293,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::AMERICAN_CERAMIC,
     };
 
@@ -290,6 +315,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_V30,
     };
 
@@ -311,6 +337,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_T75,
     };
 
@@ -345,6 +372,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::JAZZ_12,
     };
 
@@ -383,6 +411,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::BRIT_K85,
     };
 
@@ -422,6 +451,7 @@ impl CabinetProfile {
         leakage_q: 7.0,
         vent: None,
         crossover_hz: None,
+        horn: None,
         default_speaker: &SpeakerProfile::AMERICAN_BASS_10,
     };
 
@@ -430,10 +460,14 @@ impl CabinetProfile {
     /// P10/200 tens, two front vents and an 18 dB/oct passive crossover, all
     /// DOCUMENTED; one chamber (none is described). ESTIMATED: the layout --
     /// the horn's space at the top, the tens in a square below it, the vents
-    /// along the bottom; the vents' size and depth, two 3 in tubes tuned near
-    /// 40 Hz for GK's "usable response 31 Hz" (`examples/american_410_op.rs`);
-    /// the crossover's corner, 3 kHz. **The horn is attenuated fully**, as the
-    /// cabinet's own attenuator allows: the horn branch is not built yet.
+    /// along the bottom; the vents' size and depth, two 3 in tubes 52 mm deep
+    /// tuning the box to 42 Hz, about the drivers' own resonance -- with the
+    /// estimated drivers the flattest of the tunings that reach lowest
+    /// (`examples/american_410_op.rs`); the crossover's corner, 3 kHz; and the
+    /// horn -- the P508, of which nothing is published -- 102 dB for 2.83 V at
+    /// a metre, passing 2 to 13 kHz (the manual's "usable response" ends at
+    /// 13), falling off its axis as cos^2 (-6 dB at 45 degrees, a 90 degree
+    /// horn). Its level is the cabinet's attenuator, the panel's Horn knob.
     pub const AMERICAN_410: CabinetProfile = CabinetProfile {
         id: "cab_gk_410rbh",
         name: "American 4x10",
@@ -462,6 +496,13 @@ impl CabinetProfile {
             position: (0.0, -0.305),
         }),
         crossover_hz: Some(3_000.0),
+        horn: Some(Horn {
+            position: (0.0, 0.27),
+            sensitivity_db: 102.0,
+            low_hz: 2_000.0,
+            high_hz: 13_000.0,
+            coverage: 2.0,
+        }),
         default_speaker: &SpeakerProfile::CAST_BASS_10,
     };
 

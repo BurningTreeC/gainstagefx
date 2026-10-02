@@ -746,6 +746,7 @@ impl Plugin for GainStageFx {
             pan_b: p.mic_b_pan.smoothed.next_step(samples) as f64,
             invert_b: p.mic_b_invert.value(),
             align: p.mic_align.value(),
+            horn: p.cab_horn.smoothed.next_step(samples) as f64,
         };
         let pedal = crate::voice::PedalSettings {
             pedal: p.pedal.value().voice(),
@@ -760,6 +761,12 @@ impl Plugin for GainStageFx {
             level: p.pedal_level.smoothed.next_step(samples) as f64,
         };
         let settings = Settings {
+            wah: crate::voice::WahSettings {
+                wah: self.params.wah.value().voice(),
+                treadle: self.params.wah_treadle.value() as f64,
+                auto: self.params.wah_mode.value() == crate::params::WahMode::Auto,
+                sense: self.params.wah_sense.smoothed.next_step(samples) as f64,
+            },
             pedal,
             // Circuit-specific controls are sampled at their neutral point for
             // every other circuit. This makes the DSP state itself isolated,

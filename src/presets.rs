@@ -13,7 +13,7 @@ use nice_plug::prelude::Enum;
 
 use crate::params::{
     Amplifier, CabModel, Cabinet, Circuit, Diode, DryRoute, DrySource, Iron, Mains, MicModel,
-    Oversampling, PedalModel, PowerAmp, SpeakerModel, Switch, ToneStack,
+    Oversampling, PedalModel, PowerAmp, SpeakerModel, Switch, ToneStack, WahMode, WahModel,
 };
 
 pub struct Preset {
@@ -58,6 +58,14 @@ pub struct Preset {
     pub mic_b_distance: f32,
     pub mic_b_angle: f32,
     pub mic_blend: f32,
+    /// The cabinet's horn attenuator, for a cabinet with a horn.
+    pub cab_horn: f32,
+    /// A wah ahead of the pedal, its treadle, what moves it and how hard.
+    /// Off on every shipped preset but the ones written for a wah.
+    pub wah: WahModel,
+    pub wah_treadle: f32,
+    pub wah_mode: WahMode,
+    pub wah_sense: f32,
     /// Stereo placement of each microphone, -1 hard left to +1 hard right.
     /// Zero on every shipped preset: the stereo image is the player's choice,
     /// not part of a voicing.
@@ -158,6 +166,11 @@ const fn base(group: &'static str, name: &'static str) -> Preset {
         mic_b_distance: 0.05,
         mic_b_angle: 0.0,
         mic_blend: 0.5,
+        cab_horn: 0.5,
+        wah: WahModel::Off,
+        wah_treadle: 0.5,
+        wah_mode: WahMode::Manual,
+        wah_sense: 0.5,
         mic_a_pan: 0.0,
         mic_b_pan: 0.0,
         mic_b_invert: false,
@@ -1034,6 +1047,26 @@ pub const PRESETS: &[Preset] = &[
         output_trim: 0.5,
         ..base("Amplifier", "Plexi, Orange Phase")
     },
+    // The same head with the black wah in front, cocked: the treadle left a
+    // little past the middle and not moved, the fixed nasal midrange of a
+    // wah used as a filter rather than played.
+    Preset {
+        drive: 0.75,
+        circuit: Circuit::Plexi,
+        wah: WahModel::BlackWah,
+        wah_treadle: 0.6,
+        tone: ToneStack::Off,
+        bass: 0.45,
+        mid: 0.6,
+        treble: 0.5,
+        cab_model: CabModel::BritGreen,
+        mic_a_position: 0.3,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -15.4 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: 2.6,
+        ..base("Amplifier", "Plexi, Cocked Wah")
+    },
     // The blue chorus in front of the American Twin's clean channel, as half
     // the clean records of the eighties had it: a slow sweep at middle depth.
     Preset {
@@ -1094,6 +1127,32 @@ pub const PRESETS: &[Preset] = &[
         oversampling: Oversampling::Off,
         output_trim: 1.3,
         ..base("Amplifier", "Chime Edge")
+    },
+    // The chrome wah in front of the AC30 on the edge of breaking up, in
+    // Auto: the follower opens it as the strings are hit, an envelope filter
+    // with the Vox's own circuit.
+    Preset {
+        drive: 0.5,
+        circuit: Circuit::AC30,
+        wah: WahModel::ChromeWah,
+        wah_treadle: 0.85,
+        wah_mode: WahMode::Auto,
+        wah_sense: 0.5,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        treble: 0.55,
+        cab_model: CabModel::AmericanOpen212,
+        speaker: SpeakerModel::AmericanAlnico,
+        mic_a_position: 0.35,
+        mic_a_distance: 0.04,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -27.2 dB untrimmed, against the
+        // catalogue's -12.8.
+        // The wah below its peak takes a guitar's fundamentals down by
+        // ten decibels and more (ElectroSmash's response agrees), and a
+        // clean amplifier hands that on.
+        output_trim: 14.4,
+        ..base("Amplifier", "Chime, Auto Wah")
     },
     // --- Brit DR103 -------------------------------------------------------------
     // The 100 W head built for headroom: a master volume, 22 k grid stoppers and
@@ -1909,6 +1968,12 @@ impl Preset {
         };
         crate::voice::Settings {
             mains: self.mains.fraction(),
+            wah: crate::voice::WahSettings {
+                wah: self.wah.voice(),
+                treadle: self.wah_treadle as f64,
+                auto: self.wah_mode == WahMode::Auto,
+                sense: self.wah_sense as f64,
+            },
             pedal: crate::voice::PedalSettings {
                 pedal: self.pedal.voice(),
                 drive: self.pedal_drive as f64,
@@ -1934,6 +1999,7 @@ impl Preset {
                 pan_b: self.mic_b_pan as f64,
                 invert_b: self.mic_b_invert,
                 align: self.mic_align,
+                horn: self.cab_horn as f64,
             },
             gain: self.circuit.voice(),
             diode: if self.circuit.has_diodes() {
@@ -1997,7 +2063,7 @@ impl Preset {
     /// other, rather than a set of assignments the host never hears about. It
     /// is also the shape a preset saved to disk would take, so user presets
     /// can join the same path later without any of this changing.
-    pub fn dials(&self) -> [(&'static str, f32); 62] {
+    pub fn dials(&self) -> [(&'static str, f32); 67] {
         [
             ("in_trim", self.input_trim),
             ("noise_reduction", 0.0),
@@ -2053,6 +2119,11 @@ impl Preset {
             ("mic_b_distance", self.mic_b_distance),
             ("mic_b_angle", self.mic_b_angle),
             ("mic_blend", self.mic_blend),
+            ("cab_horn", self.cab_horn),
+            ("wah", self.wah.to_index() as f32),
+            ("wah_treadle", self.wah_treadle),
+            ("wah_mode", self.wah_mode.to_index() as f32),
+            ("wah_sense", self.wah_sense),
             ("mic_a_pan", self.mic_a_pan),
             ("mic_b_pan", self.mic_b_pan),
             ("mic_b_invert", if self.mic_b_invert { 1.0 } else { 0.0 }),
@@ -2280,6 +2351,8 @@ fn ids(id: &str) -> Option<&'static [&'static str]> {
         "low_switch" | "mid_switch" => Switch::ids(),
         "dry_source" => DrySource::ids(),
         "dry_route" => DryRoute::ids(),
+        "wah" => WahModel::ids(),
+        "wah_mode" => WahMode::ids(),
         _ => None,
     }
 }
@@ -2390,6 +2463,20 @@ pub fn migrate(preset: &mut Stored, params: &impl Params) {
     // had before they existed.
     for id in ["dry_source", "dry_route"] {
         preset.values.entry(id.into()).or_insert(0.0);
+    }
+    // The horn attenuator arrived on 2026-10-02 with the American 4x10, the
+    // first cabinet with a horn; no older preset can have used it, and its
+    // middle is where the cabinet comes.
+    preset.values.entry("cab_horn".into()).or_insert(0.5);
+    // The wah arrived the same day, ahead of the pedal: Off and Manual, the
+    // first of each, with the treadle and its sensitivity in the middle.
+    for (id, value) in [
+        ("wah", 0.0),
+        ("wah_mode", 0.0),
+        ("wah_treadle", 0.5),
+        ("wah_sense", 0.5),
+    ] {
+        preset.values.entry(id.into()).or_insert(value);
     }
     for (id, ptr, _) in params.param_map() {
         if let (Some(names), Some(saved)) = (ids(&id), preset.model_ids.get(&id)) {

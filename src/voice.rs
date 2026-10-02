@@ -22,7 +22,8 @@
 //! away from it. So the numbers are measured, and the audio thread only ever
 //! interpolates five of them.
 
-use crate::acoustics::cabinet::CabinetProfile;
+use crate::acoustics::cabinet::{CabinetProfile, Horn as CabinetHorn};
+use crate::acoustics::filters::{Biquad as AcousticBiquad, OnePole};
 use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
@@ -32,7 +33,7 @@ use crate::circuits::{
     console_e, deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive, heavy_metal, iron,
     jazz120, jc120_power, markiic, metal_zone, neve, orange_dist, orange_phase, oregon_t, plexi,
     plexi_bass, power, preamp, rectifier, rodent, round_fuzz, studio, tone, treble_boost, ts808,
-    tube610, twin,
+    tube610, twin, wah,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::{Bbd, Brigade};
@@ -1535,6 +1536,17 @@ impl PowerModel {
     /// The speaker-loaded circuit for this stage, whatever kind it is. One
     /// place that knows how each kind is built, rather than a `match` at every
     /// call site that wants one.
+    /// The node the speaker is stamped at in `build_loaded`'s circuit: its
+    /// terminals, which a horn's crossover is fed from.
+    pub fn speaker_terminal(self) -> &'static str {
+        match self.spec() {
+            Some(_) => "spk",
+            None if self == Self::British73Out => "spk",
+            None if self == Self::AmericanSS800 => american_ss800::OUTPUT,
+            None => jc120_power::OUTPUT,
+        }
+    }
+
     pub fn build_loaded(self, load: &LoadValues) -> Result<(Netlist, speaker::LoadSlots), Fault> {
         match self.spec() {
             Some(spec) => power::build_with_speaker(spec, 10_000.0, load),
@@ -2199,6 +2211,32 @@ impl Pedal {
 ///
 /// `tone` carries as many as the pedal has, in the order its panel has them;
 /// entries past that are ignored. See `PEDAL_TONES`.
+/// The wah ahead of the pedal: which one, if any, where its treadle is, and
+/// whether an envelope follower moves it.
+///
+/// Manual puts the pot where `treadle` says -- a host-automated lane, or an
+/// expression pedal's controller linked to the parameter. Auto moves it from
+/// the heel toward `treadle` as the player picks harder, an auto-wah, with
+/// `sense` saying how hard full travel takes. See `docs/models/wahs.md`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WahSettings {
+    pub wah: Option<wah::Build>,
+    pub treadle: f64,
+    pub auto: bool,
+    pub sense: f64,
+}
+
+impl Default for WahSettings {
+    fn default() -> Self {
+        Self {
+            wah: None,
+            treadle: 0.5,
+            auto: false,
+            sense: 0.5,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PedalSettings {
     pub pedal: Pedal,
@@ -2272,6 +2310,9 @@ pub struct AcousticSettings {
     pub pan_b: f64,
     pub invert_b: bool,
     pub align: bool,
+    /// The cabinet's horn attenuator, 0..1, for a cabinet with a horn: off at
+    /// zero, the horn's full level at one.
+    pub horn: f64,
 }
 
 impl Default for AcousticSettings {
@@ -2288,6 +2329,7 @@ impl Default for AcousticSettings {
             pan_b: 0.0,
             invert_b: false,
             align: false,
+            horn: 0.5,
         }
     }
 }
@@ -2335,6 +2377,8 @@ struct Loaded {
     shadow: Option<Box<Simulation>>,
     slots: LoadSlots,
     motional: usize,
+    /// The speaker's terminals: what a horn's crossover is fed from.
+    terminal: usize,
 }
 
 /// The block behind a voice's gain circuit, where it has one.
@@ -3128,6 +3172,8 @@ impl TwinLevelAccumulator {
 /// plugin at all: the knobs simply did nothing.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settings {
+    /// A wah ahead of the pedal. Defaults to none.
+    pub wah: WahSettings,
     /// A pedal ahead of the circuit. Defaults to none.
     pub pedal: PedalSettings,
     pub power_amp: PowerAmp,
@@ -3190,6 +3236,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            wah: WahSettings::default(),
             pedal: PedalSettings::default(),
             power_amp: PowerAmp::Matched,
             acoustic: AcousticSettings::default(),
@@ -3651,6 +3698,8 @@ struct Front<'a> {
     up: Upsampler<'a>,
     /// The dry signal's tap, when it is taken inside this half.
     tap: Option<FrontTap<'a>>,
+    /// The wah ahead of the pedal, when one is in.
+    wah: Option<WahTap<'a>>,
     pedal: Option<&'a mut Simulation>,
     /// The pedal's bucket brigade, when it has one.
     pedal_brigade: Option<BrigadeTap<'a>>,
@@ -3680,6 +3729,59 @@ struct Front<'a> {
     v4b_grid: usize,
     #[cfg(test)]
     power_traced: bool,
+}
+
+/// A wah in the first half: its circuit, its treadle's target and smoothed
+/// position, the follower's envelope for Auto, and the scale it hands on at.
+struct WahTap<'a> {
+    sim: &'a mut Simulation,
+    position: &'a mut f64,
+    envelope: &'a mut f64,
+    treadle: f64,
+    auto: bool,
+    sense: f64,
+    /// The follower's attack and release at the host rate, and the treadle's
+    /// glide at the oversampled one, as one-pole coefficients: 5 ms, 150 ms
+    /// and 20 ms, choices rather than hardware (ESTIMATED).
+    attack: f64,
+    release: f64,
+    glide: f64,
+    hand_off: f64,
+}
+
+impl WahTap<'_> {
+    /// The input at the host rate, in the plugin's units, through the
+    /// follower; the treadle's target for this sample out.
+    fn target(&mut self, x: f64) -> f64 {
+        let level = x.abs();
+        let k = if level > *self.envelope {
+            self.attack
+        } else {
+            self.release
+        };
+        *self.envelope += k * (level - *self.envelope);
+        if self.auto {
+            // Full travel at the follower's reading of a sine at the nominal
+            // -18 dBFS (some 0.08) with Sense in the middle; ten times quieter
+            // with it up, ten times louder with it down.
+            let full = 0.08 * 10f64.powf(-2.0 * (self.sense - 0.5));
+            self.treadle * (*self.envelope / full).min(1.0)
+        } else {
+            self.treadle
+        }
+    }
+
+    /// One oversampled value through the wah, its pot moved toward `target`.
+    fn process(&mut self, v: f64, target: f64) -> f64 {
+        let before = *self.position;
+        *self.position += self.glide * (target - *self.position);
+        if (*self.position - before).abs() > 1e-7 {
+            let (top, bottom) = wah::treadle_halves(*self.position);
+            self.sim.set_realtime_value(wah::TREADLE_TOP, top);
+            self.sim.set_realtime_value(wah::TREADLE_BOTTOM, bottom);
+        }
+        self.sim.process(v) * self.hand_off
+    }
 }
 
 /// A circuit's bucket brigade, by name: see `Gain::bucket_brigade`.
@@ -3792,11 +3894,26 @@ struct BackShadow<'a> {
     passes: &'a mut [u16],
 }
 
+/// A horn's feed in the second half: the speaker's terminals through the
+/// crossover's third-order high-pass -- a first-order section, the input less
+/// a one-pole low-pass, and a pair at Q 1 -- and the cabinet's attenuator, at
+/// the oversampled rate, and its own decimator, identical to the main one so
+/// the two streams stay in step.
+struct HornFeed<'a> {
+    terminal: usize,
+    low: &'a mut OnePole,
+    high: &'a mut AcousticBiquad,
+    gain: f64,
+    down: Downsampler<'a>,
+}
+
 /// The oversampled end of the second half: the iron, the power stage (or the
 /// speaker it drives), the make-up and the decimators. It hands the cabinet
 /// one value a host sample and the make-up that value was taken at.
 struct BackPower<'a> {
     down: Downsampler<'a>,
+    /// The cabinet's horn, on the physical path with a cabinet that has one.
+    horn: Option<HornFeed<'a>>,
     iron: Option<&'a mut Simulation>,
     iron_scale: f64,
     iron_trim: f64,
@@ -3826,6 +3943,8 @@ struct BackPower<'a> {
 /// `pipelined`.
 struct BackCabinet<'a> {
     pad: &'a mut Delay,
+    /// The horn's stream, padded as the cone's is.
+    horn_pad: &'a mut Delay,
     tone: Option<(&'a mut Simulation, f64)>,
     acoustic: &'a mut AcousticStage,
     stereo: bool,
@@ -3886,6 +4005,7 @@ impl Front<'_> {
             }
         }
         let mut next_tank_drive = *self.drive_previous;
+        let wah_target = self.wah.as_mut().map_or(0.0, |w| w.target(x));
         let mut up = [0.0; MAX_OVERSAMPLING];
         let n = self.up.push(x * self.input_scale, &mut up);
         let (tap_preamp, tap_scale, tap_node) = match self.tap.as_mut() {
@@ -3898,6 +4018,17 @@ impl Front<'_> {
         };
         let mut tapped = [0.0; MAX_OVERSAMPLING];
         for (k, (v, slot)) in up[..n].iter().zip(out.iter_mut()).enumerate() {
+            // The wah first, then the pedal: guitar, wah, pedal, circuit. The
+            // wah takes a guitar's level and hands on at what follows it.
+            let v = &match self.wah.as_mut() {
+                Some(wah) => {
+                    let started = self.timing.then(Instant::now);
+                    let out = wah.process(*v, wah_target);
+                    self.pedal_ns += lap(started);
+                    out
+                }
+                None => *v,
+            };
             // The pedal, when there is one, between the guitar and the circuit:
             // a guitar's level in, and out at the level the circuit behind it
             // was calibrated for. See `pedal_hand_off`.
@@ -4061,8 +4192,8 @@ impl Back<'_> {
     /// in; the chain's left and right output for it out.
     #[inline]
     fn sample(&mut self, mid: &[f64]) -> (f64, f64) {
-        let (y, out_of) = self.power.sample(mid);
-        self.cabinet.sample(y, out_of)
+        let (y, out_of, horn) = self.power.sample(mid);
+        self.cabinet.sample(y, out_of, horn)
     }
 }
 
@@ -4090,21 +4221,27 @@ impl BackPower<'_> {
     /// The oversampled values for one host sample in; the decimated value
     /// out, with the make-up it was taken at.
     #[inline]
-    fn sample(&mut self, mid: &[f64]) -> (f64, f64) {
+    fn sample(&mut self, mid: &[f64]) -> (f64, f64, f64) {
         // One pole toward the target: about a millisecond at any sample rate
         // the plugin is likely to see.
         *self.out_of += (self.out_of_target - *self.out_of) * 0.02;
         let out_of = *self.out_of;
         let mut processed = [0.0; MAX_OVERSAMPLING];
-        for (&v, slot) in mid.iter().zip(processed.iter_mut()) {
-            *slot = self.oversampled(v, out_of);
+        let mut horns = [0.0; MAX_OVERSAMPLING];
+        for ((&v, slot), horn) in mid.iter().zip(processed.iter_mut()).zip(horns.iter_mut()) {
+            (*slot, *horn) = self.oversampled(v, out_of);
         }
-        (self.down.pull(&processed[..mid.len()]), out_of)
+        let horn = match self.horn.as_mut() {
+            Some(feed) => feed.down.pull(&horns[..mid.len()]),
+            None => 0.0,
+        };
+        (self.down.pull(&processed[..mid.len()]), out_of, horn)
     }
 
-    /// One oversampled value through the power stage and the iron.
+    /// One oversampled value through the power stage and the iron, and the
+    /// horn's driver voltage beside it (zero without a horn).
     #[inline]
-    fn oversampled(&mut self, amplified: f64, out_of: f64) -> f64 {
+    fn oversampled(&mut self, amplified: f64, out_of: f64) -> (f64, f64) {
         let mut amplified = amplified;
         if self.radiating {
             // A transformer after a loudspeaker has no meaning, so on the
@@ -4118,7 +4255,7 @@ impl BackPower<'_> {
                 self.iron_ns += lap(started);
             }
             let started = self.timing.then(Instant::now);
-            let cone = match (self.power.as_mut(), self.driven.as_mut()) {
+            let (cone, terminal) = match (self.power.as_mut(), self.driven.as_mut()) {
                 (Some(sim), _) => {
                     Self::solve(
                         sim,
@@ -4127,17 +4264,35 @@ impl BackPower<'_> {
                         &mut self.spec_index,
                         &mut self.spec_seen,
                     );
-                    sim.voltage_at(self.motional)
+                    let terminal = self
+                        .horn
+                        .as_ref()
+                        .map_or(0.0, |h| sim.voltage_at(h.terminal));
+                    (sim.voltage_at(self.motional), terminal)
                 }
-                (None, Some(sim)) => sim.process(amplified),
-                (None, None) => 0.0,
+                (None, Some(sim)) => {
+                    let cone = sim.process(amplified);
+                    let terminal = self
+                        .horn
+                        .as_ref()
+                        .map_or(0.0, |h| sim.voltage_at(h.terminal));
+                    (cone, terminal)
+                }
+                (None, None) => (0.0, 0.0),
+            };
+            let horn = match self.horn.as_mut() {
+                Some(feed) => {
+                    let first = terminal - feed.low.process(terminal);
+                    feed.high.process(first) * feed.gain
+                }
+                None => 0.0,
             };
             self.power_ns += lap(started);
             // Physical cone acceleration. Keep the amplifier's output
             // calibration outside the acoustic pressure calculation.
             let pressure = self.pressure_scale * (cone - *self.motional_previous) * self.inner_rate;
             *self.motional_previous = cone;
-            return pressure;
+            return (pressure, horn);
         }
         if let Some(sim) = self.power.as_mut() {
             let started = self.timing.then(Instant::now);
@@ -4173,7 +4328,7 @@ impl BackPower<'_> {
             amplified = sim.process(amplified * self.iron_scale) * self.iron_trim / self.iron_scale;
             self.iron_ns += lap(started);
         }
-        amplified * out_of
+        (amplified * out_of, 0.0)
     }
 }
 
@@ -4181,8 +4336,9 @@ impl BackCabinet<'_> {
     /// One decimated value and the make-up it was taken at in; the chain's
     /// left and right output for it out.
     #[inline]
-    fn sample(&mut self, y: f64, out_of: f64) -> (f64, f64) {
+    fn sample(&mut self, y: f64, out_of: f64, horn: f64) -> (f64, f64) {
         let mut y = y;
+        let horn = self.horn_pad.process(horn);
         // Reverb and tremolo have both already been applied at their AB763
         // nodes ahead of the phase inverter / power stage.
         // Every setting delays by the same reported amount.
@@ -4200,11 +4356,11 @@ impl BackCabinet<'_> {
         // has two power amplifiers, so that is what wins. The microphones are
         // still both heard -- `process` is their blend, summed.
         let mut right = if self.stereo {
-            let (left, right) = self.acoustic.process_stereo(y);
+            let (left, right) = self.acoustic.process_stereo_with_horn(y, horn);
             y = left;
             right
         } else if self.radiating {
-            y = self.acoustic.process(y);
+            y = self.acoustic.process_with_horn(y, horn);
             y
         } else {
             y
@@ -4270,7 +4426,7 @@ struct BackJob<'a> {
     factor: usize,
     left: *mut f64,
     right: *mut f64,
-    handoff: *mut [f64; 2],
+    handoff: *mut [f64; 3],
     /// Set by the calling thread once its first half is done and it is free
     /// to run the cabinet.
     wanted: AtomicBool,
@@ -4302,20 +4458,20 @@ unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
     for i in from..to {
         let mid = unsafe { std::slice::from_raw_parts(job.mid.add(i * job.factor), job.factor) };
         job.reached.store(i, Ordering::Relaxed);
-        let (y, out_of) = unsafe { &mut *job.power }.sample(mid);
+        let (y, out_of, horn) = unsafe { &mut *job.power }.sample(mid);
         if job.cabinet_here.load(Ordering::Relaxed) && job.wanted.load(Ordering::Acquire) {
             job.cabinet_here.store(false, Ordering::Relaxed);
             // Every cabinet sample below `i` is done: Release them with it.
             job.handover.store(i, Ordering::Release);
         }
         if job.cabinet_here.load(Ordering::Relaxed) {
-            let (l, r) = unsafe { &mut *job.cabinet }.sample(y, out_of);
+            let (l, r) = unsafe { &mut *job.cabinet }.sample(y, out_of, horn);
             unsafe {
                 job.left.add(i).write(l);
                 job.right.add(i).write(r);
             }
         } else {
-            unsafe { job.handoff.add(i).write([y, out_of]) };
+            unsafe { job.handoff.add(i).write([y, out_of, horn]) };
             job.powered.store(i + 1, Ordering::Release);
         }
     }
@@ -4346,7 +4502,7 @@ fn pipelined(
     back: &mut Back<'_>,
     input: &[f64],
     mid: &mut [f64],
-    handoff: &mut [[f64; 2]],
+    handoff: &mut [[f64; 3]],
     left: &mut [f64],
     right: &mut [f64],
     dry: &mut [f64],
@@ -4469,8 +4625,8 @@ fn pipelined(
                 }
                 if next < job.powered.load(Ordering::Acquire) {
                     // SAFETY: written before `powered` was Released past it.
-                    let [y, out_of] = unsafe { handoff_ptr.add(next).read() };
-                    let (l, r) = cabinet.sample(y, out_of);
+                    let [y, out_of, horn] = unsafe { handoff_ptr.add(next).read() };
+                    let (l, r) = cabinet.sample(y, out_of, horn);
                     unsafe {
                         left_ptr.add(chunk_start + next).write(l);
                         right_ptr.add(chunk_start + next).write(r);
@@ -4574,6 +4730,15 @@ pub struct Chain {
     /// The pedal slot's own circuits, separate from the catalogue so the same
     /// pedal can sit in front of itself. Indexed by `Pedal::slot`.
     pedals: Vec<Simulation>,
+    /// The two wahs, built up front as the pedals are, and the one selected:
+    /// its treadle's target, its smoothed position, the follower's envelope.
+    wahs: Vec<Simulation>,
+    wah: Option<usize>,
+    wah_treadle: f64,
+    wah_auto: bool,
+    wah_sense: f64,
+    wah_position: f64,
+    wah_envelope: f64,
     pedal: Option<usize>,
     /// Which pedal that slot holds, for the policies that need to know what it
     /// is rather than merely that there is one. See `Pedal::is_expensive`.
@@ -4653,6 +4818,15 @@ pub struct Chain {
     dry_source: DrySource,
     tap_over: Oversampler,
     tap_pad: Delay,
+    /// The cabinet's horn, when the physical path's cabinet has one: its
+    /// spec, the attenuator's gain, the crossover's high-pass state at the
+    /// oversampled rate, and its stream's own decimator and padding.
+    horn: Option<CabinetHorn>,
+    horn_level: f64,
+    horn_low: OnePole,
+    horn_high: AcousticBiquad,
+    horn_over: Oversampler,
+    horn_pad: Delay,
     /// The tap's latest sample, at the host rate, in the plugin's units.
     tap_value: f64,
     /// The circuit tap's scale, glided toward its target as `out_of` is.
@@ -4759,7 +4933,7 @@ pub struct Chain {
     mid: Box<[f64]>,
     /// The power half's output, per host sample, for the samples whose
     /// cabinet the calling thread runs; see `pipelined`.
-    handoff: Box<[[f64; 2]]>,
+    handoff: Box<[[f64; 3]]>,
     /// A copy of each power stage in `powers`, at the same index, that runs
     /// ahead of it on a block's second half; see `SpecBlock`.
     power_shadows: Vec<Option<Simulation>>,
@@ -4825,6 +4999,10 @@ impl Chain {
         debug_assert_eq!(self.dry_source, source.dry_source);
         self.tap_over.copy_runtime_state_from(&source.tap_over);
         self.tap_pad.copy_runtime_state_from(&source.tap_pad);
+        self.horn_over.copy_runtime_state_from(&source.horn_over);
+        self.horn_pad.copy_runtime_state_from(&source.horn_pad);
+        self.horn_low = source.horn_low;
+        self.horn_high = source.horn_high;
         self.tap_value = source.tap_value;
         self.tap_scale = source.tap_scale;
         self.tap_scale_target = source.tap_scale_target;
@@ -4834,6 +5012,12 @@ impl Chain {
         if let Some(i) = self.pedal {
             self.pedals[i].copy_runtime_state_from(&source.pedals[i]);
         }
+        debug_assert_eq!(self.wah, source.wah);
+        if let Some(i) = self.wah {
+            self.wahs[i].copy_runtime_state_from(&source.wahs[i]);
+        }
+        self.wah_position = source.wah_position;
+        self.wah_envelope = source.wah_envelope;
         debug_assert_eq!(self.radiating, source.radiating);
         debug_assert_eq!(self.acoustic_settings, source.acoustic_settings);
         if let (Some(dst), Some(src)) = (self.active_power_mut(), source.active_power()) {
@@ -4982,6 +5166,9 @@ impl Chain {
                 let motional = circuit
                     .unknown_named(speaker::MOTIONAL)
                     .expect("the driver has a motional node");
+                let terminal = circuit
+                    .unknown_named(model.speaker_terminal())
+                    .expect("the driver has terminals");
                 let mut sim = Simulation::new(circuit, rate);
                 if *model == PowerModel::American6L6Clean {
                     // The same measured Twin solver settings as the resistive stage.
@@ -4993,6 +5180,7 @@ impl Chain {
                     sim,
                     slots,
                     motional,
+                    terminal,
                 }
             })
             .collect();
@@ -5007,6 +5195,9 @@ impl Chain {
         let (driven_circuit, driven_slots) =
             speaker::voltage_driven(&initial).expect("voltage-driven speaker builds");
         let driven_motional = driven_circuit.output;
+        let driven_terminal = driven_circuit
+            .unknown_named("spk")
+            .expect("the driven speaker has terminals");
         // Node numbering is topology-derived. Resolve the V2-B plate from the
         // same Twin circuit instead of baking a numeric index into the audio path.
         let twin_nodes = twin::build(10_000.0, 1_000_000.0).expect("Twin catalogue builds");
@@ -5070,6 +5261,21 @@ impl Chain {
         let mut chain = Self {
             mains: 1.0,
             gains,
+            wahs: [wah::Build::CryBaby, wah::Build::V847]
+                .into_iter()
+                .map(|b| {
+                    Simulation::new(
+                        wah::build(b, 10_000.0, 470_000.0).expect("wah builds"),
+                        rate,
+                    )
+                })
+                .collect(),
+            wah: None,
+            wah_treadle: 0.5,
+            wah_auto: false,
+            wah_sense: 0.5,
+            wah_position: 0.5,
+            wah_envelope: 0.0,
             pedals: (0..Pedal::SLOTS)
                 .map(|slot| Simulation::new(Pedal::build(slot).expect("pedal builds"), rate))
                 .collect(),
@@ -5084,6 +5290,7 @@ impl Chain {
                 shadow: None,
                 slots: driven_slots,
                 motional: driven_motional,
+                terminal: driven_terminal,
             }),
             acoustic: Box::new(AcousticStage::new(rate)),
             acoustic_settings: AcousticSettings::default(),
@@ -5120,6 +5327,12 @@ impl Chain {
             dry_source: DrySource::Input,
             tap_over: Oversampler::new(4),
             tap_pad: Delay::new(1),
+            horn: None,
+            horn_level: 0.0,
+            horn_low: OnePole::open(),
+            horn_high: AcousticBiquad::IDENTITY,
+            horn_over: Oversampler::new(4),
+            horn_pad: Delay::new(1),
             tap_value: 0.0,
             tap_scale: 1.0,
             tap_scale_target: 1.0,
@@ -5171,7 +5384,7 @@ impl Chain {
             realtime_stage_timing_enabled: false,
             realtime_stage_timings: RealtimeStageTimings::default(),
             mid: vec![0.0; PIPELINE_CHUNK * MAX_OVERSAMPLING].into_boxed_slice(),
-            handoff: vec![[0.0; 2]; PIPELINE_CHUNK].into_boxed_slice(),
+            handoff: vec![[0.0; 3]; PIPELINE_CHUNK].into_boxed_slice(),
             spec_voltages: vec![0.0; SPECULATION_MAX * spec_unknowns].into_boxed_slice(),
             spec_linearisations: vec![Linearisation::default(); SPECULATION_MAX * spec_devices]
                 .into_boxed_slice(),
@@ -5375,6 +5588,17 @@ impl Chain {
                 a.place_a, a.place_b, a.blend, a.pan_a, a.pan_b, a.invert_b, a.align,
             );
         }
+        let horn = a.resolved_cabinet().and_then(|cab| cab.horn);
+        if horn != self.horn {
+            self.horn = horn;
+            self.horn_low.reset();
+            self.horn_high.reset();
+            self.horn_over.reset();
+            self.horn_pad.reset();
+        }
+        // The attenuator's law: square in the knob, as an L-pad's track runs
+        // (-12 dB at its middle). ESTIMATED; GK publishes none.
+        self.horn_level = a.horn.clamp(0.0, 1.0).powi(2);
         self.acoustic_settings = *a;
         // The master and presence controls may now live in a different
         // simulation.
@@ -5389,6 +5613,38 @@ impl Chain {
     /// The pedal slot. A pedal takes the guitar at guitar level and hands its
     /// output volts straight to the circuit's input, as a cable would; with none
     /// selected the path is exactly what it was.
+    /// The wah ahead of the pedal. Switching one in starts it from rest, its
+    /// treadle where it would be at rest, under the switching fade.
+    pub fn set_wah(&mut self, s: &WahSettings) {
+        let next = s.wah.map(|b| match b {
+            wah::Build::CryBaby => 0,
+            wah::Build::V847 => 1,
+        });
+        self.wah_treadle = s.treadle.clamp(0.0, 1.0);
+        self.wah_auto = s.auto;
+        self.wah_sense = s.sense.clamp(0.0, 1.0);
+        if next != self.wah {
+            if let Some(i) = next {
+                self.wahs[i].reset_deferred();
+            }
+            self.wah = next;
+            self.wah_envelope = 0.0;
+            self.place_wah_treadle();
+            self.fade_remaining = FADE_LEN;
+        }
+    }
+
+    /// The selected wah's pot put where its treadle rests: the knob's place,
+    /// or in Auto the heel, where an envelope at rest leaves it.
+    fn place_wah_treadle(&mut self) {
+        self.wah_position = if self.wah_auto { 0.0 } else { self.wah_treadle };
+        if let Some(i) = self.wah {
+            let (top, bottom) = wah::treadle_halves(self.wah_position);
+            self.wahs[i].set_realtime_value(wah::TREADLE_TOP, top);
+            self.wahs[i].set_realtime_value(wah::TREADLE_BOTTOM, bottom);
+        }
+    }
+
     pub fn set_pedal(&mut self, s: &PedalSettings) {
         let next = s.pedal.slot();
         let changed = next != self.pedal;
@@ -5855,6 +6111,7 @@ impl Chain {
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
             .chain(self.pedals.iter_mut())
+            .chain(self.wahs.iter_mut())
         {
             sim.set_rate(inner);
         }
@@ -6094,6 +6351,7 @@ impl Chain {
     pub fn solver_health(&self) -> SolverHealth {
         let mut h = SolverHealth::default();
         let sims = std::iter::once(&self.gains[self.gain])
+            .chain(self.wah.map(|i| &self.wahs[i]))
             .chain(self.pedal.map(|i| &self.pedals[i]))
             .chain(self.active_power())
             .chain(self.active_driven().then_some(&self.driven.sim))
@@ -6139,6 +6397,7 @@ impl Chain {
     /// rather than a line quietly missing from a loop somewhere.
     pub fn apply(&mut self, s: &Settings) {
         self.set_mains(s.mains);
+        self.set_wah(&s.wah);
         self.set_pedal(&s.pedal);
         self.set_voice(s.gain, s.diode, s.amplifier);
         self.set_twin_input(s.twin_low_input);
@@ -6185,6 +6444,7 @@ impl Chain {
             .gains
             .iter_mut()
             .chain(self.pedals.iter_mut())
+            .chain(self.wahs.iter_mut())
             .chain(self.powers.iter_mut().flatten())
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
@@ -6234,6 +6494,7 @@ impl Chain {
         let pad = (latency - self.over.latency().min(latency)) as usize;
         self.pad.set_len(pad);
         self.tap_pad.set_len(pad);
+        self.horn_pad.set_len(pad);
         self.dry.set_len(latency as usize);
     }
 
@@ -6314,6 +6575,7 @@ impl Chain {
             if let Some(factor) = self.deferred_oversample.take() {
                 self.over.set_factor(factor);
                 self.tap_over.set_factor(factor);
+                self.horn_over.set_factor(factor);
                 self.sync_latency();
                 self.sync_oversampled_rates();
             }
@@ -6329,6 +6591,17 @@ impl Chain {
         let tank_send = self.ab763_tank_send();
         let (up, down) = self.over.split();
         let (_, tap_down) = self.tap_over.split();
+        // The horn's crossover at the rate it runs at this block.
+        let horn_corner = self
+            .acoustic_settings
+            .resolved_cabinet()
+            .and_then(|cab| cab.crossover_hz)
+            .unwrap_or(3_000.0);
+        self.horn_low.set_lowpass(inner_rate, horn_corner);
+        self.horn_high.set_highpass(inner_rate, horn_corner, 1.0);
+        let (_, horn_down) = self.horn_over.split();
+        let horn_feed_wanted = self.radiating && self.horn.is_some();
+        let horn_gain = self.horn_level;
         let tap = match self.dry_source {
             DrySource::Input => None,
             source => Some(FrontTap {
@@ -6343,6 +6616,10 @@ impl Chain {
             }),
         };
         let power_model = self.power_selection.resolved(self.voice);
+        let horn_terminal = match power_model {
+            Some(model) => self.loaded[model.slot()].terminal,
+            None => self.driven.terminal,
+        };
         let radiating = self.radiating;
         let (power, driven, motional, shadow) = if radiating {
             match power_model {
@@ -6395,15 +6672,33 @@ impl Chain {
             rate: inner_rate,
         });
         let pedal = self.pedal.map(|i| &mut self.pedals[i]);
-        let input_scale = if pedal.is_some() {
+        // A wah, like a pedal, is fed a guitar, and hands on at what follows
+        // it: the pedal's guitar, or the circuit's own calibrated volts.
+        let wah_into = GUITAR_VOLTS / 10f64.powf(NOMINAL_DBFS / 20.0);
+        let after_wah = if pedal.is_some() {
             self.pedal_into
         } else {
             self.into
         };
+        let host_rate = self.rate;
+        let wah = self.wah.map(|i| WahTap {
+            sim: &mut self.wahs[i],
+            position: &mut self.wah_position,
+            envelope: &mut self.wah_envelope,
+            treadle: self.wah_treadle,
+            auto: self.wah_auto,
+            sense: self.wah_sense,
+            attack: 1.0 - (-1.0 / (0.005 * host_rate)).exp(),
+            release: 1.0 - (-1.0 / (0.150 * host_rate)).exp(),
+            glide: 1.0 - (-1.0 / (0.020 * inner_rate)).exp(),
+            hand_off: after_wah / wah_into,
+        });
+        let input_scale = if wah.is_some() { wah_into } else { after_wah };
         let timing = self.realtime_stage_timing_enabled;
         let front = Front {
             up,
             tap,
+            wah,
             pedal,
             pedal_brigade,
             input_scale,
@@ -6432,8 +6727,16 @@ impl Chain {
             #[cfg(test)]
             power_traced,
         };
+        let horn = horn_feed_wanted.then_some(HornFeed {
+            terminal: horn_terminal,
+            low: &mut self.horn_low,
+            high: &mut self.horn_high,
+            gain: horn_gain,
+            down: horn_down,
+        });
         let power = BackPower {
             down,
+            horn,
             iron: self.iron.map(|i| &mut self.irons[i]),
             iron_scale: self.iron_reference * IRON_VOLTS,
             iron_trim: self.iron.map(|i| IRON_TRIM[i]).unwrap_or(1.0),
@@ -6458,6 +6761,7 @@ impl Chain {
         };
         let cabinet = BackCabinet {
             pad: &mut self.pad,
+            horn_pad: &mut self.horn_pad,
             tone: self.tone.map(|i| {
                 let (sim, trim) = &mut self.tones[i];
                 (sim, *trim)
@@ -6644,6 +6948,9 @@ impl Chain {
         if let Some(i) = self.pedal {
             front += self.pedals[i].weighted_passes();
         }
+        if let Some(i) = self.wah {
+            front += self.wahs[i].weighted_passes();
+        }
         if self.voice.has_graphic() {
             front += self.graphic.weighted_passes();
         }
@@ -6810,6 +7117,7 @@ impl Chain {
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
             .chain(self.pedals.iter_mut())
+            .chain(self.wahs.iter_mut())
         {
             sim.set_realtime_deadline(deadline);
         }
@@ -6822,6 +7130,9 @@ impl Chain {
         let mut aborts = self.gains[self.gain].deadline_aborts();
         if let Some(i) = self.pedal {
             aborts += self.pedals[i].deadline_aborts();
+        }
+        if let Some(i) = self.wah {
+            aborts += self.wahs[i].deadline_aborts();
         }
         if self.active_driven() {
             aborts += self.driven.sim.deadline_aborts();
@@ -6857,6 +7168,7 @@ impl Chain {
             .chain(self.loaded.iter().map(|l| &l.sim))
             .chain(std::iter::once(&self.driven.sim))
             .chain(self.pedals.iter())
+            .chain(self.wahs.iter())
             .map(Simulation::deadline_aborts)
             .sum()
     }
@@ -6875,6 +7187,7 @@ impl Chain {
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
             .chain(self.pedals.iter_mut())
+            .chain(self.wahs.iter_mut())
         {
             sim.set_pass_ceiling(passes);
         }
@@ -6891,6 +7204,7 @@ impl Chain {
             .chain(self.loaded.iter().map(|l| &l.sim))
             .chain(std::iter::once(&self.driven.sim))
             .chain(self.pedals.iter())
+            .chain(self.wahs.iter())
             .map(|s| s.pinched())
             .sum()
     }
@@ -6906,6 +7220,9 @@ impl Chain {
             || self
                 .pedal
                 .is_some_and(|i| self.pedals[i].needs_operating_point())
+            || self
+                .wah
+                .is_some_and(|i| self.wahs[i].needs_operating_point())
             || self
                 .iron
                 .is_some_and(|i| self.irons[i].needs_operating_point())
@@ -6997,6 +7314,11 @@ impl Chain {
                 settled &= self.pedals[i].find_operating_point();
             }
         }
+        if let Some(i) = self.wah {
+            if self.wahs[i].needs_operating_point() {
+                settled &= self.wahs[i].find_operating_point();
+            }
+        }
         if let Some(i) = self.iron {
             if self.irons[i].needs_operating_point() {
                 settled &= self.irons[i].find_operating_point();
@@ -7053,6 +7375,7 @@ impl Chain {
             .chain(self.loaded.iter_mut().map(|l| &mut l.sim))
             .chain(std::iter::once(&mut self.driven.sim))
             .chain(self.pedals.iter_mut())
+            .chain(self.wahs.iter_mut())
         {
             sim.reset_deferred();
         }
@@ -7079,5 +7402,11 @@ impl Chain {
         self.tap_pad.reset();
         self.tap_value = 0.0;
         self.tap_scale = self.tap_scale_target;
+        self.horn_low.reset();
+        self.horn_high.reset();
+        self.horn_over.reset();
+        self.horn_pad.reset();
+        self.wah_envelope = 0.0;
+        self.place_wah_treadle();
     }
 }

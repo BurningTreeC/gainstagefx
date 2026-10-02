@@ -183,7 +183,14 @@ fn the_acoustic_path_pipelined_is_the_serial_chain_to_the_bit() {
     gainstagefx::dsp::time::enable_ftz_daz();
     let live = StageWorker::new();
     let lagging = StageWorker::lagging();
-    for preset in gainstagefx::presets::PRESETS.iter().step_by(5) {
+    // Every fifth preset, the one through a cabinet with a horn, whose
+    // stream crosses the hand-over beside the cone's, and the two with a wah
+    // ahead of the circuit, one of them moved by its follower.
+    for preset in gainstagefx::presets::PRESETS.iter().step_by(5).chain(
+        PRESETS
+            .iter()
+            .filter(|p| p.name == "American 800RB Clank" || p.name.contains("Wah")),
+    ) {
         let settings = preset.settings();
         let reference = per_sample(&settings, true);
         let (serial, _, speculated) = blocks(&settings, true, None);

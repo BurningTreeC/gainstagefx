@@ -56,6 +56,8 @@ fn every_control_reaches_the_circuit() {
         power_amp: Default::default(),
         acoustic: Default::default(),
         pedal: Default::default(),
+        // No wah; the `moved` table puts one in.
+        wah: Default::default(),
         twin_low_input: false,
         twin_bright: true,
         // Centre, and not in the `moved` table below: a Distortion has no
@@ -93,7 +95,7 @@ fn every_control_reaches_the_circuit() {
     };
     let reference = render(&base);
 
-    let moved: [(&str, Settings); 9] = [
+    let moved: [(&str, Settings); 10] = [
         (
             "drive",
             Settings {
@@ -142,6 +144,16 @@ fn every_control_reaches_the_circuit() {
             "cabinet",
             Settings {
                 cabinet: Cabinet::Stack,
+                ..base
+            },
+        ),
+        (
+            "wah",
+            Settings {
+                wah: gainstagefx::voice::WahSettings {
+                    wah: Some(gainstagefx::circuits::wah::Build::CryBaby),
+                    ..Default::default()
+                },
                 ..base
             },
         ),

@@ -704,6 +704,58 @@ fn input(cx: &mut Context) {
             );
         });
     };
+
+    // The wah, ahead of the pedal: which one, its treadle -- the knob to
+    // automate, or to link an expression pedal's controller to -- and in Auto
+    // how hard it has to be played to reach the treadle's position.
+    label(cx, "wah", body_x() + 30.0, top + 138.0, 9.5, 76.0, 0x7e8a96);
+    selector(
+        cx,
+        body_x() + 76.0,
+        top + 128.0,
+        200.0,
+        |p| &p.wah,
+        vec!["Off", "Black", "Chrome"],
+        true,
+    );
+    {
+        let state = parameter_signal.map(|p| (p.wah.value(), p.wah_mode.value()));
+        Binding::new(cx, state, move |cx| {
+            let (wah, mode) = state.get();
+            let live = wah != crate::params::WahModel::Off;
+            let x0 = body_x() + 330.0;
+            let y = top + 136.0;
+            placement_knob(
+                cx,
+                x0,
+                y,
+                11.0,
+                "treadle",
+                |p| &p.wah_treadle,
+                live,
+                percent,
+            );
+            selector(
+                cx,
+                x0 + 50.0,
+                y - 10.0,
+                130.0,
+                |p| &p.wah_mode,
+                vec!["Manual", "Auto"],
+                live,
+            );
+            placement_knob(
+                cx,
+                x0 + 230.0,
+                y,
+                11.0,
+                "sense",
+                |p| &p.wah_sense,
+                live && mode == crate::params::WahMode::Auto,
+                percent,
+            );
+        });
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -1740,16 +1792,24 @@ fn cabinet(cx: &mut Context) {
         });
     };
 
-    // Placement: three for A, three for B and the blend, one row.
+    // Placement: three for A, three for B and the blend, one row; and the
+    // horn's attenuator at its end, live for a cabinet with a horn.
     {
         let flags = parameter_signal.map(|p| {
-            u8::from(p.physical_cabinet()) | (u8::from(p.mic_b.value() != MicModel::Off) << 1)
+            let horn = matches!(
+                p.cab_model.value().voice(),
+                crate::voice::CabinetChoice::Model(cab) if cab.horn.is_some()
+            );
+            u8::from(p.physical_cabinet())
+                | (u8::from(p.mic_b.value() != MicModel::Off) << 1)
+                | (u8::from(horn) << 2)
         });
         Binding::new(cx, flags, move |cx| {
             let flags = flags.get();
             let a = flags & 1 != 0;
             let b = a && flags & 2 != 0;
-            let step = body_w() / 9.0;
+            let horn = a && flags & 4 != 0;
+            let step = body_w() / 10.0;
             let x = |i: usize| body_x() + step * (i as f32 + 0.5);
             let y = top + 116.0;
             let r = 15.0;
@@ -1800,6 +1860,7 @@ fn cabinet(cx: &mut Context) {
             placement_knob(cx, x(6), y, r, "B angle", |p| &p.mic_b_angle, b, degrees);
             placement_knob(cx, x(7), y, r, "B pan", |p| &p.mic_b_pan, b, pan_position);
             placement_knob(cx, x(8), y, r, "blend", |p| &p.mic_blend, b, percent);
+            placement_knob(cx, x(9), y, r, "horn", |p| &p.cab_horn, horn, percent);
 
             let row_y = top + 170.0;
             label(

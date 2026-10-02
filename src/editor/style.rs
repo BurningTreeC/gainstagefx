@@ -25,8 +25,9 @@ pub const HEADER_H: f32 = 32.0;
 /// dismissed once it has been read. The explanations are in the README, where
 /// they can be read once.
 pub const SECTIONS: [(&str, &str, f32); 6] = [
-    // Trim and meter, then the pedal in front of the circuit.
-    ("1", "INPUT", 124.0),
+    // Trim and meter, then the pedal in front of the circuit, and under it the
+    // wah in front of the pedal.
+    ("1", "INPUT", 178.0),
     // Wiring selections in two columns, plus the Twin input/bright switches,
     // a circuit's own two- to four-position switches, and the line describing it.
     ("2", "CIRCUIT", 212.0),
