@@ -30,6 +30,8 @@ pub mod jc120_power;
 pub mod jfet;
 pub mod markiic;
 pub mod metal_zone;
+pub mod modern_33;
+pub mod modern_purple;
 pub mod neve;
 pub mod orange_dist;
 pub mod orange_phase;

@@ -1,5 +1,50 @@
 # Implementation progress
 
+## 2026-10-02 — The modern chain: researched, two pedals built
+
+The owner, asked what next, chose the modern high-gain chain's research for all five
+parts, falling back to the JTM45 and the V-4B where it did not clear: "Do that".
+
+- **Research** (`docs/models/modern_purple.md`, `modern_33.md`, `modern_generator.md`,
+  `modern_oversized_412.md`): the **Revv G3** (the original; the V2 is a revised circuit,
+  not traced) and the **Fortin 33** clear on PedalPCB's traces of genuine units -- the
+  33's checked against an original, and its circuit the TC Integrated Preamp's front
+  end, whose factory drawings are a cross-check still to obtain. The **Generator 120**
+  and its power stage do not clear: no drawing or trace found on Revv's site or the
+  amplifier forums; elektrotanya, whose search did not answer from here, is still to
+  be checked with an account. The **modern
+  oversized 4x12** was not built: Revv, EVH, Friedman, Diezel and Bogner all build the
+  1960's 30 x 30 x 14 in box, so a profile from them would be the Brit V30 4x12
+  renamed; the oversized class is the existing Cali Oversized.
+- **Modern 33** (`circuits/modern_33.rs`, pedal and circuit): +22.3 dB at 1 kHz from
+  the values, against Fortin's "+22 dB"; the low E 20 dB below; clean far past a
+  guitar's level on its 33 V rail; one knob, its level.
+- **Modern Purple** (`circuits/modern_purple.rs`, pedal and circuit): six op-amp
+  stages, each within 5 % of its values' gain. The Aggression toggle changes the gain
+  stage's leg (x27, x54, x113 at full gain) and how much bass reaches it -- not the
+  clipping, whatever Revv's manual calls it. It is expensive (5.76 Newton passes a
+  sample) and holds the chain at the host rate, as the Metal Zone does. As a circuit
+  its Aggression is the fourth tone knob; in the slot, a fourth tone knob in thirds.
+- **A bug found on the way**: the plugin and the presets sent the fourth tone knob
+  (`tone_sweep`) to the Metal Zone alone, so the Bass Driver's Blend and the 800RB's Hi
+  Mid, selected as circuits, drew a knob that reached nothing. Both now go through
+  `Circuit::sweep`, tested on the audio. *Bass Driver Direct* had been playing at half
+  Blend; at its full Blend it is 6.3 dB louder and is re-trimmed (-6.3); *American 800RB
+  Clank* gains its Hi Mid at 0.6 and moves -0.2.
+- Two presets: *Ultra, Modern 33* (the boost into the 5150) and *Twin, Modern Purple*
+  (the G3 as a preamp into a clean Twin, Aggression on Red), both into the Brit V30 4x12,
+  levelled by `presetlevel` (+4.6 and -2.2).
+- Calibration and power trim generated for both voices (only their rows added; the CE-2's
+  power trim moved 0.01 dB in one cell on regeneration). Kernel table regenerated: 188
+  kernels to 199, 185 unchanged, 13 new (nine 33-unknown, two 27- and two 9-unknown), two
+  dropped at the census's floor. With them the G3 costs 23.9 % of a channel alone, the
+  Metal Zone 20.2 beside it.
+- The G3's calibration row carries a make-up of -3.14 dB, which clippy's
+  `approx_constant` reads as pi and CI would fail on: `examples/calibrate.rs` now writes
+  an allow on the table.
+- `docs/ROADMAP.md` is git-ignored (`/docs/*` in `.gitignore`), so its status updates
+  stay local; `docs/MODEL_INVENTORY.md` carries the same.
+
 ## 2026-10-02 — The wah's Auto, and CI's editor smoke test
 
 The owner: "The wah 'auto' mode seems not to work", then "Also fix the failing CI".

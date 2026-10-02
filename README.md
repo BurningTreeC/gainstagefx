@@ -155,8 +155,10 @@ sources, where they disagree and what was approximated.
 | American 800RB | An 80s American solid-state bass head: an op-amp input stage with -10 dB, Lo Cut and Hi Boost, a mid contour notch, four active bands (bass, low mid, high mid, treble) and a JFET boost on the level knob | American SS 800 |
 | Orange Phase | A 70s phaser: four JFET all-pass stages swept by a one-op-amp oscillator, summed with the dry; Speed on the drive knob, and the block logo's feedback resistor on the tone knob as a switch (down script, up block) | none |
 | Blue Chorus | A late-70s chorus: pre-emphasis, a three-pole filter into a bucket-brigade delay swept by a triangle oscillator, the same filter out, mixed half and half with the dry through the de-emphasis; Rate on the drive knob, Depth on the tone knob | none |
+| Modern 33 | A modern metal boost: one transistor and one op-amp as a single stage on a 33 V rail, 22 dB in the middle of the band and the low strings held back, clean far past a guitar's level; one knob, its level | none |
+| Modern Purple | A modern high-gain pedal: six op-amp stages, a diode clipper in a feedback loop and red LEDs to ground, a passive bass and treble, an active middle; the Aggression toggle (off, Blue, Red) changes the gain stage's gain and how much bass reaches it, not the clipping | none |
 
-**Every pedal is also a circuit.** The sixteen in the pedal slot can each be
+**Every pedal is also a circuit.** The eighteen in the pedal slot can each be
 selected on their own, with nothing behind them — which is how a pedal into a
 desk was always recorded, and how an HM-2 into an MT-2 becomes expressible: one
 in the slot, the other as the circuit. Selected as the circuit, a pedal keeps
@@ -229,7 +231,10 @@ its two shift switches on the panel's low and mid switches when it is the circui
 **Orange Phase** (a phaser whose oscillator is solved with the rest of it:
 Speed on the drive knob, the script / block switch on the tone knob, no level) and
 **Blue Chorus** (a bucket-brigade chorus: everything either side of the delay solved,
-Rate on the drive knob, Depth on the tone knob, no level),
+Rate on the drive knob, Depth on the tone knob, no level), **Modern 33** (a boost whose
+one knob is its level: the drive knob is greyed) and **Modern Purple** (gain, bass,
+mid, treble, the Aggression toggle on a fourth tone knob in thirds, and volume; it
+holds the chain at the host rate, as the Metal Zone does),
 each with the knobs that pedal actually has, in front of
 whichever circuit is selected — so a Green 808 into the American Twin keeps both
 sets of controls. The pedal is its own netlist, solved before the circuit it
@@ -406,7 +411,7 @@ hardware behind them at all.
 | Oregon T | Sunn Model T, drawing D-1029 A, 1973, BRITE channel | [oregon_t.md](docs/models/oregon_t.md) |
 | American SVT | Ampeg SVT (6550), "SVT PREAMP" D 591719 rev D, 1975, channel 1, NORMAL input | [american_svt.md](docs/models/american_svt.md) |
 | American 800RB | Gallien-Krueger 800RB, preamp 406-0045-C, 1991 | [american_800rb.md](docs/models/american_800rb.md) |
-| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost, Bass Driver, Orange Phase, Blue Chorus | the pedals above, selectable as circuits in their own right | as listed under Pedals |
+| Green 9, Rodent, Round Fuzz, Yellow Dist, Heavy Metal, Metal Zone, Orange Dist, Treble Boost, Gold Drive, Brit Drive, Clean Boost, Bass Driver, Orange Phase, Blue Chorus, Modern 33, Modern Purple | the pedals above, selectable as circuits in their own right | as listed under Pedals |
 
 **Pedals** (the slot in front of whatever is selected)
 
@@ -428,6 +433,8 @@ hardware behind them at all.
 | Bass Driver | Tech 21 SansAmp Bass Driver DI, V2, from a trace of a real unit (kanengomibako, 2022) | [bass_driver.md](docs/models/bass_driver.md) |
 | Orange Phase | MXR Phase 90, script logo (1974-77), from ElectroSmash's trace, with the block logo's R28 switchable | [orange_phase.md](docs/models/orange_phase.md) |
 | Blue Chorus | Boss CE-2, from Boss's CE-2/CE-2B Service Notes, first edition, February 1987 | [blue_chorus.md](docs/models/blue_chorus.md) |
+| Modern 33 | Fortin 33, from PedalPCB's trace of a genuine unit (the TC Electronic Integrated Preamp's front end) | [modern_33.md](docs/models/modern_33.md) |
+| Modern Purple | Revv G3, the original (not the G3 V2), from PedalPCB's trace of a genuine unit | [modern_purple.md](docs/models/modern_purple.md) |
 
 **Wahs** (their own slot, ahead of the pedal)
 

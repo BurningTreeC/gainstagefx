@@ -194,6 +194,12 @@ pub enum Circuit {
     #[id = "pedal_boss_ce2_circuit"]
     #[name = "Blue Chorus"]
     BlueChorus,
+    #[id = "pedal_fortin_33_circuit"]
+    #[name = "Modern 33"]
+    Modern33,
+    #[id = "pedal_revv_g3_circuit"]
+    #[name = "Modern Purple"]
+    ModernPurple,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -272,9 +278,11 @@ impl Circuit {
             Circuit::American800RB => "American 800RB",
             Circuit::OrangePhase => "Orange Phase",
             Circuit::BlueChorus => "Blue Chorus",
+            Circuit::Modern33 => "Modern 33",
+            Circuit::ModernPurple => "Modern Purple",
         }
     }
-    pub const ALL: [Circuit; 46] = [
+    pub const ALL: [Circuit; 48] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -321,6 +329,8 @@ impl Circuit {
         Circuit::American800RB,
         Circuit::OrangePhase,
         Circuit::BlueChorus,
+        Circuit::Modern33,
+        Circuit::ModernPurple,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -371,6 +381,8 @@ impl Circuit {
             Circuit::American800RB => voice::Gain::American800RB,
             Circuit::OrangePhase => voice::Gain::OrangePhase,
             Circuit::BlueChorus => voice::Gain::BlueChorus,
+            Circuit::Modern33 => voice::Gain::Modern33,
+            Circuit::ModernPurple => voice::Gain::ModernPurple,
         }
     }
 
@@ -427,7 +439,9 @@ impl Circuit {
             | voice::Gain::CleanBoost
             | voice::Gain::BassDriver
             | voice::Gain::OrangePhase
-            | voice::Gain::BlueChorus => Kind::Pedal,
+            | voice::Gain::BlueChorus
+            | voice::Gain::Modern33
+            | voice::Gain::ModernPurple => Kind::Pedal,
             voice::Gain::Neve
             | voice::Gain::American312
             | voice::Gain::ConsoleE
@@ -773,6 +787,12 @@ pub enum PedalModel {
     #[id = "pedal_boss_ce2"]
     #[name = "Blue Chorus"]
     BlueChorus,
+    #[id = "pedal_fortin_33"]
+    #[name = "Modern 33"]
+    Modern33,
+    #[id = "pedal_revv_g3"]
+    #[name = "Modern Purple"]
+    ModernPurple,
 }
 
 /// The wah ahead of the pedal slot. Append new ids only. See
@@ -816,7 +836,7 @@ pub enum WahMode {
 }
 
 impl PedalModel {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 19] = [
         Self::None,
         Self::Green808,
         Self::BigMuff,
@@ -834,6 +854,8 @@ impl PedalModel {
         Self::BassDriver,
         Self::OrangePhase,
         Self::BlueChorus,
+        Self::Modern33,
+        Self::ModernPurple,
     ];
 
     pub fn name(self) -> &'static str {
@@ -859,6 +881,8 @@ impl PedalModel {
             Self::BassDriver => voice::Pedal::BassDriver,
             Self::OrangePhase => voice::Pedal::OrangePhase,
             Self::BlueChorus => voice::Pedal::BlueChorus,
+            Self::Modern33 => voice::Pedal::Modern33,
+            Self::ModernPurple => voice::Pedal::ModernPurple,
         }
     }
 }

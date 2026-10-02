@@ -1211,6 +1211,12 @@ pub fn describe(circuit: Circuit) -> String {
             "Two op-amp stages into red LEDs, then a bass, middle and treble \
                           stack that all move each other."
         }
+        Circuit::ModernPurple => {
+            "Modeled after a modern high-gain pedal: six op-amps, diode and LED clipping, active mid, Aggression."
+        }
+        Circuit::Modern33 => {
+            "Modeled after a modern metal boost: a transistor and an op-amp on 33 V, 22 dB, the lows held back."
+        }
         Circuit::BlueChorus => {
             "Modeled after a late-70s blue chorus: a bucket-brigade delay swept by an oscillator, mixed with the dry."
         }

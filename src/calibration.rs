@@ -4,6 +4,7 @@
 
 // Absolute level anchored to Twin Reverb knot 29 at -51.44624 dB; see `calibrate.rs`.
 // Catalogue additions/recalibrations do not move existing voices globally.
+#[allow(clippy::approx_constant)]
 pub const CALIBRATION: [Calibration; VOICES] = [
     // Clean with a valve: 1.1236 V in, 3.0 % distortion, 0.3 % third.
     Calibration {
@@ -275,6 +276,16 @@ pub const CALIBRATION: [Calibration; VOICES] = [
     Calibration {
         drive_volts: 0.122000,
         make_up_db: [1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04, 1.04],
+    },
+    // Fortin 33 with a valve: 0.1220 V in, 0.0 % distortion, 0.0 % third.
+    Calibration {
+        drive_volts: 0.122000,
+        make_up_db: [75.64, 75.64, 75.64, 71.30, 63.80, 57.99, 53.24, 49.22, 45.74, 42.67, 39.93, 37.44, 35.18, 33.09, 31.16, 29.36, 27.68, 26.10, 24.61, 23.20, 21.87, 20.60, 19.39, 18.23, 17.12, 16.06, 11.27, 6.67, 3.49, 1.02, -1.03, -2.80, -4.36],
+    },
+    // Revv G3 with a valve: 0.1220 V in, 22.0 % distortion, 17.8 % third.
+    Calibration {
+        drive_volts: 0.122000,
+        make_up_db: [-1.58, -1.58, -1.59, -1.65, -1.75, -1.90, -2.06, -2.22, -2.36, -2.50, -2.65, -2.79, -2.90, -2.95, -2.99, -3.07, -3.16, -3.24, -3.28, -3.30, -3.32, -3.31, -3.29, -3.27, -3.25, -3.23, -3.20, -3.18, -3.16, -3.14, -3.13, -3.11, -3.10],
     },
 ];
 

@@ -955,6 +955,52 @@ pub const PRESETS: &[Preset] = &[
         output_trim: -3.96,
         ..base("Amplifier", "Ultra Rhythm")
     },
+    // The same head pushed by the metal boost, as it is run in front of every
+    // high-gain amplifier: the Level up, the amplifier's own gain backed off,
+    // the boost's held-back low end tightening the palm mutes. Into a
+    // straight 4x12 with V30s -- the modern makers' box (see
+    // `docs/models/modern_oversized_412.md`).
+    Preset {
+        pedal: PedalModel::Modern33,
+        pedal_level: 0.8,
+        drive: 0.6,
+        circuit: Circuit::Peavey,
+        tone: ToneStack::Off,
+        bass: 0.55,
+        mid: 0.45,
+        treble: 0.6,
+        cab_model: CabModel::BritV30,
+        mic_a_position: 0.3,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -17.4 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: 4.6,
+        ..base("Amplifier", "Ultra, Modern 33")
+    },
+    // The modern high-gain pedal as a preamp in a box, into a clean Twin and
+    // the same V30 4x12: Aggression on Red, the box's go-to.
+    Preset {
+        pedal: PedalModel::ModernPurple,
+        pedal_drive: 0.55,
+        pedal_tone: 0.55,
+        pedal_tone_b: 0.45,
+        pedal_tone_c: 0.55,
+        pedal_tone_d: 0.9,
+        pedal_level: 0.5,
+        drive: 0.3,
+        circuit: Circuit::Twin,
+        tone: ToneStack::Off,
+        bass: 0.5,
+        mid: 0.5,
+        treble: 0.5,
+        cab_model: CabModel::BritV30,
+        mic_a_position: 0.3,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -10.6 dB untrimmed, against the
+        // catalogue's -12.8.
+        output_trim: -2.2,
+        ..base("Amplifier", "Twin, Modern Purple")
+    },
     // --- Brit 800 -------------------------------------------------------------
     // The 1981 master-volume British lead amplifier on its own EL34 power
     // stage. Middle up and bass back is how the stack is usually run, into a

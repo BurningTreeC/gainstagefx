@@ -31,9 +31,9 @@ use crate::circuits::{
     ac30, american312, american_800rb, american_ss800, american_svt, bass_driver, bigmuff,
     blue_chorus, brit2205, brit800, brit_drive, british_47, brum100, cabinet, clean_boost, clipper,
     console_e, deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive, heavy_metal, iron,
-    jazz120, jc120_power, markiic, metal_zone, neve, orange_dist, orange_phase, oregon_t, plexi,
-    plexi_bass, power, preamp, rectifier, rodent, round_fuzz, studio, tone, treble_boost, ts808,
-    tube610, twin, wah,
+    jazz120, jc120_power, markiic, metal_zone, modern_33, modern_purple, neve, orange_dist,
+    orange_phase, oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent, round_fuzz,
+    studio, tone, treble_boost, ts808, tube610, twin, wah,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::{Bbd, Brigade};
@@ -216,12 +216,17 @@ pub enum Gain {
     /// The Boss CE-2, its bucket brigade between two halves of its netlist
     /// (`circuits::blue_chorus`).
     BlueChorus,
+    /// The Fortin 33, from a trace of a genuine unit (`circuits::modern_33`).
+    Modern33,
+    /// The Revv G3, the original, from a trace of a genuine unit
+    /// (`circuits::modern_purple`).
+    ModernPurple,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 46] = [
+    pub const ALL: [Gain; 48] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -268,6 +273,8 @@ impl Gain {
         Gain::American800RB,
         Gain::OrangePhase,
         Gain::BlueChorus,
+        Gain::Modern33,
+        Gain::ModernPurple,
     ];
 
     pub fn name(self) -> &'static str {
@@ -318,6 +325,8 @@ impl Gain {
             Gain::American800RB => "Gallien-Krueger 800RB",
             Gain::OrangePhase => "MXR Phase 90",
             Gain::BlueChorus => "Boss CE-2",
+            Gain::Modern33 => "Fortin 33",
+            Gain::ModernPurple => "Revv G3",
         }
     }
 
@@ -370,6 +379,9 @@ impl Gain {
             Gain::American800RB => american_800rb::VOLUME,
             Gain::OrangePhase => orange_phase::SPEED,
             Gain::BlueChorus => blue_chorus::RATE,
+            // Its one pot, a level after a fixed gain, as the Treble Boost's.
+            Gain::Modern33 => modern_33::LEVEL,
+            Gain::ModernPurple => modern_purple::GAIN,
             _ => clipper::GAIN,
         }
     }
@@ -424,7 +436,8 @@ impl Gain {
             Gain::TrebleBoost => "BOOST",
             Gain::OrangePhase => "SPEED",
             Gain::BlueChorus => "RATE",
-            Gain::GoldDrive | Gain::BritDrive | Gain::CleanBoost => "GAIN",
+            Gain::Modern33 => "LEVEL",
+            Gain::GoldDrive | Gain::BritDrive | Gain::CleanBoost | Gain::ModernPurple => "GAIN",
             Gain::Mt2 | Gain::Ds1 => "DIST",
             _ => "DRIVE",
         }
@@ -436,7 +449,7 @@ impl Gain {
     pub fn level_name(self) -> &'static str {
         match self {
             Gain::Screamer | Gain::Green9 | Gain::Hm2 | Gain::Mt2 | Gain::Ds1 => "LEVEL",
-            Gain::Muff | Gain::Rat | Gain::FuzzFace => "VOLUME",
+            Gain::Muff | Gain::Rat | Gain::FuzzFace | Gain::ModernPurple => "VOLUME",
             Gain::DistPlus | Gain::GoldDrive => "OUTPUT",
             Gain::BritDrive | Gain::BassDriver => "LEVEL",
             // Its masters sit on 10 as the manual says; the knob is the boost,
@@ -504,6 +517,7 @@ impl Gain {
             Gain::OregonT => Some(Level::Circuit(oregon_t::MASTER)),
             Gain::GoldDrive => Some(Level::Circuit(gold_drive::LEVEL)),
             Gain::BritDrive => Some(Level::Circuit(brit_drive::LEVEL)),
+            Gain::ModernPurple => Some(Level::Circuit(modern_purple::VOLUME)),
             Gain::BassDriver => Some(Level::Circuit(bass_driver::LEVEL)),
             Gain::American800RB => Some(Level::Circuit(american_800rb::BOOST)),
             // The MicroAmp's one knob is its gain, already the Drive knob.
@@ -553,6 +567,12 @@ impl Gain {
             Gain::Mt2 => Some((metal_zone::LOW, metal_zone::MIDDLE, metal_zone::HIGH)),
             // The Guv'nor's own three, wired as its drawing has them.
             Gain::BritDrive => Some((brit_drive::BASS, brit_drive::MIDDLE, brit_drive::TREBLE)),
+            // The G3's passive bass and treble and its active middle.
+            Gain::ModernPurple => Some((
+                modern_purple::BASS,
+                modern_purple::MID,
+                modern_purple::TREBLE,
+            )),
             // Active, +-12 dB each; the bass and mid with their shifts on the
             // panel's low and mid switches.
             Gain::BassDriver => Some((bass_driver::BASS, bass_driver::MID, bass_driver::TREBLE)),
@@ -590,6 +610,9 @@ impl Gain {
             Gain::BassDriver => Some((bass_driver::BLEND, "BLEND")),
             // The fourth band of its four.
             Gain::American800RB => Some((american_800rb::HI_MID, "HI MID")),
+            // Not a tone control but the box's toggle beyond its stack: off,
+            // Blue and Red in thirds of the knob.
+            Gain::ModernPurple => Some((modern_purple::AGGRESSION, "AGGRESSION")),
             _ => None,
         }
     }
@@ -745,6 +768,8 @@ impl Gain {
                 | Gain::American800RB
                 | Gain::OrangePhase
                 | Gain::BlueChorus
+                | Gain::Modern33
+                | Gain::ModernPurple
         )
     }
 
@@ -1065,6 +1090,7 @@ impl Gain {
                     | Gain::CleanBoost
                     | Gain::OrangePhase
                     | Gain::BlueChorus
+                    | Gain::Modern33
             )
     }
 
@@ -1773,6 +1799,12 @@ pub enum Pedal {
     /// The Boss CE-2 (`circuits::blue_chorus`). Rate on the slot's drive,
     /// Depth on its tone knob, no level.
     BlueChorus,
+    /// The Fortin 33 (`circuits::modern_33`). One knob, Level, on the slot's
+    /// level; no drive, so the slot's drive knob is greyed.
+    Modern33,
+    /// The Revv G3 (`circuits::modern_purple`). Gain, bass, mid, treble, the
+    /// Aggression toggle as a fourth tone knob in thirds, and volume.
+    ModernPurple,
 }
 
 /// What a guitar puts out for a nominal digital signal: the level every circuit
@@ -1856,6 +1888,8 @@ impl Pedal {
             Pedal::BassDriver => ("drive", "level"),
             Pedal::OrangePhase => ("speed", "level"),
             Pedal::BlueChorus => ("rate", "level"),
+            Pedal::Modern33 => ("drive", "level"),
+            Pedal::ModernPurple => ("gain", "volume"),
         }
     }
 
@@ -1879,10 +1913,12 @@ impl Pedal {
             Pedal::BassDriver => Some(Gain::BassDriver),
             Pedal::OrangePhase => Some(Gain::OrangePhase),
             Pedal::BlueChorus => Some(Gain::BlueChorus),
+            Pedal::Modern33 => Some(Gain::Modern33),
+            Pedal::ModernPurple => Some(Gain::ModernPurple),
         }
     }
 
-    pub const ALL: [Pedal; 17] = [
+    pub const ALL: [Pedal; 19] = [
         Pedal::None,
         Pedal::Green808,
         Pedal::BigMuff,
@@ -1900,9 +1936,11 @@ impl Pedal {
         Pedal::BassDriver,
         Pedal::OrangePhase,
         Pedal::BlueChorus,
+        Pedal::Modern33,
+        Pedal::ModernPurple,
     ];
     /// How many pedal circuits a chain holds.
-    const SLOTS: usize = 16;
+    const SLOTS: usize = 18;
 
     fn slot(self) -> Option<usize> {
         match self {
@@ -1923,6 +1961,8 @@ impl Pedal {
             Pedal::BassDriver => Some(13),
             Pedal::OrangePhase => Some(14),
             Pedal::BlueChorus => Some(15),
+            Pedal::Modern33 => Some(16),
+            Pedal::ModernPurple => Some(17),
         }
     }
 
@@ -1957,8 +1997,17 @@ impl Pedal {
     /// So the chain keeps them at the host rate for now, exactly as it keeps the
     /// modelled amplifiers under `MODELLED_MAX_OVERSAMPLING`, and for the same
     /// reason. See `Chain::set_oversampling`.
+    ///
+    /// The Modern Purple (2026-10-02) joins them: six rail-aware op-amps and
+    /// six clipping diodes, 5.76 Newton passes a sample in front of the Clean
+    /// circuit (the Metal Zone 4.56). With its kernels compiled, 23.9 % alone
+    /// and 47.1 % in front of the Cali IIC+ at 1x, against the Metal Zone's
+    /// 20.2 and 45.0 measured beside it; before them it took 109.6 % at 2x.
     pub fn is_expensive(self) -> bool {
-        matches!(self, Pedal::HeavyMetal | Pedal::MetalZone)
+        matches!(
+            self,
+            Pedal::HeavyMetal | Pedal::MetalZone | Pedal::ModernPurple
+        )
     }
 
     /// Whether the pedal has a drive control. Every one but the Treble Boost
@@ -2011,6 +2060,8 @@ impl Pedal {
             13 => bass_driver::build(10_000.0, 470_000.0),
             14 => orange_phase::build(10_000.0, 470_000.0),
             15 => blue_chorus::build(10_000.0, 470_000.0),
+            16 => modern_33::build(10_000.0, 470_000.0),
+            17 => modern_purple::build(10_000.0, 470_000.0),
             _ => clean_boost::build(10_000.0, 470_000.0),
         }
     }
@@ -2181,6 +2232,40 @@ impl Pedal {
                 drive: Some(blue_chorus::RATE),
                 tones: one_tone(blue_chorus::DEPTH, "depth", false),
                 level: None,
+            },
+            // One knob, LEVEL on the box: the level, and no drive.
+            16 => PedalControls {
+                drive: None,
+                tones: NO_TONES,
+                level: Some(modern_33::LEVEL),
+            },
+            // Gain, the three of its stack and the Aggression toggle, volume.
+            17 => PedalControls {
+                drive: Some(modern_purple::GAIN),
+                tones: [
+                    Some(ToneKnob {
+                        control: modern_purple::BASS,
+                        label: "bass",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: modern_purple::MID,
+                        label: "mid",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: modern_purple::TREBLE,
+                        label: "treble",
+                        inverted: false,
+                    }),
+                    Some(ToneKnob {
+                        control: modern_purple::AGGRESSION,
+                        label: "aggr.",
+                        inverted: false,
+                    }),
+                    None,
+                ],
+                level: Some(modern_purple::VOLUME),
             },
             // One knob, GAIN on the box: the drive, and no level.
             _ => PedalControls {
@@ -2506,6 +2591,8 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         Gain::American800RB => american_800rb::build(10_000.0, 1_000_000.0),
         Gain::OrangePhase => orange_phase::build(10_000.0, 470_000.0),
         Gain::BlueChorus => blue_chorus::build(10_000.0, 470_000.0),
+        Gain::Modern33 => modern_33::build(10_000.0, 470_000.0),
+        Gain::ModernPurple => modern_purple::build(10_000.0, 470_000.0),
     }
 }
 

@@ -162,6 +162,11 @@ fn intent(gain: Gain) -> f64 {
         Gain::OrangePhase => 1.0,
         // A chorus, the same: the dry and the delayed summed.
         Gain::BlueChorus => 1.0,
+        // A boost whose one knob is its level, like the Clean Boost.
+        Gain::Modern33 => 1.0,
+        // A high-gain pedal, stated at a guitar's level like the rest: deep
+        // in its clipping with the gain at noon.
+        Gain::ModernPurple => 40.0,
     }
 }
 
@@ -307,6 +312,8 @@ fn stated_level(gain: Gain) -> Option<f64> {
         // A pedal, fed a guitar like every pedal here.
         Gain::OrangePhase => Some(GUITAR_VOLTS),
         Gain::BlueChorus => Some(GUITAR_VOLTS),
+        Gain::Modern33 => Some(GUITAR_VOLTS),
+        Gain::ModernPurple => Some(GUITAR_VOLTS),
         _ => None,
     }
 }
@@ -615,6 +622,9 @@ fn main() {
         ABSOLUTE_REFERENCE_VOICE.name()
     );
     println!("// Catalogue additions/recalibrations do not move existing voices globally.");
+    // A measured make-up can land on -3.14 dB, which clippy reads as a
+    // careless pi (the Revv G3's did, 2026-10-02).
+    println!("#[allow(clippy::approx_constant)]");
     println!("pub const CALIBRATION: [Calibration; VOICES] = [");
     for (note, drive_volts, make_up) in &rows {
         println!("{note}");
