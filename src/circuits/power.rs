@@ -737,7 +737,30 @@ impl ParaphaseFront {
         rail_dropper: 3_000.0, // R41
         rail_reservoir: 40e-6, // C16
     };
+
+    /// The V-4B's, DWG 06700 A: the VT-40's front part for part (renumbered:
+    /// R23 in, R24 / R25 / R26, C10, R27-R33, C11-C13), but for C14 .001 across
+    /// the loop's 4.7 k where the VT-40 has 500 pF, the 325 V rail under V3b and
+    /// the 360 V node under the inverter -- behind R52 and R53, 4.7 k 2 W each,
+    /// from the 545 V rail.
+    pub const V4B: ParaphaseFront = ParaphaseFront {
+        gain_rail: 325.0,
+        feedback_cap: 0.001e-6, // C14
+        rail_upstream: V4B_PI_OPEN,
+        rail_dropper: 9_400.0, // R52 + R53
+        rail_reservoir: 40e-6, // C17
+        ..Self::VT40
+    };
 }
+
+/// The V-4B's 360 V node, as `VT40_PI_OPEN` is the VT-40's 393 V: an
+/// open-circuit voltage behind R52 and R53, fitted to the drawing's 360 V with
+/// this model's inverter on it (`examples/vt40_op.rs`).
+pub const V4B_PI_OPEN: f64 = 419.6;
+/// The 545 V rail and the 540 V screen node: open-circuit voltages behind an
+/// ESTIMATED 100 ohm, and R55's 470 ohm 7 W plus that for the screens.
+pub const V4B_HT_OPEN: f64 = 555.2;
+pub const V4B_SCREEN_OPEN: f64 = 543.8;
 
 impl PowerSpec {
     /// 1981 2203 EL34 circuit with Hammond replacement-iron data. The matched
@@ -2286,6 +2309,49 @@ impl PowerSpec {
         plate_resistor: 0.0,
         follower_front: None,
         paraphase_front: Some(&ParaphaseFront::VT40),
+    };
+    /// The Ampeg V-4B's, from its schematic DWG 06700 revision A (5-71): the
+    /// matched power stage of the American V-4B (`circuits::american_v4b`).
+    /// See `docs/models/american_vt40.md`.
+    ///
+    /// - **Four 7027As**, two a side, on 540 V (the 545 V rail through the
+    ///   primary), fixed bias -64 V through R35 / R36 100 k, a 47 k stopper and
+    ///   a 470 ohm 2 W screen resistor a valve; the screens' node is 540 V
+    ///   behind R55, 470 ohm 7 W. The drawing's 527 V at the screen pins would
+    ///   be 28 mA a screen through 470 ohm and is not used.
+    /// - Everything ahead of them is `ParaphaseFront::V4B`.
+    /// - **4.7 k with .001 across it from the 8 ohm tap** (R34, C14).
+    /// - The plates' "PR1 5W" resistors (R39, R40, R45, R46) are not built:
+    ///   their value is a part code, PLAUSIBLY the parasitic suppressors the
+    ///   SVT's 5.1 ohm plate resistors are.
+    ///
+    /// ESTIMATED: the transformer (8950028, no data located) -- 3 k plate to
+    /// plate, half the VT-40's 6 k for twice its valves, with half its copper --
+    /// its inductance, leakage and core, and the supplies' source resistance.
+    pub const V4B_7027A: PowerSpec = PowerSpec {
+        name: "American V-4B 7027A (Ampeg V-4B, DWG 06700 A, 1971)",
+        pi_supply: 360.0,
+        stopper: 47_000.0 / 2.0,      // R37, R43; R38, R44
+        screen_resistor: 470.0 / 2.0, // R42, R47; R41, R48
+        tubes_per_side: 2.0,
+        bias: -64.0,
+        plate_supply: V4B_HT_OPEN,
+        screen_supply: V4B_SCREEN_OPEN,
+        // R55, 470 ohm 7 W, and the rail's own 100 ohm.
+        screen_resistance: 570.0,
+        // C18 and C20 in series with C19's sections. ESTIMATED reading, as the
+        // VT-40's.
+        reservoir: 50e-6,
+        screen_reservoir: 20e-6,
+        // 3 k plate to plate into the 8 ohm tap. ESTIMATED.
+        ratio: 19.364_916_731_037_084,
+        primary_resistance: 75.0,
+        // ESTIMATED: sized to hold 100 W (40 V peak at 8 ohm) at 40 Hz, a bass
+        // head's, as the SVT's.
+        saturation_volts: 40.0,
+        saturation_hz: 40.0,
+        paraphase_front: Some(&ParaphaseFront::V4B),
+        ..Self::VT40_7027A
     };
 }
 

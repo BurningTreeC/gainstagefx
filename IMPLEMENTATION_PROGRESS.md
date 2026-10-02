@@ -1,5 +1,40 @@
 # Implementation progress
 
+## 2026-10-02 — The VT-40's reverb, the American V-4B, two album presets
+
+The owner: "Go ahead with the V-4B and its reverb and the album presets we can create
+now". The V-4B has no reverb (its drawing has no echo board); the reverb built is the
+VT-40's.
+
+- **The VT-40's reverb**: V202 (6CG7) driving the tank's coil through C209 from the
+  treble wiper, V203's recovery stage on an auxiliary return, the REVERB pot a real
+  control (resting at zero). The tank's input impedance is not on the parts list; Ampeg's
+  A.C. table chose it: a 200 ohm coil leaves V202's plate 5.5 dB over the table, a
+  1475 ohm one (resonating with C209 near 480 Hz) 2.6 dB under. The chain's tank, which
+  belonged to the AB763s and their tremolo together, is split into `Gain::spring_reverb`
+  and `Gain::has_tremolo`, and the panel greys Reverb and Speed / Intensity separately.
+- **The American V-4B** (`circuits/american_v4b.rs`, `PowerSpec::V4B_7027A`), DWG 06700
+  A: the VT-40's tone section shared (`american_vt40::tone_section`), ULTRA LO (a ladder,
+  a cathode bypass and a capacitor on the mixer, four poles) on the low switch, ULTRA HI
+  on the Bright switch, four 7027As. Its supply chain adds up where the VT-40's does not;
+  its output transformer is estimated. Registered as `amp_ampeg_v4b` and
+  `power_ampeg_v4b_7027a`, appended; one preset, *American V-4B Growl*.
+- **Album presets**: *Desert Deaf '02* (the VT-40, its midrange pushed) and
+  *Californicated '99* (the JTM45, a 57 and an 87 on the cabinet as the engineer had
+  them), each with its evidence table in PRESETS.md. Neither record's blend of two
+  amplifiers is represented. Frusciante's own words put "a 200-watt bass head" beside
+  the '65 Marshall, not the 100 W Super Bass the waiting list had assumed.
+- Ampeg's 1976 drawing (Magnavox 591761) lists the midrange inductors as 800 / 300 /
+  100 mH, within 6-22 % of the toroid estimated from the published frequencies: a
+  cross-check, recorded; the estimate stands.
+- The *American VT-40 Crunch* preset moves to a 10" guitar speaker in the 4x10.
+- Calibration and power trim generated: the V-4B's row and column new, the VT-40's row
+  moved 0.01 dB, nothing else. Presets levelled by `presetlevel` (Crunch -0.5, V-4B
+  Growl +2.4, Desert Deaf -0.8, Californicated +10.9). Kernel table regenerated: 214 to
+  218, 209 unchanged, 8 new, 4 no longer compiled (the VT-40's netlist changed under
+  them). Tests: `tests/american_v4b.rs` (8); `tests/american_vt40.rs` gains the reverb
+  (14); `tests/knobs.rs` counts a tank's REVERB as reachable.
+
 ## 2026-10-02 — The American VT-40 (Ampeg VT-40) and the 7027A
 
 The owner: "Yes" -- commit the checkpoint and carry on with the VT-40 build.

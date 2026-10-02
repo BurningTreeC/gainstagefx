@@ -28,12 +28,12 @@ use crate::acoustics::mic::{MicPlacement, MicProfile};
 use crate::acoustics::speaker::{self, LoadSlots, LoadValues, Mounting, SpeakerProfile};
 use crate::acoustics::stage::{AcousticStage, MicSlot};
 use crate::circuits::{
-    ac30, american312, american_800rb, american_ss800, american_svt, american_vt40, bass_driver,
-    bigmuff, blue_chorus, brit2205, brit800, brit_drive, british_47, brum100, cabinet, clean_boost,
-    clipper, console_e, deluxe, distortion_plus, dr103, evh5150, german_76, gold_drive,
-    heavy_metal, iron, jazz120, jc120_power, jtm45, markiic, metal_zone, modern_33, modern_purple,
-    neve, orange_dist, orange_phase, oregon_t, plexi, plexi_bass, power, preamp, rectifier, rodent,
-    round_fuzz, studio, tone, treble_boost, ts808, tube610, twin, wah,
+    ac30, american312, american_800rb, american_ss800, american_svt, american_v4b, american_vt40,
+    bass_driver, bigmuff, blue_chorus, brit2205, brit800, brit_drive, british_47, brum100, cabinet,
+    clean_boost, clipper, console_e, deluxe, distortion_plus, dr103, evh5150, german_76,
+    gold_drive, heavy_metal, iron, jazz120, jc120_power, jtm45, markiic, metal_zone, modern_33,
+    modern_purple, neve, orange_dist, orange_phase, oregon_t, plexi, plexi_bass, power, preamp,
+    rectifier, rodent, round_fuzz, studio, tone, treble_boost, ts808, tube610, twin, wah,
 };
 use crate::dsp::ac;
 use crate::dsp::bbd::{Bbd, Brigade};
@@ -227,12 +227,15 @@ pub enum Gain {
     /// The Ampeg VT-40 of 1971, from Ampeg's own drawing and service data
     /// (`circuits::american_vt40`), into its two 7027As.
     AmericanVt40,
+    /// The Ampeg V-4B of 1971, the VT-40's bass sibling, from Ampeg's own
+    /// drawing (`circuits::american_v4b`), into its four 7027As.
+    AmericanV4b,
 }
 
 impl Gain {
     // Appended: the calibration table and every chain's circuit slots are laid
     // out in this order.
-    pub const ALL: [Gain; 50] = [
+    pub const ALL: [Gain; 51] = [
         Gain::Clean,
         Gain::Crunch,
         Gain::HighGain,
@@ -283,6 +286,7 @@ impl Gain {
         Gain::ModernPurple,
         Gain::Brit45,
         Gain::AmericanVt40,
+        Gain::AmericanV4b,
     ];
 
     pub fn name(self) -> &'static str {
@@ -337,6 +341,7 @@ impl Gain {
             Gain::ModernPurple => "Revv G3",
             Gain::Brit45 => "JTM45",
             Gain::AmericanVt40 => "Ampeg VT-40",
+            Gain::AmericanV4b => "Ampeg V-4B",
         }
     }
 
@@ -394,6 +399,7 @@ impl Gain {
             Gain::ModernPurple => modern_purple::GAIN,
             Gain::Brit45 => jtm45::VOLUME,
             Gain::AmericanVt40 => american_vt40::VOLUME,
+            Gain::AmericanV4b => american_v4b::VOLUME,
             _ => clipper::GAIN,
         }
     }
@@ -439,6 +445,7 @@ impl Gain {
             | Gain::OregonT
             | Gain::AmericanSvt
             | Gain::AmericanVt40
+            | Gain::AmericanV4b
             | Gain::American800RB => "VOLUME",
             // The Laney prints its volumes as gains: this channel's is GAIN TWO.
             Gain::Brum100 => "GAIN",
@@ -577,6 +584,11 @@ impl Gain {
                 american_vt40::BASS,
                 american_vt40::MIDDLE,
                 american_vt40::TREBLE,
+            )),
+            Gain::AmericanV4b => Some((
+                american_v4b::BASS,
+                american_v4b::MIDDLE,
+                american_v4b::TREBLE,
             )),
             // The original 5150's own stack, off its preamp sheet (2026-09-25).
             Gain::Peavey => Some((evh5150::BASS, evh5150::MIDDLE, evh5150::TREBLE)),
@@ -739,6 +751,7 @@ impl Gain {
             Gain::PlexiBass => Some(&power::PowerSpec::PLEXI_BASS_EL34),
             Gain::Brit45 => Some(&power::PowerSpec::JTM45_KT66),
             Gain::AmericanVt40 => Some(&power::PowerSpec::VT40_7027A),
+            Gain::AmericanV4b => Some(&power::PowerSpec::V4B_7027A),
             Gain::Brum100 => Some(&power::PowerSpec::BRUM_EL34),
             Gain::OregonT => Some(&power::PowerSpec::OREGON_6550),
             Gain::AmericanSvt => Some(&power::PowerSpec::SVT_6550),
@@ -795,6 +808,7 @@ impl Gain {
                 | Gain::Modern33
                 | Gain::ModernPurple
                 | Gain::AmericanVt40
+                | Gain::AmericanV4b
         )
     }
 
@@ -976,6 +990,15 @@ impl Gain {
                 on_label: "Ultra Hi (120 pF)",
             });
         }
+        if self == Gain::AmericanV4b {
+            // SW2 ULTRA HI: C105 from VR101's top to its wiper.
+            return Some(BrightSwitch {
+                slot: american_v4b::ULTRA_HI_SLOT,
+                on: american_v4b::ULTRA_HI_FARADS,
+                off: american_v4b::ULTRA_HI_OFF_FARADS,
+                on_label: "Ultra Hi (500 pF)",
+            });
+        }
         if self == Gain::Jazz120 {
             // SW2 does not switch C7 in and out: it shorts R4 so the 330 pF
             // couples fully. See `circuits::jazz120`.
@@ -1016,6 +1039,12 @@ impl Gain {
                 slots: &american_800rb::LO_CUT_SLOTS,
                 values: &[&american_800rb::LO_CUT[0], &american_800rb::LO_CUT[1]],
                 labels: &["Lo Cut", "Flat"],
+            }),
+            // The V-4B's ULTRA LO, off second, as it is built.
+            Gain::AmericanV4b => Some(CircuitSwitch {
+                slots: &american_v4b::ULTRA_LO_SLOTS,
+                values: &[&american_v4b::ULTRA_LO[0], &american_v4b::ULTRA_LO[1]],
+                labels: &["Ultra Lo", "Off"],
             }),
             // BASS SHIFT, the built position second: 40 Hz, 80 Hz.
             Gain::BassDriver => Some(CircuitSwitch {
@@ -1060,6 +1089,15 @@ impl Gain {
                 ],
                 labels: &["300 Hz", "800 Hz", "3 kHz"],
             }),
+            Gain::AmericanV4b => Some(CircuitSwitch {
+                slots: &american_v4b::MID_SELECT_SLOTS,
+                values: &[
+                    &american_v4b::MID_SELECT[0],
+                    &american_v4b::MID_SELECT[1],
+                    &american_v4b::MID_SELECT[2],
+                ],
+                labels: &["300 Hz", "800 Hz", "3 kHz"],
+            }),
             // The V76's "Gerade / 3 kHz", flat second.
             // MID CONTOUR, flat second.
             Gain::American800RB => Some(CircuitSwitch {
@@ -1082,12 +1120,36 @@ impl Gain {
         }
     }
 
-    /// Whether this voice has a reverb tank and a tremolo of its own.
-    ///
-    /// Only the Twin does. The panel greys the three controls everywhere
-    /// else rather than leaving knobs that turn nothing -- which is the
-    /// defect BUG-023 was about, from the other side.
-    pub fn has_reverb_and_tremolo(self) -> bool {
+    /// The spring reverb this voice carries in its own netlist, where it has
+    /// one: both AB763s and the VT-40. The panel greys the Reverb knob
+    /// everywhere else rather than leaving a knob that turns nothing -- which
+    /// is the defect BUG-023 was about, from the other side.
+    pub fn spring_reverb(self) -> Option<SpringReverb> {
+        if let Some(a) = self.ab763() {
+            return Some(SpringReverb {
+                tank_return_aux: a.tank_return_aux,
+                reverb: a.reverb,
+                drive_scale: 1.0,
+            });
+        }
+        match self {
+            Gain::AmericanVt40 => Some(SpringReverb {
+                tank_return_aux: american_vt40::TANK_RETURN_AUX,
+                reverb: american_vt40::REVERB,
+                drive_scale: american_vt40::TANK_DRIVE_SCALE,
+            }),
+            _ => None,
+        }
+    }
+
+    /// Whether this voice has a spring reverb of its own. See `spring_reverb`.
+    pub fn has_reverb(self) -> bool {
+        self.spring_reverb().is_some()
+    }
+
+    /// Whether this voice has a tremolo of its own: only the AB763s' Vibrato
+    /// channels. The panel greys Speed and Intensity everywhere else.
+    pub fn has_tremolo(self) -> bool {
         self.ab763().is_some()
     }
 
@@ -1174,6 +1236,20 @@ impl Gain {
             1
         }
     }
+}
+
+/// Where a voice's spring tank meets its netlist. See `Gain::spring_reverb`.
+#[derive(Clone, Copy, Debug)]
+pub struct SpringReverb {
+    /// The netlist's auxiliary input the tank's pickup returns through.
+    pub tank_return_aux: usize,
+    /// The REVERB pot's control number.
+    pub reverb: usize,
+    /// What the send node's volts are multiplied by to make the drive
+    /// `dsp::spring::Tank` is calibrated for: volts across the 4AB3C1B's 8 ohm
+    /// coil. One for the AB763s, which drive that tank; see
+    /// `american_vt40::TANK_DRIVE_SCALE` for the VT-40's.
+    pub drive_scale: f64,
 }
 
 /// The slot and control numbers of a Fender AB763 channel. See `Gain::ab763`.
@@ -1548,10 +1624,12 @@ pub enum PowerModel {
     /// The VT-40's two 7027As behind a floating paraphase. See
     /// `power::PowerSpec::VT40_7027A`.
     American7027A,
+    /// The V-4B's four 7027As. See `power::PowerSpec::V4B_7027A`.
+    AmericanV4b7027A,
 }
 
 impl PowerModel {
-    pub const ALL: [PowerModel; 21] = [
+    pub const ALL: [PowerModel; 22] = [
         PowerModel::Cali6L6,
         PowerModel::American6L6Clean,
         PowerModel::American6L6HighGain,
@@ -1573,6 +1651,7 @@ impl PowerModel {
         PowerModel::AmericanSS800,
         PowerModel::Brit45KT66,
         PowerModel::American7027A,
+        PowerModel::AmericanV4b7027A,
     ];
 
     /// The valve stage this model is, where it is one.
@@ -1603,6 +1682,7 @@ impl PowerModel {
             Self::Svt6550 => &power::PowerSpec::SVT_6550,
             Self::Brit45KT66 => &power::PowerSpec::JTM45_KT66,
             Self::American7027A => &power::PowerSpec::VT40_7027A,
+            Self::AmericanV4b7027A => &power::PowerSpec::V4B_7027A,
             Self::Jazz120SS | Self::British73Out | Self::AmericanSS800 => return None,
         })
     }
@@ -1677,6 +1757,7 @@ impl PowerModel {
             Self::AmericanSS800 => 18,
             Self::Brit45KT66 => 19,
             Self::American7027A => 20,
+            Self::AmericanV4b7027A => 21,
         }
     }
 
@@ -1714,6 +1795,9 @@ impl PowerModel {
             Self::American7027A => {
                 voice_index(Gain::AmericanVt40, Diode::Silicon, Amplifier::Valve)
             }
+            Self::AmericanV4b7027A => {
+                voice_index(Gain::AmericanV4b, Diode::Silicon, Amplifier::Valve)
+            }
         }
     }
 }
@@ -1742,10 +1826,11 @@ pub enum PowerAmp {
     AmericanSS800,
     Brit45KT66,
     American7027A,
+    AmericanV4b7027A,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -1766,6 +1851,7 @@ impl PowerAmp {
         Self::AmericanSS800,
         Self::Brit45KT66,
         Self::American7027A,
+        Self::AmericanV4b7027A,
     ];
 
     pub fn resolved(self, preamp: Gain) -> Option<PowerModel> {
@@ -1790,6 +1876,7 @@ impl PowerAmp {
                 Gain::American800RB => Some(PowerModel::AmericanSS800),
                 Gain::Brit45 => Some(PowerModel::Brit45KT66),
                 Gain::AmericanVt40 => Some(PowerModel::American7027A),
+                Gain::AmericanV4b => Some(PowerModel::AmericanV4b7027A),
                 _ => None,
             },
             Self::Bypass => None,
@@ -1817,6 +1904,7 @@ impl PowerAmp {
             Self::AmericanSS800 => Some(PowerModel::AmericanSS800),
             Self::Brit45KT66 => Some(PowerModel::Brit45KT66),
             Self::American7027A => Some(PowerModel::American7027A),
+            Self::AmericanV4b7027A => Some(PowerModel::AmericanV4b7027A),
         }
     }
 }
@@ -2664,6 +2752,7 @@ pub fn build_voice(gain: Gain, diode: Diode, amplifier: Amplifier) -> Result<Net
         // Loaded by the inverter's 1 M leak behind its .02, as the Plexis are.
         Gain::Brit45 => jtm45::build(10_000.0, 1_000_000.0),
         Gain::AmericanVt40 => american_vt40::build(10_000.0, 1_000_000.0),
+        Gain::AmericanV4b => american_v4b::build(10_000.0, 1_000_000.0),
     }
 }
 
@@ -3869,7 +3958,9 @@ struct Front<'a> {
     gain_brigade: Option<BrigadeTap<'a>>,
     graphic: Option<&'a mut Simulation>,
     line: Option<&'a mut Simulation>,
-    twin: bool,
+    /// The spring reverb, where the voice has one, and the tremolo, where it
+    /// is an AB763.
+    reverb: Option<SpringReverb>,
     ab763: Option<Ab763>,
     tank_send: usize,
     tank: &'a mut Tank,
@@ -4153,13 +4244,15 @@ impl Front<'_> {
         // sample's transformer secondary and feed its pickup into the circuit's
         // independent return port. The optical cell is likewise a real
         // audio-rate resistor in that same netlist.
-        let tank_pickup = if self.twin {
+        let tank_pickup = if self.reverb.is_some() {
             self.tank.process(*self.drive_previous)
         } else {
             0.0
         };
+        if let Some(reverb) = self.reverb {
+            self.gain.set_aux_input(reverb.tank_return_aux, tank_pickup);
+        }
         if let Some(ab763) = self.ab763 {
-            self.gain.set_aux_input(ab763.tank_return_aux, tank_pickup);
             let ldr = self.tremolo.resistance(self.speed, self.intensity);
             self.gain.set_realtime_value(ab763.ldr_slot, ldr);
             #[cfg(test)]
@@ -4240,8 +4333,10 @@ impl Front<'_> {
                 brigade.advance(self.gain);
             }
             self.gain_ns += lap(started);
-            if self.twin {
-                next_tank_drive = self.gain.voltage_at(self.tank_send);
+            if let Some(reverb) = self.reverb {
+                next_tank_drive = self.gain.voltage_at(self.tank_send) * reverb.drive_scale;
+            }
+            if self.ab763.is_some() {
                 #[cfg(test)]
                 if let Some(trace) = self.trace.as_mut() {
                     let v2_plate = self.gain.voltage_at(self.reverb_send_plate);
@@ -4271,7 +4366,7 @@ impl Front<'_> {
                 self.gain_ns += lap(started);
             }
             #[cfg(test)]
-            if self.twin && self.power_traced {
+            if self.ab763.is_some() && self.power_traced {
                 if let Some(trace) = self.trace.as_mut() {
                     trace.power_input.push(amplified);
                 }
@@ -4282,7 +4377,7 @@ impl Front<'_> {
             }
             *slot = amplified;
         }
-        if self.twin {
+        if self.reverb.is_some() {
             *self.drive_previous = next_tank_drive;
         }
         if let Some(tap) = self.tap.as_mut() {
@@ -5012,8 +5107,10 @@ pub struct Chain {
     twin_reverb_send_plate: usize,
     /// Reverb-transformer secondary/tank-drive node in the unified Twin circuit.
     twin_tank_send: usize,
-    /// The same node in the Deluxe's netlist. See `ab763_tank_send`.
+    /// The same node in the Deluxe's netlist. See `tank_send`.
     deluxe_tank_send: usize,
+    /// And the VT-40's tank coil. See `tank_send`.
+    vt40_tank_send: usize,
     /// Shared V4B dry/wet grid node, for diagnostics.
     #[cfg(test)]
     twin_v4b_grid: usize,
@@ -5212,7 +5309,7 @@ impl Chain {
         if self.voice.has_graphic() {
             self.graphic.copy_runtime_state_from(&source.graphic);
         }
-        if self.voice.has_reverb_and_tremolo() {
+        if self.voice.has_reverb() {
             self.twin_tank_drive_previous = source.twin_tank_drive_previous;
             self.tank.copy_runtime_state_from(&source.tank);
             self.tremolo.copy_runtime_state_from(&source.tremolo);
@@ -5384,6 +5481,10 @@ impl Chain {
             .expect("Deluxe catalogue builds")
             .unknown_named(deluxe::SEND)
             .expect("Deluxe has the reverb-transformer secondary");
+        let vt40_tank_send = american_vt40::build(10_000.0, 1_000_000.0)
+            .expect("VT-40 catalogue builds")
+            .unknown_named(american_vt40::SEND)
+            .expect("VT-40 has the tank's coil");
         let pedal_brigade_nodes = (0..Pedal::SLOTS)
             .map(|slot| {
                 let brigade = Pedal::ALL
@@ -5507,6 +5608,7 @@ impl Chain {
             twin_reverb_send_plate,
             twin_tank_send,
             deluxe_tank_send,
+            vt40_tank_send,
             #[cfg(test)]
             twin_v4b_grid,
             twin_tank_drive_previous: 0.0,
@@ -5597,7 +5699,7 @@ impl Chain {
             self.gain = index;
             self.gain_brigade.reset();
             self.gain_brigade_return = 0.0;
-            if gain.has_reverb_and_tremolo() {
+            if gain.has_reverb() {
                 // The unified Twin stores the Reverb pot inside its netlist.
                 // A direct voice selection must apply the chain's stored
                 // effects settings too: the netlist's default half-position
@@ -5915,6 +6017,7 @@ impl Chain {
             PowerAmp::AmericanSS800 => 16,
             PowerAmp::Brit45KT66 => 17,
             PowerAmp::American7027A => 18,
+            PowerAmp::AmericanV4b7027A => 19,
         };
         Some(column)
     }
@@ -6761,7 +6864,7 @@ impl Chain {
     /// while this thread runs the first half of the next.
     fn split(&mut self, stereo: bool, speculate: bool) -> (Front<'_>, Back<'_>) {
         let inner_rate = self.rate * self.over.factor() as f64;
-        let tank_send = self.ab763_tank_send();
+        let tank_send = self.tank_send();
         let (up, down) = self.over.split();
         let (_, tap_down) = self.tap_over.split();
         // The horn's crossover at the rate it runs at this block.
@@ -6828,7 +6931,7 @@ impl Chain {
             });
         #[cfg(test)]
         let power_traced = power.is_some() && !radiating;
-        let twin = self.voice.has_reverb_and_tremolo();
+        let reverb = self.voice.spring_reverb();
         let ab763 = self.voice.ab763();
         let pedal_nodes = self.pedal.and_then(|i| self.pedal_brigade_nodes[i]);
         let gain_nodes = self.gain_brigade_nodes[self.gain];
@@ -6880,7 +6983,7 @@ impl Chain {
             gain_brigade,
             graphic: self.voice.has_graphic().then_some(&mut self.graphic),
             line: (self.voice == Gain::Neve).then_some(self.line.as_mut()),
-            twin,
+            reverb,
             ab763,
             tank_send,
             tank: &mut self.tank,
@@ -7222,7 +7325,7 @@ impl Chain {
         // non-Twin preset overwrite two unrelated controls at the very end of
         // `apply()`: Puppet Master loaded its intended Drive/Master and then
         // silently replaced them with Reverb=0 and 1-Intensity=1.
-        if self.voice.ab763().is_none() {
+        if self.voice.spring_reverb().is_none() {
             return;
         }
         self.reverb = s.reverb;
@@ -7246,27 +7349,29 @@ impl Chain {
         self.chorus = amount.clamp(0.0, 1.0);
     }
 
-    /// Which MNA node the spring tank is driven from, for the AB763 voice in
-    /// use. Both amplifiers take it off the reverb transformer's secondary;
-    /// the two netlists simply number it differently.
-    fn ab763_tank_send(&self) -> usize {
-        if self.voice == Gain::Deluxe {
-            self.deluxe_tank_send
-        } else {
-            self.twin_tank_send
+    /// Which MNA node the spring tank is driven from, for the voice in use.
+    /// The AB763s take it off the reverb transformer's secondary, the VT-40
+    /// off its tank coil's copper; the netlists simply number them
+    /// differently. Meaningless for a voice with no tank, which never reads it.
+    fn tank_send(&self) -> usize {
+        match self.voice {
+            Gain::Deluxe => self.deluxe_tank_send,
+            Gain::AmericanVt40 => self.vt40_tank_send,
+            _ => self.twin_tank_send,
         }
     }
 
     fn sync_twin_effect_controls(&mut self) {
-        let Some(ab763) = self.voice.ab763() else {
-            return;
-        };
         // The Reverb control is a pot in the recovery stage's own circuit, so
         // it goes where every other control goes: into the simulation, once a
         // block, through `apply`.
-        self.gains[self.gain].set_control(ab763.reverb, self.reverb);
+        if let Some(reverb) = self.voice.spring_reverb() {
+            self.gains[self.gain].set_control(reverb.reverb, self.reverb);
+        }
         // The physical 50 k pot is wired opposite the panel-number direction.
-        self.gains[self.gain].set_control(ab763.intensity, 1.0 - self.intensity);
+        if let Some(ab763) = self.voice.ab763() {
+            self.gains[self.gain].set_control(ab763.intensity, 1.0 - self.intensity);
+        }
     }
 
     /// Enable expensive per-stage clock reads for a diagnostic capture.

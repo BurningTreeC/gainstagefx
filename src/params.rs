@@ -206,6 +206,9 @@ pub enum Circuit {
     #[id = "amp_ampeg_vt40"]
     #[name = "American VT-40"]
     AmericanVt40,
+    #[id = "amp_ampeg_v4b"]
+    #[name = "American V-4B"]
+    AmericanV4b,
 }
 
 /// How long the circuit list was before the Brit 800 was appended. A saved
@@ -288,9 +291,10 @@ impl Circuit {
             Circuit::ModernPurple => "Modern Purple",
             Circuit::Brit45 => "Brit 45",
             Circuit::AmericanVt40 => "American VT-40",
+            Circuit::AmericanV4b => "American V-4B",
         }
     }
-    pub const ALL: [Circuit; 50] = [
+    pub const ALL: [Circuit; 51] = [
         Circuit::Clean,
         Circuit::Crunch,
         Circuit::HighGain,
@@ -341,6 +345,7 @@ impl Circuit {
         Circuit::ModernPurple,
         Circuit::Brit45,
         Circuit::AmericanVt40,
+        Circuit::AmericanV4b,
     ];
 
     pub fn voice(self) -> voice::Gain {
@@ -395,6 +400,7 @@ impl Circuit {
             Circuit::ModernPurple => voice::Gain::ModernPurple,
             Circuit::Brit45 => voice::Gain::Brit45,
             Circuit::AmericanVt40 => voice::Gain::AmericanVt40,
+            Circuit::AmericanV4b => voice::Gain::AmericanV4b,
         }
     }
 
@@ -495,15 +501,19 @@ impl Circuit {
         self.voice().single_tone()
     }
 
-    /// Whether the Reverb, Speed and Intensity knobs reach anything here.
-    ///
-    /// Only the blackface amplifiers' vibrato channels -- the Twin's and the
-    /// Deluxe's -- have a tank and a tremolo. The panel greys them
-    /// everywhere else, for the same reason it greys the diode control on a
-    /// valve stage: a knob that turns and reaches nothing is
-    /// indistinguishable from a fault.
-    pub fn has_reverb_and_tremolo(self) -> bool {
-        self.voice().has_reverb_and_tremolo()
+    /// Whether the Reverb knob reaches anything here: the blackface
+    /// amplifiers' vibrato channels and the VT-40, the circuits with a tank in
+    /// their own netlist. The panel greys it everywhere else, for the same
+    /// reason it greys the diode control on a valve stage: a knob that turns
+    /// and reaches nothing is indistinguishable from a fault.
+    pub fn has_reverb(self) -> bool {
+        self.voice().has_reverb()
+    }
+
+    /// Whether the Speed and Intensity knobs reach anything here: only the
+    /// blackface amplifiers' vibrato channels have a tremolo.
+    pub fn has_tremolo(self) -> bool {
+        self.voice().has_tremolo()
     }
 }
 
@@ -571,10 +581,13 @@ pub enum PowerAmp {
     #[id = "power_ampeg_7027a"]
     #[name = "American 7027A"]
     American7027A,
+    #[id = "power_ampeg_v4b_7027a"]
+    #[name = "American V-4B 7027A"]
+    AmericanV4b7027A,
 }
 
 impl PowerAmp {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Matched,
         Self::Bypass,
         Self::Cali6L6,
@@ -595,6 +608,7 @@ impl PowerAmp {
         Self::AmericanSS800,
         Self::Brit45KT66,
         Self::American7027A,
+        Self::AmericanV4b7027A,
     ];
 
     pub fn name(self) -> &'static str {
@@ -623,6 +637,7 @@ impl PowerAmp {
             Self::AmericanSS800 => voice::PowerAmp::AmericanSS800,
             Self::Brit45KT66 => voice::PowerAmp::Brit45KT66,
             Self::American7027A => voice::PowerAmp::American7027A,
+            Self::AmericanV4b7027A => voice::PowerAmp::AmericanV4b7027A,
         }
     }
 }
@@ -1603,7 +1618,8 @@ pub struct GainStageParams {
     // --- 4b The Twin's own three -----------------------------------------
     // A Twin Reverb carries a reverb and a tremolo that nothing else in the
     // catalogue has. The panel greys them for every other circuit rather than
-    // leaving knobs that turn nothing. See `Gain::has_reverb_and_tremolo`.
+    // leaving knobs that turn nothing. See `Gain::has_reverb` and
+    // `Gain::has_tremolo`.
     /// How much of the tank comes back. 100 k **linear** on the drawing, which
     /// is unusual for a Fender and is why it does so much early in its travel.
     #[id = "reverb"]

@@ -13,7 +13,8 @@ use gainstagefx::dsp::device::{Pentode, Triode};
 use gainstagefx::dsp::measure::{self, Tone};
 use gainstagefx::dsp::netlist::{PentodeSpec, TriodeSpec, GROUND};
 use gainstagefx::dsp::time::Simulation;
-use gainstagefx::params::{Circuit, PowerAmp};
+use gainstagefx::editor::ToneKnobs;
+use gainstagefx::params::{Circuit, PowerAmp, ToneStack};
 use gainstagefx::voice::{Chain, Gain, PowerModel, Settings, Tone as Stack};
 use nice_plug::prelude::Enum;
 
@@ -435,4 +436,59 @@ fn it_is_realtime_safe_at_every_rate() {
         let work = chain.solver_breakdown().saturating_delta(before);
         assert!(work.gain.solves > 0 && work.power.solves > 0, "{rate}");
     }
+}
+
+/// The reverb, through the chain: a 50 ms burst at 500 Hz leaves a tail that
+/// is still there 100-250 ms after it ends with the panel's Reverb up, and is
+/// a hundred times quieter with it down; and the tank is driven within reason
+/// (the coil's copper well under a volt). The Reverb knob is live for the
+/// VT-40 and Speed and Intensity are not.
+#[test]
+fn the_reverb_knob_reaches_a_tank_that_rings() {
+    let tail = |reverb: f64| {
+        let mut chain = Chain::new(RATE);
+        chain.apply(&Settings {
+            gain: Gain::AmericanVt40,
+            drive: 0.4,
+            reverb,
+            tone: Stack::Off,
+            oversampling: 1,
+            ..Settings::default()
+        });
+        chain.settle();
+        chain.reset();
+        chain.find_operating_point();
+        let burst = (0.05 * RATE) as usize;
+        for k in 0..burst {
+            chain.process(0.05 * (std::f64::consts::TAU * 500.0 * k as f64 / RATE).sin());
+        }
+        let (start, end) = ((0.1 * RATE) as usize, (0.25 * RATE) as usize);
+        (0..end)
+            .map(|_| chain.process(0.0))
+            .enumerate()
+            .filter(|(k, _)| *k >= start)
+            .map(|(_, y)| y * y)
+            .sum::<f64>()
+    };
+    let (off, on) = (tail(0.0), tail(0.6));
+    println!("tail energy: Reverb 0 {off:.3e}, Reverb 0.6 {on:.3e}");
+    assert!(on > 100.0 * off, "{off} {on}");
+    let knobs = ToneKnobs::for_state(Circuit::AmericanVt40, ToneStack::Off);
+    assert_eq!(knobs.extras, [true, false, false]);
+    let twin = ToneKnobs::for_state(Circuit::Twin, ToneStack::Off);
+    assert_eq!(twin.extras, [true, true, true]);
+}
+
+/// The tank's drive: V202's second plate at 400 Hz with the A.C. table's
+/// 0.48 V on the treble wiper is within 3 dB of the table's 2.3 V -- the
+/// 1475 ohm coil resonating with C209 -- where a 200 ohm coil would leave it
+/// near 4.3 V.
+#[test]
+fn the_reverb_driver_is_loaded_as_the_table_has_it() {
+    let volume = table_volume();
+    let grid = pre_rms("x1", volume);
+    let plate = pre_rms("d2p", volume);
+    println!("V202 grid {grid:.3} V (.48), second plate {plate:.2} V (2.3)");
+    assert!(db(grid, 0.48).abs() < 1.0);
+    assert!(db(plate, 2.3).abs() < 3.0, "{plate}");
 }

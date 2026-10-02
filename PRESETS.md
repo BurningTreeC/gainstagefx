@@ -298,6 +298,48 @@ Sources: [Guitar World, "Tonal Recall"](https://www.guitarworld.com/artists/tona
 [Guitar Player](https://www.guitarplayer.com/guitarists/tony-iommi-modified-treble-booster-thrown-out),
 [MusicRadar](https://www.musicradar.com/artists/tony-iommi-secret-to-black-sabbath-electric-guitar-tone).
 
+### Desert Deaf '02 (group Alternative)
+
+Target inspiration: Queens of the Stone Age, *Songs for the Deaf* (2002), Josh Homme's
+guitar sound. Added 2026-10-02, when its central amplifier became a model: the Ampeg
+VT-40 (American VT-40, [american_vt40.md](docs/models/american_vt40.md)).
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | an Ovation Ultra GP, its factory DiMarzio Super 2 humbuckers, "the neck pickup for his core sound"; C standard | WIDELY REPORTED (Boost Guitar Pedals' rig feature) | input trim 0 - PLAUSIBLE |
+| Amplifier | the **Ampeg VT-40**, "probably one of the most important amplifiers in Josh Homme's 2002 guitar rig", identified from the producer's photographs | WIDELY REPORTED (Boost Guitar Pedals, after Eric Valentine) | **American VT-40**, from Ampeg's 1971 drawing, channel one |
+| Knobs | "packed with a nasal, almost cocked-wah mid-range"; the feature's own advice, "push the mids harder than you might normally" | WIDELY REPORTED as a description, not as settings | Middle 0.85 at the 800 Hz position, Bass 0.45, Treble 0.6, Volume 0.6, Ultra Hi off - PLAUSIBLE: no settings are stated anywhere located |
+| Blend | Eric Valentine "blending one of Homme's transistor Peaveys with his valve amps to build the guitar sound"; for "No One Knows", a Tube Works RT-2100 with a Peavey; Ampeg V-4B heads in the rig | WIDELY REPORTED (Valentine, interviewed) | **not represented** - APPROXIMATED: the plugin plays one amplifier, and neither the Peaveys nor the Tube Works is modelled; the V-4B is (American V-4B) but its part on the record is not stated |
+| Pedals | a ZVEX Super Hard On "one of the important pedals" (his tech), a Boss SD-1 live, a Maestro Parametric Filter | WIDELY REPORTED | none - not modelled |
+| Power | the VT-40's own two 7027As | DOCUMENTED (it is the amplifier) | Matched, American 7027A |
+| Cabinet / speaker | the combo's own four 10" | DOCUMENTED (it is the amplifier) | American 4x10 with its horn off and the American Vintage 10 (Jensen P10R) - APPROXIMATED: the combo's cabinet and its CTS speakers are not modelled |
+| Mics | not documented | - | Dynamic 57, close - PLAUSIBLE |
+
+Level: -12.0 dB untrimmed on the catalogue's chord, output trim -0.8 (`examples/presetlevel.rs`).
+
+Sources: [Boost Guitar Pedals, "Josh Homme's gear on Songs for the Deaf"](https://www.boostguitarpedals.co.uk/blogs/gear-of-the-gods/josh-hommes-gear-on-songs-for-the-deaf-2002),
+[Reverb, "Tones for the Deaf"](https://reverb.com/news/tones-for-the-deaf-nailing-josh-hommes-sound).
+
+### Californicated '99 (group Alternative)
+
+Target inspiration: Red Hot Chili Peppers, *Californication* (1999), John Frusciante's
+guitar sound. Added 2026-10-02, when the guitar head became a model: the 1965 JTM45
+(Brit 45, [brit_jtm45.md](docs/models/brit_jtm45.md)).
+
+| Stage | Rig | Evidence | Preset |
+|---|---|---|---|
+| Guitar | the 1954 Fender Stratocaster for most basic tracks | WIDELY REPORTED (Ground Guitar) | input trim 0 |
+| Amplifiers | "I used a real old '65 Marshall. I also used a 200-watt bass head that I used on Blood Sugar -- I use a bass head and a guitar head at the same time"; the '65 Marshall a JTM45, the two split through a Boss CE-1's stereo outputs, "one signal clean and the other dirty" | DOCUMENTED (Frusciante, quoted by Ground Guitar) for the pair; WIDELY REPORTED for the JTM45 and the CE-1 split | **Brit 45** (the 1965 lead head, KT66s) - APPROXIMATED: one of the pair. The bass head is a 200 W one, which the Brit Plexi Bass (the 100 W 1992) is not; it, the CE-1's split and which amplifier was the clean one are not represented |
+| Knobs | not documented | - | Volume 0.6, Bass 0.4, Middle 0.6, Treble 0.65 - PLAUSIBLE |
+| Power | the JTM45's own two KT66s and GZ34 | DOCUMENTED (it is the amplifier) | Matched, Brit 45 KT66 |
+| Cabinet / speaker | a Marshall 4x12 | PLAUSIBLE | Brit Green 4x12 with its 25 W greenbacks - APPROXIMATED |
+| Mics | "two SM57 and two U87 microphones, one of each on each cabinet ... All four went down on one track" | DOCUMENTED (engineer Jim Scott, quoted by Ground Guitar) | Dynamic 57 close and Condenser 87 at 30 cm, blended half and half - positions PLAUSIBLE |
+
+Level: -23.7 dB untrimmed on the catalogue's chord, output trim +10.9 (`examples/presetlevel.rs`).
+
+Sources: [Ground Guitar, "John Frusciante's gear on Californication"](https://www.groundguitar.com/tone-breakdown/john-frusciante-californication-rig/),
+[Ground Guitar, "John Frusciante's 1965 Marshall JTM-45"](https://www.groundguitar.com/john-frusciante-gear/john-frusciantes-1965-marshall-jtm-45/).
+
 ## Era presets: waiting for components
 
 These are not added under approximate aliases. Each needs the listed model first,
@@ -311,8 +353,6 @@ planned modern-high-gain and bass work in [docs/ROADMAP.md](docs/ROADMAP.md).
 | Unknown Garden '94 | The Sunn Model T is modelled since 2026-10-01 (Oregon T, [oregon_t.md](docs/models/oregon_t.md)). Rig research then: a Guild S-100, the Model T, a Big Muff Pi (all WIDELY REPORTED) -- but no source located gives the settings or the cabinet, and the Big Muff of that era is not the 1973 Ram's Head the Ram Fuzz is. Left for the owner rather than built on guesses |
 | Spiral '96 | A modified mid-70s Marshall Super Bass with its channels jumpered, alongside a Rectifier; the record is the two together. The stock 1992 is modelled since 2026-10-01 (Brit Plexi Bass, [brit_plexi_bass.md](docs/models/brit_plexi_bass.md)); what was done to this one is not documented -- forum accounts conflict between "stock" and "rewired to Super Lead specs", and the second would make it the existing Brit Plexi |
 | Never Mind '91, Seattle Ten '91 | The **Mesa/Boogie Studio Preamp** -- a rackmount preamplifier into a solid-state power amp (a Crown Power Base 2) into 4x12s -- which is not modeled. Research: [studio_pre.md](docs/models/studio_pre.md), which is blocked on a legible drawing. Earlier revisions of this table called it a "Studio .22 preamp"; there is no such product, and the Studio .22 is a different amplifier (an EL84 combo). The **Boss DS-1** those sessions also used is modelled (Orange Dist, [orange_dist.md](docs/models/orange_dist.md)), so only the preamplifier is missing |
-| Desert Deaf '02 | An Ampeg VT-40 and V-4B heads, and Peaveys -- not a Marshall Major, which an earlier revision of this table claimed ([brit_200.md](docs/models/brit_200.md) has the sources). The VT-40 is modelled since 2026-10-02 (American VT-40, [american_vt40.md](docs/models/american_vt40.md)); the V-4B and the Peaveys are not, and no source gives the settings |
-| Californicated '99 | A 1965 JTM45 with a Marshall Super Bass. The Super Bass is modelled since 2026-10-01 (Brit Plexi Bass, [brit_plexi_bass.md](docs/models/brit_plexi_bass.md)), the JTM45 since 2026-10-02 (Brit 45, [brit_jtm45.md](docs/models/brit_jtm45.md)); the two together, and their settings, are rig research |
 | Blood Sugar '91 | "Two Marshalls: a guitar head ... and a bass head", which models not stated; rig research |
 | Lead Airship II '69 | Rig research (the amplifier used on the record is disputed) |
 

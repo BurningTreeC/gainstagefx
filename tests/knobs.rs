@@ -329,6 +329,10 @@ fn every_control_is_either_reachable_or_given_a_resting_position() {
         if let Some(ab763) = gain.ab763() {
             reachable.extend([ab763.reverb, ab763.intensity]);
         }
+        // The Reverb knob, wherever there is a tank: the VT-40's as well.
+        if let Some(reverb) = gain.spring_reverb() {
+            reachable.push(reverb.reverb);
+        }
         let rested: Vec<usize> = netlist.resting.iter().map(|&(which, _)| which).collect();
         for control in 0..netlist.controls {
             assert!(

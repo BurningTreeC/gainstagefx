@@ -1217,6 +1217,9 @@ pub fn describe(circuit: Circuit) -> String {
         Circuit::AmericanVt40 => {
             "Modeled after an early-70s American 4x10 combo: a bass amp's tone section, active midrange, two 7027As."
         }
+        Circuit::AmericanV4b => {
+            "Modeled after an early-70s American 100 W bass head: active midrange, Ultra Lo, Ultra Hi, four 7027As."
+        }
         Circuit::ModernPurple => {
             "Modeled after a modern high-gain pedal: six op-amps, diode and LED clipping, active mid, Aggression."
         }
@@ -1499,8 +1502,9 @@ pub struct ToneKnobs {
     pub live: [bool; 3],
     /// What the panel writes under each.
     pub names: [&'static str; 3],
-    /// Whether the Twin's reverb and tremolo knobs reach anything.
-    pub extras: bool,
+    /// Whether the Reverb, Speed and Intensity knobs reach anything: Reverb
+    /// on a circuit with a tank, the other two on one with a tremolo.
+    pub extras: [bool; 3],
     /// A fourth tone knob, for a circuit with a control of its own past bass,
     /// middle and treble, and what it is called. Only the Metal Zone has one.
     pub sweep: Option<&'static str>,
@@ -1533,7 +1537,11 @@ impl ToneKnobs {
                 in_circuit || own[2],
             ],
             names: ["BASS", "MID", "TREBLE"],
-            extras: circuit.has_reverb_and_tremolo(),
+            extras: [
+                circuit.has_reverb(),
+                circuit.has_tremolo(),
+                circuit.has_tremolo(),
+            ],
             sweep: circuit.voice().own_sweep().map(|(_, name)| name),
             colour_mix: circuit
                 .voice()
@@ -1641,12 +1649,14 @@ fn tone(cx: &mut Context) {
                     if live { 0x9aa6b0 } else { 0x5a636b },
                 );
             }
-            // Greyed unless the selected circuit has a tank and a tremolo, which
-            // only the blackface amplifiers' vibrato channels do. A knob that turns and reaches nothing is
-            // indistinguishable from a fault -- the same reason the three beside
-            // them are greyed, and the same reason BUG-023 happened.
-            let live = state.extras;
+            // Each greyed unless the selected circuit has what it turns: a tank
+            // for Reverb (the blackface vibrato channels and the VT-40), a
+            // tremolo for Speed and Intensity (the blackfaces alone). A knob
+            // that turns and reaches nothing is indistinguishable from a fault
+            // -- the same reason the three beside them are greyed, and the same
+            // reason BUG-023 happened.
             for (i, to_param) in extras.into_iter().enumerate() {
+                let live = state.extras[i];
                 let x = body_x() + 46.0 + i as f32 * 84.0;
                 Knob::new(cx, parameter_signal, to_param, 18.0, live)
                     .position_type(PositionType::Absolute)

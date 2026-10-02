@@ -12,11 +12,13 @@
 //!   -- C3 .01 -- VOL 1 (1 M lin), ULTRA HI across it -- V1b (R7 3k3)
 //!   V1b and V2b share R6 68k: the two inputs' mixer
 //!   -- C4 .01 -- P.E.C. 6470000 (BASS, TREBLE), R101 120k
+//!        |__ V202 6CG7, the reverb driver, its grid on the treble wiper
 //!   -- C201 .01 -- 6K11 unit 3 (R204 220k; R202 560 + R203 7k5) -- C202 .01
 //!   -- unit 2 (R207 470k / R206 3k3) -- unit 1 follower (R211 47k + R210 6k8)
 //!        |__ R208 56k back to unit 3's cathode ______________|
 //!   MIDRANGE between unit 3's cathode and the R211/R210 tap, L101 to ground
-//!   -- C205 .1 -- R14 180k -- mix -- R15 270k -- the reverb return (R104 150k)
+//!   -- C205 .1 -- R14 180k -- mix -- R15 270k -- the reverb return (R104 150k,
+//!      C105, REVERB 500 k lin, C212 from V203's plate)
 //!   -- C7 .01 -- V3a, the 12DW7's 12AU7 half, a bootstrapped follower
 //!   -- C8 .47 -- R19 10k -- EXT AMP (R20 100k)
 //! ```
@@ -28,14 +30,19 @@
 //! one amplifier whose gain the loop sets, and the MIDRANGE pot sits between two
 //! points of that loop with a series resonance on its wiper. Ampeg's values are
 //! the SVT's but for C203 / C204, .33 uF where the SVT has .68, and a 12AU7
-//! unit as the follower.
+//! unit as the follower. The V-4B has the same section part for part
+//! (`tone_section`, `circuits::american_v4b`).
+//!
+//! **The reverb.** V202's first unit amplifies the treble wiper, its second
+//! drives the tank's input coil through C209 .47 from a 10 k plate load; the
+//! spring itself is `dsp::spring::Tank`, outside the netlist as the Twin's is,
+//! read from the coil (`SEND`) and returned through `TANK_RETURN_AUX` into
+//! V203's grid network. V203's plate drives the REVERB pot's wiper, and its top
+//! reaches the mix through C105 and R15 -- the path the dry signal also passes.
 //!
 //! **What is not built.** Channel two's input stage (V2a) -- its volume is at
 //! zero, so V2b's grid is at ground and V2b is built only as the load it puts on
-//! the shared R6 -- and the reverb's driver and tank. The return network the
-//! dry signal has to pass is built, with the REVERB pot at its middle and
-//! V203's plate as the impedance behind it, so the dry path is the drawing's;
-//! the tank itself is silent (see the log).
+//! the shared R6 -- and the reverb footswitch (closed it shorts the return).
 
 use crate::dsp::netlist::{Adjust, Circuit, Fault, Netlist, Taper, TriodeSpec};
 
@@ -47,6 +54,8 @@ pub const BASS: usize = 1;
 pub const MIDDLE: usize = 2;
 /// VR104, 1 M log, TREBLE.
 pub const TREBLE: usize = 3;
+/// VR106, 500 k linear, REVERB: the panel's Reverb knob.
+pub const REVERB: usize = 4;
 
 /// SW3 ULTRA HI, channel one's pole: C102, 120 pF from VR101's top to its
 /// wiper, as an adjustable capacitor -- in at 120 pF, out at nothing.
@@ -103,7 +112,10 @@ pub const MID_SELECT: [[f64; 3]; 3] = [
 /// midrange frequencies, "+/-20 dB at 300, 800 or 3,000 Hz", and the
 /// capacitance in series with it -- C203's .33 alone, then with C107's .15,
 /// then with C106's .033 -- so tap 1 resonates at 300 Hz, tap 2 at 800 Hz and
-/// tap 3 at 3 kHz. Built as three inductors, as the SVT's are.
+/// tap 3 at 3 kHz. Built as three inductors, as the SVT's are. Ampeg's 1976
+/// drawing of the VT-40 / V-4 (Magnavox 591761) lists separate inductors of
+/// 800, 300 and 100 mH for the same three positions: within 6, 22 and 7 % of
+/// these, and through this network 310 Hz, 906 Hz and 2.9 kHz.
 pub const L101_TAP1: f64 = 0.8529;
 pub const L101_TAP2: f64 = 0.3838;
 pub const L101_TAP3: f64 = 0.0938;
@@ -117,20 +129,38 @@ pub const RAIL_DROPPER: f64 = 2_200.0;
 pub const RAIL_RESERVOIR: f64 = 40e-6;
 
 /// What else hangs on the 354 V rail, as one resistor: V2a (0.38 mA through
-/// R12 390 k to its 205 V plate), V3b (0.60 mA through R22 220 k to 223 V, in
-/// the power stage here), V202's first unit (1.93 mA through R213 120 k to
-/// 122 V) and V203 (0.55 mA through R221 270 k to 205 V), all from the drawing's
-/// voltages: 3.46 mA. With the built stages' draw R40 then drops the 393 V node
-/// to the drawing's 354 V. DERIVED.
-const UNBUILT_DRAW: f64 = 354.0 / 3.46e-3;
+/// R12 390 k to its 205 V plate) and V3b (0.60 mA through R22 220 k to 223 V,
+/// in the power stage here), from the drawing's voltages: 0.98 mA. With the
+/// built stages' draw R40 then drops the 393 V node near the drawing's 354 V.
+/// DERIVED.
+const UNBUILT_DRAW: f64 = 354.0 / 0.98e-3;
 
-/// V203's plate as the reverb pot sees it: R221's 270 k against a 12AX7's plate
-/// resistance near 75 k at the 0.55 mA the drawing gives it. APPROXIMATED.
-const RECOVERY_SOURCE: f64 = 59_000.0;
+/// The 436 V node V202's second unit hangs from through R217, 10 k 5 W. Stiff
+/// here, for the same reason as the 393 V node.
+pub const DRIVER_RAIL: f64 = 436.0;
 
-/// Where the REVERB pot rests, since the tank is not built: the middle, where
-/// the A.C. voltage readings were taken.
-const REVERB_REST: f64 = 0.5;
+/// The tank: the parts list's "Reverb Unit Type 4C" (63100060), whose input
+/// impedance is not given. Ampeg's A.C. table settles it: V202's second unit
+/// gives 2.3 V at its plate for 2 V on its grid, a gain of 1.2 from a valve
+/// with a 10 k load -- which only a coil resonating with C209's .47 near
+/// 400-500 Hz allows. A 200 ohm coil leaves the plate at 4.3 V. Taken as the
+/// high-impedance input of the Accutronics code, F, 1475 ohm at 1 kHz: an
+/// inductance of 0.2348 H with the 4AB3C1B's proportion of copper, a tenth,
+/// 147.5 ohm. ESTIMATED; the resonance is near 480 Hz.
+const TANK_COIL_HENRY: f64 = 0.2348;
+const TANK_COIL_OHMS: f64 = 147.5;
+/// The coil's copper is where the tank is read from.
+pub const SEND: &str = "tank_coil";
+/// `dsp::spring::Tank` is calibrated in volts across the 4AB3C1B's 8 ohm coil.
+/// This coil, wound for 1475 ohm, moves the same spring with the same power
+/// in it, so its current is taken to that tank's volts as `I sqrt(8 x 1475)`:
+/// the coil's copper voltage times `sqrt(8 x 1475) / 147.5`. APPROXIMATED.
+pub const TANK_DRIVE_SCALE: f64 = 0.7365;
+/// The tank's pickup, back into the netlist: the Twin's 2.25 k output
+/// transducer (the Type 4C's output letter is not given). ESTIMATED.
+pub const TANK_RETURN_AUX: usize = 0;
+pub const RETURN: &str = "tank_out";
+const TANK_OUTPUT_OHMS: f64 = 2_250.0;
 
 const ECC83: TriodeSpec = TriodeSpec::ECC83;
 const ECC82: TriodeSpec = TriodeSpec::ECC82;
@@ -186,64 +216,56 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
     // --- the P.E.C. 6470000 ---------------------------------------------------------
     super::american_svt::james_stack(&mut net, "s1", "x1", Some((BASS, TREBLE)), "1");
 
-    // --- the 6K11 and its loop ---------------------------------------------------------
-    // Unit 3 (pins 11 / 2 / 3), unit 2 (7 / 5 / 6), unit 1 the follower
-    // (9 / 10 / 4): the medium-mu unit, by RCA's and GE's sheets the 12AU7.
-    net.capacitor("x1", "g3", 0.01e-6) // C201
-        .resistor("g3", "k3j", 1_000_000.0) // R201
-        .resistor("bp", "p3", 220_000.0) // R204
-        .triode("p3", "g3", "k3", ECC83)
-        .resistor("k3", "k3j", 560.0) // R202
-        .resistor("k3j", "gnd", 7_500.0) // R203
-        .capacitor("p3", "g2", 0.01e-6) // C202
-        .resistor("g2", "gnd", 1_000_000.0) // R205
-        .resistor("bp", "p2", 470_000.0) // R207
-        .triode("p2", "g2", "k2", ECC83)
-        .resistor("k2", "gnd", 3_300.0) // R206
-        .triode("bp", "p2", "kf", ECC82)
-        .resistor("kf", "cf", 47_000.0) // R211
-        .resistor("cf", "gnd", 6_800.0) // R210
-        .resistor("kf", "k3", 56_000.0); // R208
+    // --- the 6K11, its loop and the midrange -----------------------------------------
+    tone_section(&mut net, "x1", MIDDLE, MID_SELECT_SLOTS);
 
-    // --- MIDRANGE --------------------------------------------------------------------
-    // As the SVT's: turned up the wiper is at unit 3's cathode end, where the
-    // resonance shorts the loop's return and the band rises.
-    net.resistor("k3", "r209", 470.0) // R209
-        .capacitor("r209", "mid_l", 0.33e-6) // C203
-        .resistor("cf", "r212", 620.0) // R212
-        .capacitor("r212", "mid_r", 0.33e-6) // C204
-        .pot("mid_l", "mid_w", "mid_r", 50_000.0, Taper::Linear, MIDDLE); // VR105
-    net.inductor("ml", "gnd", L101_TAP1)
-        .inductor("mc", "l1_2", L101_TAP2)
-        .capacitor("l1_2", "gnd", 0.15e-6) // C107
-        .resistor("l1_2", "gnd", 220_000.0) // R103
-        .inductor("mh", "l1_3", L101_TAP3)
-        .capacitor("l1_3", "gnd", 0.033e-6) // C106
-        .resistor("l1_3", "gnd", 220_000.0); // R102
-    let centre = MID_SELECT[1];
-    for (to, (slot, value)) in ["ml", "mc", "mh"]
-        .into_iter()
-        .zip(MID_SELECT_SLOTS.into_iter().zip(centre))
-    {
-        let made = net.adjustable("mid_w", to, Adjust::Resistor, value);
-        debug_assert_eq!(made, slot);
-    }
+    // --- the reverb driver: V202, a 6CG7 -------------------------------------------------
+    // Unit 1 (pins 1 / 2 / 3) on the treble wiper, R214 unbypassed; C206 into
+    // unit 2 (6 / 7 / 8) on R215 22 k, its cathode bypassed, its plate on R217
+    // from 436 V with C208 to ground, and C209 into the tank's coil.
+    net.resistor("bp", "d1p", 120_000.0) // R213
+        .triode("d1p", "x1", "d1k", TriodeSpec::T6CG7)
+        .resistor("d1k", "gnd", 2_200.0) // R214
+        .capacitor("d1p", "d2g", 0.01e-6) // C206
+        .resistor("d2g", "gnd", 22_000.0) // R215
+        .supply("d2p", 10_000.0, DRIVER_RAIL) // R217
+        .triode("d2p", "d2g", "d2k", TriodeSpec::T6CG7)
+        .resistor("d2k", "gnd", 330.0) // R216
+        .capacitor("d2k", "gnd", 10e-6) // C207
+        .capacitor("d2p", "gnd", 0.022e-6) // C208
+        .capacitor("d2p", "tank_in", 0.47e-6) // C209
+        .inductor("tank_in", SEND, TANK_COIL_HENRY)
+        .resistor(SEND, "gnd", TANK_COIL_OHMS);
+
+    // --- the tank's return and V203 --------------------------------------------------------
+    // R219 22 k across the pickup, C210 .005 from it to V203's bypassed
+    // cathode (a shunt to signal ground), R218 10 k into the grid; R221 270 k,
+    // R220 1 k with C211 10 uF.
+    let tank_return = net.aux_input(RETURN, TANK_OUTPUT_OHMS);
+    debug_assert_eq!(tank_return, TANK_RETURN_AUX);
+    net.resistor(RETURN, "gnd", 22_000.0) // R219
+        .capacitor(RETURN, "r3k", 0.005e-6) // C210
+        .resistor(RETURN, "r3g", 10_000.0) // R218
+        .resistor("bp", "r3p", 270_000.0) // R221
+        .triode("r3p", "r3g", "r3k", ECC83)
+        .resistor("r3k", "gnd", 1_000.0) // R220
+        .capacitor("r3k", "gnd", 10e-6); // C211
 
     // --- the mix with the reverb return ------------------------------------------------
     // The dry signal reaches the mix through R14 and returns through R15 to the
-    // return's node, where R104 and the REVERB pot (C212 on its wiper, C105 off
-    // its top, the bottom grounded) hang. Built as the pot's two halves at its
-    // rest, the recovery stage as its plate impedance.
-    let below = REVERB_REST * 500_000.0;
-    net.capacitor("cf", "c205", 0.1e-6) // C205
+    // return's node, where R104 and the REVERB pot hang: C212 from V203's plate
+    // on its wiper, C105 off its top, its bottom grounded. `pot(a, wiper, b)`
+    // puts `R f(p)` between the wiper and `b`, so turned up the wiper is at C105.
+    // It rests at zero, where the panel's Reverb knob starts, so a simulation
+    // nobody has set -- the calibration's -- is the amplifier with it down.
+    net.rest(REVERB, 0.0)
+        .capacitor("cf", "c205", 0.1e-6) // C205
         .resistor("c205", "mix", 180_000.0) // R14
         .resistor("mix", "rev", 270_000.0) // R15
         .resistor("rev", "gnd", 150_000.0) // R104
         .capacitor("rev", "rv_t", 0.0022e-6) // C105
-        .resistor("rv_t", "rv_w", 500_000.0 - below) // VR106
-        .resistor("rv_w", "gnd", below)
-        .capacitor("rv_w", "rv_p", 0.005e-6) // C212
-        .resistor("rv_p", "gnd", RECOVERY_SOURCE);
+        .pot("rv_t", "rv_w", "gnd", 500_000.0, Taper::Linear, REVERB) // VR106
+        .capacitor("rv_w", "r3p", 0.005e-6); // C212
 
     // --- V3a, the 12DW7's medium-mu half: a bootstrapped follower ---------------------
     // Tung-Sol's 12DW7 sheet: section 2 (pins 1 / 2 / 3) is the 12AU7's figure
@@ -259,4 +281,54 @@ pub fn tap(source: f64, load: f64, at: &str) -> Result<Circuit, Fault> {
         .resistor("out", "gnd", load);
 
     net.build(at)
+}
+
+/// The 6K11 and its loop, the MIDRANGE and its selector, from the treble
+/// wiper `from` (through C201) to the follower's tap, `cf`, on the `bp` rail:
+/// the VT-40's and the V-4B's, which number and value every part alike.
+/// `middle` is the MIDRANGE pot's control and `slots` the selector's three
+/// contacts, in the order they are made here.
+pub(crate) fn tone_section(net: &mut Netlist, from: &str, middle: usize, slots: [usize; 3]) {
+    // Unit 3 (pins 11 / 2 / 3), unit 2 (7 / 5 / 6), unit 1 the follower
+    // (9 / 10 / 4): the medium-mu unit, by RCA's and GE's sheets the 12AU7.
+    net.capacitor(from, "g3", 0.01e-6) // C201
+        .resistor("g3", "k3j", 1_000_000.0) // R201
+        .resistor("bp", "p3", 220_000.0) // R204
+        .triode("p3", "g3", "k3", ECC83)
+        .resistor("k3", "k3j", 560.0) // R202
+        .resistor("k3j", "gnd", 7_500.0) // R203
+        .capacitor("p3", "g2", 0.01e-6) // C202
+        .resistor("g2", "gnd", 1_000_000.0) // R205
+        .resistor("bp", "p2", 470_000.0) // R207
+        .triode("p2", "g2", "k2", ECC83)
+        .resistor("k2", "gnd", 3_300.0) // R206
+        .triode("bp", "p2", "kf", ECC82)
+        .resistor("kf", "cf", 47_000.0) // R211
+        .resistor("cf", "gnd", 6_800.0) // R210
+        .resistor("kf", "k3", 56_000.0); // R208
+
+    // As the SVT's: turned up the wiper is at unit 3's cathode end, where the
+    // resonance shorts the loop's return and the band rises.
+    net.resistor("k3", "r209", 470.0) // R209
+        .capacitor("r209", "mid_l", 0.33e-6) // C203
+        .resistor("cf", "r212", 620.0) // R212
+        .capacitor("r212", "mid_r", 0.33e-6) // C204
+        .pot("mid_l", "mid_w", "mid_r", 50_000.0, Taper::Linear, middle); // VR105
+                                                                          // The selector's sections, each behind its own contact (C107 / C106 and
+                                                                          // R103 / R102 on the VT-40, C114 / C113 and R110 / R111 on the V-4B).
+    net.inductor("ml", "gnd", L101_TAP1)
+        .inductor("mc", "l1_2", L101_TAP2)
+        .capacitor("l1_2", "gnd", 0.15e-6)
+        .resistor("l1_2", "gnd", 220_000.0)
+        .inductor("mh", "l1_3", L101_TAP3)
+        .capacitor("l1_3", "gnd", 0.033e-6)
+        .resistor("l1_3", "gnd", 220_000.0);
+    let centre = MID_SELECT[1];
+    for (to, (slot, value)) in ["ml", "mc", "mh"]
+        .into_iter()
+        .zip(slots.into_iter().zip(centre))
+    {
+        let made = net.adjustable("mid_w", to, Adjust::Resistor, value);
+        debug_assert_eq!(made, slot);
+    }
 }

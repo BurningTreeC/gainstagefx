@@ -10,8 +10,9 @@ with a 12AX7 input per channel, the passive bass and treble of a packaged networ
 
 Status: **VT-40 IMPLEMENTED 2026-10-02** (`circuits/american_vt40.rs`,
 `power::PowerSpec::VT40_7027A` with `power::ParaphaseFront`, `PentodeSpec::T7027A`), on
-Ampeg's own drawing and service data; results below. The V-4B is cleared on the same
-family of drawings and not built.
+Ampeg's own drawing and service data, **with its reverb** (same day, later); **V-4B
+IMPLEMENTED 2026-10-02** (`circuits/american_v4b.rs`, `power::PowerSpec::V4B_7027A`) on
+its own drawing. Results below.
 
 ## Eight-question checkpoint
 
@@ -221,13 +222,100 @@ the difference: the table's own plate-to-speaker ratio is Ampeg's 6 k into 8 ohm
 settled; candidates are the 7027A's knee, which in Koren's law does not rise with the
 screen voltage as a real beam tetrode's does at 589 V, and the screen supply under
 signal. Recorded, not tuned. The midrange lifts 21-22 dB at 300 Hz, 800 Hz and 3 kHz
-(Ampeg: +/-20 dB). The same at 44.1 to 192 kHz; realtime-safe; one preset, *American
-VT-40 Crunch*.
+(Ampeg: +/-20 dB). The same at 44.1 to 192 kHz; realtime-safe; presets *American
+VT-40 Crunch* and, with its evidence table in PRESETS.md, *Desert Deaf '02*.
 
-**Approximated, beyond the toroid and the output valves' gain**: the reverb tank (not
-built: its return network is, with REVERB at the middle and V203 as its plate
-impedance, so the dry path is the drawing's and the tank is silent); channel two's
-input stage; ULTRA HI's cut position; the stiff 393 V node; the transformer's
+**Approximated, beyond the toroid and the output valves' gain**: channel two's input
+stage; ULTRA HI's cut position; the stiff 393 V and 436 V nodes; the transformer's
 inductance, leakage and core and the secondary's copper; the supply's source
-resistance (ESTIMATED, 100 ohm); D7-D10. The cabinet: the plugin has no 4x10 combo of
-its own; the preset uses the American 4x10 (a bass cabinet) with its horn off.
+resistance (ESTIMATED, 100 ohm); D7-D10; the tank (below). The cabinet: the plugin has
+no 4x10 combo of its own; the presets use the American 4x10 (a bass cabinet) with its
+horn off and a 10" guitar speaker, the American Vintage 10 (Jensen P10R).
+
+## The reverb (built 2026-10-02)
+
+The first build left the tank silent, with V203 as a fixed impedance behind the REVERB
+pot. Now the whole echo board is in the netlist and the spring between its two halves
+is `dsp::spring::Tank`, as the Twin's is:
+
+- **The send** is the treble wiper: V202's first unit (6CG7, R213 120 k, R214 2.2 k
+  unbypassed) has its grid on it, beside C201. C206 .01 into the second unit (R215 22 k
+  to ground, R216 330 with C207 10 uF), its plate on R217 10 k 5 W from the 436 V node,
+  C208 .022 to ground, and **C209 .47 straight into the tank's coil** -- no transformer.
+- **The tank's input**, from Ampeg's own table. The parts list calls the unit "Reverb
+  Unit Type 4C" (63100060) and gives no impedance. Read as the Accutronics code's "C"
+  it would be a 200 ohm coil, and with it V202's plate reads 4.3 V for the table's
+  2.3 V. A gain of 1.2 from a valve on a 10 k load needs a coil that resonates with
+  C209 near the 400 Hz the table was taken at: a high-impedance input, the code's
+  "F", 1475 ohm at 1 kHz -- 0.235 H with a tenth of that in copper, as the 4AB3C1B's
+  8 ohm coil carries 0.8 -- resonating near 480 Hz. With it the plate reads 1.7 V
+  (-2.6 dB). ESTIMATED; the table chose it.
+- **The drive**: `Tank` is calibrated in volts across the 4AB3C1B's 8 ohm coil (Elliott
+  Sound Products' measured transfer). The same power in a 1475 ohm coil moves the same
+  spring, so the coil's current is taken to that tank's volts as `I sqrt(8 x 1475)`
+  (`american_vt40::TANK_DRIVE_SCALE`). APPROXIMATED.
+- **The return**: the pickup through the Twin's 2.25 k transducer (the Type 4C's output
+  is not given; ESTIMATED) onto R219 22 k, C210 .005 from there to V203's bypassed
+  cathode -- a treble shunt -- and R218 10 k into the grid; V203 a 12AX7 half on R221
+  270 k and R220 1 k with C211 10 uF; C212 .005 from its plate onto the REVERB pot's
+  wiper (500 k linear, the bottom grounded), C105 .0022 off its top, R104 150 k and
+  R15 270 k to the mix. **REVERB is the panel's Reverb knob** for this voice; it rests
+  at zero, where the panel starts, so calibration measures the amplifier with it down.
+- The footswitch (SW4, which shorts the return) is not built.
+
+The chain's tank plumbing, which belonged to the AB763s and their tremolo together, is
+split: `Gain::spring_reverb` for any voice with a tank, `Gain::ab763` for the tremolo,
+and the panel greys Reverb and Speed / Intensity separately.
+
+## The V-4B (built 2026-10-02)
+
+DWG 06700 rev A (5-71), 12/71-223, read at 600 dpi. **The same family, part for part
+where it overlaps**: the P.E.C. 6470000 with R109 120 k, the 6K11's loop and midrange
+with every value the VT-40's (C113 .033, C114 .15, R110 / R111 220 k on the selector),
+V3 the 12DW7 follower and gain stage, the floating paraphase (R30 / R31 47 k, R28 1.5 k,
+R33 820 k, R32 1 M, C12 0.1), .33 couplings, 4.7 k of feedback from the 8 ohm tap. Both
+build from one `american_vt40::tone_section`. Its own:
+
+- **No reverb**, no SENSITIVITY: J1 straight to V1a's grid on R2 5.6 M, R6 390 k, R5
+  3.3 k unbypassed; C3 .1 (the VT-40's .01) and C7 .1 into the network.
+- **ULTRA LO**, four poles a channel (the switch gangs both channels): off ("OFF
+  (LEFT)", drawn) feeds VOL 1 straight; on feeds it through C101 .015 to ground and
+  three .0047s in series (C102-C104) with R102 1.5 M and R103 1.2 M between them,
+  bypasses V1b's cathode with C106 6.8 uF (R107 47 k keeps it charged), and hangs C22
+  .03 (R59 5.6 M) from the mixer's plate. Measured (`examples/v4b_op.rs`): -2 dB at
+  80 Hz, -1 dB at 150 Hz, -13 dB at 600 Hz, -34 dB at 2.5 kHz -- a band that keeps
+  the bottom and takes the rest away. On the panel's low switch.
+- **ULTRA HI**, C105 500 pF across VOL 1, on the Bright switch.
+- **The power stage**: four 7027As, two a side, 47 k stoppers and 470 ohm 2 W screen
+  resistors a valve, R35 / R36 100 k to -64 V; plates on the 545 V rail through the
+  primary (540 V printed at the plates); screens from a 540 V node behind R55, 470 ohm
+  7 W. The drawing prints 527 V at the screen pins, which through 470 ohm would be
+  28 mA a screen; not used. The plates' "PR1 5W" resistors are a part code, PLAUSIBLY
+  parasitic suppressors like the SVT's 5.1 ohm plate resistors, and are not built.
+  C14 .001 across R34 4.7 k (the VT-40's 500 pF).
+- **Its supply chain adds up** where the VT-40's does not: 545 V -- R53 4.7 k -- R52
+  4.7 k -- 360 V (the inverter) -- R51 2.2 k -- 325 V (the preamplifier). The
+  preamplifier hangs from a stiff 360 V through R51; the inverter's node is fitted
+  behind R52 + R53.
+- **The output transformer** (8950028, which Magnavox later numbered 320822-1) has no
+  data located: ESTIMATED at 3 k plate to plate, half the VT-40's 6 k for twice its
+  valves, with half its copper, sized for 100 W at 40 Hz.
+
+Results, model against the drawing (`tests/american_v4b.rs`, `examples/v4b_op.rs`):
+
+| | model | drawing |
+|---|---|---|
+| preamp rail | 331.0 V | 325 |
+| V1a plate, cathode | 165.7 V, 1.40 V | 155, 1.48 |
+| mixer plate, V1b cathode | 243.8 V, 2.11 V | 230, 2.1 |
+| 6K11 unit 3 plate, cathode | 215.4 V, 23.5 V | 192, 22 |
+| unit 2 plate, cathode | 150.8 V, 1.26 V | 178, 1.26 |
+| follower cathode | 157.3 V | 140 |
+| V3a cathode | 205.4 V | 200 |
+| V3b plate, cathode | 207.4 V, 1.78 V | 205, 1.8 |
+| inverter plates, cathodes | 211.1 V, 9.50 V | 200, 9.7 |
+
+Unit 2's plate is the drawing's inconsistency again: its own 1.26 V cathode puts the
+plate near 146 V. Each 7027A idles at 25.5 mA, 13.9 W. No A.C. table was published
+for the V-4B. The same at 44.1 to 192 kHz; realtime-safe; one preset, *American V-4B
+Growl*.

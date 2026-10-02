@@ -1448,7 +1448,8 @@ pub const PRESETS: &[Preset] = &[
     // The early-70s 4x10 combo with the SVT's tone section in it, played as a
     // guitar amplifier: channel one's volume well up, the midrange lifted at
     // 800 Hz, Ultra Hi off, into its two 7027As. The 4x10 is a bass cabinet's,
-    // its horn off, standing in for the combo's own, which is not built.
+    // its horn off, with a 10" guitar speaker in it, standing in for the
+    // combo's own cabinet, which is not built.
     Preset {
         drive: 0.7,
         circuit: Circuit::AmericanVt40,
@@ -1458,14 +1459,35 @@ pub const PRESETS: &[Preset] = &[
         treble: 0.6,
         twin_bright: false,
         cab_model: CabModel::American410,
+        speaker: SpeakerModel::AmericanVintage10,
         cab_horn: 0.0,
         mic_a_position: 0.3,
         mic_a_distance: 0.03,
         oversampling: Oversampling::Off,
-        // Set by `examples/presetlevel.rs`: -13.6 dB untrimmed, against the
-        // catalogue's -12.8.
-        output_trim: 0.8,
+        // Set by `examples/presetlevel.rs`: -12.3 dB untrimmed through the 10"
+        // speaker, against the catalogue's -12.8.
+        output_trim: -0.5,
         ..base("Amplifier", "American VT-40 Crunch")
+    },
+    // --- American V-4B -------------------------------------------------------------
+    // The VT-40's bass head as a bass head: four 7027As, the midrange at
+    // 800 Hz, Ultra Lo and Ultra Hi off, into the SVT's 8x10.
+    Preset {
+        drive: 0.6,
+        circuit: Circuit::AmericanV4b,
+        tone: ToneStack::Off,
+        bass: 0.6,
+        mid: 0.6,
+        treble: 0.5,
+        twin_bright: false,
+        cab_model: CabModel::American810,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.05,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -15.2 dB untrimmed through the 8x10,
+        // against the catalogue's -12.8.
+        output_trim: 2.4,
+        ..base("Amplifier", "American V-4B Growl")
     },
     // The console microphone preamplifier: two cascaded transistor stages with
     // an input transformer. Clean at low drive, warming into subtle harmonic
@@ -1999,6 +2021,56 @@ pub const PRESETS: &[Preset] = &[
         output_trim: -21.81,
         oversampling: Oversampling::Off,
         ..base("Alternative", "Pumpkin Dream '93")
+    },
+    // The VT-40 with its midrange pushed, the record's "almost cocked-wah"
+    // middle, from the neck humbucker of a guitar tuned to C. The producer's
+    // blend with a solid-state Peavey is not built. See PRESETS.md.
+    Preset {
+        circuit: Circuit::AmericanVt40,
+        power_amp: PowerAmp::Matched,
+        drive: 0.6,
+        bass: 0.45,
+        mid: 0.85,
+        treble: 0.6,
+        twin_bright: false,
+        tone: ToneStack::Off,
+        cab_model: CabModel::American410,
+        speaker: SpeakerModel::AmericanVintage10,
+        cab_horn: 0.0,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.03,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -12.0 dB untrimmed.
+        output_trim: -0.8,
+        ..base("Alternative", "Desert Deaf '02")
+    },
+    // The 1965 JTM45, the guitar head of the two amplifiers the guitar was
+    // split between, its cabinet with a 57 and an 87 on it as the engineer had
+    // them. The 200 W bass head beside it and the CE-1 that split the two are
+    // not built. See PRESETS.md.
+    Preset {
+        circuit: Circuit::Brit45,
+        power_amp: PowerAmp::Matched,
+        drive: 0.6,
+        bass: 0.4,
+        mid: 0.6,
+        treble: 0.65,
+        tone: ToneStack::Off,
+        cab_model: CabModel::BritGreen,
+        speaker: SpeakerModel::Matched,
+        mic_a: MicModel::Dynamic57,
+        mic_a_position: 0.3,
+        mic_a_distance: 0.025,
+        mic_b: MicModel::Condenser87,
+        mic_b_position: 0.4,
+        mic_b_distance: 0.3,
+        mic_blend: 0.5,
+        oversampling: Oversampling::Off,
+        // Set by `examples/presetlevel.rs`: -23.7 dB untrimmed, the 87 at 30 cm
+        // taking half the blend.
+        output_trim: 10.9,
+        ..base("Alternative", "Californicated '99")
     },
     // A Tube Screamer with little drive and a lot of level, into a blackface
     // AB763 channel on the edge of breaking up, into an open-back combo.

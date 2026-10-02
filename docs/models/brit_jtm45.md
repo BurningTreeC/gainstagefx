@@ -113,7 +113,7 @@ copper between the rectifier (450 V) and the plates (430 V) is not dropped, and 
 screens -- above the plates on the chart, behind the choke and a 1 k here -- come out
 13 V low. The unloaded rail behind the GZ34 is ESTIMATED to put the plates on the chart.
 The bright cap lifts 5 kHz against 200 Hz by 14.5 dB at a quarter volume against 5.0 at
-full. The same at 44.1 to 192 kHz; realtime-safe; one preset, *Brit 45 Blues*.
+full. The same at 44.1 to 192 kHz; realtime-safe; presets *Brit 45 Blues* and, since 2026-10-02 with its evidence table in PRESETS.md, *Californicated '99*.
 
 **Approximated, beyond the KT66 and the bias**: the output transformer (a 6.6 k plate to
 plate primary into 16 ohm, ESTIMATED from the Radio Spares / Drake part's class; copper,
