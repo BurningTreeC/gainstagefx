@@ -1,5 +1,27 @@
 # Implementation progress
 
+## 2026-10-02 — The JTM45 and the VT-40 / V-4B researched
+
+The fallback the owner agreed for the Generator 120 ("Yes"): research the two amplifiers
+two blocked album presets wait on.
+
+- **Marshall JTM45** (`docs/models/brit_jtm45.md`): **cleared** on Marshall's own
+  drawings -- the period hand-drawn "basic schematic for Marshall trem amps, types 1961,
+  1962, 1987/T" with its AVO-measured valve voltage chart, and Marshall's CAD JTM45
+  circuit diagram (issue 7). The 1965 lead head (KT66, GZ34) is the revision; the
+  drawing's own note dates it to the 1966 move to EL34s and diodes. Not built: the
+  KT66 needs a fit from GEC's data sheet first; V1A's plate resistor ("180K" against
+  the Bassman's 100 k) to be settled against the CAD drawing.
+- **Ampeg VT-40 and V-4B** (`docs/models/american_vt40.md`): **cleared** on Ampeg's
+  own factory drawings of 12/71, published on its support page, with DC voltages on
+  them and, for the VT-40, a pin-by-pin valve voltage table. One gap: both put their
+  bass and treble in a Centralab packaged network, P.E.C. 6470000, whose six parts are
+  widely reported (220 k, 22 k; 470 pF, 4.7 nF, 1 nF, 10 nF) but not where each sits.
+  Not built: the 6K11 compactron and the 6CG7 need fits; the 7027A takes the 6L6GC fit
+  as a first approximation.
+- Drawings in `docs/schematics/marshall_jtm45/` and `docs/schematics/ampeg_v4b/`
+  (git-ignored).
+
 ## 2026-10-02 — The modern chain: researched, two pedals built
 
 The owner, asked what next, chose the modern high-gain chain's research for all five
