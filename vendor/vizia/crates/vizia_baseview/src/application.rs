@@ -344,6 +344,17 @@ impl ApplicationRunner {
     }
 
     pub fn handle_event(&mut self, event: baseview::Event) {
+        // Events the context sent itself through the proxy were sent before
+        // this input arrived, so they go ahead of it. They otherwise wait for
+        // the next frame while input goes straight into the event queue. The
+        // mouse move a relayout sends to refresh hover carries the cursor
+        // position at the time of the layout; with slow frames it overtook a
+        // real move, put the cursor back where it had been, and the next press
+        // landed there (as a double click, being in the same place).
+        while let Some(event) = queue_get() {
+            self.cx.send_event(event.into_event());
+        }
+
         if requests_exit(&event, self.is_parented) {
             self.cx.send_event(Event::new(WindowEvent::WindowClose));
             self.window_context.request_close();
