@@ -19,6 +19,12 @@
 //!
 //! Nothing here allocates after construction, and the worker parks between
 //! blocks rather than spinning, so an idle plugin costs no CPU.
+//!
+//! There are two such workers, each a `Lane`. The first runs the chain's
+//! second half; the second, when the chain has a pedal worth a core of its own,
+//! runs the preamplifier while the audio thread runs the pedal, so the chain
+//! is three stages on three cores (`Chain::process_block`). The `StageWorker`
+//! methods are the first lane's; `second` is the other.
 
 use std::cell::UnsafeCell;
 use std::hint::spin_loop;
@@ -63,6 +69,11 @@ unsafe impl Sync for Shared {}
 unsafe impl Send for Shared {}
 
 pub struct StageWorker {
+    lanes: [Lane; 2],
+}
+
+/// One persistent worker thread and the block it is offered.
+pub struct Lane {
     shared: Arc<Shared>,
     thread: Option<JoinHandle<()>>,
     /// Whether the audio thread's scheduling has been read yet.
@@ -76,11 +87,95 @@ impl Default for StageWorker {
 }
 
 impl StageWorker {
-    /// A worker with no thread behind it: every offer is reclaimed by the
+    /// Workers with no threads behind them: every offer is reclaimed by the
     /// caller. The path a real worker takes when it has not woken in time,
     /// made deterministic for tests.
     #[doc(hidden)]
     pub fn inert() -> Self {
+        Self {
+            lanes: [Lane::inert(), Lane::inert()],
+        }
+    }
+
+    pub fn new() -> Self {
+        Self {
+            lanes: [
+                Lane::spawn(false, "gsfx-stage"),
+                Lane::spawn(false, "gsfx-stage-2"),
+            ],
+        }
+    }
+
+    /// Workers that claim every block and then wait for all of it to be
+    /// published before running any: the calling thread always finishes its
+    /// own half first, which is the case where it takes work back from a
+    /// worker already running. Made deterministic in *that* it happens, for
+    /// tests; where in the block it happens still varies, and must not matter.
+    #[doc(hidden)]
+    pub fn lagging() -> Self {
+        Self {
+            lanes: [
+                Lane::spawn(true, "gsfx-stage"),
+                Lane::spawn(true, "gsfx-stage-2"),
+            ],
+        }
+    }
+
+    /// The second worker, for a chain's third stage.
+    pub fn second(&self) -> &Lane {
+        &self.lanes[1]
+    }
+
+    /// See `Lane::offer`; the first worker's.
+    ///
+    /// # Safety
+    /// As `Lane::offer`.
+    pub unsafe fn offer(&self, run: Run, ctx: *mut (), total: usize) {
+        unsafe { self.lanes[0].offer(run, ctx, total) }
+    }
+
+    /// See `Lane::publish`.
+    #[inline]
+    pub fn publish(&self, produced: usize) {
+        self.lanes[0].publish(produced);
+    }
+
+    /// See `Lane::try_reclaim`.
+    ///
+    /// # Safety
+    /// As `Lane::try_reclaim`.
+    pub unsafe fn try_reclaim(&self) -> bool {
+        unsafe { self.lanes[0].try_reclaim() }
+    }
+
+    /// See `Lane::published`.
+    #[inline]
+    pub fn published(&self) -> usize {
+        self.lanes[0].published()
+    }
+
+    /// See `Lane::is_done`.
+    #[inline]
+    pub fn is_done(&self) -> bool {
+        self.lanes[0].is_done()
+    }
+
+    /// See `Lane::release`.
+    pub fn release(&self) {
+        self.lanes[0].release();
+    }
+
+    /// See `Lane::finish`.
+    ///
+    /// # Safety
+    /// As `Lane::finish`.
+    pub unsafe fn finish(&self) -> bool {
+        unsafe { self.lanes[0].finish() }
+    }
+}
+
+impl Lane {
+    fn inert() -> Self {
         Self {
             shared: Arc::new(Shared {
                 state: AtomicU32::new(IDLE),
@@ -95,21 +190,7 @@ impl StageWorker {
         }
     }
 
-    pub fn new() -> Self {
-        Self::spawn(false)
-    }
-
-    /// A worker that claims every block and then waits for all of it to be
-    /// published before running any: the calling thread always finishes its
-    /// own half first, which is the case where it takes work back from a
-    /// worker already running. Made deterministic in *that* it happens, for
-    /// tests; where in the block it happens still varies, and must not matter.
-    #[doc(hidden)]
-    pub fn lagging() -> Self {
-        Self::spawn(true)
-    }
-
-    fn spawn(lag: bool) -> Self {
+    fn spawn(lag: bool, name: &str) -> Self {
         let shared = Arc::new(Shared {
             state: AtomicU32::new(IDLE),
             produced: AtomicUsize::new(0),
@@ -120,7 +201,7 @@ impl StageWorker {
         });
         let worker_shared = shared.clone();
         let thread = thread::Builder::new()
-            .name("gsfx-stage".into())
+            .name(name.into())
             .spawn(move || worker_loop(&worker_shared))
             .expect("spawn stage worker");
         Self {
@@ -152,19 +233,27 @@ impl StageWorker {
         }
     }
 
-    /// The first half has written samples `0..produced`.
+    /// The first half has written samples `0..produced`. Callable from any
+    /// thread: a third stage's worker publishes to the second's.
     #[inline]
     pub fn publish(&self, produced: usize) {
         self.shared.produced.store(produced, Ordering::Release);
     }
 
-    /// The first half is done and published. If the worker has not claimed
-    /// the block, take it back and return `true`: the caller then runs the
-    /// whole job itself and calls `release`. `false` means the worker has it;
-    /// the caller waits for `is_done` and then calls `release`.
+    /// How much of the block has been published.
+    #[inline]
+    pub fn published(&self) -> usize {
+        self.shared.produced.load(Ordering::Acquire)
+    }
+
+    /// If the worker has not claimed the block, take it back and return
+    /// `true`: the caller then runs the whole job itself, no further than
+    /// `published` at any moment, and calls `release`. `false` means the
+    /// worker has it; the caller waits for `is_done` and then calls
+    /// `release`.
     ///
     /// # Safety
-    /// Must follow `offer`, after `publish` of the whole block.
+    /// Must follow `offer`.
     pub unsafe fn try_reclaim(&self) -> bool {
         self.shared
             .state
@@ -217,7 +306,7 @@ impl StageWorker {
     }
 }
 
-impl Drop for StageWorker {
+impl Drop for Lane {
     fn drop(&mut self) {
         self.shared.state.store(STOP, Ordering::Release);
         if let Some(thread) = self.thread.take() {

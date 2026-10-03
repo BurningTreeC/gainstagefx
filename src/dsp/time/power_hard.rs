@@ -132,6 +132,27 @@ fn power_hard() {
         fallbacks.iter().sum::<u64>(),
         passes.iter().sum::<u64>() as f64 / (n as f64 * factor as f64),
     );
+    let mut histogram = [0u64; 6];
+    for &p in &passes {
+        let per = p as f64 / factor as f64;
+        histogram[if per < 1.5 {
+            0
+        } else if per < 2.5 {
+            1
+        } else if per < 3.5 {
+            2
+        } else if per < 4.5 {
+            3
+        } else if per < 9.5 {
+            4
+        } else {
+            5
+        }] += 1;
+    }
+    println!(
+        "passes a solve, host samples: 1 {}  2 {}  3 {}  4 {}  5-9 {}  10+ {}",
+        histogram[0], histogram[1], histogram[2], histogram[3], histogram[4], histogram[5]
+    );
     let first: Vec<usize> = (0..n).filter(|&i| hard[i]).take(8).collect();
     println!("first hard host samples: {first:?}");
     let falling: Vec<usize> = (0..n).filter(|&i| fallbacks[i] > 0).take(8).collect();

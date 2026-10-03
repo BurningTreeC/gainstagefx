@@ -50,6 +50,13 @@ pub const REALTIME_CUTOFF_PERIODS: f64 = 1.5;
 /// callbacks take: on at once for a callback over half the period or a
 /// smoothed load over 30 %, off only once the smoothed load is under 20 %.
 ///
+/// What a callback takes is what it would take on one thread
+/// (`Chain::overlapped` added back): judged by its pipelined time, a chain
+/// whose pipeline saves more than a third looks light while pipelined and
+/// heavy while not, and the governor went back and forth. Measured on
+/// *Green Overdrive* (`rt_scenario --plugin`), it ran 17 % of its callbacks
+/// serially that way, at about twice the cost, and those were its tail.
+///
 /// Public so `examples/rt_scenario.rs` plays a preset the way the plugin does.
 #[derive(Clone, Copy, Debug)]
 pub struct PipelineGovernor {
@@ -1294,13 +1301,13 @@ impl Plugin for GainStageFx {
         self.meters
             .set_input_db(20.0 * (self.peak / nominal).max(1e-6).log10() as f32);
 
-        // Pipeline the next callbacks if these have been costing enough of
-        // the period to be worth a second thread. One clock read a callback;
+        // Pipeline the next callbacks if these would cost enough of the
+        // period on one thread to be worth more. One clock read a callback;
         // either way the output is the same to the bit.
         if sample_count > 0 {
             let period = sample_count as f64 / self.sample_rate;
-            self.pipeline
-                .update(callback_started.elapsed().as_secs_f64() / period);
+            let serial = callback_started.elapsed().as_secs_f64() + self.channels[0].overlapped();
+            self.pipeline.update(serial / period);
         }
 
         // The oversampling changed, so the true latency did: tell the host.

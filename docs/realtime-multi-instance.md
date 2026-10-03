@@ -111,7 +111,12 @@ another core, inside the same callback.
   decides who runs the back half. If the worker has not woken when the front
   half is done, the audio thread reclaims it.
 - **Adaptive:** used only when the chain's smoothed cost exceeds 30 % of the
-  period (off below 20 %), so light presets never wake a second thread.
+  period (off below 20 %), so light presets never wake a second thread. The
+  cost is what the callback would take on one thread: its time plus what the
+  workers ran beside it (`Chain::overlapped`). Judged by the pipelined time, a
+  chain the pipeline helped most looked light, went serial at twice the cost,
+  and came back -- 17 % of *Green Overdrive*'s callbacks ran serially that way,
+  and they were its tail.
 - **Priority:** on Linux the worker adopts the audio thread's scheduling
   policy and priority.
 
@@ -127,6 +132,47 @@ Measured on the real take, 48k/64, two cores:
 
 The Jazz Chorus gains less because its JC-120 transistor power stage alone is
 ~350 µs a callback, and one simulation cannot be split between threads.
+
+### Three stages (2026-10-03)
+
+A chain with a heavy pedal has its critical path in the first half: *Twin,
+Modern Purple* spends ~270 µs a callback in the pedal and ~170 in the
+preamplifier on one core while the power stage and cabinet on the other take
+~190. So the first half can itself be two stages: the pedal on the audio
+thread, the preamplifier on a second worker lane (`StageWorker::second`) a
+quantum behind it, and the second half a quantum behind that, with the audio
+thread taking the cabinet over once its pedal is done. Offered the same way as
+the second half: a lane that has not woken by the time the pedal is done is
+reclaimed, and the audio thread runs that stage itself.
+
+Which way a chain runs is decided from the stages' own measured times -- a
+clock read around each quantum of each stage's work, about a microsecond a
+block -- because the choice never changes the output, and the counted-work
+estimate the speculation gate uses put the Modern Purple at twice its cost.
+Three stages once that would bring the longest stage under 0.75 of the longest
+of two, back to two above 0.85 (`THREE_STAGES_BELOW`). Never on a chain that
+speculates, whose shadow reads the preamplifier's output on the audio thread.
+
+Over the 18 presets with a pedal or a wah, 48k/64, two interleaved rounds,
+p99.9 in µs (`rt_scenario --plugin --table`; same output hash in every run):
+
+| preset | before | governor fixed | and three stages | blocks run as three |
+| --- | ---: | ---: | ---: | ---: |
+| Twin, Modern Purple | 909 / 918 | 910 / 893 | 718 / 699 | 99 % |
+| Swedish Death '90 | 782 / 783 | 783 / 790 | 509 / 500 | 99 % |
+| Slaughter '95 | 723 / 620 | 619 / 609 | 443 / 449 | 99 % |
+| Twin, Blue Chorus | 614 / 625 | 618 / 603 | 521 / 526 | 99 % |
+| Green Overdrive | 558 / 507 | 461 / 470 | 416 / 387 | 95 % |
+| Puppet Master '86 | 542 / 531 | 459 / 441 | 456 / 505 | 0 |
+| Pumpkin Dream '93 | 1,100 / 593 | 435 / 436 | 437 / 435 | 0 |
+| Screamer Boost | 525 / 525 | 331 / 332 | 342 / 335 | 0 |
+
+*Twin, Modern Purple*'s callbacks over 930 µs went from 6 to none. Forced on
+everywhere, three stages lost 15-25 % of p99.9 on the presets the gate leaves
+alone (the 808s in front of a heavier amplifier), which is the four-stage
+result below again. Measured with one instance on a 16-thread machine: three
+lanes an instance oversubscribe sooner, which is when the four-stage pipeline
+spiked.
 
 **Considered and rejected, with reasons:**
 - **A global Newton across stage boundaries.** The stages are one-way
@@ -247,14 +293,14 @@ the experiments.
 
 | idea | result | why rejected |
 | --- | --- | --- |
-| Contraction stopping (Hairer–Wanner, κ = 0.1): skip the confirming Newton pass | passes −8.8 % | Physical-cabinet presets null only at −73 to −89 dB re peak: the speaker path differentiates cone velocity at 48 kHz, which amplifies an error below tolerance into one measurable at the output. Unsettled samples doubled (7 → 14). The confirming pass is doing fidelity work. |
+| Contraction stopping (Hairer–Wanner, κ = 0.1): skip the confirming Newton pass | passes −8.8 % | Physical-cabinet presets null only at −73 to −89 dB re peak: the speaker path differentiates cone velocity at 48 kHz, which amplifies an error below tolerance into one measurable at the output. Unsettled samples doubled (7 → 14). The confirming pass is doing fidelity work. (Superseded 2026-10-03 by quadratic termination, which skips it only where the next correction, estimated quadratically, is a tenth of a tolerance and the solve is within 30 tolerances: −7.3 % passes, worst preset −117.5 dB, no unsettled samples; see `docs/SOLVER_EXPERIMENTS.md`.) |
 | Transistor junction limiter off on searched passes | every JC-120 power and 73P preamp solve unsettled | The limiter is load-bearing: capped-exponent conductances wreck the linear solve. |
 | Transistor trial residuals evaluated unlimited | JC-120 unsettled 22 → 19 | Fuzz Face fallbacks 328 → 1,705. |
 | Halve steps in a detected solver orbit | JC-120 unsettled 22 → 21 | Experienced '67 unsettled 16 → 87. |
 | Schur recovery and RHS restricted to each column's non-zero span | exact, ~1–2 % faster | Within run-to-run noise; the loops were already short and vectorised. |
 | Contraction stopping on pedal and preamp only (power stage and iron keep the confirming pass) | preamp passes −6 to −7 %, power unchanged | Brit Crunch and Brit Lead still null only at −73 to −76 dB re peak, so the error is amplified downstream of the preamp too, and the gain is small. |
 | Half-step rescue triggered early, at pass 8 or 16 instead of on failure | more rescues (2,515 / 333 in 19 s) | Jazz pipelined p99.9 864 → 1,310 / 997 µs, max 1,157 → 1,954 / 1,377 µs. On the hard samples the half steps are themselves expensive; a sample that would have settled by pass ~20 costs more rescued. The rescue is a fidelity fix for failures, not a speed fix. |
-| Four pipeline stages (pedal \| preamp \| power \| cabinet) instead of two | exact | Slower: Puppet 433 → 466 µs, Jazz 385 → 439 µs, and 3–5 ms spikes when the workers are oversubscribed. Each extra stage moves a working set of tens to hundreds of kB between cores and lengthens the pipeline's fill within a 64-sample block. Two stages is the sweet spot. |
+| Four pipeline stages (pedal \| preamp \| power \| cabinet) instead of two | exact | Slower: Puppet 433 → 466 µs, Jazz 385 → 439 µs, and 3–5 ms spikes when the workers are oversubscribed. Each extra stage moves a working set of tens to hundreds of kB between cores and lengthens the pipeline's fill within a 64-sample block. Two stages is the sweet spot -- for those two, which have a light pedal or none. (2026-10-03: three stages, pedal \| preamp \| rest, now run where the stages' measured times say a heavy pedal makes the first half the critical path; see *Three stages* below.) |
 
 The JC-120's remaining unsettled samples are approximate orbits of full Newton
 steps. The line search accepts them under its non-monotone rule, while a

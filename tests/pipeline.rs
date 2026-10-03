@@ -9,6 +9,9 @@
 //! the cabinet over part-way through every block), and all four must agree
 //! exactly, at every oversampling factor the chain supports.
 //!
+//! A chain with a pedal can also run its first half as two stages, the pedal
+//! and the preamplifier on two cores; that is held to the same standard.
+//!
 //! Played sample by sample, the chain must agree with them exactly too --
 //! unless a block speculated on its power stage's second half (`SpecBlock` in
 //! `voice.rs`), which the per-sample path never does. A block that did starts
@@ -18,9 +21,13 @@
 mod allocations;
 
 use allocations::assert_no_heap;
+use gainstagefx::circuits::wah;
 use gainstagefx::presets::PRESETS;
 use gainstagefx::stage_worker::StageWorker;
-use gainstagefx::voice::{voice_at, Chain, PipelineUse, Settings, VOICES};
+use gainstagefx::voice::{
+    voice_at, Chain, DrySource, Gain, Pedal, PedalSettings, PipelineUse, Settings, WahSettings,
+    VOICES,
+};
 
 const RATE: f64 = 48_000.0;
 const BLOCK: usize = 64;
@@ -171,6 +178,187 @@ fn every_voice_pipelined_is_the_serial_chain_to_the_bit() {
                 worst < 1e-6,
                 "{gain:?}/{diode:?}/{amplifier:?} at {oversampling}x: {speculated} speculated blocks moved the output {:.1} dB",
                 20.0 * worst.log10()
+            );
+        }
+    }
+}
+
+/// A chain with a pedal can run its first half as two stages too: the pedal on
+/// the calling thread and the preamplifier on the worker's second lane, with
+/// the power stage behind it on the first (`THREE_STAGES_BELOW` in
+/// `voice.rs`). Forced to three stages, every pedal -- with a wah ahead of it
+/// on every other one, and the DI taken at the pedal, at the preamplifier and
+/// at the input in turn -- is the serial block path to the bit, on a live
+/// worker, on an inert one (both stages reclaimed) and on a lagging one (the
+/// cabinet taken over behind both), across the rates and oversampling
+/// factors.
+#[test]
+fn three_stages_are_the_serial_chain_to_the_bit() {
+    gainstagefx::dsp::time::enable_ftz_daz();
+    let live = StageWorker::new();
+    let inert = StageWorker::inert();
+    let lagging = StageWorker::lagging();
+    let rates = [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0];
+    let sources = [DrySource::Pedal, DrySource::Preamp, DrySource::Input];
+    let pedals = Pedal::ALL.iter().filter(|p| **p != Pedal::None);
+    for (k, &pedal) in pedals.enumerate() {
+        let rate = rates[k % rates.len()];
+        let settings = Settings {
+            gain: Gain::Twin,
+            drive: 0.7,
+            pedal: PedalSettings::centred(pedal, 0.8, 0.5),
+            wah: WahSettings {
+                wah: (k % 2 == 0).then_some(wah::Build::CryBaby),
+                ..WahSettings::default()
+            },
+            dry_source: sources[k % sources.len()],
+            oversampling: [1, 2][k % 2],
+            ..Settings::default()
+        };
+        let play = |worker: Option<&StageWorker>, three: bool| {
+            let mut chain = Chain::new(rate);
+            chain.apply(&settings);
+            chain.settle();
+            chain.find_operating_point();
+            chain.set_speculation(false);
+            chain.set_three_stages(Some(three));
+            let (mut out, mut uses) = (Vec::new(), Vec::new());
+            for b in 0..BLOCKS {
+                let input: Vec<f64> = (0..BLOCK)
+                    .map(|i| material_at(b * BLOCK + i, rate))
+                    .collect();
+                let mut dry: Vec<f64> = input.iter().map(|&x| chain.delayed_dry(x)).collect();
+                let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
+                uses.push(chain.process_block_with_dry(
+                    &input, &mut left, &mut right, &mut dry, true, worker, true,
+                ));
+                out.extend(
+                    left.iter()
+                        .zip(&right)
+                        .zip(&dry)
+                        .map(|((l, r), d)| (l.to_bits(), r.to_bits(), d.to_bits())),
+                );
+            }
+            let three_ran = chain.three_stage_blocks();
+            (out, uses, three_ran)
+        };
+        let (serial, _, _) = play(None, false);
+        let (live_run, _, ran) = play(Some(&live), true);
+        assert_eq!(
+            ran, BLOCKS as u64,
+            "{pedal:?}: forced, every block runs as three"
+        );
+        let (reclaimed, uses, _) = play(Some(&inert), true);
+        assert!(uses.iter().all(|u| *u == PipelineUse::Reclaimed));
+        let (shared, _) = (0..5)
+            .map(|_| {
+                let (run, uses, _) = play(Some(&lagging), true);
+                (run, uses)
+            })
+            .find(|(_, uses)| uses.contains(&PipelineUse::Shared))
+            .unwrap_or_else(|| panic!("{pedal:?}: a lagging worker never took a block"));
+        for (name, run) in [
+            ("live", &live_run),
+            ("reclaimed", &reclaimed),
+            ("shared", &shared),
+        ] {
+            if let Some(i) = run.iter().zip(&serial).position(|(a, b)| a != b) {
+                panic!(
+                    "{pedal:?} at {rate} Hz, {}x, DI {:?}: three stages {name} differ from serial at sample {i}",
+                    settings.oversampling, settings.dry_source
+                );
+            }
+        }
+    }
+}
+
+/// Three stages allocate nothing on the calling thread, at any rate the
+/// plugin runs at: on a live worker, and on an inert one, where the calling
+/// thread runs the preamplifier's job and the second half itself.
+#[test]
+fn three_stages_do_not_allocate() {
+    gainstagefx::dsp::time::enable_ftz_daz();
+    let live = StageWorker::new();
+    let inert = StageWorker::inert();
+    for rate in [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0] {
+        let settings = Settings {
+            gain: Gain::Twin,
+            drive: 0.7,
+            pedal: PedalSettings::centred(Pedal::ALL[1], 0.8, 0.5),
+            dry_source: DrySource::Preamp,
+            ..Settings::default()
+        };
+        for worker in [&live, &inert] {
+            let mut chain = Chain::new(rate);
+            chain.apply(&settings);
+            chain.settle();
+            chain.find_operating_point();
+            chain.set_three_stages(Some(true));
+            let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
+            let (mut input, mut dry) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
+            assert_no_heap(|| {
+                for b in 0..1024 / BLOCK {
+                    for (i, x) in input.iter_mut().enumerate() {
+                        *x = material_at(b * BLOCK + i, rate);
+                    }
+                    dry.copy_from_slice(&input);
+                    chain.process_block_with_dry(
+                        &input,
+                        &mut left,
+                        &mut right,
+                        &mut dry,
+                        false,
+                        Some(worker),
+                        true,
+                    );
+                }
+            });
+            assert_eq!(chain.three_stage_blocks(), (1024 / BLOCK) as u64, "{rate}");
+        }
+    }
+}
+
+/// `Chain::overlapped`, which the plugin adds back to a callback's time for
+/// `PipelineGovernor` to judge what it would cost serially, is zero for a block
+/// that ran on one thread -- serial, or offered to a worker that never woke --
+/// and positive for blocks that really ran on two or three.
+#[test]
+fn overlapped_is_what_running_apart_saved() {
+    gainstagefx::dsp::time::enable_ftz_daz();
+    let live = StageWorker::new();
+    let inert = StageWorker::inert();
+    let settings = Settings {
+        gain: Gain::Twin,
+        drive: 0.7,
+        pedal: PedalSettings::centred(Pedal::ALL[1], 0.8, 0.5),
+        ..Settings::default()
+    };
+    for (worker, pipeline, three) in [
+        (None, false, false),
+        (Some(&inert), true, false),
+        (Some(&inert), true, true),
+        (Some(&live), true, false),
+        (Some(&live), true, true),
+    ] {
+        let mut chain = chain(&settings);
+        chain.set_three_stages(Some(three));
+        let mut overlapped = Vec::new();
+        for b in 0..BLOCKS {
+            let input: Vec<f64> = (0..BLOCK).map(|i| material(b * BLOCK + i)).collect();
+            let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
+            chain.process_block(&input, &mut left, &mut right, false, worker, pipeline);
+            overlapped.push(chain.overlapped());
+        }
+        let live_worker = worker.is_some_and(|w| std::ptr::eq(w, &live));
+        if live_worker {
+            assert!(
+                overlapped.iter().any(|&o| o > 0.0),
+                "three {three}: a live worker overlapped nothing"
+            );
+        } else {
+            assert!(
+                overlapped.iter().all(|&o| o == 0.0),
+                "pipeline {pipeline}, three {three}: one thread, yet {overlapped:?}"
             );
         }
     }

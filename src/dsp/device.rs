@@ -385,6 +385,11 @@ pub trait Device: Send {
     /// Called once the sample is settled.
     fn advance(&mut self) {}
 
+    /// Bring whatever `advance` carries forward to the accepted voltages `v`,
+    /// for a solve that stopped without stamping them (`quadratically_done`
+    /// in `dsp::time`). Only a device whose `advance` keeps state needs it.
+    fn commit(&mut self, _v: &[f64]) {}
+
     /// Whether this device jumps between states rather than bending smoothly.
     ///
     /// An op-amp is either following its input or against a rail, and which
@@ -2111,6 +2116,12 @@ impl Device for Core {
         self.last_volts = self.volts;
         self.trial_eval = None;
     }
+
+    fn commit(&mut self, v: &[f64]) {
+        self.volts = across(v, self.a, self.b);
+        self.flux = self.last_flux + self.half_step * (self.last_volts + self.volts);
+        self.trial_eval = None;
+    }
 }
 
 /// A bipolar transistor, by the Ebers-Moll transport model.
@@ -3153,6 +3164,12 @@ impl Device for AnyDevice {
             AnyDevice::Core(c) => c.advance(),
             AnyDevice::Transconductor(t) => t.advance(),
             AnyDevice::VariableResistor(r) => r.advance(),
+        }
+    }
+
+    fn commit(&mut self, v: &[f64]) {
+        if let AnyDevice::Core(c) = self {
+            c.commit(v);
         }
     }
 

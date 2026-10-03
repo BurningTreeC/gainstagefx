@@ -155,6 +155,49 @@ step on the kink instead of across it. Hard solves 12,239 -> 11,952, but fallbac
 12,388 -> 14,857 and passes a solve 4.355 -> 4.361. Reverted. What is left is how hard
 the stage is driven and at what oversampling: the owner's call, not the solver's.
 
+## Three stages, and a governor that sees the serial cost, 3 October
+
+Two changes to how a chain is spread over cores, neither touching what it
+computes: every output hash below is identical before and after.
+
+- **The governor judged a pipelined chain by its pipelined time.** A chain the
+  pipeline helped most then looked light, went serial at about twice the cost,
+  and came back: *Green Overdrive* ran 17 % of its callbacks serially, *Brown
+  '84* 89 %, and those were the tails. `PipelineGovernor` now decides from what
+  the callback would take on one thread (`Chain::overlapped` added back).
+- **A heavy pedal gets a core of its own.** The pedal on the audio thread, the
+  preamplifier on a second worker lane, the second half on the first, where the
+  stages' measured times say a heavy pedal makes the first half the critical path
+  (`THREE_STAGES_BELOW` in `voice.rs`; `docs/realtime-multi-instance.md`).
+
+Every preset, 4 s of the take, plugin path, two interleaved rounds each:
+
+| | before | after |
+|---|---:|---:|
+| median p99.9 | 424 µs | 351 µs |
+| callbacks over 930 µs, both rounds | 41 | 25 |
+| presets never over 930 µs | 86 | 96 |
+
+*Twin, Modern Purple* p99.9 908 / 895 -> 694 / 695 µs, its callbacks over 930
+from 1 to none here (24 at the audit); *Swedish Death '90* 766 / 743 -> 486 /
+491; *Brown '84* 680 / 570 -> 458 / 453; *Californicated '99* 1,014 / 528 -> 509
+/ 514. The presets that read worse moved in one round of two and ran the same
+path both times (*SVT Grind* 431 / 423 -> 442 / 550, pipelined throughout):
+noise. What is left over 930 µs is *American 800RB Clank* (19 and 20 callbacks),
+whose time is its power stage's own and which neither change can split.
+
+## Speculating in time on more cores (measured, not built)
+
+What is left over 930 µs is power stages, whose solves are sequential. Shadows
+solving later stretches of a block ahead on more cores were measured as an upper
+bound (`dsp::time::parallel_in_time`; the table is in
+`docs/SOLVER_EXPERIMENTS.md`): past today's one helper, the heaviest blocks
+shorten by another 10-20 % for 5 to 29 more cores, the mean not at all, and on
+the transistor stages a shadow's far start can land on a second solution (-49 dB
+on the JC-120). The 8x valve rig's load is uniform and the best scheme takes 19 %
+of it. Not the way to the deadline; for those rigs what remains is the
+oversampling they run at and the 800RB's stage itself.
+
 ## What follows
 
 In order of what a player can hit:
@@ -167,5 +210,5 @@ In order of what a player can hit:
    power stage in it should be capped as a modelled circuit is, and whether 2x
    belongs on a live chain at all, is the owner's call: it is an option's range, not
    a solver fix.
-4. **Twin, Modern Purple** at a steady margin: where its callbacks' time goes, by
-   stage, before anything is changed.
+4. ~~**Twin, Modern Purple** at a steady margin~~: the pedal took ~270 µs a
+   callback beside the preamplifier's ~170 on one core; three stages, above.

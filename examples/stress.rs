@@ -27,8 +27,13 @@
 //! name the panel gives it: how a component that dominates every comparison is
 //! set aside so the rest of the catalogue gets a fair search.
 //!
+//! `--rig "PEDAL|CIRCUIT|POWER|CABINET|OVERSAMPLING"` skips the search and plays
+//! that rig (names as the panel gives them, oversampling as 1/2/4/8), with
+//! where each callback's time went, stage by stage, serially.
+//!
 //! ```text
 //! cargo run --release --example stress
+//! cargo run --release --example stress -- --rig "Round Fuzz|American 800RB|Matched|Legacy|2"
 //! cargo run --release --example stress -- --seconds 6
 //! cargo run --release --example stress -- --exclude "American 800RB" --exclude "American SS 800"
 //! ```
@@ -174,7 +179,7 @@ fn play(chain: &mut Chain, rig: &Preset, take: &[f64], gain_db: f64, paced: bool
             governor.pipelining(),
         );
         let used = started.elapsed().as_secs_f64();
-        governor.update(used / period);
+        governor.update((used + chain.overlapped()) / period);
         times.push(used * 1e6);
     }
     let h = chain.solver_breakdown().saturating_delta(before);
@@ -195,13 +200,64 @@ fn play(chain: &mut Chain, rig: &Preset, take: &[f64], gain_db: f64, paced: bool
     );
 }
 
+fn by_name<T: Enum + Copy>(all: &[T], wanted: &str) -> T {
+    *all.iter()
+        .find(|x| name(**x) == wanted)
+        .unwrap_or_else(|| panic!("no option named {wanted:?}"))
+}
+
+/// The rig serially over the whole take, with each stage's share.
+fn stages(chain: &mut Chain, rig: &Preset, take: &[f64]) {
+    chain.apply(&rig.settings());
+    chain.settle();
+    chain.reset();
+    chain.find_operating_point();
+    chain.set_realtime_stage_timing(true);
+    let before = chain.realtime_stage_timings();
+    let health = chain.solver_breakdown();
+    let blocks = take.len() / BLOCK;
+    let (mut input, mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK], vec![0.0; BLOCK]);
+    let started = Instant::now();
+    for b in 0..blocks {
+        input.copy_from_slice(&take[b * BLOCK..(b + 1) * BLOCK]);
+        chain.process_block(&input, &mut left, &mut right, true, None, false);
+    }
+    let total = started.elapsed().as_secs_f64() * 1e6 / blocks as f64;
+    let t = chain.realtime_stage_timings().delta(before);
+    let h = chain.solver_breakdown().saturating_delta(health);
+    let per = |ns: u64| ns as f64 / 1000.0 / blocks as f64;
+    println!(
+        "  serial, us a callback: total {total:.0}; pedal {:.0}, gain {:.0}, power {:.0}, iron {:.0}, tone {:.0}, cabinet {:.0}",
+        per(t.pedal_ns),
+        per(t.gain_ns),
+        per(t.power_ns),
+        per(t.iron_ns),
+        per(t.tone_ns),
+        per(t.cabinet_ns)
+    );
+    for (label, s) in [("pedal", h.pedal), ("gain", h.gain), ("power", h.power)] {
+        if s.solves > 0 {
+            println!(
+                "  {label:<6} {:.2} passes a solve, {} solves, {} fallbacks, {} unsettled",
+                s.passes as f64 / s.solves as f64,
+                s.solves,
+                s.fallbacks,
+                s.unsettled
+            );
+        }
+    }
+    chain.set_realtime_stage_timing(false);
+}
+
 fn main() {
     let mut seconds = 4.0;
     let mut exclude: Vec<String> = Vec::new();
+    let mut fixed: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--exclude" => exclude.push(args.next().expect("--exclude takes a name")),
+            "--rig" => fixed = Some(args.next().expect("--rig takes a rig")),
             "--seconds" => {
                 seconds = args
                     .next()
@@ -233,6 +289,30 @@ fn main() {
         ..*base
     };
     let mut chain = Chain::new(RATE);
+    if let Some(spec) = fixed {
+        let parts: Vec<&str> = spec.split('|').collect();
+        assert_eq!(
+            parts.len(),
+            5,
+            "--rig \"PEDAL|CIRCUIT|POWER|CABINET|OVERSAMPLING\""
+        );
+        rig.pedal = by_name(&PedalModel::ALL, parts[0]);
+        rig.circuit = by_name(&Circuit::ALL, parts[1]);
+        rig.power_amp = by_name(&PowerAmp::ALL, parts[2]);
+        rig.cab_model = by_name(&CabModel::ALL, parts[3]);
+        rig.oversampling = match parts[4] {
+            "1" => Oversampling::Off,
+            "2" => Oversampling::Two,
+            "4" => Oversampling::Four,
+            _ => Oversampling::Eight,
+        };
+        println!("{spec}:");
+        stages(&mut chain, &rig, &take);
+        for (gain_db, paced) in [(0.0, false), (6.0, false)] {
+            play(&mut chain, &rig, &take, gain_db, paced);
+        }
+        return;
+    }
     println!(
         "mean / p99.9 callback us, serial, over {seconds} s of the take; the top three of each sweep:"
     );

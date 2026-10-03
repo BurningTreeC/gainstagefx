@@ -1,5 +1,44 @@
 # Implementation progress
 
+## 2026-10-03 — Three stages, the governor, and parallel-in-time measured
+
+The owner, on the callbacks still over 930 µs: "can we solve that if you start
+thinking very very creatively and innovative?", then "Do 1, then 2": a third
+pipeline stage, then speculation in time across more cores.
+
+- **Quadratic termination** (`dsp::time::quadratically_done`): a solve stops one
+  pass early where Newton's last two corrections predict the next to be a tenth
+  of a tolerance, within 30 tolerances and with every device settled; a saturating
+  core commits its flux at the point taken (`Device::commit`). Passes -7.3 %
+  catalogue-wide, worst preset -117.5 dB, no unsettled samples, both baselines
+  pass. Not the contraction stopping rejected earlier, which nulled at -73 dB on
+  the physical cabinet; see `docs/SOLVER_EXPERIMENTS.md`.
+- **Tried and rejected**: a three-point predictor (worse everywhere) and starting a
+  hard solve from its analogue a period ago (`dsp::time::analogue`: -1 to -2 %
+  overall, and -57.7 dB on the 800RB at +6 dB, whose clamp has two solutions).
+- **`PipelineGovernor` sees the serial cost**: a callback's time plus what the
+  workers ran beside it (`Chain::overlapped`). Judged by its pipelined time, a
+  chain the pipeline helped went serial at twice the cost and came back.
+- **Three stages** (`StageWorker` has two lanes; `GainJob`/`run_gain` in
+  `voice.rs`): pedal | preamplifier | the rest, where the stages' measured times
+  say so (`THREE_STAGES_BELOW`, hysteresis to 0.85). The first half's pedal and
+  preamplifier are now timed a quantum at a time, about a microsecond a block.
+  Catalogue-wide p99.9 median 424 -> 351 µs, presets never over 930 µs 86 -> 96,
+  *Twin, Modern Purple* 908 -> 694 µs; every hash unchanged
+  (`docs/realtime-catalogue.md`, `docs/realtime-multi-instance.md`).
+  `tests/pipeline.rs`: `three_stages_are_the_serial_chain_to_the_bit` (every
+  pedal, a wah on every other, the DI at each source, every rate),
+  `three_stages_do_not_allocate`, `overlapped_is_what_running_apart_saved`.
+- `rt_scenario --three on|off` forces the choice, prints each stage's measured
+  time, and the table has a `3st` column; `stress --rig` times a named rig by stage.
+- **Parallel in time, measured and not built** (`dsp::time::parallel_in_time`, an
+  upper bound in Newton passes): K shadows each solving a later stretch of the
+  block ahead, one and two sweeps. Past today's single helper the heaviest blocks
+  shorten by 10-20 % more for 5 to 29 more cores, the mean not at all, and on the
+  JC-120 plain 4 or 16 segments moved the output -49 dB (a second solution where
+  the stage clips). The floor -- every solve started at its own answer -- is 12-30 %:
+  the headroom exists, but not for a start a shadow can give.
+
 ## 2026-10-03 — GMIN: the 800RB's collapse, and the SVT stage driven hot
 
 The owner: "Yes, then do 2" -- fix the transistor power stage's collapse, then look at

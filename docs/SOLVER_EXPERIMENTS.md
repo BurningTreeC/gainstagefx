@@ -49,6 +49,35 @@ repeated runs.
 
 ## Accepted
 
+### Quadratic termination (2026-10-03)
+
+Not exact: a solve may stop one pass before the convergence test would have
+said so. Newton's corrections shrink quadratically once it is close, so with
+`moved` the latest correction in tolerances and `previous` the one before, the
+next would be about `moved^3 / previous^2`; when that is under a tenth of a
+tolerance, the solve stops at the current point, committing the saturating
+cores' flux there (`Device::commit`). Guarded: never on the DC solve or after a
+line search, every device settled, and only within `QUADRATIC_REACH` = 30
+tolerances, where Newton is quadratic. Without that reach the Plexi Cranked's
+power stage went from 3.9 to 33.8 passes a solve with 194,000 unsettled samples:
+a correction a thousand tolerances long is not yet in the quadratic regime. Two
+thirds of all solves take exactly three passes, the third only confirming the
+second; over 4 s of every preset, passes -7.3 % (power stages -9.0 %), no
+unsettled samples, worst preset -117.5 dB re peak, median -161 dB; both frozen
+baselines pass. 6 dB hotter, passes 119.0 M -> 109.6 M (-7.9 %), fallbacks
++0.3 %, still none unsettled, worst preset -101.9 dB (*Thrash Rhythm*), median
+-161 dB. A reach of 100 saved -9.6 % at -102 dB, 1000 saved -12.5 % at -40 dB,
+which is not a solver's tolerance any more.
+
+The same pass was tried before as Hairer-Wanner contraction stopping (kappa =
+0.1, no reach) and rejected (`docs/realtime-multi-instance.md`): the physical
+cabinet differentiates cone displacement at the sample rate, and its presets
+nulled only at -73 to -89 dB with unsettled samples doubled. That test
+estimates the remaining error as `theta / (1 - theta)` times the step, which
+stops a linearly converging solve; this one stops only where the next
+correction, estimated quadratically, is a tenth of a tolerance, and only within
+reach. 74 of the 100 presets measured above run the physical cabinet.
+
 ### GMIN across every junction (2026-10-03)
 
 Not exact, and not meant to be: a physical teraohm across each diode and
@@ -425,6 +454,54 @@ replace.
 
 Exact and 2.4 % fewer instructions, but no change in cycles: the loop is bound
 by memory traffic, not arithmetic.
+
+### Speculating in time on more cores -- measured, not built (2026-10-03)
+
+`SpecBlock` speculates on a block's second half with one helper. Cut into K
+segments instead, each after the first with its own shadow from the block's
+start, and optionally solved a second time from the end of the previous
+segment's first sweep (`dsp::time::parallel_in_time`, critical path counted in
+Newton passes, every shadow on its own core). Heaviest 1 % of blocks, as a
+fraction of today's passes; the floor starts every real solve at its own answer:
+
+| rig | floor | 2 segments | 4 | 4, two sweeps | 8, two sweeps | 16, two sweeps |
+|---|---:|---:|---:|---:|---:|---:|
+| American 800RB Clank | 15 % | 83 % | 79 % | 73 % | 69 % | 71 % |
+| Round Fuzz + 800RB, 2x | 30 % | 83 % | 80 % | 73 % | 69 % | 72 % |
+| Brown '84 | 15 % | 75 % | 64 % | 65 % | 58 % | 56 % |
+| Jazz Chorus | 21 % | 91 % | 93 % | 84 % | 84 % | 89 % |
+| Jazz Chorus, +6 dB | 22 % | 77 % | 71 % | 70 % | 67 % | 67 % |
+| Treble Boost + High Gain + 6550, 8x | 25 % | 90 % | 88 % | 83 % | 81 % | 81 % |
+| helpers | | 1 | 3 | 5 | 13 | 29 |
+
+The mean block does not shorten at all (93-107 %), the helpers' passes are 1.3
+to 2 times the stage's own, and past today's two segments the heavy blocks gain
+another 10-20 % for 5 to 29 more cores. The floor says the headroom is real and
+large, but only for a start at the answer: a shadow that skips ahead starts from
+a state too far off. And the transistor stages have more than one solution where
+they clip: on the JC-120 at the take's level, plain 4 and 16 segments moved the
+output by -49 dB re peak where 2 segments keep -172, a shadow's far start
+landing on the other one. (At +6 dB that stage, and the 800RB at 2x, move by
+-53 to -74 dB from *any* change of start, the floor included: they amplify a
+perturbation, whatever made it.) Not built.
+
+### Starting a hard solve from its analogue a period ago -- rejected
+
+A guitar note is nearly periodic, so a hard power-stage solve was usually solved
+once already, a period earlier: find the past moment whose last 24 inputs best
+match now's, within 50 ms, and start Newton from the answer reached then (the
+*method of analogues*; `dsp::time::analogue`, an upper bound that picks with
+hindsight). On the hard solves themselves passes fell 18-30 %, but they are few
+enough that the whole take saved 1-2 %, and on the 800RB at +6 dB the output
+moved by -57.7 dB re peak: its op-amp clamp has more than one solution there,
+and a start from a different period lands on the other one (2026-10-03).
+
+### A three-point predictor -- rejected
+
+Extrapolating the next solve's start from the last three settled points
+(second order) instead of two was slightly worse on every rig tried: a guitar
+signal turns too often for the curvature of the last three samples to say
+anything about the next (2026-10-03).
 
 ### Landing a valve grid's step on its conduction kink -- rejected
 

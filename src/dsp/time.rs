@@ -13,6 +13,8 @@
 //! thing to an independent check either of them can have.
 
 #[cfg(test)]
+mod analogue;
+#[cfg(test)]
 mod full_trace;
 #[cfg(test)]
 mod half_step;
@@ -20,6 +22,8 @@ mod half_step;
 mod hard_samples;
 #[cfg(test)]
 mod jacobian_init;
+#[cfg(test)]
+mod parallel_in_time;
 #[cfg(test)]
 mod power_hard;
 #[cfg(test)]
@@ -554,6 +558,39 @@ const TOLERANCE: f64 = 1e-6;
 
 /// The relative part of the convergence test. See `iterate`.
 const RELATIVE: f64 = 1e-6;
+
+/// How far under the tolerance the next correction must be predicted to fall
+/// before a solve may stop without taking it. See `quadratically_done`.
+const QUADRATIC_MARGIN: f64 = 0.1;
+
+/// How close, in the test's own units, the last correction must already be
+/// for the quadratic estimate to be trusted at all. See `quadratically_done`.
+const QUADRATIC_REACH: f64 = 30.0;
+
+/// Whether a solve converging quadratically can stop on this pass.
+///
+/// Two thirds of all solves took exactly three passes: one to correct the
+/// predictor, one smaller correction still just over the tolerance, and one
+/// whose only job was to measure a third correction and find it far under --
+/// a whole stamp and factorisation to confirm what the first two already said.
+/// In the quadratic regime each correction is the last one squared times a
+/// constant, `d3 = K d2^2` with `K = d2 / d1^2`, so the third is predicted by
+/// the first two: `d3 = d2^3 / d1^2`, in the test's own units. When that is
+/// under `QUADRATIC_MARGIN` the step just computed is taken and the solve
+/// stops, its remaining error a tenth of the tolerance by the same estimate.
+/// Only on a plain pass (no line search, so the previous correction was taken
+/// whole and the regime is the smooth one), contracting, already within
+/// `QUADRATIC_REACH` of converged, and only with every device settled -- a
+/// limiter holding one back is the opposite of the regime this assumes.
+/// Without the reach the estimate fired a thousand tolerances out, where
+/// Newton is not yet quadratic, and the Plexi's power stage diverged.
+#[inline]
+fn quadratically_done(previous: f64, moved: f64) -> bool {
+    previous.is_finite()
+        && moved < QUADRATIC_REACH
+        && moved < previous
+        && moved * moved * moved < QUADRATIC_MARGIN * previous * previous
+}
 /// How many passes a sample may take before the last good answer is used
 /// instead. A circuit driven somewhere absurd should go quiet, not explode.
 ///
@@ -5823,6 +5860,7 @@ impl Simulation {
         };
         // Kept so the caller can see whether this pass made progress, and turn
         // the line search on the moment one does not. See `CONVERGING`.
+        let previous = self.moved;
         self.moved = moved;
         #[cfg(test)]
         self.full_trace_step(
@@ -5873,7 +5911,8 @@ impl Simulation {
         // test in the wrong place, the transformer core -- five unknowns, one
         // device, converging in two passes flat -- reported 7854 failed
         // solves a second.
-        let devices_settled = if moved < 1.0 {
+        let converged = moved < 1.0 || (!dc && !search && quadratically_done(previous, moved));
+        let devices_settled = if converged {
             #[cfg(test)]
             let profile_started = self.twin_phase_profile_start();
             let settled = self.devices.iter().all(|d| d.settled(TOLERANCE));
@@ -5890,7 +5929,7 @@ impl Simulation {
         } else {
             false
         };
-        if moved < 1.0 && devices_settled {
+        if converged && devices_settled {
             #[cfg(test)]
             if !dc {
                 let (settled_factors, settled_rhs) =
@@ -5916,6 +5955,13 @@ impl Simulation {
                 }
             }
             self.voltage.copy_from_slice(&self.guess);
+            if moved >= 1.0 {
+                // Stopped on the quadratic estimate: the devices were stamped
+                // a step short of these voltages. See `quadratically_done`.
+                for device in &mut self.devices {
+                    device.commit(&self.voltage);
+                }
+            }
             return Pass::Settled;
         }
 

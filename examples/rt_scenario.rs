@@ -58,6 +58,10 @@
 //! blocks back to back; it takes as long as the audio it plays. `--stages`
 //! arms the per-stage clocks the realtime trace uses and prints where each
 //! callback's time went (the clocks themselves cost ~10 reads a sample).
+//! `--three on|off` forces a pipelined chain with a pedal to run its first
+//! half as two stages, pedal and preamplifier on two cores, or not; by default
+//! the chain decides from its work (`THREE_STAGES_BELOW` in `voice.rs`). The
+//! hash is the same either way.
 
 use gainstagefx::plugin::PipelineGovernor;
 use gainstagefx::presets::PRESETS;
@@ -94,6 +98,7 @@ struct Options {
     helper: bool,
     plugin: bool,
     table: bool,
+    three: Option<bool>,
 }
 
 impl Options {
@@ -124,6 +129,7 @@ fn options() -> Options {
         helper: false,
         plugin: false,
         table: false,
+        three: None,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -158,6 +164,13 @@ fn options() -> Options {
                 o.plugin = true;
             }
             "--table" => o.table = true,
+            "--three" => {
+                o.three = match value().as_str() {
+                    "on" => Some(true),
+                    "off" => Some(false),
+                    _ => None,
+                }
+            }
             "--oversampling" => {
                 o.oversampling = Some(value().parse().expect("--oversampling takes 1, 2, 4 or 8"))
             }
@@ -249,6 +262,8 @@ struct Row {
     unsettled: u64,
     fallbacks: u64,
     pipelined: f64,
+    /// Of the blocks, how many ran their first half as two stages.
+    three: f64,
 }
 
 /// Every stage's Newton passes since `before`.
@@ -339,6 +354,7 @@ fn main() {
         chain.find_operating_point();
         chain.set_realtime_stage_timing(o.stages);
         chain.set_speculation(o.speculation);
+        chain.set_three_stages(o.three);
         let stages_before = chain.realtime_stage_timings();
 
         let before: SolverBreakdown = chain.solver_breakdown();
@@ -406,7 +422,7 @@ fn main() {
             }
             times.push(started.elapsed().as_secs_f64() * 1e6);
             if o.plugin {
-                governor.update(started.elapsed().as_secs_f64() / period);
+                governor.update((started.elapsed().as_secs_f64() + chain.overlapped()) / period);
             }
             if o.table {
                 let now = chain.solver_breakdown();
@@ -515,6 +531,13 @@ fn main() {
                 chain.speculation_gate()
             );
         }
+        if o.block {
+            let (pedal, gain, back) = chain.stage_estimates();
+            println!(
+                "  measured stage time a sample: pedal {pedal:.0} ns  rest of the first half {gain:.0} ns  second half {back:.0} ns; three stages in {} blocks",
+                chain.three_stage_blocks()
+            );
+        }
         if o.stages {
             let t = chain.realtime_stage_timings().delta(stages_before);
             let per = |ns: u64| ns as f64 / 1000.0 / blocks as f64;
@@ -556,18 +579,19 @@ fn main() {
                     + h.power.fallbacks
                     + h.iron.fallbacks,
                 pipelined: pipelined_blocks as f64 / blocks as f64,
+                three: chain.three_stage_blocks() as f64 / blocks as f64,
             });
         }
     }
     if o.table {
         rows.sort_by(|a, b| b.p999.total_cmp(&a.p999));
         println!(
-            "\n{:<34} {:<24} {:>2} {:>6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>6} {:>6} {:>5} {:>5} {:>4}",
-            "preset", "circuit", "os", "p50", "p99", "p99.9", "max", ">930", ">prd", "pmax", "p99.9p", "unst", "fallb", "pipe"
+            "\n{:<34} {:<24} {:>2} {:>6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>6} {:>6} {:>5} {:>5} {:>4} {:>4}",
+            "preset", "circuit", "os", "p50", "p99", "p99.9", "max", ">930", ">prd", "pmax", "p99.9p", "unst", "fallb", "pipe", "3st"
         );
         for r in &rows {
             println!(
-                "{:<34} {:<24} {:>2} {:>6.0} {:>6.0} {:>6.0} {:>6.0} {:>5} {:>5} {:>6} {:>6} {:>5} {:>5} {:>3.0}%",
+                "{:<34} {:<24} {:>2} {:>6.0} {:>6.0} {:>6.0} {:>6.0} {:>5} {:>5} {:>6} {:>6} {:>5} {:>5} {:>3.0}% {:>3.0}%",
                 r.name,
                 r.circuit,
                 r.factor,
@@ -581,7 +605,8 @@ fn main() {
                 r.passes_p999,
                 r.unsettled,
                 r.fallbacks,
-                r.pipelined * 100.0
+                r.pipelined * 100.0,
+                r.three * 100.0
             );
         }
     }

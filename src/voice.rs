@@ -44,7 +44,7 @@ use crate::dsp::spring::Tank;
 use crate::dsp::time::Simulation;
 use crate::dsp::tremolo::Tremolo;
 use crate::stage_worker::StageWorker;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 /// The level a plugin should be set up around: hot enough to be well clear of
@@ -3619,6 +3619,105 @@ const SPECULATE_BELOW: f64 = 0.5;
 /// after a quiet passage -- the heaviest there are -- found it closed.
 const WORK_WINDOW: f64 = 32_768.0;
 
+/// A chain with a pedal runs the pedal, the preamplifier and the second half
+/// on three cores once that would shorten the longest of its stages to below
+/// this fraction of the longest of two, and goes back to two above
+/// `THREE_STAGES_ABOVE`. A third stage costs a third thread's wake, another
+/// quantum of fill at the start of each block and the preamplifier's state
+/// moving between cores; it is worth that where a heavy pedal sits in front of
+/// a preamplifier about as heavy, which is where the first half is the
+/// critical path and splitting it nearly halves it.
+///
+/// Decided from the stages' measured time, not from counted work: which way
+/// a block runs never changes its output, so the decision is free to depend on
+/// the machine, and `Simulation::pass_weight`, fitted to the power stage, put
+/// the Modern Purple at twice its measured cost and leaves the cabinet out.
+/// Measured on the pedal presets (`rt_scenario --plugin`, both forced, two
+/// rounds), every one whose stages this puts below 0.75 gained p99.9 -- the
+/// Modern Purple in front of the Twin from 922 and 891 us to 725 and 719 --
+/// and the 808s, which it puts above 0.9, lost 15 to 25 %.
+const THREE_STAGES_BELOW: f64 = 0.75;
+const THREE_STAGES_ABOVE: f64 = 0.85;
+
+/// Host samples of measured stage times before a chain decides on three
+/// stages, and over which they are averaged: about 0.7 s at 48 kHz, as
+/// `WORK_WINDOW`.
+const STAGE_SETTLE: f64 = 4_096.0;
+const STAGE_WINDOW: f64 = 32_768.0;
+
+/// One block's stage times, in nanoseconds, measured a quantum at a time
+/// around each stage's own work, never around a wait: the pedal's, the rest
+/// of the first half's (all of it, where the pedal is not timed apart), the
+/// second half's on whichever thread ran it, and the cabinet's on the calling
+/// thread once it has taken it over. `samples` counts the host samples whose
+/// pedal was timed apart, which are the ones that decide `three`.
+#[derive(Clone, Copy, Default)]
+struct BlockClock {
+    pedal: u64,
+    gain: u64,
+    back: u64,
+    cabinet: u64,
+    samples: u64,
+}
+
+impl BlockClock {
+    /// Every stage's time together: what the block would have taken on one
+    /// thread.
+    fn busy(&self) -> u64 {
+        self.pedal + self.gain + self.back + self.cabinet
+    }
+
+    /// Add what the second half and, if it ran apart, the preamplifier
+    /// measured, once both jobs are done.
+    fn add_jobs(&mut self, back: &BackJob<'_>, gain: Option<&GainJob<'_>>) {
+        self.back += back.busy.load(Ordering::Relaxed);
+        if let Some(gain) = gain {
+            self.gain += gain.busy.load(Ordering::Relaxed);
+        }
+    }
+}
+
+/// Running averages of what `BlockClock` measures, a host sample.
+#[derive(Clone, Copy, Default)]
+struct StageClock {
+    per_sample: [f64; 3],
+    samples: f64,
+}
+
+impl StageClock {
+    fn add(&mut self, block: &BlockClock) {
+        let n = block.samples as f64;
+        let alpha = n / (n + STAGE_WINDOW.min(self.samples + n));
+        let measured = [block.pedal, block.gain, block.back].map(|ns| ns as f64 / n);
+        for (average, now) in self.per_sample.iter_mut().zip(measured) {
+            // A block the scheduler preempted reads long; let it move the
+            // average no further than four times where it stands.
+            let now = if self.samples >= STAGE_SETTLE {
+                now.min(4.0 * *average)
+            } else {
+                now
+            };
+            *average += (now - *average) * alpha;
+        }
+        self.samples += n;
+    }
+
+    /// Whether to run as three stages, from whether the chain does now.
+    fn decide(&self, three: bool) -> bool {
+        if self.samples < STAGE_SETTLE {
+            return three;
+        }
+        let [pedal, gain, back] = self.per_sample;
+        let two = (pedal + gain).max(back);
+        let ratio = pedal.max(gain).max(back) / two.max(f64::MIN_POSITIVE);
+        if three {
+            ratio < THREE_STAGES_ABOVE
+        } else {
+            ratio < THREE_STAGES_BELOW
+        }
+    }
+}
+
 /// Second-half solves a block speculates over at most, which is what the
 /// buffers are sized for: 32 host samples at 8x, or 256 at 1x.
 const SPECULATION_MAX: usize = 256;
@@ -3941,10 +4040,20 @@ impl SpecBlock {
 
 /// Everything in `Chain::process` before the power stage: the oversampler's
 /// interpolators, the pedal, the preamplifier with its reverb send and
-/// tremolo, the Mark's graphic and the Neve's line stage.
+/// tremolo, the Mark's graphic and the Neve's line stage. Two parts, which
+/// share no state: the pedal's (the upsampler, the wah, the pedal) and the
+/// circuit's (everything from the preamplifier on), so a chain with a heavy
+/// pedal can run them on two cores. See `pipelined3`.
 struct Front<'a> {
+    pedal: FrontPedal<'a>,
+    gain: FrontGain<'a>,
+}
+
+/// The first part of the first half: the oversampler's interpolators, the wah
+/// and the pedal, and the dry tap when it is the pedal's.
+struct FrontPedal<'a> {
     up: Upsampler<'a>,
-    /// The dry signal's tap, when it is taken inside this half.
+    /// The dry signal's tap, when it is the pedal's output.
     tap: Option<FrontTap<'a>>,
     /// The wah ahead of the pedal, when one is in.
     wah: Option<WahTap<'a>>,
@@ -3953,8 +4062,18 @@ struct Front<'a> {
     pedal_brigade: Option<BrigadeTap<'a>>,
     input_scale: f64,
     hand_off: f64,
+    timing: bool,
+    pedal_ns: u64,
+}
+
+/// The second part: the preamplifier and what lives in its netlist -- the
+/// reverb, the tremolo, the bucket brigade -- the graphic and the line stage,
+/// and the dry tap when it is the preamplifier's.
+struct FrontGain<'a> {
+    /// The dry signal's tap, when it is the preamplifier's output.
+    tap: Option<FrontTap<'a>>,
     gain: &'a mut Simulation,
-    /// The circuit's, likewise.
+    /// The circuit's bucket brigade, likewise.
     gain_brigade: Option<BrigadeTap<'a>>,
     graphic: Option<&'a mut Simulation>,
     line: Option<&'a mut Simulation>,
@@ -3969,7 +4088,6 @@ struct Front<'a> {
     intensity: f64,
     drive_previous: &'a mut f64,
     timing: bool,
-    pedal_ns: u64,
     gain_ns: u64,
     #[cfg(test)]
     trace: Option<&'a mut TwinLevelAccumulator>,
@@ -4223,57 +4341,42 @@ fn lap(started: Option<Instant>) -> u64 {
 
 impl Front<'_> {
     fn factor(&self) -> usize {
-        self.up.factor()
+        self.pedal.up.factor()
     }
 
     fn timings(&self) -> (u64, u64) {
-        (self.pedal_ns, self.gain_ns)
+        (self.pedal.pedal_ns, self.gain.gain_ns)
     }
 
     /// The tap's sample for the host sample just processed, if there is a tap.
     fn tapped(&self) -> Option<f64> {
-        self.tap.as_ref().map(|tap| *tap.value)
+        self.pedal
+            .tap
+            .as_ref()
+            .or(self.gain.tap.as_ref())
+            .map(|tap| *tap.value)
     }
 
     /// One host sample in; the values the power stage is handed at the
     /// oversampled rate out, in order. Returns how many (the factor).
     #[inline]
     fn sample(&mut self, x: f64, out: &mut [f64; MAX_OVERSAMPLING]) -> usize {
-        // The complete Twin electrical signal path lives in `gain`. The
-        // spring is the only mechanical break: drive it from the previous host
-        // sample's transformer secondary and feed its pickup into the circuit's
-        // independent return port. The optical cell is likewise a real
-        // audio-rate resistor in that same netlist.
-        let tank_pickup = if self.reverb.is_some() {
-            self.tank.process(*self.drive_previous)
-        } else {
-            0.0
-        };
-        if let Some(reverb) = self.reverb {
-            self.gain.set_aux_input(reverb.tank_return_aux, tank_pickup);
-        }
-        if let Some(ab763) = self.ab763 {
-            let ldr = self.tremolo.resistance(self.speed, self.intensity);
-            self.gain.set_realtime_value(ab763.ldr_slot, ldr);
-            #[cfg(test)]
-            if let Some(trace) = self.trace.as_mut() {
-                trace.transformer_secondary.push(*self.drive_previous);
-                trace.tank_pickup.push(tank_pickup);
-                trace.wet_mix.push(tank_pickup);
-            }
-        }
-        let mut next_tank_drive = *self.drive_previous;
+        let mut pedalled = [0.0; MAX_OVERSAMPLING];
+        let n = self.pedal.sample(x, &mut pedalled);
+        self.gain.sample(&pedalled[..n], out);
+        n
+    }
+}
+
+impl FrontPedal<'_> {
+    /// One host sample in; what the circuit is handed at the oversampled
+    /// rate out, in order. Returns how many (the factor).
+    #[inline]
+    fn sample(&mut self, x: f64, out: &mut [f64; MAX_OVERSAMPLING]) -> usize {
         let wah_target = self.wah.as_mut().map_or(0.0, |w| w.target(x));
         let mut up = [0.0; MAX_OVERSAMPLING];
         let n = self.up.push(x * self.input_scale, &mut up);
-        let (tap_preamp, tap_scale, tap_node) = match self.tap.as_mut() {
-            Some(tap) if tap.preamp => {
-                *tap.scale += (tap.scale_target - *tap.scale) * 0.02;
-                (Some(true), *tap.scale, tap.node)
-            }
-            Some(tap) => (Some(false), tap.pedal_scale, None),
-            None => (None, 0.0, None),
-        };
+        let tap_scale = self.tap.as_ref().map_or(0.0, |tap| tap.pedal_scale);
         let mut tapped = [0.0; MAX_OVERSAMPLING];
         for (k, (v, slot)) in up[..n].iter().zip(out.iter_mut()).enumerate() {
             // The wah first, then the pedal: guitar, wah, pedal, circuit. The
@@ -4305,9 +4408,56 @@ impl Front<'_> {
                 }
                 None => *v,
             };
-            if tap_preamp == Some(false) {
-                tapped[k] = v * tap_scale;
+            tapped[k] = v * tap_scale;
+            *slot = v;
+        }
+        if let Some(tap) = self.tap.as_mut() {
+            let decimated = tap.down.pull(&tapped[..n]);
+            *tap.value = tap.pad.process(decimated);
+        }
+        n
+    }
+}
+
+impl FrontGain<'_> {
+    /// One host sample's worth of the pedal's output in, at the oversampled
+    /// rate; the values the power stage is handed out, in order.
+    #[inline]
+    fn sample(&mut self, input: &[f64], out: &mut [f64; MAX_OVERSAMPLING]) {
+        // The complete Twin electrical signal path lives in `gain`. The
+        // spring is the only mechanical break: drive it from the previous host
+        // sample's transformer secondary and feed its pickup into the circuit's
+        // independent return port. The optical cell is likewise a real
+        // audio-rate resistor in that same netlist.
+        let tank_pickup = if self.reverb.is_some() {
+            self.tank.process(*self.drive_previous)
+        } else {
+            0.0
+        };
+        if let Some(reverb) = self.reverb {
+            self.gain.set_aux_input(reverb.tank_return_aux, tank_pickup);
+        }
+        if let Some(ab763) = self.ab763 {
+            let ldr = self.tremolo.resistance(self.speed, self.intensity);
+            self.gain.set_realtime_value(ab763.ldr_slot, ldr);
+            #[cfg(test)]
+            if let Some(trace) = self.trace.as_mut() {
+                trace.transformer_secondary.push(*self.drive_previous);
+                trace.tank_pickup.push(tank_pickup);
+                trace.wet_mix.push(tank_pickup);
             }
+        }
+        let mut next_tank_drive = *self.drive_previous;
+        let (tap_scale, tap_node) = match self.tap.as_mut() {
+            Some(tap) => {
+                *tap.scale += (tap.scale_target - *tap.scale) * 0.02;
+                (*tap.scale, tap.node)
+            }
+            None => (0.0, None),
+        };
+        let n = input.len();
+        let mut tapped = [0.0; MAX_OVERSAMPLING];
+        for (k, (&v, slot)) in input.iter().zip(out.iter_mut()).enumerate() {
             // The power amplifier comes next, in volts, *before* the make-up.
             //
             // Not after it, which is where the signal order would otherwise
@@ -4371,7 +4521,7 @@ impl Front<'_> {
                     trace.power_input.push(amplified);
                 }
             }
-            if tap_preamp == Some(true) {
+            if self.tap.is_some() {
                 let at = tap_node.map_or(amplified, |node| self.gain.voltage_at(node));
                 tapped[k] = at * tap_scale;
             }
@@ -4384,7 +4534,6 @@ impl Front<'_> {
             let decimated = tap.down.pull(&tapped[..n]);
             *tap.value = tap.pad.process(decimated);
         }
-        n
     }
 }
 
@@ -4700,6 +4849,8 @@ struct BackJob<'a> {
     /// How far the worker has got, for the calling thread to judge whether
     /// taking the cabinet over is worth moving its state between cores.
     reached: AtomicUsize,
+    /// The nanoseconds spent running the job.
+    busy: AtomicU64,
 }
 
 /// Run the second half for host samples `from..to` of the block `ctx` names.
@@ -4715,6 +4866,7 @@ struct BackJob<'a> {
 /// the job, and so is the cabinet half until `handover` is published.
 unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
     let job = unsafe { &*(ctx as *const BackJob<'_>) };
+    let started = Instant::now();
     for i in from..to {
         let mid = unsafe { std::slice::from_raw_parts(job.mid.add(i * job.factor), job.factor) };
         job.reached.store(i, Ordering::Relaxed);
@@ -4735,6 +4887,65 @@ unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
             job.powered.store(i + 1, Ordering::Release);
         }
     }
+    job.busy
+        .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+}
+
+/// What the second worker needs to run a block's preamplifier: the third
+/// stage, between the pedal on the calling thread and the power stage on the
+/// first worker.
+///
+/// As with `BackJob`, both threads hold only a shared reference to this. The
+/// preamplifier is reached through a raw pointer, dereferenced only by
+/// whoever runs the job.
+struct GainJob<'a> {
+    gain: *mut FrontGain<'a>,
+    /// The pedal's output, `factor` values a host sample.
+    pedalled: *const f64,
+    mid: *mut f64,
+    factor: usize,
+    /// The dry signal's slots from this chunk's first sample, and how many.
+    dry: *mut f64,
+    dry_len: usize,
+    /// The first worker, which runs the power stage on what this writes.
+    next: *const StageWorker,
+    /// The nanoseconds spent running the job.
+    busy: AtomicU64,
+}
+
+/// Run the preamplifier for host samples `from..to` of the block `ctx` names,
+/// publishing its output to the power stage's worker a quantum at a time.
+///
+/// # Safety
+/// `ctx` is a live `GainJob`; the pedal has finished writing `pedalled` for
+/// every sample below `to`, Released with the count; the preamplifier is this
+/// thread's for the job.
+unsafe fn run_gain(ctx: *mut (), from: usize, to: usize) {
+    let job = unsafe { &*(ctx as *const GainJob<'_>) };
+    let gain = unsafe { &mut *job.gain };
+    let next = unsafe { &*job.next };
+    let started = Instant::now();
+    let mut out = [0.0; MAX_OVERSAMPLING];
+    for i in from..to {
+        let input =
+            unsafe { std::slice::from_raw_parts(job.pedalled.add(i * job.factor), job.factor) };
+        gain.sample(input, &mut out);
+        if let Some(tap) = gain.tap.as_ref().filter(|_| i < job.dry_len) {
+            // SAFETY: the dry tap is the preamplifier's, so nobody else
+            // writes these slots.
+            unsafe { job.dry.add(i).write(*tap.value) };
+        }
+        // SAFETY: the power stage reads stretch `i` only once it is published.
+        unsafe {
+            std::ptr::copy_nonoverlapping(out.as_ptr(), job.mid.add(i * job.factor), job.factor)
+        };
+        if (i + 1) % PIPELINE_QUANTUM == 0 {
+            next.publish(i + 1);
+        }
+    }
+    job.busy
+        .fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    next.publish(to);
 }
 
 /// The first half on this thread, the second on `worker`, `PIPELINE_QUANTUM`
@@ -4756,11 +4967,20 @@ unsafe fn run_back(ctx: *mut (), from: usize, to: usize) {
 ///
 /// Whenever this thread would otherwise wait, it advances the power stage's
 /// shadow instead, if the block is one that will use it; see `SpecBlock`.
+///
+/// With `three`, the first half is itself two stages: this thread runs the
+/// pedal and the worker's second lane the preamplifier, a quantum behind it,
+/// and the power stage trails the preamplifier by another. The preamplifier
+/// is offered just as the second half is: if its worker has not woken by the
+/// time the pedal is done, this thread runs it, and the power stage behind
+/// it, itself. Only for a chain that does not speculate, whose first half is
+/// the heavy one, so there is never a shadow to advance in that case.
 #[allow(clippy::too_many_arguments)]
 fn pipelined(
     front: &mut Front<'_>,
     back: &mut Back<'_>,
     input: &[f64],
+    pedalled: &mut [f64],
     mid: &mut [f64],
     handoff: &mut [[f64; 3]],
     left: &mut [f64],
@@ -4768,19 +4988,34 @@ fn pipelined(
     dry: &mut [f64],
     worker: &StageWorker,
     speculation: &mut Speculation,
+    three: bool,
+    clock: &mut BlockClock,
 ) -> PipelineUse {
     let factor = front.factor();
     let mut used = PipelineUse::Serial;
     // Raw pointers throughout: the worker reads `mid` and writes the outputs
     // while this thread still writes later stretches of `mid`, so no `&mut`
-    // to either may be live across the hand-off.
+    // to either may be live across the hand-off. Likewise `pedalled`, which
+    // the second lane reads, and `dry`, which it writes when the tap is the
+    // preamplifier's.
+    let pedalled_ptr = pedalled.as_mut_ptr();
     let mid_ptr = mid.as_mut_ptr();
     let handoff_ptr = handoff.as_mut_ptr();
     let (left_ptr, right_ptr) = (left.as_mut_ptr(), right.as_mut_ptr());
+    let (dry_ptr, dry_len) = (dry.as_mut_ptr(), dry.len());
+    let second = worker.second();
+    // With a pedal, the first half runs a quantum of the pedal and then the
+    // same quantum of the preamplifier, timing each: the two share no state,
+    // so the order is free, and the times decide `three`.
+    let timed = front.pedal.pedal.is_some() || front.pedal.wah.is_some();
     for chunk_start in (0..input.len()).step_by(PIPELINE_CHUNK) {
         let chunk = &input[chunk_start..input.len().min(chunk_start + PIPELINE_CHUNK)];
         let len = chunk.len();
         let spec = back.speculation(mid_ptr, factor, len, speculation.since_hard < EAGER_WITHIN);
+        debug_assert!(
+            !three || spec.is_none(),
+            "three stages only where there is no shadow"
+        );
         if let Some(spec) = &spec {
             spec.helped.store(true, Ordering::Relaxed);
         }
@@ -4809,38 +5044,141 @@ fn pipelined(
             handover: AtomicUsize::new(usize::MAX),
             powered: AtomicUsize::new(0),
             reached: AtomicUsize::new(0),
+            busy: AtomicU64::new(0),
         };
         let ctx = &job as *const BackJob<'_> as *mut ();
-        // SAFETY: `job`, `mid`, `handoff` and the outputs outlive the offer:
-        // this iteration does not end until the worker is done with them or
-        // has been refused them.
+        let dry_from = chunk_start.min(dry_len);
+        let gain_job = three.then(|| GainJob {
+            gain: &mut front.gain as *mut FrontGain<'_>,
+            pedalled: pedalled_ptr,
+            mid: mid_ptr,
+            factor,
+            dry: unsafe { dry_ptr.add(dry_from) },
+            dry_len: dry_len - dry_from,
+            next: worker,
+            busy: AtomicU64::new(0),
+        });
+        let gain_ctx = gain_job
+            .as_ref()
+            .map(|job| job as *const GainJob<'_> as *mut ());
+        // SAFETY: `job`, `gain_job`, `pedalled`, `mid`, `handoff`, `dry` and
+        // the outputs outlive the offers: this iteration does not end until
+        // each worker is done with them or has been refused them. The second
+        // half is offered first, so that its count is reset before the
+        // preamplifier's worker can publish to it.
         unsafe { worker.offer(run_back, ctx, len) };
-        let mut buf = [0.0; MAX_OVERSAMPLING];
-        for (i, &x) in chunk.iter().enumerate() {
-            let n = front.sample(x, &mut buf);
-            debug_assert_eq!(n, factor);
-            // The tap is this thread's alone: the worker never sees `dry`.
-            if let (Some(v), Some(slot)) = (front.tapped(), dry.get_mut(chunk_start + i)) {
-                *slot = v;
-            }
-            // SAFETY: stretch `i` of `mid` is not yet published, so the worker
-            // is not reading it.
-            unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), mid_ptr.add(i * factor), n) };
-            if (i + 1) % PIPELINE_QUANTUM == 0 {
-                worker.publish(i + 1);
-            }
+        if let Some(gain_ctx) = gain_ctx {
+            unsafe { second.offer(run_gain, gain_ctx, len) };
         }
-        worker.publish(len);
-        // SAFETY: the whole chunk is published.
+        let mut buf = [0.0; MAX_OVERSAMPLING];
+        let dry_here = dry_len - dry_from;
+        for quantum in (0..len).step_by(PIPELINE_QUANTUM) {
+            let end = (quantum + PIPELINE_QUANTUM).min(len);
+            if !timed {
+                let started = Instant::now();
+                for (i, &x) in chunk.iter().enumerate().take(end).skip(quantum) {
+                    let n = front.sample(x, &mut buf);
+                    debug_assert_eq!(n, factor);
+                    // The tap is this thread's alone: the worker never sees `dry`.
+                    if let Some(v) = front.tapped().filter(|_| i < dry_here) {
+                        unsafe { dry_ptr.add(dry_from + i).write(v) };
+                    }
+                    // SAFETY: stretch `i` of `mid` is not yet published, so
+                    // the worker is not reading it.
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(buf.as_ptr(), mid_ptr.add(i * factor), n)
+                    };
+                }
+                clock.gain += started.elapsed().as_nanos() as u64;
+                worker.publish(end);
+                continue;
+            }
+            let started = Instant::now();
+            for (i, &x) in chunk.iter().enumerate().take(end).skip(quantum) {
+                let n = front.pedal.sample(x, &mut buf);
+                debug_assert_eq!(n, factor);
+                if let Some(tap) = front.pedal.tap.as_ref().filter(|_| i < dry_here) {
+                    // SAFETY: the tap is the pedal's, so this thread's alone.
+                    unsafe { dry_ptr.add(dry_from + i).write(*tap.value) };
+                }
+                // SAFETY: stretch `i` is not yet published to the second
+                // lane, and with two stages nobody else reads it.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(buf.as_ptr(), pedalled_ptr.add(i * factor), n)
+                };
+            }
+            let pedalled_at = Instant::now();
+            clock.pedal += (pedalled_at - started).as_nanos() as u64;
+            if three {
+                second.publish(end);
+                continue;
+            }
+            for i in quantum..end {
+                let input =
+                    unsafe { std::slice::from_raw_parts(pedalled_ptr.add(i * factor), factor) };
+                front.gain.sample(input, &mut buf);
+                if let Some(tap) = front.gain.tap.as_ref().filter(|_| i < dry_here) {
+                    unsafe { dry_ptr.add(dry_from + i).write(*tap.value) };
+                }
+                // SAFETY: as above.
+                unsafe {
+                    std::ptr::copy_nonoverlapping(buf.as_ptr(), mid_ptr.add(i * factor), factor)
+                };
+            }
+            clock.gain += pedalled_at.elapsed().as_nanos() as u64;
+            worker.publish(end);
+        }
+        if timed {
+            clock.samples += len as u64;
+        }
+        // Whether the preamplifier is still running on the second lane, to be
+        // waited for before this iteration ends.
+        let mut gain_elsewhere = false;
+        match gain_ctx {
+            Some(gain_ctx) => {
+                second.publish(len);
+                // SAFETY: the whole chunk's pedal output is published.
+                if unsafe { second.try_reclaim() } {
+                    // SAFETY: nobody else holds the job.
+                    unsafe { run_gain(gain_ctx, 0, len) };
+                    second.release();
+                } else {
+                    gain_elsewhere = true;
+                }
+            }
+            None => worker.publish(len),
+        }
+        let wait_for_gain = || {
+            if gain_elsewhere {
+                while !second.is_done() {
+                    std::hint::spin_loop();
+                }
+                second.release();
+            }
+        };
+        // SAFETY: offered above.
         if unsafe { worker.try_reclaim() } {
             // The worker never started: the whole second half runs here, and
-            // so does the shadow.
+            // so does the shadow. Behind the preamplifier, when that is still
+            // running on the second lane; otherwise all of it is published.
             if let Some(spec) = &spec {
                 spec.helped.store(false, Ordering::Relaxed);
             }
-            // SAFETY: nobody else holds the job.
-            unsafe { run_back(ctx, 0, len) };
+            let mut done = 0;
+            while done < len {
+                let ready = worker.published();
+                if ready > done {
+                    // SAFETY: nobody else holds the job, and `ready` was
+                    // Released after the samples below it were written.
+                    unsafe { run_back(ctx, done, ready) };
+                    done = ready;
+                } else {
+                    std::hint::spin_loop();
+                }
+            }
             worker.release();
+            wait_for_gain();
+            clock.add_jobs(&job, gain_job.as_ref());
             used = PipelineUse::Reclaimed;
             SpecBlock::tally(spec.as_ref(), speculation, len);
             back.power.spec = std::ptr::null();
@@ -4886,7 +5224,9 @@ fn pipelined(
                 if next < job.powered.load(Ordering::Acquire) {
                     // SAFETY: written before `powered` was Released past it.
                     let [y, out_of, horn] = unsafe { handoff_ptr.add(next).read() };
+                    let started = Instant::now();
                     let (l, r) = cabinet.sample(y, out_of, horn);
+                    clock.cabinet += started.elapsed().as_nanos() as u64;
                     unsafe {
                         left_ptr.add(chunk_start + next).write(l);
                         right_ptr.add(chunk_start + next).write(r);
@@ -4903,6 +5243,8 @@ fn pipelined(
             }
         }
         worker.release();
+        wait_for_gain();
+        clock.add_jobs(&job, gain_job.as_ref());
         SpecBlock::tally(spec.as_ref(), speculation, len);
         back.power.spec = std::ptr::null();
     }
@@ -5193,6 +5535,9 @@ pub struct Chain {
     /// The first half's output for a block, handed to the second half; see
     /// `process_block`. Allocated here so the audio thread never does.
     mid: Box<[f64]>,
+    /// The pedal's output for a block, handed to the preamplifier when they
+    /// run as two stages; see `pipelined`.
+    pedalled: Box<[f64]>,
     /// The power half's output, per host sample, for the samples whose
     /// cabinet the calling thread runs; see `pipelined`.
     handoff: Box<[[f64; 3]]>,
@@ -5217,6 +5562,18 @@ pub struct Chain {
     /// the same however the blocks ran.
     front_work: f64,
     power_work: f64,
+    /// What the pipelined stages have measured, and whether the chain runs as
+    /// three stages; see `THREE_STAGES_BELOW`.
+    stage_clock: StageClock,
+    three_stage: bool,
+    /// How much longer the last block would have taken on one thread; see
+    /// `overlapped`.
+    overlapped_ns: u64,
+    /// Blocks whose first half ran as two stages, for measurements.
+    three_stage_blocks: u64,
+    /// Whether a pipelined block runs as three stages regardless of
+    /// `three_stages`, for tests and measurements; `None` lets it decide.
+    three_override: Option<bool>,
 }
 
 impl Chain {
@@ -5651,6 +6008,7 @@ impl Chain {
             realtime_stage_timing_enabled: false,
             realtime_stage_timings: RealtimeStageTimings::default(),
             mid: vec![0.0; PIPELINE_CHUNK * MAX_OVERSAMPLING].into_boxed_slice(),
+            pedalled: vec![0.0; PIPELINE_CHUNK * MAX_OVERSAMPLING].into_boxed_slice(),
             handoff: vec![[0.0; 3]; PIPELINE_CHUNK].into_boxed_slice(),
             spec_voltages: vec![0.0; SPECULATION_MAX * spec_unknowns].into_boxed_slice(),
             spec_linearisations: vec![Linearisation::default(); SPECULATION_MAX * spec_devices]
@@ -5664,6 +6022,11 @@ impl Chain {
             speculating: true,
             front_work: 0.0,
             power_work: 0.0,
+            stage_clock: StageClock::default(),
+            three_stage: false,
+            overlapped_ns: 0,
+            three_stage_blocks: 0,
+            three_override: None,
         };
         chain.set_oversampling(4);
         chain.set_drive(0.5);
@@ -5791,6 +6154,13 @@ impl Chain {
     }
 
     /// The speaker driven with no power stage, when that is what is in the path.
+    /// The power stage's inputs for the last block `process_block` ran
+    /// serially, `effective_oversampling` a host sample.
+    #[cfg(test)]
+    pub(crate) fn test_mid(&self) -> &[f64] {
+        &self.mid
+    }
+
     /// Test-only: the power-stage simulation this chain is running.
     #[cfg(test)]
     pub(crate) fn test_active_power_mut(&mut self) -> Option<&mut Simulation> {
@@ -6971,37 +7341,48 @@ impl Chain {
         });
         let input_scale = if wah.is_some() { wah_into } else { after_wah };
         let timing = self.realtime_stage_timing_enabled;
+        // The tap goes with the part that makes its signal.
+        let (pedal_tap, gain_tap) = match tap {
+            Some(tap) if tap.preamp => (None, Some(tap)),
+            tap => (tap, None),
+        };
         let front = Front {
-            up,
-            tap,
-            wah,
-            pedal,
-            pedal_brigade,
-            input_scale,
-            hand_off: self.pedal_hand_off,
-            gain: &mut self.gains[self.gain],
-            gain_brigade,
-            graphic: self.voice.has_graphic().then_some(&mut self.graphic),
-            line: (self.voice == Gain::Neve).then_some(self.line.as_mut()),
-            reverb,
-            ab763,
-            tank_send,
-            tank: &mut self.tank,
-            tremolo: &mut self.tremolo,
-            speed: self.speed,
-            intensity: self.intensity,
-            drive_previous: &mut self.twin_tank_drive_previous,
-            timing,
-            pedal_ns: 0,
-            gain_ns: 0,
-            #[cfg(test)]
-            trace: self.twin_level_trace.as_mut(),
-            #[cfg(test)]
-            reverb_send_plate: self.twin_reverb_send_plate,
-            #[cfg(test)]
-            v4b_grid: self.twin_v4b_grid,
-            #[cfg(test)]
-            power_traced,
+            pedal: FrontPedal {
+                up,
+                tap: pedal_tap,
+                wah,
+                pedal,
+                pedal_brigade,
+                input_scale,
+                hand_off: self.pedal_hand_off,
+                timing,
+                pedal_ns: 0,
+            },
+            gain: FrontGain {
+                tap: gain_tap,
+                gain: &mut self.gains[self.gain],
+                gain_brigade,
+                graphic: self.voice.has_graphic().then_some(&mut self.graphic),
+                line: (self.voice == Gain::Neve).then_some(self.line.as_mut()),
+                reverb,
+                ab763,
+                tank_send,
+                tank: &mut self.tank,
+                tremolo: &mut self.tremolo,
+                speed: self.speed,
+                intensity: self.intensity,
+                drive_previous: &mut self.twin_tank_drive_previous,
+                timing,
+                gain_ns: 0,
+                #[cfg(test)]
+                trace: self.twin_level_trace.as_mut(),
+                #[cfg(test)]
+                reverb_send_plate: self.twin_reverb_send_plate,
+                #[cfg(test)]
+                v4b_grid: self.twin_v4b_grid,
+                #[cfg(test)]
+                power_traced,
+            },
         };
         let horn = horn_feed_wanted.then_some(HornFeed {
             terminal: horn_terminal,
@@ -7108,9 +7489,11 @@ impl Chain {
     /// halves are the same code `process` runs, the output is the same to the
     /// bit, and if the worker has not woken by the time the first half is done
     /// this thread runs the second half itself: there is nothing to wait for
-    /// that might not come. Without `pipeline` the worker is only asked to run
-    /// the power stage's shadow (`SpecBlock`) on a block that needs one. The
-    /// output is the same to the bit whichever way a block ran.
+    /// that might not come. A chain with a heavy pedal runs the pedal and the
+    /// preamplifier as two stages of their own, on the worker's second lane
+    /// (`THREE_STAGES_BELOW`). Without `pipeline` the worker is only asked to
+    /// run the power stage's shadow (`SpecBlock`) on a block that needs one.
+    /// The output is the same to the bit whichever way a block ran.
     pub fn process_block(
         &mut self,
         input: &[f64],
@@ -7143,17 +7526,29 @@ impl Chain {
         let mut mid = std::mem::take(&mut self.mid);
         let mut handoff = std::mem::take(&mut self.handoff);
         let mut speculation = self.speculation;
+        let mut pedalled = std::mem::take(&mut self.pedalled);
         let work = self.work_so_far();
         let speculate = self.speculating && self.front_work < SPECULATE_BELOW * self.power_work;
+        // Never where the chain speculates: a block that would have used a
+        // shadow must use it whichever way it runs, for the output not to
+        // depend on timing, and the shadow reads the preamplifier's output on
+        // this thread.
+        let has_pedal = self.pedal.is_some() || self.wah.is_some();
+        let three = !speculate && has_pedal && self.three_override.unwrap_or(self.three_stage);
+        let mut clock = BlockClock::default();
         let (mut front, mut back) = self.split(stereo, speculate);
         let factor = front.factor();
         let mut used = PipelineUse::Serial;
+        let mut ran_three = false;
+        let mut block_started = None;
         match worker {
             Some(worker) if pipeline && len > PIPELINE_QUANTUM && factor <= MAX_OVERSAMPLING => {
+                block_started = Some(Instant::now());
                 used = pipelined(
                     &mut front,
                     &mut back,
                     &input[..len],
+                    &mut pedalled,
                     &mut mid,
                     &mut handoff,
                     &mut left[..len],
@@ -7161,7 +7556,10 @@ impl Chain {
                     dry,
                     worker,
                     &mut speculation,
+                    three,
+                    &mut clock,
                 );
+                ran_three = three;
             }
             _ => serial(
                 &mut front,
@@ -7177,6 +7575,13 @@ impl Chain {
         }
         let timings = (front.timings(), back.timings());
         self.mid = mid;
+        self.pedalled = pedalled;
+        self.three_stage_blocks += u64::from(ran_three);
+        self.overlapped_ns = block_started.map_or(0, |started| {
+            clock
+                .busy()
+                .saturating_sub(started.elapsed().as_nanos() as u64)
+        });
         self.handoff = handoff;
         self.speculation = speculation;
         if len > 0 {
@@ -7185,6 +7590,10 @@ impl Chain {
             let per_sample = |now: f64, then: f64| (now - then) / len as f64;
             self.front_work += (per_sample(front, work.0) - self.front_work) * alpha;
             self.power_work += (per_sample(power, work.1) - self.power_work) * alpha;
+        }
+        if clock.samples > 0 {
+            self.stage_clock.add(&clock);
+            self.three_stage = self.stage_clock.decide(self.three_stage);
         }
         self.add_stage_timings(timings.0, timings.1);
         if len > 0 {
@@ -7209,6 +7618,36 @@ impl Chain {
     /// stage started from its answer.
     pub fn speculation_work(&self) -> (u64, u64) {
         (self.speculation.shadow_passes, self.speculation.starts)
+    }
+
+    /// Blocks whose first half ran as two stages on two cores; see
+    /// `THREE_STAGES_BELOW`.
+    pub fn three_stage_blocks(&self) -> u64 {
+        self.three_stage_blocks
+    }
+
+    /// How much longer the last `process_block` would have taken run on the
+    /// calling thread alone, in seconds: zero unless it was pipelined. Added
+    /// to a callback's time, it is what the callback would have cost serially,
+    /// which is what `PipelineGovernor` decides from.
+    pub fn overlapped(&self) -> f64 {
+        self.overlapped_ns as f64 * 1e-9
+    }
+
+    /// The pipelined stages' measured time a host sample, in nanoseconds:
+    /// the pedal's (with the wah's), the rest of the first half's and the
+    /// second half's, which `THREE_STAGES_BELOW` decides from.
+    pub fn stage_estimates(&self) -> (f64, f64, f64) {
+        let [pedal, gain, back] = self.stage_clock.per_sample;
+        (pedal, gain, back)
+    }
+
+    /// Run pipelined blocks as three stages always (`Some(true)`), never
+    /// (`Some(false)`), or as the chain's work decides (`None`, the default),
+    /// for measuring what the third stage buys. A chain that speculates
+    /// never runs as three. The output is the same to the bit either way.
+    pub fn set_three_stages(&mut self, three: Option<bool>) {
+        self.three_override = three;
     }
 
     /// The first half's estimated work over the power stage's, running; the
