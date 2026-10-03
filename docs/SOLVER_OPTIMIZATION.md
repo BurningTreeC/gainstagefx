@@ -267,6 +267,15 @@ time. A span-restricted recovery was tried before and was within noise
 (`docs/realtime-multi-instance.md`), so the recovery's share of it is the least
 certain.
 
+*Done, 3 October* (`docs/SOLVER_EXPERIMENTS.md`): the stamps, and no
+generator was needed -- `Stamper::block` hands a device's ordinary write code
+constant positions and the compiler does the specialising. Measured, not
+estimated: -5.5 to -5.7 % of the transistor stages' cycles, -1.7 to -2.1 % of
+the valve stages', exact. The 10-20 % above counted the RHS and the recovery
+too; those are four-lane dense loops whose span-restricted form was already
+within noise, and compiled to their non-zeros they trade the width away, which
+only wins below about a quarter's fill. Left alone.
+
 **Not compiling**: libm. A cheaper `pow` or `exp` changes the device equations,
 which is a fidelity question with its own rules (below), not a code-generation
 one.

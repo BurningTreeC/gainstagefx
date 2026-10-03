@@ -49,6 +49,29 @@ repeated runs.
 
 ## Accepted
 
+### The stamps' writes inlined, and the transistor's on its own block (2026-10-03)
+
+Exact: every preset's output hash unchanged over 4 s of the take. Profiled, a
+transistor stage spent about a third of `Stamper::transconductance_at` on the
+call, the ground tests and the bounds compares around each write, and the
+compiler had declined its `#[inline]`. Forced inline (`#[inline(always)]` on
+every `Stamper` write): cycles -2.6 % on Jazz Chorus, -2.1 % on the 800RB,
+-2.1 % on the SVT, -1.9 % on Brown '84 (user-space cycles, `perf stat`,
+interleaved).
+
+Then `Stamper::block`: a device's k x k block gathered into a local array, its
+own write code run there on the constant positions `0..k`, and put back once,
+so the writes fold to register arithmetic. A transistor makes 24 writes into
+a block of 9: Jazz Chorus -5.5 %, the 800RB -5.7 % against the start. The
+first try was 8 % *slower* -- the write code was a closure used on both paths,
+so the compiler kept it out of line and nothing folded; written as an
+always-inlined method with a closure per path, it folds. The triode, pentode
+and JFET on blocks measured slower than inlined (SVT +3.4 %, Brown '84 level):
+a triode with its cathode on ground writes three or four entries, a JFET eight
+into nine, and the gather and scatter cost more than they save, so those keep
+the direct writes. `tests`: `a_block_writes_what_the_direct_writes_do` (signed
+zeros, both polarities, ground on each terminal, the refusals).
+
 ### Quadratic termination (2026-10-03)
 
 Not exact: a solve may stop one pass before the convergence test would have

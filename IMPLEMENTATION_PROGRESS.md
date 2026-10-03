@@ -1,5 +1,23 @@
 # Implementation progress
 
+## 2026-10-03 — Compiled stamps
+
+The owner: "Then do the compiled stamps next."
+
+- **The stamper's writes inlined** (`#[inline(always)]`; the compiler had kept
+  `transconductance_at` out of line): -1.9 to -2.6 % of cycles on the four power
+  stages profiled.
+- **`Stamper::block`**: a device's block gathered into registers, its own write
+  code run there on constant positions, put back once; each entry gets the same
+  additions in the same order. On the transistor (`BipolarTerms`): Jazz Chorus
+  -5.5 %, *American 800RB Clank* -5.7 % in all; the SVT -1.7 % and Brown '84
+  -2.1 % from the inlining alone. Blocks for the triode, pentode and JFET measured
+  slower and were left off. Every preset's hash identical; the transistor circuits'
+  tests and both baselines pass; `a_block_writes_what_the_direct_writes_do`.
+- No generator: unlike the LU kernels, nothing here needed a table -- the
+  positions are the only thing to specialise, and monomorphising on `Stamper::block`'s
+  constants does it for every circuit at once.
+
 ## 2026-10-03 — The solver profiled, and the cap for chains with a power stage
 
 The owner: "Do the profile first and the oversampling cap for chains with a power

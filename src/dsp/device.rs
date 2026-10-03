@@ -70,7 +70,7 @@ pub struct Stamper<'a> {
 }
 
 impl Stamper<'_> {
-    #[inline]
+    #[inline(always)]
     fn local(&mut self, node: usize) -> Option<usize> {
         if node == GROUND {
             return None;
@@ -88,6 +88,7 @@ impl Stamper<'_> {
         }
     }
 
+    #[inline(always)]
     pub fn conductance(&mut self, a: usize, b: usize, g: f64) {
         let a = self.local(a);
         let b = self.local(b);
@@ -95,7 +96,7 @@ impl Stamper<'_> {
     }
 
     /// `conductance` on nodes already `locate`d.
-    #[inline]
+    #[inline(always)]
     pub fn conductance_at(&mut self, a: Option<usize>, b: Option<usize>, g: f64) {
         let n = self.n;
         if let Some(a) = a {
@@ -119,14 +120,108 @@ impl Stamper<'_> {
     /// three nodes, and mapped term by term it looked twenty nodes up in the
     /// reduced boundary map on every Newton pass. The terms, their order and
     /// their arithmetic are the same either way.
-    #[inline]
+    #[inline(always)]
     pub fn locate(&mut self, node: usize) -> Option<usize> {
         self.local(node)
+    }
+
+    /// Run a device's writes on its own block, gathered out of the matrix and
+    /// put back once, rather than on the matrix entry by entry.
+    ///
+    /// `terms` is the device's ordinary write code. Here it is handed the
+    /// block's own positions, `0..K`, as constants, so once inlined every
+    /// write is to a fixed place in a small local array that can live in
+    /// registers: no ground tests, no index arithmetic, no bounds checks and
+    /// no store waiting on the one before it to the same entry. Each entry
+    /// still receives the same additions in the same order, so the matrix
+    /// comes out identical to the bit. A terminal on ground writes into a row
+    /// and column that are never put back, which is what skipping it does.
+    ///
+    /// Returns `false`, having written nothing, where the block cannot stand
+    /// in: two terminals on one node (their writes would meet in one entry in
+    /// a different order) or a node the reduced map does not hold (the
+    /// ordinary path flags that). The caller then runs `terms` on the
+    /// matrix as before.
+    #[inline(always)]
+    pub fn block<const K: usize>(
+        &mut self,
+        nodes: [usize; K],
+        terms: impl FnOnce(&mut Stamper, [Option<usize>; K]),
+    ) -> bool {
+        let n = self.n;
+        let mut at = [usize::MAX; K];
+        for (slot, &node) in at.iter_mut().zip(&nodes) {
+            if node == GROUND {
+                continue;
+            }
+            let local = match self.map {
+                Some(map) => map.get(node).copied().unwrap_or(usize::MAX),
+                None => node,
+            };
+            if local >= n {
+                return false;
+            }
+            *slot = local;
+        }
+        for i in 0..K {
+            for j in i + 1..K {
+                if at[i] != usize::MAX && at[i] == at[j] {
+                    return false;
+                }
+            }
+        }
+        if self.matrix.len() < n * n || self.rhs.len() < n {
+            return false;
+        }
+        // The block. A terminal on ground keeps its row and column, written
+        // and never put back.
+        const { assert!(K <= 4) };
+        let mut flat = [0.0; 16];
+        let mut rhs = [0.0; 4];
+        for (r, &row) in at.iter().enumerate() {
+            if row == usize::MAX {
+                continue;
+            }
+            // SAFETY: `row < n` was checked above and `rhs.len() >= n`.
+            rhs[r] = unsafe { *self.rhs.get_unchecked(row) };
+            for (c, &column) in at.iter().enumerate() {
+                if column != usize::MAX {
+                    // SAFETY: both below `n`, and `matrix.len() >= n * n`.
+                    flat[r * K + c] = unsafe { *self.matrix.get_unchecked(row * n + column) };
+                }
+            }
+        }
+        let mut local = Stamper {
+            matrix: &mut flat[..K * K],
+            rhs: &mut rhs[..K],
+            n: K,
+            map: None,
+            mapping_failed: false,
+            limiting: self.limiting,
+            junction_held: false,
+        };
+        terms(&mut local, std::array::from_fn(Some));
+        self.junction_held |= local.junction_held;
+        for (r, &row) in at.iter().enumerate() {
+            if row == usize::MAX {
+                continue;
+            }
+            // SAFETY: as for the gather.
+            unsafe { *self.rhs.get_unchecked_mut(row) = rhs[r] };
+            for (c, &column) in at.iter().enumerate() {
+                if column != usize::MAX {
+                    // SAFETY: as for the gather.
+                    unsafe { *self.matrix.get_unchecked_mut(row * n + column) = flat[r * K + c] };
+                }
+            }
+        }
+        true
     }
 
     /// A transconductance: current between `a` and `b` controlled by the
     /// voltage between `c` and `d`. Asymmetric, which is why the matrix cannot
     /// be factored as if it were symmetric.
+    #[inline(always)]
     pub fn transconductance(&mut self, a: usize, b: usize, c: usize, d: usize, gm: f64) {
         let a = self.local(a);
         let b = self.local(b);
@@ -136,7 +231,7 @@ impl Stamper<'_> {
     }
 
     /// `transconductance` on nodes already `locate`d.
-    #[inline]
+    #[inline(always)]
     pub fn transconductance_at(
         &mut self,
         a: Option<usize>,
@@ -159,6 +254,7 @@ impl Stamper<'_> {
 
     /// Ties a node to a branch's current: the part sources `sign` amps of it
     /// into that node.
+    #[inline(always)]
     pub fn branch_current(&mut self, node: usize, branch: usize, sign: f64) {
         let node = self.local(node);
         let branch = self.local(branch);
@@ -169,6 +265,7 @@ impl Stamper<'_> {
 
     /// One term of a branch's own row, which is the condition the part is
     /// imposing on the voltages.
+    #[inline(always)]
     pub fn branch_constraint(&mut self, branch: usize, node: usize, sign: f64) {
         let branch = self.local(branch);
         let node = self.local(node);
@@ -178,6 +275,7 @@ impl Stamper<'_> {
     }
 
     /// What that condition equals.
+    #[inline(always)]
     pub fn branch_value(&mut self, branch: usize, volts: f64) {
         if let Some(branch) = self.local(branch) {
             self.rhs[branch] += volts;
@@ -185,6 +283,7 @@ impl Stamper<'_> {
     }
 
     /// A current flowing out of `a` and into `b`.
+    #[inline(always)]
     pub fn current(&mut self, a: usize, b: usize, amps: f64) {
         let a = self.local(a);
         let b = self.local(b);
@@ -192,7 +291,7 @@ impl Stamper<'_> {
     }
 
     /// `current` on nodes already `locate`d.
-    #[inline]
+    #[inline(always)]
     pub fn current_at(&mut self, a: Option<usize>, b: Option<usize>, amps: f64) {
         if let Some(a) = a {
             self.rhs[a] -= amps;
@@ -986,16 +1085,17 @@ impl Device for Triode {
         };
         let rp = slope_p.max(1e-12);
 
-        // Mapped once; see `Stamper::locate`.
-        let (p, g, k) = (s.locate(self.p), s.locate(self.g), s.locate(self.k));
-        s.conductance_at(p, k, rp);
-        s.transconductance_at(p, k, g, k, gm);
-        s.current_at(p, k, ip - rp * vpk - gm * vgk);
-
         // The grid is a straight line once it conducts, so its slope is the
         // line's and needs no difference at all.
         let ig = self.grid(vgk);
         let gg = if vgk < 0.0 { 1e-12 } else { 1.0 / 1_500.0 };
+        // Mapped once; see `Stamper::locate`. Not on a block
+        // (`Stamper::block`): a triode writes too few terms for gathering its
+        // block to pay, and measured slower on the SVT.
+        let (p, g, k) = (s.locate(self.p), s.locate(self.g), s.locate(self.k));
+        s.conductance_at(p, k, rp);
+        s.transconductance_at(p, k, g, k, gm);
+        s.current_at(p, k, ip - rp * vpk - gm * vgk);
         s.conductance_at(g, k, gg);
         s.current_at(g, k, ig - gg * vgk);
     }
@@ -1457,7 +1557,11 @@ impl Device for Pentode {
         // Plate branch: its own conductance, plus the two transconductances
         // that say how the grid and the screen move it.
         let rp = gp.max(1e-12);
-        // Mapped once; see `Stamper::locate`.
+        // Screen branch. No knee, so nothing here depends on the plate.
+        let rs = gs2.max(1e-12);
+        let ig = self.grid(vgk);
+        let gg = if vgk < 0.0 { 1e-12 } else { self.count / 600.0 };
+        // Mapped once; see `Stamper::locate`. Not on a block, as the triode.
         let (p, g, screen, k) = (
             st.locate(self.p),
             st.locate(self.g),
@@ -1468,15 +1572,9 @@ impl Device for Pentode {
         st.transconductance_at(p, k, g, k, gm);
         st.transconductance_at(p, k, screen, k, gs);
         st.current_at(p, k, ip - rp * vpk - gm * vgk - gs * vsk);
-
-        // Screen branch. No knee, so nothing here depends on the plate.
-        let rs = gs2.max(1e-12);
         st.conductance_at(screen, k, rs);
         st.transconductance_at(screen, k, g, k, gm2);
         st.current_at(screen, k, ig2 - rs * vsk - gm2 * vgk);
-
-        let ig = self.grid(vgk);
-        let gg = if vgk < 0.0 { 1e-12 } else { self.count / 600.0 };
         st.conductance_at(g, k, gg);
         st.current_at(g, k, ig - gg * vgk);
     }
@@ -1786,6 +1884,7 @@ impl Device for Jfet {
             ((self.drain(vgs, vds + step) - self.drain(vgs, vds - step)) / (2.0 * step)).max(1e-9);
 
         // Drain to source conductance, and the gate's control of it.
+        // Not on a block, as the triode: eight writes to a block of nine.
         let (d, g, source) = (s.locate(self.d), s.locate(self.g), s.locate(self.s));
         s.conductance_at(d, source, gds);
         s.transconductance_at(d, source, g, source, gm);
@@ -2281,30 +2380,20 @@ impl Device for Bipolar {
         let dib_dvbe = gf * self.inv_forward_beta;
         let dib_dvbc = gr * self.inv_reverse_beta;
 
-        // Mapped once; see `Stamper::locate`.
-        let (c, b, e) = (s.locate(self.c), s.locate(self.b), s.locate(self.e));
-        // `GMIN` across both junctions; linear, so no companion current.
-        s.conductance_at(b, e, GMIN);
-        s.conductance_at(b, c, GMIN);
-        if self.pnp {
-            // Emitter to collector and emitter to base, controlled by the
-            // emitter-base and collector-base junctions.
-            s.transconductance_at(e, c, e, b, dic_dvbe);
-            s.transconductance_at(e, c, c, b, dic_dvbc);
-            s.current_at(e, c, ic - dic_dvbe * vbe - dic_dvbc * vbc);
-            s.transconductance_at(e, b, e, b, dib_dvbe);
-            s.transconductance_at(e, b, c, b, dib_dvbc);
-            s.current_at(e, b, ib - dib_dvbe * vbe - dib_dvbc * vbc);
-        } else {
-            // Collector current, controlled by both junctions.
-            s.transconductance_at(c, e, b, e, dic_dvbe);
-            s.transconductance_at(c, e, b, c, dic_dvbc);
-            s.current_at(c, e, ic - dic_dvbe * vbe - dic_dvbc * vbc);
-
-            // And the base current it takes to get it.
-            s.transconductance_at(b, e, b, e, dib_dvbe);
-            s.transconductance_at(b, e, b, c, dib_dvbc);
-            s.current_at(b, e, ib - dib_dvbe * vbe - dib_dvbc * vbc);
+        let terms = BipolarTerms {
+            pnp: self.pnp,
+            dic_dvbe,
+            dic_dvbc,
+            dib_dvbe,
+            dib_dvbc,
+            collector: ic - dic_dvbe * vbe - dic_dvbc * vbc,
+            base: ib - dib_dvbe * vbe - dib_dvbc * vbc,
+        };
+        // On the device's own block where it can be; see `Stamper::block`.
+        // Otherwise mapped once; see `Stamper::locate`.
+        if !s.block([self.c, self.b, self.e], |s, at| terms.write(s, at)) {
+            let (c, b, e) = (s.locate(self.c), s.locate(self.b), s.locate(self.e));
+            terms.write(s, [c, b, e]);
         }
     }
 
@@ -2314,6 +2403,51 @@ impl Device for Bipolar {
 
     fn settled(&self, _tolerance: f64) -> bool {
         !self.clamped
+    }
+}
+
+/// What a transistor's stamp writes: its slopes and companion currents.
+#[derive(Clone, Copy)]
+struct BipolarTerms {
+    pnp: bool,
+    dic_dvbe: f64,
+    dic_dvbc: f64,
+    dib_dvbe: f64,
+    dib_dvbc: f64,
+    /// The collector's and the base's companion currents.
+    collector: f64,
+    base: f64,
+}
+
+impl BipolarTerms {
+    /// The writes, at the collector, base and emitter positions given. Always
+    /// inlined, so that on `Stamper::block`'s constant positions each one
+    /// folds to a fixed place in the block.
+    #[inline(always)]
+    fn write(&self, s: &mut Stamper, [c, b, e]: [Option<usize>; 3]) {
+        // `GMIN` across both junctions; linear, so no companion current.
+        s.conductance_at(b, e, GMIN);
+        s.conductance_at(b, c, GMIN);
+        if self.pnp {
+            // Emitter to collector and emitter to base, controlled by the
+            // emitter-base and collector-base junctions.
+            s.transconductance_at(e, c, e, b, self.dic_dvbe);
+            s.transconductance_at(e, c, c, b, self.dic_dvbc);
+            s.current_at(e, c, self.collector);
+            s.transconductance_at(e, b, e, b, self.dib_dvbe);
+            s.transconductance_at(e, b, c, b, self.dib_dvbc);
+            s.current_at(e, b, self.base);
+        } else {
+            // Collector current, controlled by both junctions.
+            s.transconductance_at(c, e, b, e, self.dic_dvbe);
+            s.transconductance_at(c, e, b, c, self.dic_dvbc);
+            s.current_at(c, e, self.collector);
+
+            // And the base current it takes to get it.
+            s.transconductance_at(b, e, b, e, self.dib_dvbe);
+            s.transconductance_at(b, e, b, c, self.dib_dvbc);
+            s.current_at(b, e, self.base);
+        }
     }
 }
 
@@ -3196,6 +3330,86 @@ mod optimization_tests {
         powi_small, AnyDevice, Core, Device, Pentode, ResidualStamper, Stamper, Triode, GROUND,
     };
     use crate::dsp::netlist::{CoreSpec, PentodeSpec, TriodeSpec};
+
+    /// `Stamper::block` leaves the matrix and the right-hand side as the
+    /// direct writes do, to the bit -- signed zeros included -- for both
+    /// polarities and with ground on any terminal, and refuses, writing
+    /// nothing, two terminals on one node or a node the map does not hold.
+    #[test]
+    fn a_block_writes_what_the_direct_writes_do() {
+        use super::BipolarTerms;
+        // Global nodes 0..6; node 3 is internal (not in the reduced map).
+        let map = [2usize, 0, 4, usize::MAX, 1, 3];
+        let n = 5;
+        let start: Vec<f64> = (0..n * n)
+            .map(|k| match k % 7 {
+                0 => -0.0,
+                1 => 0.0,
+                _ => (k as f64 * 0.37).sin() * 10f64.powi((k % 5) as i32 - 2),
+            })
+            .collect();
+        let start_rhs = [0.25, -0.0, 1e-9, -3.5, 0.0];
+        let write = |nodes: [usize; 3], terms: BipolarTerms, block: bool| {
+            let (mut matrix, mut rhs) = (start.clone(), start_rhs);
+            let mut s = Stamper {
+                matrix: &mut matrix,
+                rhs: &mut rhs,
+                n,
+                map: Some(&map),
+                mapping_failed: false,
+                limiting: false,
+                junction_held: false,
+            };
+            let blocked = block && s.block(nodes, |s, at| terms.write(s, at));
+            if !block {
+                let at = nodes.map(|node| s.locate(node));
+                terms.write(&mut s, at);
+            }
+            let failed = s.mapping_failed;
+            let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+            (bits(&matrix), bits(&rhs), blocked, failed)
+        };
+        for pnp in [false, true] {
+            let terms = BipolarTerms {
+                pnp,
+                dic_dvbe: 0.0383,
+                dic_dvbc: -1.7e-7,
+                dib_dvbe: 3.1e-4,
+                dib_dvbc: 2.2e-9,
+                collector: -1.25e-3,
+                base: 7.5e-6,
+            };
+            for nodes in [
+                [0, 1, 2],
+                [5, 4, 0],
+                [0, 1, GROUND],
+                [0, GROUND, 2],
+                [GROUND, 1, 2],
+                [GROUND, 1, GROUND],
+            ] {
+                let direct = write(nodes, terms, false);
+                let blocked = write(nodes, terms, true);
+                assert!(blocked.2, "{nodes:?}: the block should stand in");
+                assert_eq!(
+                    (&blocked.0, &blocked.1),
+                    (&direct.0, &direct.1),
+                    "{nodes:?}, pnp {pnp}"
+                );
+            }
+            // Two terminals on one node, and an internal node: refused, with
+            // nothing written, for the direct path to take.
+            let untouched = (
+                start.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+                start_rhs.iter().map(|x| x.to_bits()).collect::<Vec<_>>(),
+            );
+            for nodes in [[0, 0, 2], [0, 1, 3]] {
+                let refused = write(nodes, terms, true);
+                assert!(!refused.2, "{nodes:?}");
+                assert_eq!((refused.0, refused.1), untouched, "{nodes:?}");
+            }
+            assert!(write([0, 1, 3], terms, false).3, "the direct path flags it");
+        }
+    }
 
     #[test]
     fn mapped_stamper_writes_compact_boundary() {
