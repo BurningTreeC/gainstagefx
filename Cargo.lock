@@ -1330,7 +1330,7 @@ dependencies = [
 
 [[package]]
 name = "gainstagefx"
-version = "0.44.0"
+version = "0.45.0"
 dependencies = [
  "nice-plug",
  "nice-plug-au2",
