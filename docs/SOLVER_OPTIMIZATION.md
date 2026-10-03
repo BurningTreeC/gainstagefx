@@ -221,6 +221,60 @@ and `perf`.
    wide. There is little left here, and the earlier belief that there was came
    from the profiler clock.
 
+## The power stages, 3 October 2026
+
+Since the profile above, the reduced LU has been compiled (`kernels.rs`, 123
+kernels, 99.9 % of replayed solves), the solve widened to AVX where the CPU has
+it, and the speaker made physical. Profiled again on the four power stages
+that set the realtime tail -- the 800RB's transistor stage, the JC-120's, the
+SVT's 6550s and the Plexi's EL34s -- per sample over the 19 s take, `perf
+record -F 4000` on a release build with symbols kept, grouped by
+`tools/perf_buckets.py`. Shares of the whole process:
+
+| | 800RB Clank | Jazz Chorus | SVT Grind | Brown '84 |
+|---|---:|---:|---:|---:|
+| LU, compiled kernels | 25.3 % | 19.2 % | 18.7 % | 12.9 % |
+| LU, generic replay | 1.9 % | 1.0 % | 0.1 % | 0.4 % |
+| device stamps | 20.5 % | 20.0 % | 16.3 % | 16.2 % |
+| libm (`exp`, `pow`) | 10.0 % | 9.2 % | 20.4 % | 20.6 % |
+| Schur RHS | 9.3 % | 10.1 % | 11.1 % | 8.7 % |
+| solve wrapper | 7.6 % | 6.3 % | 6.9 % | 7.4 % |
+| internal recovery | 7.6 % | 5.3 % | 6.2 % | 5.1 % |
+| Newton driver | 3.2 % | 3.9 % | 3.6 % | 3.7 % |
+| acoustics (cabinet, mics) | 6.6 % | 16.6 % | 9.5 % | 17.9 % |
+
+What changed since the Twin profile: the LU is no longer the bulk. Half of a
+power stage's time is now in the parts of a pass that are still generic code --
+stamping, the RHS, the wrapper and the recovery -- and libm stays where the
+valves put it, at a fifth (the transistor stages, two `exp` a junction and no
+`pow`, at a tenth).
+
+**Compiling the rest of the pass.** The LU kernels paid (7-17 % of serial
+means, exact) by removing run-time bookkeeping that never changes between
+rebuilds, and the generic parts carry the same kind. Annotated on the JC-120,
+`Stamper::transconductance_at` spends its time on the matrix stores and on the
+bookkeeping around them -- the ground tests on each node, the bounds compares
+on `row * n + col`, the call itself -- with the arithmetic a small part; a
+transistor stamps six such terms. A generator in the manner of `kernels` could
+emit, per circuit, the stamp with constant positions and every device's
+contributions to one entry summed in the same order into one store, the RHS and
+the recovery over their known non-zeros only, and the copy and coupling
+subtraction fused into the stamp. Kept to the same order of operations it is
+exact, testable against the generic path as the kernels are, and a stale table
+costs speed rather than correctness. ESTIMATED, not measured: the bookkeeping
+is perhaps a third to a half of that 45-50 %, so 10-20 % of a power stage's
+time. A span-restricted recovery was tried before and was within noise
+(`docs/realtime-multi-instance.md`), so the recovery's share of it is the least
+certain.
+
+**Not compiling**: libm. A cheaper `pow` or `exp` changes the device equations,
+which is a fidelity question with its own rules (below), not a code-generation
+one.
+
+**Not worth it now**: updating the LU across passes instead of refactoring it.
+The kernels are 13-25 %, and in a clipping stage most devices' slopes move
+every pass, so the rank of the update is most of the matrix.
+
 ## The transcendentals are 19 % of CPU
 
 Grouped by shared object rather than by symbol, the same `perf` recording says:

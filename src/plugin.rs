@@ -705,6 +705,7 @@ impl Plugin for GainStageFx {
         self.reported_latency = crate::voice::true_latency(
             circuit.voice(),
             self.params.pedal.value().voice(),
+            self.params.power_amp.value().voice(),
             self.oversampling.factor(),
         );
         context.set_latency_samples(self.reported_latency);

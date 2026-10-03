@@ -123,6 +123,46 @@ fn modelled_circuits_are_capped_not_pinned() {
     assert_eq!(generic.effective_oversampling(), 4);
 }
 
+/// A topology follows the control all the way, until a power stage goes in
+/// behind it: the stage runs inside the oversampler and is the heaviest solve
+/// in the chain, so the chain is capped as a modelled amplifier is
+/// (`voice::caps_oversampling`). Taking the stage out again gives the stored
+/// request back, and so does `Bypass`.
+#[test]
+fn a_chain_with_a_power_stage_is_capped() {
+    let mut chain = Chain::new(RATE);
+    chain.set_voice(
+        Gain::HighGain,
+        voice::Diode::Silicon,
+        voice::Amplifier::Valve,
+    );
+    chain.set_oversampling(8);
+    chain.process(0.0);
+    assert_eq!(chain.effective_oversampling(), 8, "a topology alone");
+    for power in voice::PowerAmp::ALL {
+        chain.set_power_amp(power);
+        chain.process(0.0);
+        let staged = power.resolved(Gain::HighGain).is_some();
+        let expected = if staged {
+            voice::MODELLED_MAX_OVERSAMPLING
+        } else {
+            8
+        };
+        assert_eq!(chain.effective_oversampling(), expected, "{power:?}");
+    }
+    chain.set_power_amp(voice::PowerAmp::Svt6550);
+    chain.process(0.0);
+    for asked in [1, 2] {
+        chain.set_oversampling(asked);
+        chain.process(0.0);
+        assert_eq!(chain.effective_oversampling(), asked, "a cap, not a pin");
+    }
+    chain.set_oversampling(8);
+    chain.set_power_amp(voice::PowerAmp::Matched);
+    chain.process(0.0);
+    assert_eq!(chain.effective_oversampling(), 8, "the stage taken out");
+}
+
 /// The Twin power stage deliberately stops its normal realtime line search at 1/8.
 /// Keep that performance policy tied to an explicit accuracy measurement: the
 /// normal four-backtrack solve must null far below audibility against the full
@@ -943,32 +983,37 @@ fn true_latency_is_the_oversamplers_own_and_the_dry_path_matches() {
 /// and the chain have to agree for every voice, pedal and request.
 #[test]
 fn the_activation_latency_rule_is_what_the_chain_does() {
-    use gainstagefx::voice::{true_latency, voice_at, Pedal, PedalSettings, Settings, VOICES};
+    use gainstagefx::voice::{
+        true_latency, voice_at, Pedal, PedalSettings, PowerAmp, Settings, VOICES,
+    };
     let mut chain = Chain::new(RATE);
     chain.set_true_latency(true);
     for index in 0..VOICES {
         let (gain, diode, amplifier) = voice_at(index);
         for pedal in [Pedal::None, Pedal::HeavyMetal, Pedal::ALL[1]] {
-            for requested in [1usize, 2, 4, 8] {
-                chain.apply(&Settings {
-                    gain,
-                    diode,
-                    amplifier,
-                    oversampling: requested,
-                    pedal: PedalSettings {
-                        pedal,
-                        ..PedalSettings::default()
-                    },
-                    ..Settings::default()
-                });
-                for _ in 0..4 {
-                    chain.process(0.0);
+            for power_amp in [PowerAmp::Matched, PowerAmp::Bypass, PowerAmp::Svt6550] {
+                for requested in [1usize, 2, 4, 8] {
+                    chain.apply(&Settings {
+                        gain,
+                        diode,
+                        amplifier,
+                        oversampling: requested,
+                        pedal: PedalSettings {
+                            pedal,
+                            ..PedalSettings::default()
+                        },
+                        power_amp,
+                        ..Settings::default()
+                    });
+                    for _ in 0..4 {
+                        chain.process(0.0);
+                    }
+                    assert_eq!(
+                        chain.latency(),
+                        true_latency(gain, pedal, power_amp, requested),
+                        "{gain:?} with {pedal:?} and {power_amp:?} at {requested}x"
+                    );
                 }
-                assert_eq!(
-                    chain.latency(),
-                    true_latency(gain, pedal, requested),
-                    "{gain:?} with {pedal:?} at {requested}x"
-                );
             }
         }
     }

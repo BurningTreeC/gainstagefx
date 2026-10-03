@@ -1,5 +1,27 @@
 # Implementation progress
 
+## 2026-10-03 — The solver profiled, and the cap for chains with a power stage
+
+The owner: "Do the profile first and the oversampling cap for chains with a power
+stage."
+
+- **The profile** (`perf`, symbols kept, per sample over the take; grouped by
+  `tools/perf_buckets.py`, recorded in `docs/SOLVER_OPTIMIZATION.md`): on the
+  800RB, the JC-120, the SVT and the Plexi, the compiled LU kernels are 13-25 % of
+  the process, device stamping 16-21 %, libm 9-21 % (the valves' `pow` and `exp`),
+  the Schur RHS 9-11 %, the solve wrapper and the internal recovery 12-15 %, the
+  cabinet and microphones 7-18 %. In the stamper's writes the stores and the
+  bookkeeping around them -- ground tests, bounds compares, the call -- outweigh the
+  arithmetic.
+- **`voice::caps_oversampling`**: a chain with a power stage follows the
+  Oversampling control as far as `MODELLED_MAX_OVERSAMPLING`, as a modelled
+  circuit does; the latency the host is told, the panel's row and
+  `Chain::set_power_amp` follow the same rule. No shipped preset puts a power stage
+  behind a topology, so none changes. The worst rig, asked for 8x: serial 4,750 ->
+  2,021 µs a callback. `examples/oversampling.rs` measures topologies with power
+  stages too; `tests/voice.rs::a_chain_with_a_power_stage_is_capped`, and the
+  activation-latency test covers power selections.
+
 ## 2026-10-03 — Three stages, the governor, and parallel-in-time measured
 
 The owner, on the callbacks still over 930 µs: "can we solve that if you start

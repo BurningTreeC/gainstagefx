@@ -485,9 +485,10 @@ fn strip(cx: &mut Context) {
 
     let width = 112.0;
     let left = PANEL_W - 14.0 - width;
-    // A circuit-modelled voice follows this control only as far as
-    // `voice::MODELLED_MAX_OVERSAMPLING`: past that those circuits cost more
-    // than the time there is. So the row offers what it can deliver -- the
+    // A circuit-modelled voice, and any chain with a power stage, follows this
+    // control only as far as `voice::MODELLED_MAX_OVERSAMPLING`: past that they
+    // cost more than the time there is (`voice::caps_oversampling`). So the row
+    // offers what it can deliver -- the
     // factors up to the cap, live, because they are what takes the fold-back
     // out of a high-gain amplifier -- and lights the one in use when a stored
     // setting is higher than the cap.
@@ -496,7 +497,9 @@ fn strip(cx: &mut Context) {
     // so choosing a pedal again brings the setting back instead of silently
     // discarding it, and nothing here fights the host's automation.
     {
-        let modelled = parameter_signal.map(|p| p.circuit.value().voice().is_modelled());
+        let modelled = parameter_signal.map(|p| {
+            crate::voice::caps_oversampling(p.circuit.value().voice(), p.power_amp.value().voice())
+        });
         Binding::new(cx, modelled, move |cx| {
             let labels: Vec<&'static str> = Oversampling::ALL.iter().map(|o| o.name()).collect();
             let handle = if modelled.get() {

@@ -1518,17 +1518,50 @@ pub fn voice_index(gain: Gain, diode: Diode, amplifier: Amplifier) -> usize {
 /// Every shipped preset on a modelled circuit asks for 1x, so none of them
 /// costs any more than it did; this is what the control does when a player
 /// turns it up.
+///
+/// A topology with a power stage behind it is capped here too
+/// (`caps_oversampling`). Measured the same way with the cap lifted, fold-back
+/// at 1760 Hz and cost a channel:
+///
+/// | | 1x | 2x | 4x | 8x |
+/// |---|---|---|---|---|
+/// | High Gain + American 6550 | 17.3 % / 33 % | 7.0 % / 46 % | 3.7 % / 81 % | 1.9 % / 125 % |
+/// | Crunch + Brit EL34 | 2.0 % / 11 % | 0.2 % / 21 % | 0.1 % / 41 % | 0.1 % / 79 % |
+/// | Distortion + American 6L6 | 7.5 % / 12 % | 0.7 % / 22 % | 0.3 % / 43 % | 0.3 % / 83 % |
+///
+/// No shipped preset puts a power stage behind a topology.
 pub const MODELLED_MAX_OVERSAMPLING: usize = 2;
+
+/// Whether a chain follows the Oversampling control only as far as
+/// `MODELLED_MAX_OVERSAMPLING`: a modelled circuit, or any chain with a power
+/// stage in it -- the voice's own or one chosen in its place.
+///
+/// The power stage runs inside the oversampler, after the preamplifier, and it
+/// is the heaviest solve in any chain that has one, so a topology with a power
+/// stage behind it is priced like a modelled amplifier: the worst rig a player
+/// could dial in, Treble Boost, High Gain and the American 6550 stage, took
+/// 4.75 ms a 1.33 ms callback at 8x, 3.96 of them in the power stage
+/// (`examples/stress.rs`, `docs/realtime-catalogue.md`). A topology on its own
+/// is cheap enough to follow the control all the way.
+pub fn caps_oversampling(gain: Gain, power: PowerAmp) -> bool {
+    gain.is_modelled() || power.resolved(gain).is_some()
+}
 
 /// The oversampling factor a chain actually runs at for a requested one.
 ///
-/// A modelled circuit is capped at `MODELLED_MAX_OVERSAMPLING`, and an expensive
-/// pedal in the slot takes the whole oversampled path down to 1x, because the
-/// pedal runs inside it. See `Chain::set_oversampling`, which applies this.
-pub fn effective_oversampling(gain: Gain, pedal: Pedal, requested: usize) -> usize {
+/// A modelled circuit, and a chain with a power stage, are capped at
+/// `MODELLED_MAX_OVERSAMPLING` (`caps_oversampling`), and an expensive pedal in
+/// the slot takes the whole oversampled path down to 1x, because the pedal runs
+/// inside it. See `Chain::set_oversampling`, which applies this.
+pub fn effective_oversampling(
+    gain: Gain,
+    pedal: Pedal,
+    power: PowerAmp,
+    requested: usize,
+) -> usize {
     if pedal != Pedal::None && pedal.is_expensive() {
         1
-    } else if gain.is_modelled() {
+    } else if caps_oversampling(gain, power) {
         requested.min(MODELLED_MAX_OVERSAMPLING)
     } else {
         requested
@@ -1536,10 +1569,10 @@ pub fn effective_oversampling(gain: Gain, pedal: Pedal, requested: usize) -> usi
 }
 
 /// The true latency, in host samples, of a chain running `gain` with `pedal`
-/// at the `requested` oversampling: what `Chain::latency` reports once the
-/// chain is in true-latency mode and those settings have been applied.
-pub fn true_latency(gain: Gain, pedal: Pedal, requested: usize) -> u32 {
-    Oversampler::latency_of(effective_oversampling(gain, pedal, requested))
+/// and `power` at the `requested` oversampling: what `Chain::latency` reports
+/// once the chain is in true-latency mode and those settings have been applied.
+pub fn true_latency(gain: Gain, pedal: Pedal, power: PowerAmp, requested: usize) -> u32 {
+    Oversampler::latency_of(effective_oversampling(gain, pedal, power, requested))
 }
 
 pub fn voice_at(index: usize) -> (Gain, Diode, Amplifier) {
@@ -6337,6 +6370,9 @@ impl Chain {
             // gliding. See `set_voice` for why a glide between paths is wrong.
             self.set_drive(self.drive);
             self.out_of = self.out_of_target;
+            // A power stage arriving or leaving can change what the chain can
+            // afford to oversample. See `caps_oversampling`.
+            self.set_oversampling(self.requested_oversampling);
         }
     }
 
@@ -6773,8 +6809,9 @@ impl Chain {
     /// frequency too high. The factor change itself also resets the halfband
     /// FIR histories, so it is installed on the first sample of a fresh
     /// crossfade instead of in the middle of otherwise continuous audio.
-    /// The modelled circuits are capped at `MODELLED_MAX_OVERSAMPLING` rather
-    /// than following the control all the way up. See that constant.
+    /// The modelled circuits, and any chain with a power stage, are capped at
+    /// `MODELLED_MAX_OVERSAMPLING` rather than following the control all the
+    /// way up. See that constant and `caps_oversampling`.
     pub fn set_oversampling(&mut self, factor: usize) {
         let requested_changed = factor != self.requested_oversampling;
         self.requested_oversampling = factor;
@@ -6786,7 +6823,8 @@ impl Chain {
         } else {
             Pedal::None
         };
-        let factor = effective_oversampling(voice_at(self.gain).0, pedal, factor);
+        let factor =
+            effective_oversampling(voice_at(self.gain).0, pedal, self.power_selection, factor);
 
         if !requested_changed && factor == self.over.factor() && self.deferred_oversample.is_none()
         {
@@ -6841,9 +6879,10 @@ impl Chain {
         self.acoustic.set_rate(rate);
     }
 
-    /// The factor actually used by the nonlinear gain path. A modelled circuit
-    /// reports at most `MODELLED_MAX_OVERSAMPLING`, however high the control is
-    /// set, so that it stays safe to play live.
+    /// The factor actually used by the nonlinear gain path. A modelled circuit,
+    /// or a chain with a power stage, reports at most
+    /// `MODELLED_MAX_OVERSAMPLING`, however high the control is set, so that it
+    /// stays safe to play live.
     pub fn effective_oversampling(&self) -> usize {
         self.over.factor()
     }

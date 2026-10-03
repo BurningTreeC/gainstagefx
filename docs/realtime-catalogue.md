@@ -205,10 +205,13 @@ In order of what a player can hit:
 1. ~~The transistor power stages' convergence under clipping~~: the 800RB's collapse
    was the junction-only node, fixed above.
 2. ~~The power stage's fallbacks when driven hot~~: honest work, looked at above.
-3. **What the oversampling options promise.** The cap keys on `is_modelled`; the
-   cost comes from whatever stage is in the oversampled path. Whether a chain with a
-   power stage in it should be capped as a modelled circuit is, and whether 2x
-   belongs on a live chain at all, is the owner's call: it is an option's range, not
-   a solver fix.
+3. ~~**What the oversampling options promise.**~~ The owner's call, 3 October: a
+   chain with a power stage is capped at 2x as a modelled circuit is
+   (`voice::caps_oversampling`). The worst rig -- Treble Boost, High Gain, the
+   American 6550 stage, asked for 8x -- now runs at 2x: serial 4,750 -> 2,021 µs a
+   callback, the power stage 3,961 -> 1,794 µs at 4.18 passes a solve against 2.82
+   (a bigger step takes more passes), pipelined p50 about 1 ms. Halved, and still
+   over: maxed out, that stage is more than a core can solve in time even at 2x.
+   No shipped preset is affected.
 4. ~~**Twin, Modern Purple** at a steady margin~~: the pedal took ~270 µs a
    callback beside the preamplifier's ~170 on one core; three stages, above.

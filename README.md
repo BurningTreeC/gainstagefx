@@ -550,6 +550,13 @@ note -- and they are also the most expensive to solve. They follow the control
 as far as **2x**, which takes about two thirds of that away for about double
 the work, and stop there: at four times every one of them costs more than the
 time there is, which is a DAW missing its deadline rather than a cleaner sound.
+So does a chain with a power stage in it, the voice's own or one chosen in
+its place behind a topology: the power stage runs inside the oversampler and is
+the heaviest solve there is. Behind the High Gain topology the American 6550
+stage folds back 7 % at two times and 1.9 % at eight, but at eight it costs more
+than a whole callback on its own; behind Crunch or Distortion two times is
+already within a fraction of a percent of eight. A topology without a power
+stage still follows the control all the way.
 The row shows the factors it can deliver and lights the one in use. Every
 shipped preset on a modelled circuit asks for host rate, and **so does a fresh
 instance**: the control defaults to host rate rather than to two, because the
