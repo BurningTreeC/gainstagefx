@@ -48,11 +48,18 @@
 //! slowest callbacks have in common.
 //! `--oversampling N` overrides the preset's factor (the voice's cap still
 //! applies; the header line prints the factor that ran).
+//! `--plugin` plays each preset the way the plugin does on a mono or
+//! dual-mono track: blocks through a `StageWorker`, pipelined or not by the
+//! plugin's own `PipelineGovernor` from each callback's measured cost.
+//! `--table` ends with one row a preset, slowest p99.9 first, with the
+//! machine-independent counts beside the times; with `--all` it is the
+//! catalogue's realtime audit (`docs/realtime-catalogue.md`).
 //! `--paced` waits out each callback's period like a host instead of running
 //! blocks back to back; it takes as long as the audio it plays. `--stages`
 //! arms the per-stage clocks the realtime trace uses and prints where each
 //! callback's time went (the clocks themselves cost ~10 reads a sample).
 
+use gainstagefx::plugin::PipelineGovernor;
 use gainstagefx::presets::PRESETS;
 use gainstagefx::stage_worker::StageWorker;
 use gainstagefx::voice::PipelineUse;
@@ -85,6 +92,8 @@ struct Options {
     callbacks: Option<String>,
     speculation: bool,
     helper: bool,
+    plugin: bool,
+    table: bool,
 }
 
 impl Options {
@@ -113,6 +122,8 @@ fn options() -> Options {
         callbacks: None,
         speculation: true,
         helper: false,
+        plugin: false,
+        table: false,
     };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -142,6 +153,11 @@ fn options() -> Options {
                 o.helper = true;
             }
             "--callbacks" => o.callbacks = Some(value()),
+            "--plugin" => {
+                o.block = true;
+                o.plugin = true;
+            }
+            "--table" => o.table = true,
             "--oversampling" => {
                 o.oversampling = Some(value().parse().expect("--oversampling takes 1, 2, 4 or 8"))
             }
@@ -215,6 +231,37 @@ fn read_wav(path: &str) -> Vec<f64> {
         .collect()
 }
 
+/// One preset's line in `--table`.
+struct Row {
+    name: String,
+    circuit: &'static str,
+    factor: usize,
+    p50: f64,
+    p99: f64,
+    p999: f64,
+    max: f64,
+    over_short: usize,
+    over_period: usize,
+    /// Newton passes in the worst callback, every stage together, and at the
+    /// 99.9th percentile: the machine-independent side of the tail.
+    passes_max: u64,
+    passes_p999: u64,
+    unsettled: u64,
+    fallbacks: u64,
+    pipelined: f64,
+}
+
+/// Every stage's Newton passes since `before`.
+fn passes(now: SolverBreakdown, before: SolverBreakdown) -> u64 {
+    let d = now.saturating_delta(before);
+    d.pedal.passes
+        + d.line.passes
+        + d.gain.passes
+        + d.power.passes
+        + d.iron.passes
+        + d.reverb_return.passes
+}
+
 fn percentile(sorted: &[f64], p: f64) -> f64 {
     sorted[((sorted.len() - 1) as f64 * p).round() as usize]
 }
@@ -271,6 +318,7 @@ fn main() {
         .unwrap();
         file
     });
+    let mut rows: Vec<Row> = Vec::new();
     let mut out = o
         .write
         .as_ref()
@@ -299,11 +347,15 @@ fn main() {
         let mut times = Vec::with_capacity(blocks);
         let mut hash = 0xcbf2_9ce4_8422_2325u64;
         let mut samples = Vec::with_capacity(o.block_len());
-        let worker = (o.pipeline || o.helper).then(StageWorker::new);
+        let worker = (o.pipeline || o.helper || o.plugin).then(StageWorker::new);
+        let mut governor = PipelineGovernor::new();
+        let mut pipelined_blocks = 0usize;
         let (mut inputs, mut right) = (vec![0.0; o.block_len()], vec![0.0; o.block_len()]);
         let mut uses = [0usize; 4];
         let (mut callback_health, mut callback_stages) = (before, stages_before);
         let mut callback_speculated = chain.speculated_blocks();
+        let mut callback_passes = Vec::with_capacity(blocks);
+        let mut passes_before = before;
         let mut next = Instant::now();
         for b in 0..blocks {
             if o.paced {
@@ -324,13 +376,15 @@ fn main() {
                     *x = take[(b * o.block_len() + k) % take.len()] * scale;
                 }
                 samples.resize(o.block_len(), 0.0);
+                let pipelining = o.pipeline || (o.plugin && governor.pipelining());
+                pipelined_blocks += pipelining as usize;
                 let used = chain.process_block(
                     &inputs,
                     &mut samples,
                     &mut right,
                     true,
                     worker.as_ref(),
-                    o.pipeline,
+                    pipelining,
                 );
                 last_use = match used {
                     PipelineUse::Serial => 0,
@@ -351,6 +405,14 @@ fn main() {
                 }
             }
             times.push(started.elapsed().as_secs_f64() * 1e6);
+            if o.plugin {
+                governor.update(started.elapsed().as_secs_f64() / period);
+            }
+            if o.table {
+                let now = chain.solver_breakdown();
+                callback_passes.push(passes(now, passes_before));
+                passes_before = now;
+            }
             if let Some(file) = callbacks.as_mut() {
                 let health = chain.solver_breakdown();
                 let stages = chain.realtime_stage_timings();
@@ -465,6 +527,61 @@ fn main() {
                 per(t.tone_ns),
                 per(t.cabinet_ns),
                 per(t.pedal_ns + t.gain_ns + t.iron_ns + t.power_ns + t.tone_ns + t.cabinet_ns),
+            );
+        }
+        if o.table {
+            let mut sorted_passes = callback_passes.clone();
+            sorted_passes.sort_unstable();
+            rows.push(Row {
+                name: name.clone(),
+                circuit: preset.circuit.name(),
+                factor: chain.effective_oversampling(),
+                p50: percentile(&sorted, 0.50),
+                p99: percentile(&sorted, 0.99),
+                p999: percentile(&sorted, 0.999),
+                max: sorted[sorted.len() - 1],
+                over_short: times.iter().filter(|&&t| t > SHORT_CYCLE_US).count(),
+                over_period: times.iter().filter(|&&t| t > period * 1e6).count(),
+                passes_max: *sorted_passes.last().unwrap_or(&0),
+                passes_p999: sorted_passes
+                    .get(((sorted_passes.len().max(1) - 1) as f64 * 0.999).round() as usize)
+                    .copied()
+                    .unwrap_or(0),
+                unsettled: h.pedal.unsettled
+                    + h.gain.unsettled
+                    + h.power.unsettled
+                    + h.iron.unsettled,
+                fallbacks: h.pedal.fallbacks
+                    + h.gain.fallbacks
+                    + h.power.fallbacks
+                    + h.iron.fallbacks,
+                pipelined: pipelined_blocks as f64 / blocks as f64,
+            });
+        }
+    }
+    if o.table {
+        rows.sort_by(|a, b| b.p999.total_cmp(&a.p999));
+        println!(
+            "\n{:<34} {:<24} {:>2} {:>6} {:>6} {:>6} {:>6} {:>5} {:>5} {:>6} {:>6} {:>5} {:>5} {:>4}",
+            "preset", "circuit", "os", "p50", "p99", "p99.9", "max", ">930", ">prd", "pmax", "p99.9p", "unst", "fallb", "pipe"
+        );
+        for r in &rows {
+            println!(
+                "{:<34} {:<24} {:>2} {:>6.0} {:>6.0} {:>6.0} {:>6.0} {:>5} {:>5} {:>6} {:>6} {:>5} {:>5} {:>3.0}%",
+                r.name,
+                r.circuit,
+                r.factor,
+                r.p50,
+                r.p99,
+                r.p999,
+                r.max,
+                r.over_short,
+                r.over_period,
+                r.passes_max,
+                r.passes_p999,
+                r.unsettled,
+                r.fallbacks,
+                r.pipelined * 100.0
             );
         }
     }

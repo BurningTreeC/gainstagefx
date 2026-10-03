@@ -2043,8 +2043,8 @@ fn a_pipelined_callback_is_the_serial_callback_and_does_not_allocate() {
     ] {
         let mut serial = initialized(circuit, mono, 48_000.0);
         let mut pipelined = initialized(circuit, mono, 48_000.0);
-        pipelined.pipelining = true;
-        serial.pipelining = false;
+        pipelined.pipeline.pipelining = true;
+        serial.pipeline.pipelining = false;
         let mut k = 0usize;
         for _ in 0..48 {
             let mut a: Vec<f32> = (0..64).map(|i| material(k + i) * 4.0).collect();
@@ -2061,8 +2061,8 @@ fn a_pipelined_callback_is_the_serial_callback_and_does_not_allocate() {
             }
             assert_eq!(a, b, "{circuit:?} left");
             // Keep the adaptive policy from switching either one.
-            pipelined.pipelining = true;
-            serial.pipelining = false;
+            pipelined.pipeline.pipelining = true;
+            serial.pipeline.pipelining = false;
         }
     }
 }

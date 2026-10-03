@@ -45,6 +45,61 @@ use crate::voice::{Chain, PipelineUse, Settings, NOMINAL_DBFS};
 /// which had not. Every one of those was a click on top of the dropout.
 pub const REALTIME_CUTOFF_PERIODS: f64 = 1.5;
 
+/// Whether the plugin runs one chain's two halves on two cores (see
+/// `Chain::process_block`), decided from how much of the host period its
+/// callbacks take: on at once for a callback over half the period or a
+/// smoothed load over 30 %, off only once the smoothed load is under 20 %.
+///
+/// Public so `examples/rt_scenario.rs` plays a preset the way the plugin does.
+#[derive(Clone, Copy, Debug)]
+pub struct PipelineGovernor {
+    /// Smoothed fraction of the host period the callbacks take.
+    load: f64,
+    pipelining: bool,
+}
+
+impl PipelineGovernor {
+    /// Started pipelined. The first callbacks after a preset loads are the
+    /// heaviest -- the operating point, the new circuit's first attack -- and
+    /// waiting for the smoothed load to climb past the threshold ran them on
+    /// one core: the worst three dropouts of the 11:19 REAPER capture. A
+    /// light preset drops back below 20 % within a few dozen callbacks.
+    pub const fn new() -> Self {
+        Self {
+            load: 0.35,
+            pipelining: true,
+        }
+    }
+
+    /// Before `initialize`: nothing measured and nothing pipelined.
+    pub const fn idle() -> Self {
+        Self {
+            load: 0.0,
+            pipelining: false,
+        }
+    }
+
+    pub fn pipelining(&self) -> bool {
+        self.pipelining
+    }
+
+    /// One callback's cost, as a fraction of its period.
+    pub fn update(&mut self, used: f64) {
+        self.load += (used - self.load) * 0.05;
+        if self.load > 0.30 || used > 0.50 {
+            self.pipelining = true;
+        } else if self.load < 0.20 {
+            self.pipelining = false;
+        }
+    }
+}
+
+impl Default for PipelineGovernor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub struct GainStageFx {
     params: Arc<GainStageParams>,
     meters: Arc<Meters>,
@@ -102,10 +157,8 @@ pub struct GainStageFx {
     /// `Chain::process_block`. Used for mono and dual-mono, where one chain
     /// carries the whole load, once that load is worth a second thread.
     stage_worker: Option<StageWorker>,
-    /// Smoothed fraction of the host period the chain's callbacks take, and
-    /// whether that is enough to pipeline. On above 30 %, off below 20 %.
-    load: f64,
-    pipelining: bool,
+    /// Whether the next callback pipelines. See `PipelineGovernor`.
+    pipeline: PipelineGovernor,
     /// The latency last told to the host. The chains run in true-latency
     /// mode, so this follows the oversampling: nothing at 1x.
     reported_latency: u32,
@@ -334,8 +387,7 @@ impl Default for GainStageFx {
             stereo_noise_gain: Vec::new(),
             stereo_right_peak: Vec::new(),
             stage_worker: None,
-            load: 0.0,
-            pipelining: false,
+            pipeline: PipelineGovernor::idle(),
             reported_latency: 0,
             block_input: Vec::new(),
             block_dry: Vec::new(),
@@ -615,14 +667,8 @@ impl Plugin for GainStageFx {
         if self.stage_worker.is_none() {
             self.stage_worker = Some(StageWorker::new());
         }
-        // Start pipelined. The first callbacks after a preset loads are the
-        // heaviest -- the operating point, the new circuit's first attack --
-        // and waiting for the smoothed load to climb past the threshold ran
-        // them on one core: the worst three dropouts of the 11:19 REAPER
-        // capture. A light preset drops back below 20 % within a few dozen
-        // callbacks.
-        self.load = 0.35;
-        self.pipelining = true;
+        // Start pipelined; see `PipelineGovernor::new`.
+        self.pipeline = PipelineGovernor::new();
 
         // Ramps are re-seeded from whatever the host loaded into the
         // parameters, which is not necessarily what `Default` saw.
@@ -1093,7 +1139,7 @@ impl Plugin for GainStageFx {
                 &mut self.block_dry[..sample_count],
                 duplicated_mono && !split,
                 self.stage_worker.as_ref(),
-                self.pipelining,
+                self.pipeline.pipelining(),
             );
             trace_speculated = (chain.speculated_blocks() - speculated) as u32;
             if tracing {
@@ -1249,18 +1295,12 @@ impl Plugin for GainStageFx {
             .set_input_db(20.0 * (self.peak / nominal).max(1e-6).log10() as f32);
 
         // Pipeline the next callbacks if these have been costing enough of
-        // the period to be worth a second thread: on at once for a heavy
-        // callback, off only once the smoothed load has stayed low. One clock
-        // read a callback; either way the output is the same to the bit.
+        // the period to be worth a second thread. One clock read a callback;
+        // either way the output is the same to the bit.
         if sample_count > 0 {
             let period = sample_count as f64 / self.sample_rate;
-            let used = callback_started.elapsed().as_secs_f64() / period;
-            self.load += (used - self.load) * 0.05;
-            if self.load > 0.30 || used > 0.50 {
-                self.pipelining = true;
-            } else if self.load < 0.20 {
-                self.pipelining = false;
-            }
+            self.pipeline
+                .update(callback_started.elapsed().as_secs_f64() / period);
         }
 
         // The oversampling changed, so the true latency did: tell the host.

@@ -49,6 +49,17 @@ repeated runs.
 
 ## Accepted
 
+### GMIN across every junction (2026-10-03)
+
+Not exact, and not meant to be: a physical teraohm across each diode and
+transistor junction, in the current and the slope alike, where the stamps had
+floored a reverse junction's slope at 1e-12 S in the Jacobian only. A node held
+only by off junctions (the 800RB's limiter collector) had no answer within reach
+and was walked half a volt a pass from 468,000 V. Over 4 s of every preset, 65 of
+100 bit-identical, the rest -87.5 to -137 dB re peak; both frozen baselines pass;
+unsettled samples catalogue-wide at +6 dB 83,046 -> 0. `dsp::device::GMIN` and
+`docs/realtime-catalogue.md` have the figures.
+
 ### Step 32b switched on in the plugin
 
 Step 32b below (skip `x -= +0.0` in the Schur coupling subtraction) was accepted
@@ -414,6 +425,16 @@ replace.
 
 Exact and 2.4 % fewer instructions, but no change in cycles: the loop is bound
 by memory traffic, not arithmetic.
+
+### Landing a valve grid's step on its conduction kink -- rejected
+
+A grid draws nothing below 0 V and a straight line above it, and in an SVT stage
+driven 33 dB past full power a driver grid crossed that kink back and forth while
+the line search crawled at a tenth of a step (`dsp::time::power_hard`). Stopping
+any grid step that would cross the kink on it, held, so the next pass is
+linearised there: on that rig hard solves 12,239 -> 11,952 but fallbacks 12,388
+-> 14,857 and passes a solve 4.355 -> 4.361 (2026-10-03). The extra pass a
+crossing costs is more than the crawl it saves.
 
 ### Junction limiting from the critical voltage -- rejected
 

@@ -466,6 +466,27 @@ fn limit_grid(new: f64, old: f64) -> (f64, bool) {
 /// Where the exponential is held, short of overflowing.
 const CLAMP: f64 = 60.0;
 
+/// A conductance across every PN junction, in the current as well as in its
+/// slope: SPICE's GMIN, at its default, a teraohm.
+///
+/// A reverse-biased junction passes `-Is` whatever its voltage, so its slope is
+/// next to nothing, and a node joined to the rest of the circuit only through
+/// such junctions -- the GK 800RB's current limiter, Q15 off and D8 reversed,
+/// is one -- has no equation that holds it anywhere in particular. The stamps
+/// floored that slope at 1e-12 S to keep the matrix solvable, but left the
+/// current without it, so Newton's model and the circuit disagreed: two
+/// leakage currents leaving the node with nothing to supply them, the true
+/// answer out where a junction finally conducts, and each pass a step of
+/// `Is / 1e-12`, about half a volt. Measured on the 800RB driven hard, the
+/// limiter's collector had wandered to 468,000 V and every sample spent its
+/// whole 64 passes walking back (`dsp::time::ss800_collapse`). With the
+/// conductance in the current too, the node has an answer -- where the two
+/// leaks balance -- and a reverse-biased region is linear, so one pass finds it.
+///
+/// A teraohm across a junction moves a forward one's current by a picoampere
+/// a volt: below every figure any of these circuits is measured against.
+pub(crate) const GMIN: f64 = 1e-12;
+
 #[inline]
 fn powi_small(mut base: f64, mut exponent: u8) -> f64 {
     let mut result = 1.0;
@@ -585,16 +606,17 @@ impl Device for Diode {
         // needed -- where a central difference asked for two more.
         let x = guess * self.inv_scale;
         let (i, g) = if x >= CLAMP {
-            (self.spec.saturation * (CLAMP.exp() - 1.0), 1e-12)
+            (self.spec.saturation * (CLAMP.exp() - 1.0), 0.0)
         } else {
             let e = x.exp();
             (
                 self.spec.saturation * (e - 1.0),
-                (self.spec.saturation * e * self.inv_scale).max(1e-12),
+                self.spec.saturation * e * self.inv_scale,
             )
         };
+        // `GMIN` is linear, so it needs no companion current of its own.
         let (a, k) = (s.locate(self.a), s.locate(self.k));
-        s.conductance_at(a, k, g);
+        s.conductance_at(a, k, g + GMIN);
         s.current_at(a, k, i - g * guess);
     }
 
@@ -2219,8 +2241,8 @@ impl Device for Bipolar {
         let er = (vbc / VT).min(cap).exp();
         let forward = self.spec.saturation * (ef - 1.0);
         let reverse = self.spec.saturation * (er - 1.0);
-        let gf = (self.spec.saturation * ef / VT).max(1e-12);
-        let gr = (self.spec.saturation * er / VT).max(1e-12);
+        let gf = self.spec.saturation * ef / VT;
+        let gr = self.spec.saturation * er / VT;
 
         // The Early effect: the collector current rises slightly with the
         // voltage across it, which is the stage's finite output resistance.
@@ -2250,6 +2272,9 @@ impl Device for Bipolar {
 
         // Mapped once; see `Stamper::locate`.
         let (c, b, e) = (s.locate(self.c), s.locate(self.b), s.locate(self.e));
+        // `GMIN` across both junctions; linear, so no companion current.
+        s.conductance_at(b, e, GMIN);
+        s.conductance_at(b, c, GMIN);
         if self.pnp {
             // Emitter to collector and emitter to base, controlled by the
             // emitter-base and collector-base junctions.
@@ -2469,7 +2494,7 @@ impl TrialResidual for Diode {
         } else {
             self.spec.saturation * (x.exp() - 1.0)
         };
-        r.current(self.a, self.k, i);
+        r.current(self.a, self.k, i + GMIN * guess);
     }
 }
 
@@ -2617,9 +2642,13 @@ impl TrialResidual for Bipolar {
         if self.pnp {
             r.current(self.e, self.c, ic);
             r.current(self.e, self.b, ib);
+            r.current(self.e, self.b, GMIN * vbe);
+            r.current(self.c, self.b, GMIN * vbc);
         } else {
             r.current(self.c, self.e, ic);
             r.current(self.b, self.e, ib);
+            r.current(self.b, self.e, GMIN * vbe);
+            r.current(self.b, self.c, GMIN * vbc);
         }
     }
 }

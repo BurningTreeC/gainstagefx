@@ -20,6 +20,10 @@ mod half_step;
 mod hard_samples;
 #[cfg(test)]
 mod jacobian_init;
+#[cfg(test)]
+mod power_hard;
+#[cfg(test)]
+mod ss800_collapse;
 
 use super::device::{
     AnyDevice, Bipolar, Core, Device, Diode, Jfet, Linearisation, Mark, OpAmp, Pentode, Rectifier,

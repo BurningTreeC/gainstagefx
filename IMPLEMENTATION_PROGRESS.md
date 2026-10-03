@@ -1,5 +1,56 @@
 # Implementation progress
 
+## 2026-10-03 — GMIN: the 800RB's collapse, and the SVT stage driven hot
+
+The owner: "Yes, then do 2" -- fix the transistor power stage's collapse, then look at
+the power stage's fallbacks when driven hot. See
+[docs/realtime-catalogue.md](docs/realtime-catalogue.md).
+
+- **`dsp::device::GMIN`**: a teraohm across every diode and transistor junction, in
+  the current as well as the slope. The stamps had floored a reverse junction's slope
+  at 1e-12 S in the Jacobian only, so a node held only by off junctions -- the 800RB's
+  limiter collector -- had no answer within reach; it had wandered to 468,000 V and
+  every solve walked it back half a volt a pass. *American 800RB Clank* at +6 dB:
+  23,456 unsettled samples and 737 k fallbacks to none and 2,932, p99.9 47.7 to
+  2.5 ms; at full Volume and BOOST, 17.3 passes a solve to 4.2. Catalogue-wide at
+  +6 dB, unsettled 83,046 to 0. 65 presets bit-identical, the rest within -87 to
+  -137 dB; both baselines and every transistor and diode circuit's tests pass; the
+  JC-120's fallbacks +14 % with its passes unchanged.
+  `tests/american_800rb.rs::the_power_stage_does_not_collapse_driven_hot` (fails on the
+  old model: 12.4 passes a solve, 21,885 unsettled).
+- **The SVT's stage driven 33 dB over**: honest work -- every node moving hundreds of
+  volts a sample on each edge. Tried landing a valve grid's step on its conduction kink
+  rather than across it: fallbacks +20 %, reverted.
+- Diagnostics, ignored tests: `dsp::time::ss800_collapse` and `dsp::time::power_hard`
+  (any rig's power stage: where its hard solves happen, any solve traced pass by pass).
+- A toy circuit of two diodes on one node did not reproduce the defect on the old model
+  (a 1N4002's leakage throws the node past its answer in one step), so the guard is the
+  real preset.
+
+## 2026-10-02 — The catalogue's realtime audit and the worst-case rig
+
+The owner agreed the catalogue is big enough and asked to qualify it for live use
+instead, and for a stress test: the most expensive pedal, wah, circuit, power stage,
+cabinet, speaker and two microphones together. Results in
+[docs/realtime-catalogue.md](docs/realtime-catalogue.md).
+
+- `plugin::PipelineGovernor`: the plugin's choice to pipeline a chain, factored out of
+  `process` unchanged, so a measurement can play a preset the way the plugin does.
+- `examples/rt_scenario.rs` gains `--plugin` (blocks through a `StageWorker`,
+  pipelined by the governor) and `--table` (one row a preset, the machine-independent
+  counts beside the times). `examples/stress.rs` searches every category for its most
+  expensive option and plays the rig found; `--exclude` sets an option aside.
+- **Every preset**: 90 of 100 never cross 930 µs at the take's level; median p99.9
+  453 µs (482 at +6 dB). One clear defect, *American 800RB Clank* (62 unsettled, 3,736
+  fallbacks; at +6 dB 83,046 and 2.1 M, p99.9 40 ms), and one steady margin, *Twin,
+  Modern Purple* (24, then 67, callbacks over 930 µs). The rest are isolated spikes
+  that do not repeat.
+- **The worst rig** (800RB set aside): Treble Boost, High Gain, the American 6550
+  stage, at 8x as it runs -- a topology is not capped and an override stage runs inside
+  its oversampler. p50 2.7 ms, every callback over the deadline, paced or not. The
+  cabinet, speaker and microphones differ by less than the noise. The 800RB with Volume
+  and BOOST up averaged 8.7 ms a callback on its own.
+
 ## 2026-10-02 — The VT-40's reverb, the American V-4B, two album presets
 
 The owner: "Go ahead with the V-4B and its reverb and the album presets we can create

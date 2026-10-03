@@ -38,6 +38,9 @@
 !/docs/SOLVER_EXPERIMENTS.md
 # The realtime record IMPLEMENTATION_PROGRESS.md points at, for the same reason.
 !/docs/realtime-multi-instance.md
+# And the catalogue's realtime audit, which `examples/rt_scenario.rs` and
+# `examples/stress.rs` point at.
+!/docs/realtime-catalogue.md
 # The DI's design, which the code, the README and the research logs point at.
 !/docs/DI.md
 

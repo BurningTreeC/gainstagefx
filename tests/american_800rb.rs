@@ -372,3 +372,62 @@ fn the_direct_out_table_is_the_circuits_own_gain() {
         );
     }
 }
+
+/// The fixture take, mono, at its recorded level.
+fn take() -> Vec<f64> {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/01-260912_1044.wav"
+    ))
+    .expect("the take");
+    let mut at = 12;
+    let mut data = None;
+    while at + 8 <= bytes.len() {
+        let len = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+        if &bytes[at..at + 4] == b"data" {
+            data = Some(&bytes[at + 8..(at + 8 + len).min(bytes.len())]);
+        }
+        at += 8 + len + (len & 1);
+    }
+    data.unwrap()
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|b| ((b[0] as i32 | (b[1] as i32) << 8 | (b[2] as i32) << 16) << 8 >> 8) as f64)
+        .map(|v| v / 8_388_608.0)
+        .collect()
+}
+
+/// The shipped preset 6 dB hotter than the take, through the stretch where its
+/// power stage used to collapse: from 2.45 s every solve ran to the 64-pass
+/// ceiling and fell back, for half a second, because Q15's collector -- held
+/// only by Q15's and D8's junctions -- had wandered to 468,000 V and Newton
+/// walked it back half a volt a pass (`dsp::device::GMIN`,
+/// `dsp::time::ss800_collapse`). Over the first three seconds the power stage
+/// now leaves nothing unsettled and averages under five passes a solve; it
+/// was 7.6 with 23,456 unsettled over eight.
+#[test]
+fn the_power_stage_does_not_collapse_driven_hot() {
+    let preset = gainstagefx::presets::PRESETS
+        .iter()
+        .find(|p| p.name == "American 800RB Clank")
+        .expect("preset");
+    let scale = 10f64.powf((preset.input_trim as f64 + 6.0) / 20.0);
+    let mut chain = Chain::new(48_000.0);
+    chain.apply(&preset.settings());
+    chain.settle();
+    chain.find_operating_point();
+    let before = chain.solver_breakdown();
+    let take = take();
+    for &x in &take[..3 * 48_000] {
+        assert!(chain.process_stereo(x * scale).0.is_finite());
+    }
+    let power = chain.solver_breakdown().saturating_delta(before).power;
+    let per_solve = power.passes as f64 / power.solves as f64;
+    println!(
+        "{per_solve:.2} passes a solve, {} unsettled, {} fallbacks",
+        power.unsettled, power.fallbacks
+    );
+    assert_eq!(power.unsettled, 0);
+    assert!(per_solve < 5.0, "{per_solve}");
+}
