@@ -142,11 +142,17 @@ impl Stamper<'_> {
     /// a different order) or a node the reduced map does not hold (the
     /// ordinary path flags that). The caller then runs `terms` on the
     /// matrix as before.
+    ///
+    /// A trait rather than a closure: `BlockTerms::write` is always inlined,
+    /// in every build. A closure cannot be marked so, and in the fat-LTO
+    /// build the tagged releases ship it was left out of line, the positions
+    /// never became constants, and the transistor stages ran 10 % slower than
+    /// without the block.
     #[inline(always)]
-    pub fn block<const K: usize>(
+    pub(crate) fn block<const K: usize>(
         &mut self,
         nodes: [usize; K],
-        terms: impl FnOnce(&mut Stamper, [Option<usize>; K]),
+        terms: &impl BlockTerms<K>,
     ) -> bool {
         let n = self.n;
         let mut at = [usize::MAX; K];
@@ -200,7 +206,7 @@ impl Stamper<'_> {
             limiting: self.limiting,
             junction_held: false,
         };
-        terms(&mut local, std::array::from_fn(Some));
+        terms.write(&mut local, std::array::from_fn(Some));
         self.junction_held |= local.junction_held;
         for (r, &row) in at.iter().enumerate() {
             if row == usize::MAX {
@@ -2391,7 +2397,7 @@ impl Device for Bipolar {
         };
         // On the device's own block where it can be; see `Stamper::block`.
         // Otherwise mapped once; see `Stamper::locate`.
-        if !s.block([self.c, self.b, self.e], |s, at| terms.write(s, at)) {
+        if !s.block([self.c, self.b, self.e], &terms) {
             let (c, b, e) = (s.locate(self.c), s.locate(self.b), s.locate(self.e));
             terms.write(s, [c, b, e]);
         }
@@ -2404,6 +2410,13 @@ impl Device for Bipolar {
     fn settled(&self, _tolerance: f64) -> bool {
         !self.clamped
     }
+}
+
+/// A device's writes, for `Stamper::block`: the terms it stamps, at the
+/// positions given, with nothing else in between. The implementation must be
+/// `#[inline(always)]`; that is what makes the block's positions constants.
+pub(crate) trait BlockTerms<const K: usize> {
+    fn write(&self, s: &mut Stamper, at: [Option<usize>; K]);
 }
 
 /// What a transistor's stamp writes: its slopes and companion currents.
@@ -2419,7 +2432,7 @@ struct BipolarTerms {
     base: f64,
 }
 
-impl BipolarTerms {
+impl BlockTerms<3> for BipolarTerms {
     /// The writes, at the collector, base and emitter positions given. Always
     /// inlined, so that on `Stamper::block`'s constant positions each one
     /// folds to a fixed place in the block.
@@ -3337,7 +3350,7 @@ mod optimization_tests {
     /// nothing, two terminals on one node or a node the map does not hold.
     #[test]
     fn a_block_writes_what_the_direct_writes_do() {
-        use super::BipolarTerms;
+        use super::{BipolarTerms, BlockTerms};
         // Global nodes 0..6; node 3 is internal (not in the reduced map).
         let map = [2usize, 0, 4, usize::MAX, 1, 3];
         let n = 5;
@@ -3360,7 +3373,7 @@ mod optimization_tests {
                 limiting: false,
                 junction_held: false,
             };
-            let blocked = block && s.block(nodes, |s, at| terms.write(s, at));
+            let blocked = block && s.block(nodes, &terms);
             if !block {
                 let at = nodes.map(|node| s.locate(node));
                 terms.write(&mut s, at);

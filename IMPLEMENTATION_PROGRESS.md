@@ -1,5 +1,21 @@
 # Implementation progress
 
+## 2026-10-03 — What ships, compiled: fat LTO, PGO, and a CI fix
+
+The owner: "can you compile other things for performance improvements?"
+
+- **The compiled stamps did not reach the shipped build.** Tagged releases use
+  `release-lto` (fat LTO), and there the closure carrying a transistor's writes
+  into `Stamper::block` stayed out of line: Jazz Chorus and the 800RB 9-10 % slower
+  than thin LTO. The writes are now a `BlockTerms` trait with an always-inlined
+  `write`; fat and thin are level again, every hash identical in both.
+- **Profile-guided optimisation**: tried with the installed LLVM 22 and rejected,
+  2-6 % slower on all four stages (`docs/SOLVER_EXPERIMENTS.md`).
+- **CI**: `overlapped_is_what_running_apart_saved` asserted that a live worker
+  overlaps, which takes a second core the scheduler gives it; on a busy runner it
+  failed. It now holds what the governor relies on -- zero for a block run on one
+  thread, finite and never negative otherwise -- and passes pinned to one core.
+
 ## 2026-10-03 — Compiled stamps
 
 The owner: "Then do the compiled stamps next."

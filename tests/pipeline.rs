@@ -321,7 +321,15 @@ fn three_stages_do_not_allocate() {
 /// `Chain::overlapped`, which the plugin adds back to a callback's time for
 /// `PipelineGovernor` to judge what it would cost serially, is zero for a block
 /// that ran on one thread -- serial, or offered to a worker that never woke --
-/// and positive for blocks that really ran on two or three.
+/// so a chain that is not pipelining is judged by its own time; and on a live
+/// worker it is finite and never negative.
+///
+/// Not that a live worker overlaps: that takes a second core the scheduler
+/// actually gives it. On one core (`taskset -c 0`), or a CI runner busy with
+/// other tests, the worker takes blocks while the calling thread waits, nothing
+/// runs side by side, and zero is the right answer. A first version asserted
+/// overlap there and failed on CI. That it shows on a real machine is
+/// measured, in `docs/realtime-catalogue.md`.
 #[test]
 fn overlapped_is_what_running_apart_saved() {
     gainstagefx::dsp::time::enable_ftz_daz();
@@ -333,34 +341,34 @@ fn overlapped_is_what_running_apart_saved() {
         pedal: PedalSettings::centred(Pedal::ALL[1], 0.8, 0.5),
         ..Settings::default()
     };
+    let run = |worker: Option<&StageWorker>, pipeline: bool, three: bool| {
+        let mut chain = chain(&settings);
+        chain.set_three_stages(Some(three));
+        let mut blocks = Vec::new();
+        for b in 0..BLOCKS {
+            let input: Vec<f64> = (0..BLOCK).map(|i| material(b * BLOCK + i)).collect();
+            let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
+            let used = chain.process_block(&input, &mut left, &mut right, false, worker, pipeline);
+            let overlapped = chain.overlapped();
+            assert!(overlapped.is_finite() && overlapped >= 0.0, "{overlapped}");
+            blocks.push((used, overlapped));
+        }
+        blocks
+    };
     for (worker, pipeline, three) in [
         (None, false, false),
         (Some(&inert), true, false),
         (Some(&inert), true, true),
-        (Some(&live), true, false),
-        (Some(&live), true, true),
     ] {
-        let mut chain = chain(&settings);
-        chain.set_three_stages(Some(three));
-        let mut overlapped = Vec::new();
-        for b in 0..BLOCKS {
-            let input: Vec<f64> = (0..BLOCK).map(|i| material(b * BLOCK + i)).collect();
-            let (mut left, mut right) = (vec![0.0; BLOCK], vec![0.0; BLOCK]);
-            chain.process_block(&input, &mut left, &mut right, false, worker, pipeline);
-            overlapped.push(chain.overlapped());
-        }
-        let live_worker = worker.is_some_and(|w| std::ptr::eq(w, &live));
-        if live_worker {
-            assert!(
-                overlapped.iter().any(|&o| o > 0.0),
-                "three {three}: a live worker overlapped nothing"
-            );
-        } else {
-            assert!(
-                overlapped.iter().all(|&o| o == 0.0),
-                "pipeline {pipeline}, three {three}: one thread, yet {overlapped:?}"
-            );
-        }
+        let blocks = run(worker, pipeline, three);
+        assert!(
+            blocks.iter().all(|&(_, o)| o == 0.0),
+            "pipeline {pipeline}, three {three}: one thread, yet {blocks:?}"
+        );
+    }
+    for three in [false, true] {
+        // `run` asserts finite and never negative on every block.
+        run(Some(&live), true, three);
     }
 }
 

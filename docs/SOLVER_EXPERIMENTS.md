@@ -72,6 +72,15 @@ into nine, and the gather and scatter cost more than they save, so those keep
 the direct writes. `tests`: `a_block_writes_what_the_direct_writes_do` (signed
 zeros, both polarities, ground on each terminal, the refusals).
 
+All of that was measured on `--release`, which is thin LTO. Tagged releases
+ship `release-lto` (fat LTO, one codegen unit), and there the block's closure
+was left out of line, its positions never became constants, and the transistor
+stages ran **10 % slower** than without the block (Jazz Chorus 2.27e10 cycles
+against 2.06e10 thin). The writes are now passed as a `BlockTerms` trait whose
+`write` is `#[inline(always)]`, which every build honours: fat LTO 2.02e10, thin
+2.06e10, the same hashes. Measure what ships: a gain resting on the inliner can
+be one build profile's alone.
+
 ### Quadratic termination (2026-10-03)
 
 Not exact: a solve may stop one pass before the convergence test would have
@@ -507,6 +516,17 @@ output by -49 dB re peak where 2 segments keep -172, a shadow's far start
 landing on the other one. (At +6 dB that stage, and the 800RB at 2x, move by
 -53 to -74 dB from *any* change of start, the floor included: they amplify a
 perturbation, whatever made it.) Not built.
+
+### Profile-guided optimisation -- rejected (2026-10-03)
+
+The fat-LTO build instrumented (`-Cprofile-generate`), trained on 3 s of every
+preset, merged with LLVM 22's `llvm-profdata` (rustc's own LLVM version) and
+rebuilt with `-Cprofile-use`: identical output, and **slower** on all four power
+stages measured -- cycles +2.4 % (Jazz Chorus), +2.5 % (800RB), +5.7 % (SVT),
++3.6 % (Brown '84), with 4-5 % more instructions. The hot code is numeric loops
+whose inlining is already forced where it matters; the profile's layout and
+inlining choices do not help them. Fat against thin LTO is otherwise level
+(within 2 % either way).
 
 ### Starting a hard solve from its analogue a period ago -- rejected
 
