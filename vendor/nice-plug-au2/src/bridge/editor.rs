@@ -45,6 +45,11 @@ unsafe extern "C" {
 pub(super) struct EditorIvars {
     rust_instance: Cell<*mut c_void>,
     editor_handle: Cell<*mut c_void>,
+    /// The size the editor last asked for. The view keeps it whatever a host
+    /// passes to `setFrameSize:`, and it is read here rather than from the
+    /// editor so that a resize arriving while the editor is being spawned
+    /// cannot wait on the editor's lock.
+    size: Cell<NSSize>,
     display_link: Cell<CVDisplayLinkRef>,
     display_link_context: Cell<*mut DisplayLinkContext>,
 }
@@ -83,20 +88,25 @@ define_class!(
             let _: () = unsafe { msg_send![super(self), viewDidMoveToWindow] };
             if self.window().is_some() {
                 self.spawn_editor_if_needed();
+                self.start_display_link();
+            } else {
+                // The display link holds the view. Out of a window it is
+                // stopped, so a host that lets the view go frees it, and
+                // dropping it closes the editor. That may be the last
+                // reference, so the release waits for the autorelease pool
+                // rather than freeing `self` inside its own method.
+                let keep = unsafe { Retained::retain((self as *const Self).cast_mut()) }
+                    .expect("an Objective-C method always has a live self");
+                self.stop_display_link();
+                let _ = Retained::autorelease_ptr(keep);
             }
         }
 
         #[unsafe(method(setFrameSize:))]
         fn set_frame_size(&self, requested: NSSize) {
-            let instance = self.ivars().rust_instance.get();
-            let mut width = 0;
-            let mut height = 0;
-            let size = if !instance.is_null()
-                && nice_au2_get_editor_size(instance.cast(), &mut width, &mut height)
-                && width > 0
-                && height > 0
-            {
-                NSSize::new(width as f64, height as f64)
+            let wanted = self.ivars().size.get();
+            let size = if wanted.width > 0.0 && wanted.height > 0.0 {
+                wanted
             } else {
                 requested
             };
@@ -137,6 +147,7 @@ impl EditorView {
     ) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(EditorIvars {
             rust_instance: Cell::new(rust_instance),
+            size: Cell::new(frame.size),
             ..EditorIvars::default()
         });
         let this: Retained<Self> = unsafe { msg_send![super(this), initWithFrame: frame] };
@@ -157,9 +168,29 @@ impl EditorView {
         let handle =
             nice_au2_spawn_editor(instance.cast(), (self as *const Self).cast_mut().cast());
         ivars.editor_handle.set(handle);
+        // The size given before the editor existed could not know the
+        // window's backing scale; an editor sized in physical pixels comes
+        // up half that size on a Retina display. Take the size it opened at,
+        // which also tells the host through the frame-change notification.
+        let (mut width, mut height) = (0, 0);
+        if !handle.is_null()
+            && nice_au2_get_editor_size(instance.cast(), &mut width, &mut height)
+            && width > 0
+            && height > 0
+        {
+            self.request_size(NSSize::new(width as f64, height as f64));
+        }
         self.layout_embedded_subviews();
         let _: () = unsafe { msg_send![self, niceAu2RefreshEditorView] };
-        self.start_display_link();
+    }
+
+    /// Resize to what the editor asked for. Hosts follow an AU view through
+    /// its `NSViewFrameDidChangeNotification`.
+    fn request_size(&self, size: NSSize) {
+        self.ivars().size.set(size);
+        if self.frame().size != size {
+            let _: () = unsafe { msg_send![self, setFrameSize: size] };
+        }
     }
 
     fn start_display_link(&self) {
@@ -298,6 +329,18 @@ fn unregister(instance: *mut c_void, view: &EditorView) {
     {
         views.remove(&(instance as usize));
     }
+}
+
+/// The editor's own resize (a zoom, or a section opening) reaching the view
+/// that holds it. `view` is the parent the editor was spawned into; the
+/// editor, and with it this request, is closed before that view goes.
+pub(crate) fn request_view_size(view: *mut c_void, width: f64, height: f64) -> bool {
+    if view.is_null() || MainThreadMarker::new().is_none() || !(width > 0.0 && height > 0.0) {
+        return false;
+    }
+    let view = unsafe { &*view.cast::<EditorView>() };
+    view.request_size(NSSize::new(width.round(), height.round()));
+    true
 }
 
 pub(super) fn close_for_rust_instance(instance: *mut c_void) {

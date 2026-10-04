@@ -21,6 +21,8 @@ use crate::render::{
     Au2MidiEvent, Au2ScheduledParameterEvent, AudioBuffer, AudioBufferList, AudioTimeStamp,
 };
 
+pub(crate) use editor::request_view_size;
+
 #[unsafe(no_mangle)]
 pub extern "C" fn nice_au2_close_editor_for_rust_instance(instance: *mut c_void) {
     editor::close_for_rust_instance(instance);

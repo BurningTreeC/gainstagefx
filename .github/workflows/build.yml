@@ -295,11 +295,18 @@ jobs:
           echo "Verifying AUv2 metadata entry point..."
           nm -gU "$binary" | grep -E '(_)?nice_au2_metadata$'
 
+          # The class itself, from the Objective-C class list. Its name also
+          # appears as a plain string, which `strings` finds even when the
+          # class was never linked -- as it was not, through 0.47.0.
           echo
           echo "Verifying Objective-C Cocoa view factory..."
-          if command -v strings >/dev/null 2>&1; then
-            strings "$binary" | grep 'NiceAu2CocoaViewFactory'
-          fi
+          for arch in arm64 x86_64; do
+            if ! otool -arch "$arch" -ov "$binary" | grep 'NiceAu2CocoaViewFactory' >/dev/null; then
+              echo "error: NiceAu2CocoaViewFactory is not linked into the $arch slice" >&2
+              exit 1
+            fi
+            echo "  $arch: NiceAu2CocoaViewFactory is linked"
+          done
 
           echo
           echo "Verifying ad-hoc code signature..."

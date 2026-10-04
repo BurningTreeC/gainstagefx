@@ -335,6 +335,66 @@ static int report(Host *host) {
     return failures;
 }
 
+// The AUv2 way: the component names a Cocoa view factory class in a bundle.
+// Returns the number of failed checks.
+static int open_cocoa_view(AudioUnit unit, double duration) {
+    UInt32 size = 0;
+    Boolean writable = false;
+    OSStatus status = AudioUnitGetPropertyInfo(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0,
+                                      &size, &writable);
+    if (status != noErr || size < sizeof(AudioUnitCocoaViewInfo)) {
+        say(@"FAIL: no Cocoa view (%d, %u bytes)", (int)status, (unsigned)size);
+        return 1;
+    }
+    AudioUnitCocoaViewInfo *info = malloc(size);
+    status = AudioUnitGetProperty(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, info, &size);
+    if (status != noErr) {
+        say(@"FAIL: kAudioUnitProperty_CocoaUI: %d", (int)status);
+        return 1;
+    }
+    NSURL *bundle_url = (__bridge_transfer NSURL *)info->mCocoaAUViewBundleLocation;
+    NSString *class_name = (__bridge_transfer NSString *)info->mCocoaAUViewClass[0];
+    free(info);
+    say(@"Cocoa view %@ in %@", class_name, bundle_url.path);
+    NSBundle *bundle = [NSBundle bundleWithURL:bundle_url];
+    Class factory_class = [bundle classNamed:class_name];
+    if (factory_class == nil) {
+        say(@"FAIL: %@ is not in the bundle", class_name);
+        return 1;
+    }
+    id<AUCocoaUIBase> factory = [[factory_class alloc] init];
+    double began = now();
+    // Logic passes the size it last showed; nothing yet on a first open.
+    NSView *editor = [factory uiViewForAudioUnit:unit withSize:NSZeroSize];
+    beat();
+    say(@"uiViewForAudioUnit took %.3f s and returned %@ %.0fx%.0f", now() - began,
+        editor != nil ? NSStringFromClass(editor.class) : @"nil", editor.frame.size.width,
+        editor.frame.size.height);
+    if (editor == nil) return 1;
+
+    Host *host = [[Host alloc] init];
+    [host open:editor];
+    pump(duration, nil);
+    int failures = report(host);
+
+    // A second open, as when the user closes and reopens the plug-in window.
+    [host close];
+    pump(1.0, nil);
+    editor = [factory uiViewForAudioUnit:unit withSize:NSZeroSize];
+    say(@"reopened: %@ %.0fx%.0f", editor != nil ? NSStringFromClass(editor.class) : @"nil",
+        editor.frame.size.width, editor.frame.size.height);
+    if (editor != nil) {
+        [host open:editor];
+        pump(2.0, nil);
+        say(@"reopened editor %.0fx%.0f", host.editor.frame.size.width, host.editor.frame.size.height);
+        [host close];
+        editor = nil;
+    }
+    pump(1.0, nil);
+
+    return failures;
+}
+
 static int in_process(double duration) {
     AudioComponent component = AudioComponentFindNext(NULL, &DESCRIPTION);
     if (component == NULL) {
@@ -383,60 +443,7 @@ static int in_process(double duration) {
     renderer.qualityOfService = NSQualityOfServiceUserInteractive;
     [renderer start];
 
-    UInt32 size = 0;
-    Boolean writable = false;
-    status = AudioUnitGetPropertyInfo(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0,
-                                      &size, &writable);
-    if (status != noErr || size < sizeof(AudioUnitCocoaViewInfo)) {
-        say(@"FAIL: no Cocoa view (%d, %u bytes)", (int)status, (unsigned)size);
-        return 1;
-    }
-    AudioUnitCocoaViewInfo *info = malloc(size);
-    status = AudioUnitGetProperty(unit, kAudioUnitProperty_CocoaUI, kAudioUnitScope_Global, 0, info, &size);
-    if (status != noErr) {
-        say(@"FAIL: kAudioUnitProperty_CocoaUI: %d", (int)status);
-        return 1;
-    }
-    NSURL *bundle_url = (__bridge_transfer NSURL *)info->mCocoaAUViewBundleLocation;
-    NSString *class_name = (__bridge_transfer NSString *)info->mCocoaAUViewClass[0];
-    free(info);
-    say(@"Cocoa view %@ in %@", class_name, bundle_url.path);
-    NSBundle *bundle = [NSBundle bundleWithURL:bundle_url];
-    Class factory_class = [bundle classNamed:class_name];
-    if (factory_class == nil) {
-        say(@"FAIL: %@ is not in the bundle", class_name);
-        return 1;
-    }
-    id<AUCocoaUIBase> factory = [[factory_class alloc] init];
-    began = now();
-    // Logic passes the size it last showed; nothing yet on a first open.
-    NSView *editor = [factory uiViewForAudioUnit:unit withSize:NSZeroSize];
-    beat();
-    say(@"uiViewForAudioUnit took %.3f s and returned %@ %.0fx%.0f", now() - began,
-        editor != nil ? NSStringFromClass(editor.class) : @"nil", editor.frame.size.width,
-        editor.frame.size.height);
-    if (editor == nil) return 1;
-
-    Host *host = [[Host alloc] init];
-    [host open:editor];
-    pump(duration, nil);
-    int failures = report(host);
-
-    // A second open, as when the user closes and reopens the plug-in window.
-    [host close];
-    pump(1.0, nil);
-    editor = [factory uiViewForAudioUnit:unit withSize:NSZeroSize];
-    say(@"reopened: %@ %.0fx%.0f", editor != nil ? NSStringFromClass(editor.class) : @"nil",
-        editor.frame.size.width, editor.frame.size.height);
-    if (editor != nil) {
-        [host open:editor];
-        pump(2.0, nil);
-        say(@"reopened editor %.0fx%.0f", host.editor.frame.size.width, host.editor.frame.size.height);
-        [host close];
-        editor = nil;
-    }
-    pump(1.0, nil);
-
+    int failures = open_cocoa_view(unit, duration);
     atomic_store(&rendering, false);
     pump(0.5, nil);
     began = now();

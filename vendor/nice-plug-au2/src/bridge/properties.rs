@@ -40,6 +40,12 @@ unsafe extern "C" {
     static kCFTypeDictionaryValueCallBacks: u8;
 }
 
+unsafe extern "C" {
+    /// In `shim.m`. Naming the view factory through the class itself is what
+    /// links it: see the comment there.
+    fn nice_au2_cocoa_view_class_name() -> *const std::ffi::c_char;
+}
+
 fn property_callback_eq(
     a: AudioUnitPropertyListenerProc,
     b: AudioUnitPropertyListenerProc,
@@ -518,7 +524,7 @@ unsafe fn cocoa_view_info(output: *mut c_void, io_size: *mut u32) -> OSStatus {
     let class = unsafe {
         CFStringCreateWithCString(
             ptr::null(),
-            c"NiceAu2CocoaViewFactory".as_ptr(),
+            nice_au2_cocoa_view_class_name(),
             kCFStringEncodingUTF8,
         )
     };

@@ -9,7 +9,9 @@ fn main() {
     //
     // AUv2 hosts discover the editor through Objective-C class metadata.
     // Merely implementing the editor in Rust is not sufficient: the
-    // NiceAu2CocoaViewFactory class must exist in the final Mach-O image.
+    // NiceAu2CocoaViewFactory class must exist in the final Mach-O image,
+    // which it does only because properties.rs calls into the shim (see
+    // nice_au2_cocoa_view_class_name).
     cc::Build::new()
         .file("src/bridge/shim.m")
         .flag("-fobjc-arc")
