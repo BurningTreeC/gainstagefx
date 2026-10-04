@@ -572,6 +572,22 @@ pub unsafe extern "C" fn set(
     let Some(component) = (unsafe { Component::from_self(this) }) else {
         return kAudioUnitErr_InvalidProperty;
     };
+    // TEMPORARY trace (au-editor-smoke branch): what does Apple's v2 bridge set?
+    if std::env::var_os("NICE_AU2_TRACE").is_some() {
+        let proc_set = if property == kAudioUnitProperty_SetRenderCallback && !input.is_null() {
+            let cb: AURenderCallbackStruct = unsafe { *input.cast() };
+            format!(" inputProc={}", cb.inputProc.is_some())
+        } else {
+            String::new()
+        };
+        let text = format!(
+            "nice-plug-au2 trace: set property {property} scope {scope} element {element} bytes {bytes} null={}{proc_set}",
+            input.is_null()
+        );
+        if let Ok(text) = std::ffi::CString::new(text) {
+            unsafe { libc::syslog(libc::LOG_ERR, c"%s".as_ptr(), text.as_ptr()) };
+        }
+    }
     if input.is_null() || !valid_scope(property, scope) {
         return kAudioUnitErr_InvalidProperty;
     }

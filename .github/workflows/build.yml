@@ -391,7 +391,7 @@ jobs:
           out="$RUNNER_TEMP/au-editor"
           status=0
           for mode in inproc bridged outofproc; do
-            "$RUNNER_TEMP/au_editor_smoke" "$mode" "$out" 6 || status=1
+            NICE_AU2_TRACE=1 "$RUNNER_TEMP/au_editor_smoke" "$mode" "$out" 6 || status=1
             for sample in "$out/$mode"-sample-*.txt; do
               [ -f "$sample" ] || continue
               echo "::group::$(basename "$sample")"
