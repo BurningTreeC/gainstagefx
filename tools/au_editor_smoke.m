@@ -4,8 +4,10 @@
 // `inproc` asks the component for its Cocoa view (kAudioUnitProperty_CocoaUI),
 // which is the AUv2 path most hosts take. `outofproc` loads the unit into
 // AUHostingService and asks AUAudioUnit for a view controller, which is how
-// Logic Pro and GarageBand can open it. Either way audio is rendered on a
-// second thread while the editor is up, as a host does.
+// Logic Pro and GarageBand can open it. `bridged` is that through Apple's v2
+// bridge in this process, which tells a fault of the bridge from one of being
+// out of process. Every mode renders audio on a second thread while the editor
+// is up, as a host does.
 //
 // The main thread has to keep turning. A watchdog samples this process (and
 // any AUHostingService) if it stops for WATCHDOG seconds. At the end every
@@ -14,7 +16,7 @@
 //   clang -fobjc-arc -framework AppKit -framework AudioToolbox \
 //     -framework AVFoundation -framework CoreAudioKit \
 //     -o au_editor_smoke tools/au_editor_smoke.m
-//   ./au_editor_smoke inproc|outofproc OUT_DIR [SECONDS]
+//   ./au_editor_smoke inproc|bridged|outofproc OUT_DIR [SECONDS]
 //
 // The component must already be registered (installed in
 // ~/Library/Audio/Plug-Ins/Components). Exit status: 0 the editor arrived,
@@ -489,22 +491,25 @@ static int in_process(double duration) {
     return failures > 0 ? 1 : 0;
 }
 
-static int out_of_process(double duration) {
+// Through AUAudioUnit: `options` 0 wraps the v2 unit in Apple's bridge in this
+// process; kAudioComponentInstantiation_LoadOutOfProcess puts it, bridge and
+// all, in AUHostingService.
+static int through_auaudiounit(double duration, AudioComponentInstantiationOptions options) {
     __block AUAudioUnit *unit = nil;
     __block NSError *failed = nil;
     double began = now();
     [AUAudioUnit instantiateWithComponentDescription:DESCRIPTION
-                                             options:kAudioComponentInstantiation_LoadOutOfProcess
+                                             options:options
                                    completionHandler:^(AUAudioUnit *made, NSError *failure) {
                                      unit = made;
                                      failed = failure;
                                      atomic_store(&instantiated, true);
                                    }];
     if (!pump(30.0, ^BOOL { return atomic_load(&instantiated); })) {
-        say(@"FAIL: out-of-process instantiation did not complete");
+        say(@"FAIL: instantiation did not complete");
         return 1;
     }
-    say(@"instantiated out of process in %.3f s: %@", now() - began,
+    say(@"instantiated in %.3f s: %@", now() - began,
         unit != nil ? NSStringFromClass(unit.class) : failed.description);
     if (unit == nil) return 2;
 
@@ -566,10 +571,10 @@ static int out_of_process(double duration) {
     pump(duration, nil);
     say(@"preferred content size now %.0fx%.0f", controller.preferredContentSize.width,
         controller.preferredContentSize.height);
-    int failures = report(host, NO);
-    // The editor runs in the service, so a hang there leaves this main thread
-    // free: sample it whatever happened.
-    sample_everything();
+    int failures = report(host, !(options & kAudioComponentInstantiation_LoadOutOfProcess));
+    // Out of process the editor runs in the service, so a hang there leaves
+    // this main thread free: sample it whatever happened.
+    if (options & kAudioComponentInstantiation_LoadOutOfProcess) sample_everything();
 
     [host close];
     controller = nil;
@@ -585,8 +590,9 @@ int main(int argc, const char *argv[]) {
         mach_timebase_info(&timebase);
         started = now();
         beat();
-        if (argc < 3 || (strcmp(argv[1], "inproc") != 0 && strcmp(argv[1], "outofproc") != 0)) {
-            fprintf(stderr, "usage: %s inproc|outofproc OUT_DIR [SECONDS]\n", argv[0]);
+        if (argc < 3 || (strcmp(argv[1], "inproc") != 0 && strcmp(argv[1], "bridged") != 0 &&
+                         strcmp(argv[1], "outofproc") != 0)) {
+            fprintf(stderr, "usage: %s inproc|bridged|outofproc OUT_DIR [SECONDS]\n", argv[0]);
             return 2;
         }
         mode = @(argv[1]);
@@ -607,7 +613,10 @@ int main(int argc, const char *argv[]) {
         beat();
 
         say(@"accelerated OpenGL 3.2 Core: %@", accelerated_opengl() ? @"yes" : @"no");
-        int status = strcmp(argv[1], "inproc") == 0 ? in_process(duration) : out_of_process(duration);
+        int status = strcmp(argv[1], "inproc") == 0    ? in_process(duration)
+                     : strcmp(argv[1], "bridged") == 0 ? through_auaudiounit(duration, 0)
+                                                       : through_auaudiounit(
+                                                             duration, kAudioComponentInstantiation_LoadOutOfProcess);
         if (status == 0 && atomic_load(&render_failed)) status = 1;
         say(@"%s", status == 0 ? "PASS" : "FAIL");
         return status;

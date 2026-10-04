@@ -509,12 +509,31 @@ pub extern "C" fn nice_au2_render(
             Ok(()) => os_status::NO_ERR,
             Err(e) => {
                 log::error!("Render error: {:?}", e);
+                report_render_failure(&format!("{e:?}"));
                 os_status::K_AUDIO_UNIT_ERR_RENDER
             }
         }
     }));
 
-    result.unwrap_or(os_status::K_AUDIO_UNIT_ERR_RENDER)
+    result.unwrap_or_else(|_| {
+        report_render_failure("the plugin panicked");
+        os_status::K_AUDIO_UNIT_ERR_RENDER
+    })
+}
+
+/// The first render failure in this process goes to the unified log (Console,
+/// `log show`). Hosts discard stderr, no logger is installed, and the status
+/// alone says only that `process` failed -- not which check, or where.
+fn report_render_failure(message: &str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static REPORTED: AtomicBool = AtomicBool::new(false);
+    if REPORTED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let text = format!("nice-plug-au2: render failed: {message}").replace('\0', "");
+    if let Ok(text) = std::ffi::CString::new(text) {
+        unsafe { libc::syslog(libc::LOG_ERR, c"%s".as_ptr(), text.as_ptr()) };
+    }
 }
 
 #[unsafe(no_mangle)]

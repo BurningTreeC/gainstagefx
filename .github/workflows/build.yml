@@ -378,10 +378,11 @@ jobs:
           echo
           echo "AUv2 auval validation passed."
 
-      # Open the editor as a host does, both in process (the Cocoa view most
-      # hosts ask for) and out of process (AUHostingService, as Logic Pro and
-      # GarageBand can), with audio rendering alongside. The host samples the
-      # main threads if one stops turning; captures and samples are uploaded.
+      # Open the editor as a host does: in process (the Cocoa view most hosts
+      # ask for), through Apple's v2 bridge, and out of process
+      # (AUHostingService, as Logic Pro and GarageBand can), with audio
+      # rendering alongside. The host samples the main threads if one stops
+      # turning; captures and samples are uploaded.
       - name: Open the AU editor
         if: startsWith(matrix.os, 'macos')
         timeout-minutes: 5
@@ -389,7 +390,7 @@ jobs:
           set -uo pipefail
           out="$RUNNER_TEMP/au-editor"
           status=0
-          for mode in inproc outofproc; do
+          for mode in inproc bridged outofproc; do
             "$RUNNER_TEMP/au_editor_smoke" "$mode" "$out" 6 || status=1
             for sample in "$out/$mode"-sample-*.txt; do
               [ -f "$sample" ] || continue
@@ -398,6 +399,12 @@ jobs:
               echo "::endgroup::"
             done
           done
+          # nice-plug-au2 reports its first render failure to the unified log;
+          # AUHostingService's stderr goes nowhere.
+          echo "::group::nice-plug-au2 in the unified log"
+          sudo -n log show --last 5m --style compact \
+            --predicate 'eventMessage CONTAINS "nice-plug-au2"' || true
+          echo "::endgroup::"
           exit "$status"
 
       - name: Upload the AU editor captures
