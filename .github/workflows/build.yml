@@ -141,6 +141,16 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev
 
+      # Compiled before the plugin, so a mistake in it fails in seconds rather
+      # than after the release build.
+      - name: Build the AU editor smoke host
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          clang -fobjc-arc -Wall -Werror -Wno-deprecated-declarations \
+            -framework AppKit -framework AudioToolbox \
+            -framework AVFoundation -framework CoreAudioKit \
+            -o "$RUNNER_TEMP/au_editor_smoke" tools/au_editor_smoke.m
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -360,6 +370,36 @@ jobs:
 
           echo
           echo "AUv2 auval validation passed."
+
+      # Open the editor as a host does, both in process (the Cocoa view most
+      # hosts ask for) and out of process (AUHostingService, as Logic Pro and
+      # GarageBand can), with audio rendering alongside. The host samples the
+      # main threads if one stops turning; captures and samples are uploaded.
+      - name: Open the AU editor
+        if: startsWith(matrix.os, 'macos')
+        timeout-minutes: 5
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/au-editor"
+          status=0
+          for mode in inproc outofproc; do
+            "$RUNNER_TEMP/au_editor_smoke" "$mode" "$out" 6 || status=1
+            for sample in "$out/$mode"-sample-*.txt; do
+              [ -f "$sample" ] || continue
+              echo "::group::$(basename "$sample")"
+              cat "$sample"
+              echo "::endgroup::"
+            done
+          done
+          exit "$status"
+
+      - name: Upload the AU editor captures
+        if: always() && startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: au-editor-smoke
+          path: ${{ runner.temp }}/au-editor
+          if-no-files-found: ignore
 
       - name: Test the Linux CLAP editor
         if: startsWith(matrix.os, 'ubuntu')
