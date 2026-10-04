@@ -2,20 +2,22 @@
 //! access to negotiated mono/stereo layout state and solver-health counters.
 use super::*;
 use crate::params::{Cabinet, Circuit, Iron, ToneStack};
-use crate::voice::LATENCY;
 use std::cell::Cell;
 
 thread_local! {
     /// The latency the plugin last reported from `process`, if it did.
     static REPORTED: Cell<Option<u32>> = const { Cell::new(None) };
+    /// The latency the plugin last reported from `activate`.
+    static ACTIVATED: Cell<Option<u32>> = const { Cell::new(None) };
 }
 
-#[path = "allocations.rs"]
-mod allocations;
-use allocations::assert_no_heap;
+use crate::test_allocations::assert_no_heap;
 
 #[path = "attacks.rs"]
 mod attacks;
+
+#[path = "reservoir_plugin.rs"]
+mod reservoir_plugin;
 
 #[cfg(target_os = "linux")]
 #[repr(C)]
@@ -67,9 +69,8 @@ impl ActivateContext<GainStageFx> for Host {
     }
     fn execute(&self, _: ()) {}
     fn set_latency_samples(&self, samples: u32) {
-        // The true figure: the oversampler's own round trip, never more
-        // than the padded maximum.
-        assert!(samples <= LATENCY);
+        // The reservoir's samples plus the oversampler's own round trip.
+        ACTIVATED.with(|activated| activated.set(Some(samples)));
     }
     fn set_current_voice_capacity(&self, _: u32) {
         unreachable!()
@@ -115,7 +116,34 @@ impl ProcessContext<GainStageFx> for Host {
 }
 
 fn initialized(circuit: Circuit, mono: bool, rate: f32) -> GainStageFx {
+    initialized_with(circuit, mono, rate, 0, ProcessMode::Realtime)
+}
+
+/// `initialized`, with a reservoir of `reservoir` samples (0 for none) and
+/// activated in `mode`. An offline activation disarms the solver's deadline
+/// and makes the reservoir wait for its worker, so its output is the
+/// machine's no matter how loaded it is.
+fn initialized_with(
+    circuit: Circuit,
+    mono: bool,
+    rate: f32,
+    reservoir: usize,
+    mode: ProcessMode,
+) -> GainStageFx {
+    initialized_speculating(circuit, mono, rate, reservoir, mode, true)
+}
+
+/// `initialized_with`, choosing whether the chains speculate.
+fn initialized_speculating(
+    circuit: Circuit,
+    mono: bool,
+    rate: f32,
+    reservoir: usize,
+    mode: ProcessMode,
+    speculation: bool,
+) -> GainStageFx {
     let mut plugin = GainStageFx::default();
+    plugin.set_speculation(speculation);
     let p = Arc::get_mut(&mut plugin.params).unwrap();
     // NIH-plug's host wrapper normally seeds these from parameter values.
     // Direct callback tests bypass that wrapper; an unseeded Master smoother
@@ -171,13 +199,17 @@ fn initialized(circuit: Circuit, mono: bool, rate: f32) -> GainStageFx {
     p.intensity.smoothed.reset(0.9);
     p.speed.smoothed.reset(0.7);
     p.mix.smoothed.reset(0.65);
+    // `initialized` is the synchronous path: those tests compare outputs
+    // sample for sample with no reservoir in between. `reservoir_plugin.rs`
+    // tests the reservoir against it.
+    plugin.set_reservoir_delay(reservoir);
     assert!(plugin.activate(
         &GainStageFx::AUDIO_IO_LAYOUTS[usize::from(mono)],
         &BufferConfig {
             sample_rate: rate,
             min_buffer_size: Some(1),
             max_buffer_size: 1024,
-            process_mode: ProcessMode::Realtime,
+            process_mode: mode,
         },
         &mut Host,
     ));
@@ -185,7 +217,9 @@ fn initialized(circuit: Circuit, mono: bool, rate: f32) -> GainStageFx {
     // assert convergence and bit-exact channel equivalence, and the cfg(test)
     // solver diagnostics run slower than real time, so on a loaded machine the
     // cutoff would decide their outcome. Keep them about the solver.
-    plugin.budget.armed = false;
+    if reservoir == 0 {
+        plugin.dsp_mut().budget.armed = false;
+    }
     plugin.reset();
     plugin
 }
@@ -273,7 +307,7 @@ fn set_noise_reduction(plugin: &mut GainStageFx, enabled: bool, threshold: f32) 
 fn noise_reduction_stereo_worker_matches_sequential_and_bypass_is_a_wire() {
     let mut parallel = initialized(Circuit::Clean, false, 48_000.0);
     let mut sequential = initialized(Circuit::Clean, false, 48_000.0);
-    sequential.stereo_worker = None;
+    sequential.dsp_mut().stereo_worker = None;
     for block in 0..800 {
         if block % 100 == 0 || block == 750 {
             for plugin in [&mut parallel, &mut sequential] {
@@ -332,7 +366,7 @@ fn noise_reduction_dual_mono_matches_mono_at_all_supported_rates() {
             assert_eq!(left, reference, "rate={rate}");
             assert_eq!(left, right, "rate={rate}");
         }
-        assert!(!stereo.stereo_seen);
+        assert!(!stereo.dsp().stereo_seen);
     }
 }
 
@@ -390,12 +424,12 @@ fn negotiated_layout_builds_exactly_one_chain_per_host_channel() {
     let mono = initialized(Circuit::Clean, true, 48_000.0);
     let stereo = initialized(Circuit::Clean, false, 48_000.0);
     assert_eq!(
-        mono.channels.len(),
+        mono.dsp().channels.len(),
         1,
         "mono layout must own exactly one chain"
     );
     assert_eq!(
-        stereo.channels.len(),
+        stereo.dsp().channels.len(),
         2,
         "stereo layout must own exactly two chains"
     );
@@ -404,16 +438,16 @@ fn negotiated_layout_builds_exactly_one_chain_per_host_channel() {
 #[test]
 fn mono_layout_processes_exactly_one_chain() {
     let mut mono = initialized(Circuit::Boogie, true, 48_000.0);
-    assert_eq!(mono.channels.len(), 1);
-    let before = mono.channels[0].solver_health().solves;
+    assert_eq!(mono.dsp().channels.len(), 1);
+    let before = mono.dsp().channels[0].solver_health().solves;
     for block in 0..12 {
         let mut samples = std::array::from_fn::<_, 64, _>(|i| material(block * 64 + i));
         process(&mut mono, &mut samples, None);
         assert!(samples.iter().all(|sample| sample.is_finite()));
     }
-    assert!(mono.channels[0].solver_health().solves > before);
+    assert!(mono.dsp().channels[0].solver_health().solves > before);
     assert_eq!(
-        mono.channels.len(),
+        mono.dsp().channels.len(),
         1,
         "mono processing must never create a hidden right chain"
     );
@@ -428,9 +462,9 @@ fn stereo_host_buffer_processes_exact_dual_mono_once() {
         Circuit::Crunch,
     ] {
         let mut stereo = initialized(circuit, false, 48_000.0);
-        assert_eq!(stereo.channels.len(), 2);
-        let left_before = stereo.channels[0].solver_health().solves;
-        let right_before = stereo.channels[1].solver_health().solves;
+        assert_eq!(stereo.dsp().channels.len(), 2);
+        let left_before = stereo.dsp().channels[0].solver_health().solves;
+        let right_before = stereo.dsp().channels[1].solver_health().solves;
         for block in 0..12 {
             let mut left = std::array::from_fn::<_, 64, _>(|i| material(block * 64 + i));
             let mut right = left;
@@ -442,15 +476,15 @@ fn stereo_host_buffer_processes_exact_dual_mono_once() {
                 circuit.name()
             );
         }
-        assert!(stereo.channels[0].solver_health().solves > left_before);
+        assert!(stereo.dsp().channels[0].solver_health().solves > left_before);
         assert_eq!(
-            stereo.channels[1].solver_health().solves,
+            stereo.dsp().channels[1].solver_health().solves,
             right_before,
             "{} exact dual-mono input unexpectedly ran the right nonlinear chain",
             circuit.name()
         );
         assert!(
-            !stereo.stereo_seen,
+            !stereo.dsp().stereo_seen,
             "{} exact dual-mono input was incorrectly latched as stereo",
             circuit.name()
         );
@@ -467,8 +501,8 @@ fn first_different_stereo_block_wakes_right_chain_and_latches_stereo() {
         let mut right = left;
         process(&mut stereo, &mut left, Some(&mut right));
     }
-    let right_before = stereo.channels[1].solver_health().solves;
-    assert!(!stereo.stereo_seen);
+    let right_before = stereo.dsp().channels[1].solver_health().solves;
+    assert!(!stereo.dsp().stereo_seen);
 
     // A single real difference must wake the right path for this same block.
     let mut left = std::array::from_fn::<_, 64, _>(|i| material(8 * 64 + i));
@@ -476,20 +510,20 @@ fn first_different_stereo_block_wakes_right_chain_and_latches_stereo() {
     right[17] = -right[17];
     process(&mut stereo, &mut left, Some(&mut right));
     assert!(
-        stereo.stereo_seen,
+        stereo.dsp().stereo_seen,
         "first differing block did not latch stereo"
     );
     assert!(
-        stereo.channels[1].solver_health().solves > right_before,
+        stereo.dsp().channels[1].solver_health().solves > right_before,
         "right chain did not run on the first differing stereo block"
     );
 
     // Once histories can differ, later equal input must remain two-chain stereo.
-    let right_before_equal = stereo.channels[1].solver_health().solves;
+    let right_before_equal = stereo.dsp().channels[1].solver_health().solves;
     let mut left = std::array::from_fn::<_, 64, _>(|i| material(9 * 64 + i));
     let mut right = left;
     process(&mut stereo, &mut left, Some(&mut right));
-    assert!(stereo.channels[1].solver_health().solves > right_before_equal);
+    assert!(stereo.dsp().channels[1].solver_health().solves > right_before_equal);
 }
 
 #[test]
@@ -505,7 +539,7 @@ fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
         // Force the reference to process two independent chains from the first
         // sample. If the dormant-right synchronization is complete, waking the
         // auto path after identical history must produce the exact same output.
-        reference.stereo_seen = true;
+        reference.dsp_mut().stereo_seen = true;
         // The auto path runs dual-mono blocks through `process_block`, the
         // reference two chains sample by sample. A block that speculates on its
         // power stage (`SpecBlock` in `voice.rs`) agrees with the per-sample
@@ -513,9 +547,10 @@ fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
         // `tests/pipeline.rs` checks; what this checks is the wake, so both run
         // without it.
         for chain in auto
+            .dsp_mut()
             .channels
             .iter_mut()
-            .chain(reference.channels.iter_mut())
+            .chain(reference.dsp_mut().channels.iter_mut())
         {
             chain.set_speculation(false);
         }
@@ -548,7 +583,7 @@ fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
             );
         }
         assert!(
-            auto.stereo_seen,
+            auto.dsp().stereo_seen,
             "{} never latched stereo after divergence",
             circuit.name()
         );
@@ -558,8 +593,8 @@ fn dual_mono_sleep_then_stereo_wake_matches_always_stereo_reference() {
 #[test]
 fn stereo_layout_processes_both_chains_for_one_sided_input() {
     let mut stereo = initialized(Circuit::Peavey, false, 48_000.0);
-    let left_before = stereo.channels[0].solver_health().solves;
-    let right_before = stereo.channels[1].solver_health().solves;
+    let left_before = stereo.dsp().channels[0].solver_health().solves;
+    let right_before = stereo.dsp().channels[1].solver_health().solves;
     for block in 0..12 {
         let mut left = std::array::from_fn::<_, 64, _>(|i| material(block * 64 + i));
         let mut right = [0.0; 64];
@@ -567,9 +602,9 @@ fn stereo_layout_processes_both_chains_for_one_sided_input() {
         assert!(left.iter().all(|sample| sample.is_finite()));
         assert!(right.iter().all(|sample| sample.is_finite()));
     }
-    assert!(stereo.channels[0].solver_health().solves > left_before);
+    assert!(stereo.dsp().channels[0].solver_health().solves > left_before);
     assert!(
-        stereo.channels[1].solver_health().solves > right_before,
+        stereo.dsp().channels[1].solver_health().solves > right_before,
         "stereo right chain must run even when the current right input is silent"
     );
 }
@@ -1119,8 +1154,14 @@ fn run_realtime_pass(
     let period = std::time::Duration::from_secs_f64(BLOCK as f64 / rate as f64);
     let mut plugin = attacks::probe_configuration_layout(circuit, layout.is_mono());
     plugin.params.input_trim.smoothed.reset(input_trim_db);
-    plugin.input_ramp.reset(util::db_to_gain(input_trim_db));
-    assert_eq!(plugin.channels.len(), if layout.is_mono() { 1 } else { 2 });
+    plugin
+        .dsp_mut()
+        .input_ramp
+        .reset(util::db_to_gain(input_trim_db));
+    assert_eq!(
+        plugin.dsp().channels.len(),
+        if layout.is_mono() { 1 } else { 2 }
+    );
 
     let max_warmup = LIVE_SETTLE_BLOCKS * BLOCK;
     let warmup = if warmup.len() > max_warmup {
@@ -1163,7 +1204,7 @@ fn run_realtime_pass(
         }
     }
 
-    plugin.channels[0].reset_twin_level_trace();
+    plugin.dsp_mut().channels[0].reset_twin_level_trace();
     // Read once, after warm-up. Relative zero is the first measured power
     // solve, exactly as in the existing solver-control sample records.
     let full_trace_sample = std::env::var("GAINSTAGEFX_TRACE_POWER_SAMPLE")
@@ -1182,7 +1223,7 @@ fn run_realtime_pass(
             sample < input.len() as u64,
             "selected sample is outside the measured excerpt"
         );
-        plugin.channels[0].configure_full_power_trace(sample, BLOCK);
+        plugin.dsp_mut().channels[0].configure_full_power_trace(sample, BLOCK);
     }
     let solver_control_profile_enabled =
         (std::env::var_os("GAINSTAGEFX_PROFILE_SOLVER_CONTROL_TAIL").is_some()
@@ -1190,11 +1231,11 @@ fn run_realtime_pass(
             && circuit == Circuit::Twin
             && layout == ProbeLayout::Mono;
     if solver_control_profile_enabled {
-        plugin.channels[0].reset_power_solver_control_samples();
+        plugin.dsp_mut().channels[0].reset_power_solver_control_samples();
     }
-    let solver_before = plugin.channels[0].solver_breakdown();
+    let solver_before = plugin.dsp().channels[0].solver_breakdown();
     let solver_control_profile_before = if solver_control_profile_enabled {
-        plugin.channels[0].power_solver_control_profile()
+        plugin.dsp().channels[0].power_solver_control_profile()
     } else {
         None
     };
@@ -1202,7 +1243,7 @@ fn run_realtime_pass(
         && circuit == Circuit::Twin
         && layout == ProbeLayout::Mono;
     let phase_profile_before = if phase_profile_enabled {
-        plugin.channels[0].power_phase_profile()
+        plugin.dsp().channels[0].power_phase_profile()
     } else {
         None
     };
@@ -1235,12 +1276,12 @@ fn run_realtime_pass(
             wait_until(release);
         }
         let block_phase_before = if phase_profile_enabled {
-            plugin.channels[0].power_phase_profile()
+            plugin.dsp().channels[0].power_phase_profile()
         } else {
             None
         };
         let block_solver_control_before = if solver_control_profile_enabled {
-            plugin.channels[0].power_solver_control_profile()
+            plugin.dsp().channels[0].power_solver_control_profile()
         } else {
             None
         };
@@ -1259,7 +1300,7 @@ fn run_realtime_pass(
             && circuit == Circuit::Twin
             && layout == ProbeLayout::Mono
         {
-            Some(plugin.channels[0].solver_breakdown())
+            Some(plugin.dsp().channels[0].solver_breakdown())
         } else {
             None
         };
@@ -1313,16 +1354,17 @@ fn run_realtime_pass(
             first_cpu_compute_miss.get_or_insert(block);
         }
         if phase_profile_enabled && cpu_elapsed > callback_budget.as_secs_f64() {
-            if let (Some(before), Some(after)) =
-                (block_phase_before, plugin.channels[0].power_phase_profile())
-            {
+            if let (Some(before), Some(after)) = (
+                block_phase_before,
+                plugin.dsp().channels[0].power_phase_profile(),
+            ) {
                 phase_slow_blocks.push((cpu_us, block, after.saturating_delta(before)));
             }
         }
         if solver_control_profile_enabled {
             if let (Some(before), Some(after)) = (
                 block_solver_control_before,
-                plugin.channels[0].power_solver_control_profile(),
+                plugin.dsp().channels[0].power_solver_control_profile(),
             ) {
                 solver_control_slow_blocks.push((
                     cpu_us,
@@ -1336,7 +1378,7 @@ fn run_realtime_pass(
             if elapsed > callback_budget.as_secs_f64()
                 || cpu_elapsed > callback_budget.as_secs_f64()
             {
-                let delta = plugin.channels[0]
+                let delta = plugin.dsp().channels[0]
                     .solver_breakdown()
                     .saturating_delta(block_solver_before);
                 println!(
@@ -1404,12 +1446,12 @@ fn run_realtime_pass(
         && layout == ProbeLayout::Mono
     {
         let power_before = solver_before.power.solves;
-        for trace in plugin.channels[0].unsettled_power_solver_trace() {
+        for trace in plugin.dsp().channels[0].unsettled_power_solver_trace() {
             let relative_sample =
                 trace.solve.saturating_sub(power_before.saturating_add(1)) as usize;
             let tail_unknown_names = std::array::from_fn::<_, 8, _>(|i| {
                 if i < trace.tail_trace_count {
-                    plugin.channels[0]
+                    plugin.dsp().channels[0]
                         .power_solver_unknown_name(trace.tail_trace_max_unknown[i])
                         .unwrap_or("?")
                 } else {
@@ -1470,7 +1512,7 @@ fn run_realtime_pass(
             );
         }
 
-        for trace in plugin.channels[0]
+        for trace in plugin.dsp().channels[0]
             .power_solver_trace()
             .iter()
             .filter(|trace| trace.last_settled_restart_attempted)
@@ -1497,15 +1539,15 @@ fn run_realtime_pass(
         }
     }
 
-    plugin.channels[0].print_full_power_trace();
+    plugin.dsp().channels[0].print_full_power_trace();
     let (mean_us, p99_us, max_us) = summarize(&mut times);
     let (cpu_mean_us, cpu_p99_us, cpu_max_us) = summarize(&mut cpu_times);
     let (preempt_mean_us, preempt_p99_us, preempt_max_us) = summarize(&mut preempt_times);
-    let solver = plugin.channels[0]
+    let solver = plugin.dsp().channels[0]
         .solver_breakdown()
         .saturating_delta(solver_before);
     if circuit == Circuit::Twin {
-        if let Some(levels) = plugin.channels[0].twin_level_diagnostics() {
+        if let Some(levels) = plugin.dsp().channels[0].twin_level_diagnostics() {
             println!(
                 "twin_level_diagnostics,live_paced={},layout={:?},levels={:?}",
                 live_paced, layout, levels
@@ -1515,7 +1557,7 @@ fn run_realtime_pass(
     if let (Some(before), Some(after)) = (
         solver_control_profile_before,
         if solver_control_profile_enabled {
-            plugin.channels[0].power_solver_control_profile()
+            plugin.dsp().channels[0].power_solver_control_profile()
         } else {
             None
         },
@@ -1617,7 +1659,7 @@ fn run_realtime_pass(
         }
 
         let power_before = solver_before.power.solves;
-        let mut samples = plugin.channels[0]
+        let mut samples = plugin.dsp().channels[0]
             .power_solver_control_samples()
             .iter()
             .copied()
@@ -1701,7 +1743,7 @@ fn run_realtime_pass(
     if let (Some(before), Some(after)) = (
         phase_profile_before,
         if phase_profile_enabled {
-            plugin.channels[0].power_phase_profile()
+            plugin.dsp().channels[0].power_phase_profile()
         } else {
             None
         },
@@ -1774,6 +1816,7 @@ fn run_realtime_pass(
         max_finish_late_us,
         max_meter_db,
         right_solves: plugin
+            .dsp()
             .channels
             .get(1)
             .map(|chain| chain.solver_health().solves)
@@ -1973,7 +2016,7 @@ fn an_armed_trace_does_not_allocate_and_writes_every_callback() {
     let mut plugin = initialized(Circuit::Crunch, false, 48_000.0);
     let (trace, path) = crate::rt_trace::RtTrace::to_dir(&dir, plugin.params.clone())
         .expect("the writer thread starts");
-    plugin.rt_trace = Some(trace);
+    plugin.dsp_mut().rt_trace = Some(trace);
     let mut k = 0usize;
     let mut block = |plugin: &mut GainStageFx, stereo: bool| {
         let mut left: Vec<f32> = (0..64).map(|i| material(k + i)).collect();
@@ -1995,7 +2038,7 @@ fn an_armed_trace_does_not_allocate_and_writes_every_callback() {
     let mut mono = initialized(Circuit::Crunch, true, 48_000.0);
     let (trace, mono_path) = crate::rt_trace::RtTrace::to_dir(&dir, mono.params.clone())
         .expect("the writer thread starts");
-    mono.rt_trace = Some(trace);
+    mono.dsp_mut().rt_trace = Some(trace);
     let mut left: Vec<f32> = (0..64).map(material).collect();
     process(&mut mono, &mut left, None);
     drop(mono);
@@ -2043,8 +2086,8 @@ fn a_pipelined_callback_is_the_serial_callback_and_does_not_allocate() {
     ] {
         let mut serial = initialized(circuit, mono, 48_000.0);
         let mut pipelined = initialized(circuit, mono, 48_000.0);
-        pipelined.pipeline.pipelining = true;
-        serial.pipeline.pipelining = false;
+        pipelined.dsp_mut().pipeline.pipelining = true;
+        serial.dsp_mut().pipeline.pipelining = false;
         let mut k = 0usize;
         for _ in 0..48 {
             let mut a: Vec<f32> = (0..64).map(|i| material(k + i) * 4.0).collect();
@@ -2061,8 +2104,8 @@ fn a_pipelined_callback_is_the_serial_callback_and_does_not_allocate() {
             }
             assert_eq!(a, b, "{circuit:?} left");
             // Keep the adaptive policy from switching either one.
-            pipelined.pipeline.pipelining = true;
-            serial.pipeline.pipelining = false;
+            pipelined.dsp_mut().pipeline.pipelining = true;
+            serial.dsp_mut().pipeline.pipelining = false;
         }
     }
 }
@@ -2081,6 +2124,9 @@ fn the_plugin_reports_true_latency_and_follows_the_oversampling() {
         // All dry, so the test hears the dry path's delay and nothing else.
         p.mix = FloatParam::new("Mix", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 });
     }
+    // The chains' own latency; the reservoir's is added in
+    // `reservoir_plugin.rs`.
+    plugin.set_reservoir_delay(0);
     assert!(plugin.activate(
         &GainStageFx::AUDIO_IO_LAYOUTS[1],
         &BufferConfig {
@@ -2154,7 +2200,7 @@ fn split_puts_the_amplifier_left_and_the_dry_right() {
         process(&mut mono, &mut reference, None);
         // Read after the block: the first one applies the settings, and with
         // them the oversampling the latency follows.
-        let latency = split.channels[0].latency() as usize;
+        let latency = split.dsp().channels[0].latency() as usize;
         assert_eq!(
             left, reference,
             "block {block}: the left side is not the amplifier"

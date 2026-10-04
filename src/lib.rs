@@ -15,10 +15,17 @@ pub mod meters;
 pub mod params;
 pub mod plugin;
 pub mod presets;
+pub mod reservoir;
 pub mod rt_trace;
 pub mod stage_worker;
 mod stereo_worker;
 pub mod voice;
+
+/// Counts heap operations on a test thread; one global allocator for every
+/// unit test in the crate.
+#[cfg(test)]
+#[path = "../tests/support/allocations.rs"]
+pub(crate) mod test_allocations;
 
 // ---------------------------------------------------------------------------
 // macOS Audio Unit v2 export

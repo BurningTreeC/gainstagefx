@@ -72,11 +72,15 @@ fn apply_preset(plugin: &mut GainStageFx, circuit: Circuit, name: &str) {
     ] {
         param.smoothed.reset(value);
     }
-    plugin.input_ramp.reset(util::db_to_gain(preset.input_trim));
     plugin
+        .dsp_mut()
+        .input_ramp
+        .reset(util::db_to_gain(preset.input_trim));
+    plugin
+        .dsp_mut()
         .output_ramp
         .reset(util::db_to_gain(preset.output_trim));
-    plugin.mix_ramp.reset(preset.mix);
+    plugin.dsp_mut().mix_ramp.reset(preset.mix);
     println!("preset={name}");
     println!("preset_configuration,requested={name},applied={name},reason=matched");
 }
@@ -105,10 +109,10 @@ fn attack_level_sweep() {
                     assert_eq!(left, right);
                     assert!(left.iter().all(|x| x.is_finite()));
                 }
-                let health = plugin.channels[0].solver_health();
+                let health = plugin.dsp().channels[0].solver_health();
                 assert_eq!(health.nonfinite, 0);
                 assert_eq!(
-                    plugin.channels[1].solver_health().solves,
+                    plugin.dsp().channels[1].solver_health().solves,
                     0,
                     "exact L=R attack sweep should stay on the dual-mono fast path"
                 );
@@ -155,7 +159,7 @@ fn blackface_throb_converges_through_high_pick_attacks() {
 }
 
 fn check_pick_attacks(mut plugin: GainStageFx) {
-    plugin.channels[0].reset_twin_level_trace();
+    plugin.dsp_mut().channels[0].reset_twin_level_trace();
     for block in 0..375 {
         let mut left = std::array::from_fn::<_, 256, _>(|j| treble_pick(block * 256 + j, 48_000.0));
         let mut right = left;
@@ -164,9 +168,9 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
         assert!(left.iter().all(|x| x.is_finite()));
     }
     if std::env::var_os("GAINSTAGEFX_TRACE_UNSETTLED").is_some() {
-        for trace in plugin.channels[0].unsettled_power_solver_trace() {
+        for trace in plugin.dsp().channels[0].unsettled_power_solver_trace() {
             let probe_unknown_name = if trace.probe_pass != 0 {
-                plugin.channels[0]
+                plugin.dsp().channels[0]
                     .power_solver_unknown_name(trace.probe_max_correction_unknown)
                     .unwrap_or("?")
             } else {
@@ -174,7 +178,7 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
             };
             let tail_unknown_names = std::array::from_fn::<_, 8, _>(|i| {
                 if i < trace.tail_trace_count {
-                    plugin.channels[0]
+                    plugin.dsp().channels[0]
                         .power_solver_unknown_name(trace.tail_trace_max_unknown[i])
                         .unwrap_or("?")
                 } else {
@@ -255,22 +259,22 @@ fn check_pick_attacks(mut plugin: GainStageFx) {
             );
         }
     }
-    if let Some(levels) = plugin.channels[0].twin_level_diagnostics() {
+    if let Some(levels) = plugin.dsp().channels[0].twin_level_diagnostics() {
         if levels.power_input.samples > 0 {
             println!("twin_level_diagnostics={levels:?}");
         }
     }
-    let health = plugin.channels[0].solver_health();
+    let health = plugin.dsp().channels[0].solver_health();
     assert_eq!(
         health.unsettled,
         0,
         "{} failed solves: {:?}",
         plugin.params.circuit.value().name(),
-        plugin.channels[0].solver_breakdown()
+        plugin.dsp().channels[0].solver_breakdown()
     );
     assert_eq!(health.nonfinite, 0, "nonfinite corrections");
     assert_eq!(
-        plugin.channels[1].solver_health().solves,
+        plugin.dsp().channels[1].solver_health().solves,
         0,
         "exact L=R pick attack should stay on the dual-mono fast path"
     );
@@ -343,7 +347,7 @@ fn attack_recording_probe() {
                 let mut left = [0.0; BLOCK];
                 left[..chunk.len()].copy_from_slice(chunk);
                 let mut right = left;
-                let before = plugin.channels[0].solver_health();
+                let before = plugin.dsp().channels[0].solver_health();
                 let elapsed = process(
                     &mut plugin,
                     &mut left[..chunk.len()],
@@ -352,7 +356,7 @@ fn attack_recording_probe() {
                 if elapsed > chunk.len() as f64 / rate as f64 * 1e6 {
                     misses += 1;
                 }
-                let after = plugin.channels[0].solver_health();
+                let after = plugin.dsp().channels[0].solver_health();
                 let mut block_step = 0.0f32;
                 for &sample in &left[..chunk.len()] {
                     assert!(sample.is_finite());
@@ -372,7 +376,7 @@ fn attack_recording_probe() {
                     block_step,
                 ));
             }
-            let health = plugin.channels[0].solver_health();
+            let health = plugin.dsp().channels[0].solver_health();
             let mean = times.iter().sum::<f64>() / times.len() as f64;
             times.sort_by(f64::total_cmp);
             println!(
@@ -387,11 +391,11 @@ fn attack_recording_probe() {
                 health.nonfinite
             );
             assert_eq!(
-                plugin.channels[1].solver_health().solves,
+                plugin.dsp().channels[1].solver_health().solves,
                 0,
                 "exact L=R recording probe should stay on the dual-mono fast path"
             );
-            let power = plugin.channels[0].test_power().unwrap();
+            let power = plugin.dsp().channels[0].test_power().unwrap();
             println!(
                 "power: statistics={:?}, health={:?}",
                 power.statistics(),

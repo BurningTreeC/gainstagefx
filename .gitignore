@@ -43,6 +43,9 @@
 !/docs/realtime-catalogue.md
 # The DI's design, which the code, the README and the research logs point at.
 !/docs/DI.md
+# The reservoir's design and measurements, which `src/reservoir.rs`, the
+# README and IMPLEMENTATION_PROGRESS.md point at.
+!/docs/reservoir.md
 
 CLAUDE.md
 AGENTS.md

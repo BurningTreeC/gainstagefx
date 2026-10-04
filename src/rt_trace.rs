@@ -95,6 +95,14 @@ pub struct TraceRecord {
     pub speculated: u32,
     pub solver: SolverBreakdown,
     pub largest_output_delta: f32,
+    /// The reservoir the DSP ran behind, in samples. Zero: the row is a host
+    /// callback, as before. Otherwise it is the reservoir worker's processing
+    /// of one host call's audio, whose deadline is the reservoir's, not the
+    /// host's.
+    pub reservoir_samples: u32,
+    /// From when that host call was due to when the worker started it: wake-up
+    /// latency plus any backlog. Zero on the host thread.
+    pub queue_ns: u64,
 }
 
 /// Single producer (the audio thread), single consumer (the writer).
@@ -251,7 +259,7 @@ pedal_passes,gain_passes,power_passes,iron_passes,\
 pedal_backtracks,gain_backtracks,power_backtracks,iron_backtracks,\
 pedal_fallbacks,gain_fallbacks,power_fallbacks,iron_fallbacks,\
 pedal_unsettled,gain_unsettled,power_unsettled,iron_unsettled,\
-largest_output_delta,ring_dropped,preset";
+largest_output_delta,ring_dropped,preset,reservoir_samples,queue_us";
 
 fn write_rows(
     path: &std::path::Path,
@@ -373,7 +381,7 @@ fn write_row(
     let gain = |f: fn(&SolverHealth) -> u64| f(&v.gain) + f(&v.line);
     writeln!(
         out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.9},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{:.9},{},{},{},{:.3}",
         v.pedal.passes,
         gain(|h| h.passes),
         v.power.passes,
@@ -393,6 +401,8 @@ fn write_row(
         r.largest_output_delta,
         ring.dropped.load(Ordering::Relaxed),
         csv_field(preset),
+        r.reservoir_samples,
+        us(r.queue_ns),
     )
 }
 
@@ -532,6 +542,8 @@ mod tests {
             speculated: 0,
             solver: SolverBreakdown::default(),
             largest_output_delta: 0.0,
+            reservoir_samples: 0,
+            queue_ns: 0,
         }
     }
 

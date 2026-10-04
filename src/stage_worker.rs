@@ -367,7 +367,7 @@ fn worker_loop(shared: &Shared) {
 }
 
 #[cfg(target_os = "linux")]
-mod sys {
+pub(crate) mod sys {
     use std::os::raw::{c_int, c_ulong};
 
     #[repr(C)]
@@ -407,7 +407,7 @@ mod sys {
 }
 
 #[cfg(not(target_os = "linux"))]
-mod sys {
+pub(crate) mod sys {
     pub fn current_scheduling() -> Option<(i32, i32)> {
         None
     }

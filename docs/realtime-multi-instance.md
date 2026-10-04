@@ -482,6 +482,15 @@ and full steps accepted, so the next thing to find is which non-smooth edge of
 the pentode model it is crossing: `vpk.max(0.0)`, the zero Jacobian at
 `vpk ≤ 0`, or `gp.max(1e-12)`.
 
+## The reservoir (2026-10-04)
+
+Everything above made the solve faster or split it across cores inside the
+callback, at no added latency. The reservoir takes the other trade: the DSP
+runs on its own worker 128 samples behind the host, so a solver spike costs
+the worker time it has instead of the host time it lacks, and the host
+callback takes microseconds. The intra-callback pipeline is unchanged and now
+runs on the worker. Design and measurements: [`reservoir.md`](reservoir.md).
+
 ## What the goal requires
 
 - A live instance must finish inside ~930 µs **every** time, with its SMT

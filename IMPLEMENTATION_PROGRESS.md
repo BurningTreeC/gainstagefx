@@ -1,5 +1,60 @@
 # Implementation progress
 
+## 2026-10-04 — The reservoir: the DSP behind the host, 128 samples late
+
+The owner asked for "a real-time-safe processing reservoir / computational
+look-ahead architecture ... so that short nonlinear-solver compute spikes no
+longer directly cause host audio callback deadline misses", 64 samples by
+default, native to nice-plug. `docs/reservoir.md` has the design and the
+measurements.
+
+- **`Controls` and `Engine`.** `plugin.rs` reads every parameter a host call
+  uses into `Controls` on the host thread, at the call, smoothers stepped there
+  as always; `Engine` holds all the DSP and reads no parameter. The old
+  `process` body is `Engine::process_segment`, moved, not rewritten: with no
+  reservoir the plugin is bit-identical to before (every existing plugin test
+  passes on that path).
+- **`src/reservoir.rs`**: the engine on its own sequential worker `D` host
+  samples behind (`DEFAULT_RESERVOIR`; `GAINSTAGEFX_RESERVOIR`). Input in
+  `rtrb` SPSC rings (new direct dependency, the ring nice-plug's standalone
+  backend uses), output in an index-addressed ring published with one
+  `(epoch, count)` atomic. Exact delay whatever the block sizes; late frames
+  concealed and skipped, never played late; resets are epochs, real-time safe;
+  the worker adopts the host thread's scheduling and parks when idle. The
+  reported latency is `D` plus the oversampler's; measured equal by impulse at
+  44.1-192 kHz.
+- **Where the callback waits**, the one place the brief's "never" bends: an
+  offline render; a host measurably ahead of real time (REAPER's anticipative
+  FX, which CLAP reports as realtime: without waiting every burst would be
+  lost), for no longer than its lead; and blocks longer than the reservoir,
+  whose output depends on their own input, bounded by their period. Never for
+  audio an earlier real-time callback delivered.
+- **Found by measuring**: the worker's solver cutoff had been anchored to the
+  hand-over, so one slow segment spent the budget of every one queued behind
+  it and the cutoff cascaded (2-4x the synchronous aborts); it is anchored to
+  the worker's start now. And the host-pace estimate re-anchored on every late
+  call, so the call after a late one looked early; only a real gap restarts it.
+- **Measured** (`examples/reservoir.rs`, whole plugin, real take, 64/48k,
+  `SCHED_FIFO` hosts): host callbacks 1-6 us p50 against 260-360 us; none past
+  930 us at D >= 64 in any run, against 717-933 for 16 Jazz Chorus and 41-46
+  thousand for 16 Puppet Master synchronously; one host thread running 8
+  instances missed every cycle synchronously and none behind reservoirs. Output
+  bit-identical to the synchronous plugin `D` later wherever the wall-clock
+  cutoff did not fire. Underruns: none at D = 128 anywhere; at 64, the JC-120
+  only (2 of 13 runs at 1-8 instances, 34-55 events at 16).
+- **Blocks longer than the reservoir wait for half.** A call's output needs
+  only `N - D` frames of its own input; the worker processes and publishes
+  those first (`Timing::first`) and the rest behind them, so the callback waits
+  for `N - D` frames' work, not `N`: at 256-sample blocks Jazz Chorus 1,098 ->
+  587 us p50, the Twin 1,361 -> 713 us. Exact except where the power stage
+  speculates (per block): there a split is another block boundary, as a
+  different buffer size is. Offline waits now give up only on a dead worker
+  or after 60 s, not 2 s.
+- **The default is 128**, 2.667 ms at 48 kHz: shipped at 64 first as asked,
+  then, measured, the smallest depth with no underrun in any run. The owner
+  chose it. 64 stays a `GAINSTAGEFX_RESERVOIR` away.
+- Tests: `tests/support/reservoir_unit.rs` (14), `reservoir_plugin.rs` (8).
+
 ## 2026-10-04 — The Audio Unit's editor, which no host could open
 
 The owner: "The AU on macOS doesn't show the plugin window. It shows a small,

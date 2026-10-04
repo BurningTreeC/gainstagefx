@@ -29,6 +29,9 @@ standalone = ["nice-plug/standalone"]
 [dependencies]
 nice-plug = { git = "https://codeberg.org/RustAudio/nice-plug", rev = "e60b5db09d8606c3dc3e93f982847a00bce17325", features = ["unsafe_flush_denormals"] }
 vizia_plug = { path = "vendor/vizia_plug" }
+# The reservoir's input queues (`src/reservoir.rs`): the wait-free SPSC ring
+# nice-plug's own standalone backend uses, at the version it locks.
+rtrb = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

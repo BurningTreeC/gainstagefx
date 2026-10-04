@@ -131,7 +131,14 @@ def report_instance(inst, args):
         print("  voice    " + ", ".join(f"{k} ({v})" for k, v in voices.most_common(3))
               + "   mode " + ", ".join(f"{k} ({v})" for k, v in modes.most_common(3)))
 
-    print(f"  callback us  {spread(inst.duration)}")
+    reservoir = int(rows[0].get("reservoir_samples", 0) or 0)
+    if reservoir:
+        # Behind a reservoir the rows are the worker's: its time per host
+        # call, judged against the reservoir, not the host's period. The
+        # host callback itself takes microseconds and is not traced.
+        print(f"  RESERVOIR {reservoir} samples: rows are the DSP worker's, not host callbacks")
+        print(f"  worker queue us  {spread([r.get('queue_us', 0.0) for r in rows])}")
+    print(f"  {'worker' if reservoir else 'callback'} us  {spread(inst.duration)}")
     if "pipeline" in rows[0]:
         use = Counter(r["pipeline"] for r in rows)
         print("  second half ran on: " + ", ".join(f"{k} {100 * v / len(rows):.1f} %" for k, v in use.most_common()))

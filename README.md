@@ -566,6 +566,39 @@ Turning it up is a choice with a cost, and the panel is where that choice is
 made. Measured with `cargo run --release --example oversampling`, and the cost
 side with `cargo run --release --example stutter`.
 
+### Latency, and the reservoir
+
+The circuits are solved, so their cost varies from sample to sample: a clip
+transition can take ten times the Newton passes of the samples round it. A
+host callback that runs past its deadline is a dropout for the whole session,
+so the plugin does not solve on the host's thread. Its DSP runs on a worker of
+its own **128 samples behind the host** (2.667 ms at 48 kHz, 2.902 ms at 44.1),
+and the host callback only hands over the input and takes output the worker
+finished earlier: a few microseconds instead of a few hundred. The delay is
+real and reported, so the host lines parallel tracks up; it is also what you
+hear when you monitor through the plugin, on top of the 0-66 samples the
+oversampling adds (none at host rate, where every modelled preset ships).
+
+The worker produces the same audio as before, to the bit, 128 samples later.
+A solver spike costs the worker time it has rather than the host time it
+lacks; if the worker is ever later than the reservoir, the late samples are
+concealed and skipped -- a short fade, counted -- rather than played late, so
+the latency never grows. What the reservoir cannot do is make a chain that
+needs more than the period on average fit: it absorbs spikes, not overload.
+With a host buffer longer than the reservoir, part of each callback's output
+is made from that same callback's input, so the callback waits for that part
+alone -- half its work at 256 samples, three quarters at 512 -- and the worker
+does the rest behind it.
+
+128 is the smallest depth that never ran dry in any measurement, the JC-120's
+hardest playing with sixteen instances included.
+`GAINSTAGEFX_RESERVOIR=<samples>` in the host's environment sets another depth
+when an instance is created: 64 halves the latency and, measured, conceals a
+rare millisecond of the JC-120 under heavy load; `0` runs on the host thread as
+before. How it works, and what it measured:
+[`docs/reservoir.md`](docs/reservoir.md), with
+`cargo run --release --example reservoir`.
+
 ## Presets
 
 Eighty-two, in twelve groups shown quietest first so the list reads as a

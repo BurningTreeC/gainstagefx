@@ -3,7 +3,7 @@
 The GainStageFx plugin is distributed under the MIT License or the
 Apache License 2.0, at your option, whose texts are in `LICENSE-MIT`
 and `LICENSE-APACHE`. It links the
-265 crates listed below, whose own licences and copyright notices
+266 crates listed below, whose own licences and copyright notices
 are reproduced here as those licences require.
 
 Where a crate offers a choice of licence, the one this distribution
@@ -470,6 +470,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 - **regex-syntax** 0.8.11 <https://github.com/rust-lang/regex>
   - Copyright (c) 2014 The Rust Project Developers
   - Copyright © 1991-2018 Unicode, Inc. All rights reserved
+- **rtrb** 0.4.0 <https://github.com/mgeier/rtrb>
 - **rustc-demangle** 0.1.28 <https://github.com/rust-lang/rustc-demangle>
   - Copyright (c) 2014 Alex Crichton
 - **rustc_version** 0.4.1 <https://github.com/djc/rustc-version-rs>

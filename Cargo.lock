@@ -1334,6 +1334,7 @@ version = "0.48.0"
 dependencies = [
  "nice-plug",
  "nice-plug-au2",
+ "rtrb",
  "serde",
  "serde_json",
  "vizia_plug",
