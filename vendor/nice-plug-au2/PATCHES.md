@@ -23,8 +23,14 @@ rewrite of the AUv2 adapter. The following are carried:
 - **A closed view is freed.** The display link retains the view; it now stops
   when the view leaves its window, so a host that releases the view frees it and
   the editor closes, rather than rendering on unseen for the instance's life.
+- **The first render failure is reported.** It goes to the unified log
+  (`log show`, Console) once per process, formatted only then. Hosts discard
+  stderr and no logger is installed, so before this a failing render said
+  nothing but its status.
 
 Validation: `tools/au_editor_smoke.m`, run by the macOS package job after
-`auval`, opens the editor in process and out of process with audio rendering,
-checks its size and pixels, reopens it, and samples the main threads if one
-stops. The job also checks the class is in each slice's Objective-C class list.
+`auval`, opens the editor in process, through Apple's v2 bridge, and out of
+process, with audio rendering; checks its size, and its pixels where the
+machine has accelerated OpenGL (the GitHub runner does not); reopens it; and
+samples the main threads if one stops. The job also checks the class is in each
+slice's Objective-C class list, and prints any render failure from the log.

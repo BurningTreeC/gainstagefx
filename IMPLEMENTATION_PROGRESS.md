@@ -1,5 +1,35 @@
 # Implementation progress
 
+## 2026-10-04 — The Audio Unit's editor, which no host could open
+
+The owner: "The AU on macOS doesn't show the plugin window. It shows a small,
+very very small window with spinning cursor." (Logic Pro / GarageBand.)
+
+- **The editor's class was never in the plugin.** `NiceAu2CocoaViewFactory`, the
+  class `kAudioUnitProperty_CocoaUI` names, is compiled from `shim.m` into a
+  static archive that nothing referenced, so the linker dropped it: no
+  `__objc_classlist` at all in 0.47.0's binary. Every host's `classNamed:` came
+  back nil. In process that is no editor; out of process -- AUHostingService,
+  which is how Logic Pro and GarageBand loaded it -- a remote view of 1x1
+  points in a window the size of its title bar. The reported name is now read
+  from the class, which links it. CI's check used `strings`, which found the
+  same name as a plain string in `properties.rs`; it reads the class list now.
+- **The view follows its editor.** It keeps the size the editor asks for, takes
+  the size the editor opened at once the window's backing scale is known (the
+  size given before could not know it), and receives the editor's own resizes
+  -- zoom and the collapsible sections -- so the host's window follows. The
+  display link no longer keeps a closed view, and its editor, alive.
+- **`tools/au_editor_smoke.m`**, in the macOS package job: opens the editor in
+  process, through Apple's v2 bridge, and out of process, with audio rendering;
+  reopens it; samples the main threads if one stops. 0.47.0 fails it at once,
+  1x1. What it cannot check is drawing: the runner has no accelerated OpenGL,
+  so baseview opens no GL view there, and it says so rather than passing a
+  black window. That still has to be seen on a Mac.
+- Found on the way: Apple's v2 bridge starts an effect's input bus disabled and
+  installs no input callback until the host enables it -- every render then
+  fails "0/2 input channels". A harness fault, not the plugin's, found because
+  the AU now writes its first render failure to the unified log.
+
 ## 2026-10-03 — What ships, compiled: fat LTO, PGO, and a CI fix
 
 The owner: "can you compile other things for performance improvements?"

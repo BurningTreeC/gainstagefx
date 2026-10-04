@@ -516,9 +516,10 @@ static int through_auaudiounit(double duration, AudioComponentInstantiationOptio
     NSError *error = nil;
     AVAudioFormat *format = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:RATE channels:2];
     if (unit.inputBusses.count > 0) {
-        say(@"%lu input bus(ses), the first %@ by default", (unsigned long)unit.inputBusses.count,
-            unit.inputBusses[0].enabled ? @"enabled" : @"disabled");
         if (![unit.inputBusses[0] setFormat:format error:&error]) say(@"input format: %@", error);
+        // Apple's v2 bridge starts an effect's input bus disabled, and installs
+        // the unit's input callback only for an enabled one. A host enables
+        // it; without that every render fails for want of input.
         unit.inputBusses[0].enabled = YES;
     }
     if (unit.outputBusses.count > 0 && ![unit.outputBusses[0] setFormat:format error:&error])
