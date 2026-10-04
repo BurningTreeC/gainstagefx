@@ -141,6 +141,16 @@ jobs:
             libxcb-shape0-dev \
             libxcb-xfixes0-dev
 
+      # Compiled before the plugin, so a mistake in it fails in seconds rather
+      # than after the release build.
+      - name: Build the AU editor smoke host
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          clang -fobjc-arc -Wall -Werror -Wno-deprecated-declarations \
+            -framework AppKit -framework AudioToolbox \
+            -framework AVFoundation -framework CoreAudioKit \
+            -o "$RUNNER_TEMP/au_editor_smoke" tools/au_editor_smoke.m
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -285,11 +295,18 @@ jobs:
           echo "Verifying AUv2 metadata entry point..."
           nm -gU "$binary" | grep -E '(_)?nice_au2_metadata$'
 
+          # The class itself, from the Objective-C class list. Its name also
+          # appears as a plain string, which `strings` finds even when the
+          # class was never linked -- as it was not, through 0.47.0.
           echo
           echo "Verifying Objective-C Cocoa view factory..."
-          if command -v strings >/dev/null 2>&1; then
-            strings "$binary" | grep 'NiceAu2CocoaViewFactory'
-          fi
+          for arch in arm64 x86_64; do
+            if ! otool -arch "$arch" -ov "$binary" | grep 'NiceAu2CocoaViewFactory' >/dev/null; then
+              echo "error: NiceAu2CocoaViewFactory is not linked into the $arch slice" >&2
+              exit 1
+            fi
+            echo "  $arch: NiceAu2CocoaViewFactory is linked"
+          done
 
           echo
           echo "Verifying ad-hoc code signature..."
@@ -360,6 +377,43 @@ jobs:
 
           echo
           echo "AUv2 auval validation passed."
+
+      # Open the editor as a host does: in process (the Cocoa view most hosts
+      # ask for), through Apple's v2 bridge, and out of process
+      # (AUHostingService, as Logic Pro and GarageBand can), with audio
+      # rendering alongside. The host samples the main threads if one stops
+      # turning; captures and samples are uploaded.
+      - name: Open the AU editor
+        if: startsWith(matrix.os, 'macos')
+        timeout-minutes: 5
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/au-editor"
+          status=0
+          for mode in inproc bridged outofproc; do
+            "$RUNNER_TEMP/au_editor_smoke" "$mode" "$out" 6 || status=1
+            for sample in "$out/$mode"-sample-*.txt; do
+              [ -f "$sample" ] || continue
+              echo "::group::$(basename "$sample")"
+              cat "$sample"
+              echo "::endgroup::"
+            done
+          done
+          # nice-plug-au2 reports its first render failure to the unified log;
+          # AUHostingService's stderr goes nowhere.
+          echo "::group::nice-plug-au2 in the unified log"
+          sudo -n log show --last 5m --style compact \
+            --predicate 'eventMessage CONTAINS "nice-plug-au2"' || true
+          echo "::endgroup::"
+          exit "$status"
+
+      - name: Upload the AU editor captures
+        if: always() && startsWith(matrix.os, 'macos')
+        uses: actions/upload-artifact@v4
+        with:
+          name: au-editor-smoke
+          path: ${{ runner.temp }}/au-editor
+          if-no-files-found: ignore
 
       - name: Test the Linux CLAP editor
         if: startsWith(matrix.os, 'ubuntu')

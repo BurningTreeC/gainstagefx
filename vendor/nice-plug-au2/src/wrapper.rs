@@ -277,6 +277,44 @@ impl<P: Plugin> instance::NicePluginFrontend for Au2Frontend<P> {
     }
 }
 
+/// The editor's resizes go to the AU view it was spawned into, which the host
+/// follows. There is nothing to call back on the main thread: AppKit editors
+/// already run there.
+#[cfg(target_os = "macos")]
+fn editor_host(parent: *mut std::ffi::c_void) -> Option<nice_plug_core::editor::HostMethods> {
+    use nice_plug_core::editor::dpi::Size;
+    use nice_plug_core::editor::{HostCallbacks, HostMainThreadCaller, HostMethods};
+
+    struct ViewCallbacks(*mut std::ffi::c_void);
+    impl HostCallbacks for ViewCallbacks {
+        fn request_resize(
+            &mut self,
+            new_size: Size,
+            scale_factor: f64,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let size = new_size.to_logical::<f64>(scale_factor);
+            if crate::bridge::request_view_size(self.0, size.width, size.height) {
+                Ok(())
+            } else {
+                Err("the AU view cannot take this size".into())
+            }
+        }
+
+        fn destroyed(&mut self) {}
+    }
+
+    struct AlreadyOnMainThread;
+    impl HostMainThreadCaller for AlreadyOnMainThread {
+        fn call_main_thread(&mut self) {}
+    }
+
+    Some(HostMethods {
+        callbacks: Box::new(ViewCallbacks(parent)),
+        main_thread_caller: Box::new(AlreadyOnMainThread),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
 fn editor_host(_parent: *mut std::ffi::c_void) -> Option<nice_plug_core::editor::HostMethods> {
     None
 }

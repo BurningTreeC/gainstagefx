@@ -620,7 +620,10 @@ cargo run --release --features standalone   # the panel without a DAW
 On macOS, `cargo xtask bundle-universal gainstagefx --release` builds universal
 bundles, and `bash tools/package_au2.sh GainStageFx` then wraps the same binary
 as an Audio Unit (`target/bundled/GainStageFx.component`), which is what the
-release workflow does.
+release workflow does. The workflow then opens the Audio Unit's editor with
+audio running, the three ways a host can (`tools/au_editor_smoke.m`): its Cocoa
+view in process, through Apple's v2 bridge, and out of process in
+AUHostingService, the way Logic Pro and GarageBand load it.
 
 The source-tree installer uses `jq` to read Cargo's configured target directory.
 It builds the `release-lto` profile and installs both formats, each in a
