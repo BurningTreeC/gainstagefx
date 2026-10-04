@@ -42,7 +42,7 @@ extern char **environ;
 static const AudioComponentDescription DESCRIPTION = {
     kAudioUnitType_Effect, 'GSfx', 'BrTC', 0, 0};
 static const double RATE = 48000.0;
-static const UInt32 FRAMES = 512;
+enum { FRAMES = 512 };
 static const double WATCHDOG = 10.0;
 
 static NSString *out_dir;
