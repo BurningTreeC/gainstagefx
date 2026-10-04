@@ -53,6 +53,7 @@ static _Atomic uint64_t last_beat;
 static atomic_bool rendering;
 // Set by completion handlers that may run on any thread.
 static atomic_bool instantiated, answered;
+static atomic_bool render_failed;
 
 static double seconds(uint64_t ticks) {
     return (double)ticks * timebase.numer / timebase.denom / 1e9;
@@ -162,10 +163,8 @@ static void fill(AudioBufferList *list, UInt32 frames) {
     static float scratch[2][4096];
     static double phase;
     for (UInt32 b = 0; b < list->mNumberBuffers; b++) {
-        if (list->mBuffers[b].mData == NULL && b < 2) {
-            list->mBuffers[b].mData = scratch[b];
-            list->mBuffers[b].mDataByteSize = frames * sizeof(float);
-        }
+        if (list->mBuffers[b].mData == NULL && b < 2) list->mBuffers[b].mData = scratch[b];
+        list->mBuffers[b].mDataByteSize = frames * sizeof(float);
     }
     for (UInt32 i = 0; i < frames; i++) {
         float value = 0.1f * (float)sin(phase);
@@ -212,8 +211,29 @@ static void render_like_a_device(OSStatus (^render)(const AudioTimeStamp *)) {
         time.mSampleTime += FRAMES;
         if (took < period) usleep((useconds_t)((period - took) * 1e6));
     }
-    say(@"rendered %llu blocks, %llu failed (first %d), slowest %.2f ms", calls, failed,
-        (int)first_failure, worst * 1e3);
+    say(@"%@rendered %llu blocks, %llu failed (first %d), slowest %.2f ms",
+        failed > 0 ? @"FAIL: " : @"", calls, failed, (int)first_failure, worst * 1e3);
+    if (failed > 0) atomic_store(&render_failed, true);
+}
+
+// Whether this machine offers the pixel format baseview asks for: OpenGL 3.2
+// Core, accelerated. A virtual machine's paravirtualised GPU may not, and then
+// an editor cannot open here however correct it is.
+static BOOL accelerated_opengl(void) {
+    NSOpenGLPixelFormatAttribute attributes[] = {
+        NSOpenGLPFAOpenGLProfile, NSOpenGLProfileVersion3_2Core,
+        NSOpenGLPFAColorSize, 24, NSOpenGLPFAAlphaSize, 8,
+        NSOpenGLPFADepthSize, 24, NSOpenGLPFAStencilSize, 8,
+        NSOpenGLPFAAccelerated, NSOpenGLPFADoubleBuffer, 0};
+    return [[NSOpenGLPixelFormat alloc] initWithAttributes:attributes] != nil;
+}
+
+static BOOL has_subview_of_class(NSView *view, Class kind) {
+    if ([view isKindOfClass:kind]) return YES;
+    for (NSView *subview in view.subviews) {
+        if (has_subview_of_class(subview, kind)) return YES;
+    }
+    return NO;
 }
 
 static void dump(NSView *view, int depth) {
@@ -225,16 +245,16 @@ static void dump(NSView *view, int depth) {
     for (NSView *subview in view.subviews) dump(subview, depth + 1);
 }
 
-// Distinct colours on a 64 x 64 grid over the image, and the share of samples
-// that are not black.
-static NSUInteger colours(NSString *file, double *lit_share) {
+// Distinct colours on a 64 x 64 grid over the image below its top `skip`
+// pixels (the title bar), and the share of samples that are not black.
+static NSUInteger colours(NSString *file, NSInteger skip, double *lit_share) {
     *lit_share = 0;
     NSData *data = [NSData dataWithContentsOfFile:file];
     NSBitmapImageRep *image = data != nil ? [NSBitmapImageRep imageRepWithData:data] : nil;
     if (image == nil) return 0;
     NSMutableSet *seen = [NSMutableSet set];
     NSInteger width = image.pixelsWide, height = image.pixelsHigh, total = 0, lit = 0;
-    for (NSInteger y = 0; y < height; y += MAX(1, height / 64)) {
+    for (NSInteger y = MIN(skip, height); y < height; y += MAX(1, (height - skip) / 64)) {
         for (NSInteger x = 0; x < width; x += MAX(1, width / 64)) {
             NSColor *colour = [[image colorAtX:x y:y] colorUsingColorSpace:NSColorSpace.sRGBColorSpace];
             long r = lround(colour.redComponent * 255), g = lround(colour.greenComponent * 255),
@@ -305,7 +325,7 @@ static NSUInteger colours(NSString *file, double *lit_share) {
 }
 @end
 
-static int report(Host *host) {
+static int report(Host *host, BOOL in_this_process) {
     int failures = 0;
     NSWindow *window = host.window;
     NSSize content = window.contentView.frame.size;
@@ -323,14 +343,30 @@ static int report(Host *host) {
     const char *argv[] = {"/usr/sbin/screencapture", "-x", "-o", window_id.UTF8String, file.UTF8String, NULL};
     run(argv);
     capture_screen(@"screen.png");
+    BOOL opengl = accelerated_opengl();
+    if (in_this_process) {
+        BOOL spawned = has_subview_of_class(host.editor, NSOpenGLView.class);
+        say(@"the editor's OpenGL view is %@", spawned ? @"there" : @"missing");
+        if (!spawned && opengl) {
+            say(@"FAIL: accelerated OpenGL is available and the editor did not open");
+            failures++;
+        }
+    }
+    // The title bar is window height less content height, in pixels.
+    NSInteger title = (NSInteger)lround((window.frame.size.height - content.height) *
+                                        window.backingScaleFactor);
     double lit = 0;
-    NSUInteger seen = colours(file, &lit);
-    say(@"window capture: %lu colours, %.0f%% not black", (unsigned long)seen, lit * 100);
+    NSUInteger seen = colours(file, title, &lit);
+    say(@"editor capture: %lu colours, %.0f%% not black", (unsigned long)seen, lit * 100);
     if (seen == 0) {
         say(@"no window capture (screen recording not permitted?)");
-    } else if (seen < 8) {
-        say(@"FAIL: the editor did not draw (%lu colours)", (unsigned long)seen);
-        failures++;
+    } else if (lit < 0.5) {
+        if (opengl) {
+            say(@"FAIL: the editor did not draw");
+            failures++;
+        } else {
+            say(@"not checked: no accelerated OpenGL on this machine, so nothing can draw");
+        }
     }
     return failures;
 }
@@ -375,7 +411,7 @@ static int open_cocoa_view(AudioUnit unit, double duration) {
     Host *host = [[Host alloc] init];
     [host open:editor];
     pump(duration, nil);
-    int failures = report(host);
+    int failures = report(host, YES);
 
     // A second open, as when the user closes and reopens the plug-in window.
     [host close];
@@ -530,7 +566,7 @@ static int out_of_process(double duration) {
     pump(duration, nil);
     say(@"preferred content size now %.0fx%.0f", controller.preferredContentSize.width,
         controller.preferredContentSize.height);
-    int failures = report(host);
+    int failures = report(host, NO);
     // The editor runs in the service, so a hang there leaves this main thread
     // free: sample it whatever happened.
     sample_everything();
@@ -570,7 +606,9 @@ int main(int argc, const char *argv[]) {
         [NSApp finishLaunching];
         beat();
 
+        say(@"accelerated OpenGL 3.2 Core: %@", accelerated_opengl() ? @"yes" : @"no");
         int status = strcmp(argv[1], "inproc") == 0 ? in_process(duration) : out_of_process(duration);
+        if (status == 0 && atomic_load(&render_failed)) status = 1;
         say(@"%s", status == 0 ? "PASS" : "FAIL");
         return status;
     }
